@@ -200,6 +200,14 @@ class FlattradeBroker:
         out = await self._post("SearchScrip", {"stext": text, "exch": exch})
         return out.get("values", []) if isinstance(out, dict) else []
 
+    async def get_option_chain(self, exch: str, tsym: str, strprc: str, cnt: int = 15) -> dict:
+        """Noren GetOptionChain: strikes + tokens around `strprc` for the expiry encoded in `tsym`."""
+        out = await self._post(
+            "GetOptionChain",
+            {"exch": exch, "tsym": tsym, "strprc": str(strprc), "cnt": str(cnt)},
+        )
+        return out if isinstance(out, dict) else {"stat": "Not_Ok", "raw": out}
+
     async def feed_token(self, symbol: str) -> tuple[str, str] | None:
         sym = symbol.upper()
         if sym in INDEX_FEED_TOKENS:

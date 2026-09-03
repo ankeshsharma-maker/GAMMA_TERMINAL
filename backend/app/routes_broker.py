@@ -141,3 +141,58 @@ async def holdings():
         return {"holdings": await b.holdings()}
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
+
+
+@router.get("/probe")
+async def probe(symbol: str = Query("NIFTY"), strike: float = Query(0)):
+    """Diagnostic: raw Flattrade responses for the pieces the NSE->Flattrade
+    data migration needs (limits, index quote, scrip search, option chain)."""
+    import json as _json
+    from datetime import datetime as _dt
+
+    b = _require_auth()
+    out: dict = {"symbol": symbol.upper()}
+
+    async def safe(name, coro):
+        try:
+            out[name] = await coro
+        except Exception as exc:  # noqa: BLE001
+            out[name] = {"__error__": str(exc)}
+
+    await safe("limits", b.funds())
+
+    # index feed token + a quote on it
+    tok = None
+    try:
+        tok = await b.feed_token(symbol)
+        out["feed_token"] = tok
+    except Exception as exc:  # noqa: BLE001
+        out["feed_token"] = {"__error__": str(exc)}
+    if tok:
+        await safe("index_quote", b.quotes(tok[0], tok[1]))
+
+    # NFO option scrip search — see what tsym / expiry / strike fields look like
+    await safe("searchscrip_nfo", b.search_scrip("NFO", symbol.upper()))
+
+    # try a GetOptionChain around an ATM-ish strike using a constructed near-expiry tsym
+    try:
+        raw_idx = out.get("index_quote") or {}
+        spot = float(raw_idx.get("lp") or raw_idx.get("c") or 0) or strike or 24000
+        atm = round(spot / 50) * 50 if "NIFTY" in symbol.upper() else round(spot / 100) * 100
+        vals = out.get("searchscrip_nfo") or []
+        base_tsym = None
+        if isinstance(vals, list) and vals:
+            # pick any CE near atm to use as the anchor tsym
+            base_tsym = next(
+                (v.get("tsym") for v in vals if v.get("tsym", "").upper().endswith(f"C{int(atm)}")),
+                vals[0].get("tsym"),
+            )
+        out["oc_anchor"] = {"spot": spot, "atm": atm, "base_tsym": base_tsym}
+        if base_tsym:
+            await safe("option_chain", b.get_option_chain("NFO", base_tsym, str(int(atm)), 8))
+    except Exception as exc:  # noqa: BLE001
+        out["oc_anchor"] = {"__error__": str(exc)}
+
+    out["_at"] = _dt.now().isoformat(timespec="seconds")
+    # keep the payload compact in the response
+    return _json.loads(_json.dumps(out, default=str))
