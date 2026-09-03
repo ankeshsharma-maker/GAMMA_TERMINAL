@@ -19,6 +19,8 @@ from .config import (
     GREEK_GAMMA_JUMP_PCT,
     GREEK_NEAR_ATM_STRIKES,
     HISTORY_MAXLEN,
+    PAPER_CAPITAL,
+    SHORT_OPTION_MARGIN_PCT,
     SCREENER_IV_HISTORY_MAXLEN,
 )
 from .processing import build_chain, lot_size
@@ -873,6 +875,7 @@ class Store:
         with _lock:
             positions = []
             unrealized = 0.0
+            margin_used = 0.0
             for pos in self.paper["positions"]:
                 ltp = self._mark_price(
                     pos["symbol"], pos["expiry"], pos["strike"], pos["optionType"]
@@ -880,13 +883,24 @@ class Store:
                 ltp = ltp if ltp is not None else pos["avgPrice"]
                 pnl = (ltp - pos["avgPrice"]) * pos["qty"]
                 unrealized += pnl
+                # blocked margin: long = premium paid, short = ~SPAN+exposure on strike notional
+                if pos["qty"] >= 0:
+                    margin_used += pos["avgPrice"] * pos["qty"]
+                else:
+                    margin_used += SHORT_OPTION_MARGIN_PCT * pos["strike"] * abs(pos["qty"])
                 positions.append({**pos, "ltp": round(ltp, 2), "pnl": round(pnl, 2)})
+            realized = self.paper["realized"]
+            available = PAPER_CAPITAL + realized - margin_used
             return {
                 "positions": positions,
                 "orders": self.paper["orders"][:100],
-                "realized": round(self.paper["realized"], 2),
+                "realized": round(realized, 2),
                 "unrealized": round(unrealized, 2),
-                "total": round(self.paper["realized"] + unrealized, 2),
+                "total": round(realized + unrealized, 2),
+                "capital": round(PAPER_CAPITAL, 2),
+                "marginUsed": round(margin_used, 2),
+                "marginAvailable": round(available, 2),
+                "equity": round(PAPER_CAPITAL + realized + unrealized, 2),
             }
 
     def close_paper(self, position_id: str, price: float | None = None) -> dict:

@@ -4,35 +4,36 @@ import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
 import { StopEditor } from "./StopEditor";
 
-function BrokerFunds() {
+function MarginBar() {
   const broker = useStore((s) => s.broker);
-  const [cash, setCash] = useState<number | null>(null);
-  useEffect(() => {
-    if (!broker?.authed) return;
-    let alive = true;
-    const load = () =>
-      api.brokerFunds().then(
-        (f) => {
-          const v = Number(f.cash ?? f.marginused ?? (f as any).payin ?? NaN);
-          if (alive && !Number.isNaN(v)) setCash(v);
-        },
-        () => {}
-      );
-    load();
-    const t = setInterval(load, 15000);
-    return () => {
-      alive = false;
-      clearInterval(t);
-    };
-  }, [broker?.authed]);
+  const funds = useStore((s) => s.brokerFunds);
+  const paper = useStore((s) => s.paper);
+  const orderMode = useStore((s) => s.orderMode);
 
-  if (!broker?.authed) return null;
+  const live = orderMode === "live" && funds?.connected && funds.available != null;
+  const avail = live ? funds!.available! : paper?.marginAvailable ?? null;
+  const used = live ? funds!.used! : paper?.marginUsed ?? null;
+  const total = live ? funds!.total ?? null : paper?.capital ?? null;
+  const pct = total && used != null ? Math.min(100, Math.max(0, (used / total) * 100)) : 0;
+
   return (
-    <div className="flex items-center justify-between border-b border-term-border bg-up/5 px-3 py-1 text-2xs">
-      <span className="text-up">◈ Flattrade {broker.clientId}</span>
-      <span className="num text-term-dim">
-        {cash != null ? `cash ₹${nf(cash, 0)}` : "…"}
-      </span>
+    <div className="border-b border-term-border bg-term-panel/40 px-3 py-1.5 text-2xs">
+      <div className="flex items-center justify-between">
+        <span className={live ? "text-up" : "text-term-dim"}>
+          {live ? `◈ Flattrade ${broker?.clientId ?? ""}` : "Paper margin"}
+        </span>
+        <span className="num text-term-dim">
+          used <span className="text-amber-400">₹{avail != null ? nf(used ?? 0, 0) : "–"}</span> /{" "}
+          {total != null ? `₹${nf(total, 0)}` : "–"}
+        </span>
+      </div>
+      <div className="mt-1 h-1.5 overflow-hidden rounded bg-term-border">
+        <div className="h-full bg-amber-500" style={{ width: `${pct}%` }} />
+      </div>
+      <div className="mt-0.5 flex justify-between">
+        <span className="num text-up">available ₹{avail != null ? nf(avail, 0) : "–"}</span>
+        {funds?.error && <span className="text-down">{funds.error}</span>}
+      </div>
     </div>
   );
 }
@@ -90,7 +91,7 @@ export function Positions() {
 
   return (
     <div className="flex h-full flex-col bg-term-panel2">
-      <BrokerFunds />
+      <MarginBar />
       <div className="flex items-center justify-between border-b border-term-border px-3 py-2">
         <span className="text-2xs font-semibold uppercase tracking-wide text-term-dim">
           Paper Positions

@@ -163,6 +163,19 @@ export interface PaperState {
   realized: number;
   unrealized: number;
   total: number;
+  capital: number;
+  marginUsed: number;
+  marginAvailable: number;
+  equity: number;
+}
+
+export interface BrokerFunds {
+  connected: boolean;
+  available: number | null;
+  used: number | null;
+  total: number | null;
+  error?: string;
+  raw?: Record<string, unknown> | null;
 }
 
 export type ConnStatus = "connecting" | "open" | "closed";

@@ -16,6 +16,11 @@ DIVIDEND_YIELD = float(os.getenv("DIVIDEND_YIELD", "0.0"))
 POLL_INTERVAL = float(os.getenv("POLL_INTERVAL", "15"))
 OFFHOURS_POLL_INTERVAL = float(os.getenv("OFFHOURS_POLL_INTERVAL", "60"))
 
+# Notional starting capital for paper trading (used for the Margin Available readout).
+PAPER_CAPITAL = float(os.getenv("PAPER_CAPITAL", "500000"))
+# Rough SPAN+exposure margin for a short option leg, as a fraction of strike notional.
+SHORT_OPTION_MARGIN_PCT = float(os.getenv("SHORT_OPTION_MARGIN_PCT", "0.11"))
+
 DEFAULT_SYMBOLS = [
     s.strip().upper()
     for s in os.getenv("DEFAULT_SYMBOLS", "NIFTY,BANKNIFTY,FINNIFTY").split(",")

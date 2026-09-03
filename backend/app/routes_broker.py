@@ -79,11 +79,41 @@ def _require_auth():
 
 @router.get("/funds")
 async def funds():
-    b = _require_auth()
+    """Normalised margin view: {available, used, total, raw}. Never hard-fails so the
+    UI can still show the paper-margin figures when the broker isn't connected."""
+    b = get_broker()
+    if not b.authed:
+        return {"connected": False, "available": None, "used": None, "total": None, "raw": None}
     try:
-        return await b.funds()
+        raw = await b.funds()
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc))
+        return {"connected": True, "available": None, "used": None, "total": None,
+                "error": str(exc), "raw": None}
+    d = raw if isinstance(raw, dict) else {}
+
+    def num(*keys: str) -> float:
+        for k in keys:
+            v = d.get(k)
+            if v not in (None, ""):
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    pass
+        return 0.0
+
+    # Noren `Limits`: `cash` is the net available balance, `payin` today's deposits.
+    # margin used = `marginused` if present, else SPAN + exposure + option premium blocked.
+    used = num("marginused")
+    if used == 0.0:
+        used = num("span", "spanused") + num("expo", "exposuremargin") + num("premium")
+    available = num("cash") + num("payin") - num("payout") + num("brkcollamt", "collateral")
+    return {
+        "connected": True,
+        "available": round(available, 2),
+        "used": round(used, 2),
+        "total": round(available + used, 2),
+        "raw": d,
+    }
 
 
 @router.get("/positions")

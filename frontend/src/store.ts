@@ -47,6 +47,7 @@ interface State {
   scalpLots: number;
   chartInstrument: string; // "" = underlying spot, "STRADDLE", or an option key
   paper: PaperState | null;
+  brokerFunds: import("./types").BrokerFunds | null;
   view: View;
   scan: ScanRow[];
   alerts: Alert[];
@@ -132,6 +133,7 @@ export const useStore = create<State>((set, get) => ({
   scalpLots: 1,
   chartInstrument: "",
   paper: null,
+  brokerFunds: null,
   view: "chain",
   builderQueue: [],
   scan: [],
@@ -259,11 +261,10 @@ export const useStore = create<State>((set, get) => ({
         set({ screener: d.rows, screenerProgress: d.progress, screenerPresets: d.presets }),
       () => {}
     );
-    const pollBroker = () =>
-      api.brokerStatus().then(
-        (b) => set({ broker: b }),
-        () => {}
-      );
+    const pollBroker = () => {
+      api.brokerStatus().then((b) => set({ broker: b }), () => {});
+      api.brokerFunds().then((f) => set({ brokerFunds: f }), () => {});
+    };
     pollBroker();
     setInterval(pollBroker, 10000);
     api.orderModeGet().then(

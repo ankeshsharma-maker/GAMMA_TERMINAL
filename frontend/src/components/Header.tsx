@@ -41,6 +41,33 @@ function ViewToggle() {
   );
 }
 
+function MarginStats() {
+  const funds = useStore((s) => s.brokerFunds);
+  const paper = useStore((s) => s.paper);
+  const orderMode = useStore((s) => s.orderMode);
+
+  const live = orderMode === "live" && funds?.connected && funds.available != null;
+  const avail = live ? funds!.available! : paper?.marginAvailable ?? null;
+  const used = live ? funds!.used! : paper?.marginUsed ?? null;
+  const src = live ? "Flattrade" : "paper";
+  if (avail == null && used == null) return null;
+
+  return (
+    <div className="flex items-center gap-3" title={`Margin (${src})`}>
+      <Stat
+        label={`Margin avail · ${src}`}
+        value={avail != null ? `₹${compact(avail)}` : "–"}
+        cls={avail != null && avail < 0 ? "text-down" : "text-up"}
+      />
+      <Stat
+        label="Margin used"
+        value={used != null ? `₹${compact(used)}` : "–"}
+        cls={used ? "text-amber-400" : ""}
+      />
+    </div>
+  );
+}
+
 function BrokerPill() {
   const { broker, connectBroker, disconnectBroker } = useStore();
   if (!broker || !broker.configured)
@@ -183,6 +210,8 @@ export function Header() {
       ) : (
         <span className="text-xs text-term-dim">loading chain…</span>
       )}
+
+      <MarginStats />
 
       <div className="ml-auto flex items-center gap-3">
         {chain && (
