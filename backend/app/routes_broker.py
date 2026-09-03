@@ -151,7 +151,7 @@ async def probe(symbol: str = Query("NIFTY"), strike: float = Query(0)):
     from datetime import datetime as _dt
 
     b = _require_auth()
-    out: dict = {"symbol": symbol.upper()}
+    out: dict = {"symbol": symbol.upper(), "token_len": len(b._token or "")}
 
     async def safe(name, coro):
         try:
@@ -159,6 +159,7 @@ async def probe(symbol: str = Query("NIFTY"), strike: float = Query(0)):
         except Exception as exc:  # noqa: BLE001
             out[name] = {"__error__": str(exc)}
 
+    await safe("user_details", b._post("UserDetails", {}))
     await safe("limits", b.funds())
 
     # index feed token + a quote on it

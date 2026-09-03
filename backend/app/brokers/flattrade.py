@@ -42,7 +42,7 @@ log = logging.getLogger("flattrade")
 _AUTH_URL = "https://auth.flattrade.in/"
 _TOKEN_URL = "https://authapi.flattrade.in/trade/apitoken"
 _REST = "https://piconnect.flattrade.in/NorenWClientTP"
-_WS = "wss://piconnect.flattrade.in/NorenWSTP/"
+_WS = "wss://piconnect.flattrade.in/PiConnectWSTp/"
 _SESSION_FILE = DATA_DIR / "broker_session.json"
 
 # Flattrade sits behind Cloudflare, which 404s/blocks header-less datacentre requests.
@@ -127,12 +127,17 @@ class FlattradeBroker:
             json={"api_key": self.api_key, "request_code": request_code, "api_secret": hashed},
         )
         data = resp.json()
+        log.info(
+            "Flattrade apitoken resp: http=%s keys=%s stat=%s emsg=%s token_len=%s client=%s",
+            resp.status_code, sorted(data) if isinstance(data, dict) else type(data),
+            data.get("stat"), data.get("emsg"), len(data.get("token") or ""), data.get("client"),
+        )
         if data.get("stat") == "Ok" and data.get("token"):
             self._token = data["token"]
             if data.get("client"):
                 self.client_id = data["client"].upper()
             self._save_session()
-            log.info("Flattrade authenticated as %s", self.client_id)
+            log.info("Flattrade authenticated as %s (token_len=%s)", self.client_id, len(self._token))
             return {"ok": True, "client": self.client_id}
         raise RuntimeError(f"token exchange failed: {data.get('emsg') or data}")
 
