@@ -57,7 +57,7 @@ class FlattradeBroker:
         self.client_id = FLATTRADE_CLIENT_ID
         self.redirect_url = FLATTRADE_REDIRECT_URL
         self._token: str | None = None
-        self._http = httpx.AsyncClient(timeout=httpx.Timeout(15.0))
+        self._http = httpx.AsyncClient(timeout=httpx.Timeout(15.0), follow_redirects=True)
         self._ws = None
         self._ws_task: asyncio.Task | None = None
         self._subs: set[str] = set()
@@ -143,14 +143,22 @@ class FlattradeBroker:
         if not self._token:
             raise RuntimeError("not authenticated with Flattrade")
         body = {"uid": self.client_id, **payload}
+        url = f"{_REST}/{endpoint}"
+        # Noren wants the body as raw `jData=<json>&jKey=<token>` (not form-encoded values)
+        raw_body = f"jData={json.dumps(body)}&jKey={self._token}"
         r = await self._http.post(
-            f"{_REST}/{endpoint}",
-            data={"jData": json.dumps(body), "jKey": self._token},
+            url,
+            content=raw_body,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         try:
             data = r.json()
         except ValueError:
+            snippet = (r.text or "")[:300].replace("\n", " ")
+            log.warning(
+                "Flattrade %s -> HTTP %s (%s) at %s :: %s",
+                endpoint, r.status_code, r.headers.get("content-type", "?"), r.url, snippet,
+            )
             raise RuntimeError(f"{endpoint}: non-JSON response ({r.status_code})")
         if isinstance(data, dict) and data.get("stat") not in ("Ok", None):
             if "emsg" in data and "no data" in data["emsg"].lower():
