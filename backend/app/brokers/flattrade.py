@@ -158,8 +158,11 @@ class FlattradeBroker:
             raise RuntimeError("not authenticated with Flattrade")
         body = {"uid": self.client_id, **payload}
         url = f"{_REST}/{endpoint}"
+        # Noren wants the body as the literal string `jData=<compact-json>&jKey=<token>`
+        # (NOT form-encoded key/values — that yields "jData is not valid json object").
+        raw = f"jData={json.dumps(body, separators=(',', ':'))}&jKey={self._token}"
         r = await self._http.post(
-            url, data={"jData": json.dumps(body), "jKey": self._token}
+            url, content=raw, headers={"Content-Type": "application/x-www-form-urlencoded"}
         )
         try:
             data = r.json()
