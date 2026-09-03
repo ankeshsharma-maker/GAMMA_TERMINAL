@@ -41,9 +41,21 @@ log = logging.getLogger("flattrade")
 
 _AUTH_URL = "https://auth.flattrade.in/"
 _TOKEN_URL = "https://authapi.flattrade.in/trade/apitoken"
-_REST = "https://piconnect.flattrade.in/PiConnectTP"
-_WS = "wss://piconnect.flattrade.in/PiConnectWSTp/"
+_REST = "https://piconnect.flattrade.in/NorenWClientTP"
+_WS = "wss://piconnect.flattrade.in/NorenWSTP/"
 _SESSION_FILE = DATA_DIR / "broker_session.json"
+
+# Flattrade sits behind Cloudflare, which 404s/blocks header-less datacentre requests.
+_BROWSERISH = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": "https://pi.flattrade.in",
+    "Referer": "https://pi.flattrade.in/",
+}
 
 TickHandler = Callable[[str, dict], Awaitable[None] | None]
 
@@ -57,7 +69,9 @@ class FlattradeBroker:
         self.client_id = FLATTRADE_CLIENT_ID
         self.redirect_url = FLATTRADE_REDIRECT_URL
         self._token: str | None = None
-        self._http = httpx.AsyncClient(timeout=httpx.Timeout(15.0), follow_redirects=True)
+        self._http = httpx.AsyncClient(
+            timeout=httpx.Timeout(15.0), follow_redirects=True, headers=_BROWSERISH
+        )
         self._ws = None
         self._ws_task: asyncio.Task | None = None
         self._subs: set[str] = set()
@@ -144,12 +158,8 @@ class FlattradeBroker:
             raise RuntimeError("not authenticated with Flattrade")
         body = {"uid": self.client_id, **payload}
         url = f"{_REST}/{endpoint}"
-        # Noren wants the body as raw `jData=<json>&jKey=<token>` (not form-encoded values)
-        raw_body = f"jData={json.dumps(body)}&jKey={self._token}"
         r = await self._http.post(
-            url,
-            content=raw_body,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            url, data={"jData": json.dumps(body), "jKey": self._token}
         )
         try:
             data = r.json()
