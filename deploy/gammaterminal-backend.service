@@ -1,0 +1,19 @@
+[Unit]
+Description=GammaTerminal backend (FastAPI + poller + WS)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/gammaterminal/backend
+EnvironmentFile=/opt/gammaterminal/backend/.env
+# no --reload in production (a reloader child orphans and holds port 8000 on restart)
+ExecStart=/opt/gammaterminal/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --log-level info
+Restart=on-failure
+RestartSec=3
+# data/, broker_session.json, history/ live here and must survive restarts
+StateDirectory=gammaterminal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,23 @@
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+backend/.env
+data/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+npm-debug.log*
+
+# Editor / OS / tooling
+.vscode/
+.idea/
+.claude/
+.DS_Store
+Thumbs.db
+
+# build / deploy artifacts
+*.tsbuildinfo
+gammaterminal-deploy.tar.gz
+gammaterminal-deploy.zip

@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #0a0e14;
+  color: #c8d3e0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-track {
+  background: #0d131c;
+}
+::-webkit-scrollbar-thumb {
+  background: #263140;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #33425a;
+}
+
+@layer components {
+  .cell {
+    @apply px-1.5 py-[3px] text-right num text-2xs whitespace-nowrap border-r border-term-border;
+  }
+  /* dense bordered option-chain grid */
+  .oc-grid {
+    @apply w-full border-separate border-spacing-0 border border-term-border;
+  }
+  .oc-grid thead th {
+    @apply border-b border-r border-term-border px-1 py-1 text-[10px] uppercase font-medium;
+  }
+  .oc-grid tbody td {
+    @apply border-b border-r border-term-border;
+  }
+  .seg {
+    @apply flex overflow-hidden rounded border border-term-border text-2xs;
+  }
+  .seg > button {
+    @apply px-2.5 py-1 border-r border-term-border last:border-r-0 transition-colors;
+  }
+  .seg > button.on {
+    @apply bg-term-accent text-white;
+  }
+  .seg > button:not(.on) {
+    @apply text-term-dim hover:bg-term-border;
+  }
+  .btn {
+    @apply px-2 py-1 rounded border border-term-border bg-term-panel hover:bg-term-border text-xs transition-colors;
+  }
+  .btn-buy {
+    @apply bg-up/20 border-up/40 hover:bg-up/30 text-up;
+  }
+  .btn-sell {
+    @apply bg-down/20 border-down/40 hover:bg-down/30 text-down;
+  }
+}
