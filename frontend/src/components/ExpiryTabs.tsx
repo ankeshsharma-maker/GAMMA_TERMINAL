@@ -1,14 +1,27 @@
 import { useStore } from "../store";
 
-const N_TABS = 6;
+/** "08-Sep-2026" -> "Sep-2026" (month bucket key) */
+const monthKey = (e: string) => {
+  const p = e.split("-");
+  return p.length === 3 ? `${p[1]}-${p[2]}` : e;
+};
 
 export function ExpiryTabs() {
   const { chain, expiry, selectExpiry } = useStore();
   if (!chain) return null;
 
   const cur = expiry ?? chain.expiry;
-  const tabs = chain.expiries.slice(0, N_TABS);
-  const rest = chain.expiries.slice(N_TABS);
+  const all = chain.expiries;
+
+  // individual tabs = every expiry in the same calendar month as the nearest one
+  // (the front-month weeklies); everything later goes into the dropdown.
+  const frontKey = all.length ? monthKey(all[0]) : "";
+  let tabs = all.filter((e) => monthKey(e) === frontKey);
+  let rest = all.filter((e) => monthKey(e) !== frontKey);
+  if (tabs.length === 0) {
+    tabs = all.slice(0, 6);
+    rest = all.slice(6);
+  }
   const restSelected = rest.includes(cur);
 
   return (
@@ -37,9 +50,9 @@ export function ExpiryTabs() {
                 ? "border-term-accent bg-term-accent text-white"
                 : "border-term-border bg-term-panel text-term-dim"
             }`}
-            title="Further-out monthly expiries"
+            title="Later monthly expiries"
           >
-            <option value="">Monthly ▾</option>
+            <option value="">Later ▾</option>
             {rest.map((e) => (
               <option key={e} value={e}>
                 {e}
