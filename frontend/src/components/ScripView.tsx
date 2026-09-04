@@ -25,20 +25,25 @@ export function ScripView() {
         </div>
       </div>
 
-      {/* OI graph  |  option chain */}
-      <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <div className="flex min-h-0 flex-col border-r-2 border-term-border">
+      {/* OI graph  |  option chain — two equal, self-contained columns */}
+      <div className="grid min-h-0 grid-cols-2">
+        <div className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r-2 border-term-border">
           <div className="border-b border-term-border bg-term-panel2 px-3 py-1 text-2xs font-semibold uppercase tracking-wide text-term-dim">
             {symbol} · OI profile
           </div>
-          <div className="min-h-0 flex-1">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <OIProfile />
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+          <div className="border-b border-term-border bg-term-panel2 px-3 py-1 text-2xs font-semibold uppercase tracking-wide text-term-dim">
+            {symbol} · Option chain
+          </div>
           <ExpiryTabs />
-          <OptionChain />
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <OptionChain />
+          </div>
         </div>
       </div>
     </div>
