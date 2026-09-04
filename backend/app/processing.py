@@ -18,7 +18,7 @@ _MIN_T = (15.0 * 60) / _YEAR_SECONDS  # 15 minutes
 # Contract lot sizes. NSE revises these periodically -- verify against the
 # current F&O contract file before trading anything real.
 LOT_SIZES = {
-    "NIFTY": 75,
+    "NIFTY": 65,
     "BANKNIFTY": 35,
     "FINNIFTY": 65,
     "MIDCPNIFTY": 140,
