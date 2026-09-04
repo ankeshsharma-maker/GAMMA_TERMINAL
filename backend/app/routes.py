@@ -515,6 +515,27 @@ async def strategy_from_paper():
     return {**built, "analysis": analysis}
 
 
+@router.post("/strategy/from-broker")
+async def strategy_from_broker():
+    """Pull your live Flattrade positions into the builder so the hedge finder
+    (and Execute LIVE) can cap the running loss on a real open position."""
+    from .brokers import get_broker
+
+    b = get_broker()
+    if not b.authed:
+        raise HTTPException(status_code=400, detail="Flattrade not connected")
+    try:
+        positions = await b.positions()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+    built = strat.from_broker(positions)
+    if not built:
+        raise HTTPException(status_code=404, detail="no open broker option positions")
+    chain = await _ensure_chain(built["symbol"], built["expiry"])
+    analysis = strat.analyze(chain, built["legs"])
+    return {**built, "analysis": analysis}
+
+
 @router.get("/strategies")
 def strategies_list():
     return {"strategies": strat.list_saved()}

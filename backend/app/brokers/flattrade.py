@@ -20,6 +20,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import struct
 import time
 from datetime import datetime
@@ -82,6 +83,28 @@ _BROWSERISH = {
 }
 
 TickHandler = Callable[[str, dict], Awaitable[None] | None]
+
+_TSYM_RE = re.compile(r"^([A-Z]+)(\d{2}[A-Z]{3}\d{2})([CP])(\d+(?:\.\d+)?)$")
+
+
+def parse_noren_tsym(tsym: str) -> dict | None:
+    """Reverse of resolve_nfo's tsym build: 'NIFTY08SEP26C24050' ->
+    {symbol, expiry ('08-Sep-2026'), optionType, strike}. None if tsym isn't a
+    NFO option in that conventional form (e.g. an equity '-EQ' symbol)."""
+    m = _TSYM_RE.match((tsym or "").upper())
+    if not m:
+        return None
+    name, datepart, cp, strike_s = m.groups()
+    try:
+        d = datetime.strptime(datepart, "%d%b%y")
+    except ValueError:
+        return None
+    return {
+        "symbol": name,
+        "expiry": d.strftime("%d-%b-%Y"),
+        "optionType": "CE" if cp == "C" else "PE",
+        "strike": float(strike_s),
+    }
 
 
 class FlattradeBroker:

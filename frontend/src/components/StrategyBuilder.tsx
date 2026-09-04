@@ -23,6 +23,7 @@ export function StrategyBuilder() {
   const selectSymbol = useStore((s) => s.selectSymbol);
   const selectExpiry = useStore((s) => s.selectExpiry);
   const orderMode = useStore((s) => s.orderMode);
+  const broker = useStore((s) => s.broker);
   const requestStrategyExecute = useStore((s) => s.requestStrategyExecute);
   const expiry = useStore((s) => s.expiry) ?? chain?.expiry ?? null;
   const expiries = chain?.expiries ?? [];
@@ -57,6 +58,7 @@ export function StrategyBuilder() {
   const [hedgeMax, setHedgeMax] = useState<number>(5000);
   const [hedge, setHedge] = useState<Awaited<ReturnType<typeof api.findHedge>> | null>(null);
   const [hedgeBusy, setHedgeBusy] = useState(false);
+  const [fromBroker, setFromBroker] = useState(false);
   const [mult, setMult] = useState(1);
 
   const scaled = useCallback(
@@ -182,12 +184,31 @@ export function StrategyBuilder() {
   const removeLeg = (i: number) => update(legs.filter((_, idx) => idx !== i));
 
   const loadTemplate = (name: string) => {
-    if (name && templates[name]) update(templates[name].map((l) => ({ ...l })));
+    if (name && templates[name]) {
+      setFromBroker(false);
+      update(templates[name].map((l) => ({ ...l })));
+    }
   };
 
   const loadFromPaper = () =>
     api.strategyFromPaper().then(
       (d) => {
+        setFromBroker(false);
+        selectSymbol(d.symbol, true);
+        selectExpiry(d.expiry);
+        setLegs(d.legs);
+        setAnalysis(d.analysis);
+        setErr(null);
+      },
+      (e) => setErr(String(e.message || e))
+    );
+
+  const loadFromBroker = () =>
+    api.strategyFromBroker().then(
+      (d) => {
+        setFromBroker(true);
+        selectSymbol(d.symbol, true);
+        selectExpiry(d.expiry);
         setLegs(d.legs);
         setAnalysis(d.analysis);
         setErr(null);
@@ -261,10 +282,25 @@ export function StrategyBuilder() {
             <button className="btn flex-1 text-2xs" onClick={loadFromPaper}>
               From paper positions
             </button>
-            <button className="btn flex-1 text-2xs" onClick={() => update([])}>
+            <button
+              className="btn flex-1 text-2xs"
+              onClick={() => {
+                setFromBroker(false);
+                update([]);
+              }}
+            >
               Clear
             </button>
           </div>
+          {broker?.authed && (
+            <button
+              className="btn text-2xs text-up hover:text-up"
+              onClick={loadFromBroker}
+              title="Load your live Flattrade option positions into the builder so you can hedge / cap the running loss"
+            >
+              ⚡ From live positions
+            </button>
+          )}
           <div className="flex items-center gap-1 text-2xs">
             <span className="text-term-dim">Lot multiplier</span>
             <button className="btn px-1.5 py-0.5" onClick={() => setMult((m) => Math.max(1, m - 1))}>
@@ -418,6 +454,12 @@ export function StrategyBuilder() {
         )}
 
         <div className="mt-auto flex flex-col gap-2 border-t border-term-border p-2">
+          {fromBroker && orderMode !== "live" && (
+            <div className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-2xs text-amber-400">
+              ⚠ These are your live positions, but order mode is PAPER — switch to LIVE
+              (header) before executing or this hedge won't touch your real position.
+            </div>
+          )}
           <button
             disabled={legs.length === 0}
             onClick={() => requestStrategyExecute(scaled(legs))}

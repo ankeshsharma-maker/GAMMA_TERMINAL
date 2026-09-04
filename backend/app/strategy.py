@@ -416,6 +416,48 @@ def from_paper(positions: list[dict]) -> dict | None:
     return {"symbol": symbol, "expiry": expiry, "legs": legs}
 
 
+def from_broker(positions: list[dict]) -> dict | None:
+    """Turn live Flattrade PositionBook rows (open NFO option legs only) into
+    strategy legs, same shape as from_paper -- picks the symbol/expiry with the
+    most open legs so the hedge finder / builder work on the live position."""
+    from .brokers.flattrade import parse_noren_tsym
+    from .processing import lot_size
+
+    groups: dict[tuple, list[dict]] = {}
+    for p in positions or []:
+        try:
+            qty = float(p.get("netqty") or 0)
+        except (TypeError, ValueError):
+            qty = 0.0
+        if not qty:
+            continue
+        parsed = parse_noren_tsym(p.get("tsym", ""))
+        if not parsed:
+            continue  # not an NFO option in the conventional tsym form (e.g. equity)
+        avg = p.get("netavgprc") or p.get("daybuyavgprc") or p.get("daysellavgprc") or 0
+        try:
+            avg = float(avg)
+        except (TypeError, ValueError):
+            avg = 0.0
+        key = (parsed["symbol"], parsed["expiry"])
+        groups.setdefault(key, []).append({**parsed, "qty": qty, "avg": avg})
+    if not groups:
+        return None
+    (symbol, expiry), rows = max(groups.items(), key=lambda kv: len(kv[1]))
+    ls = lot_size(symbol)
+    legs = [
+        {
+            "optionType": r["optionType"],
+            "strike": r["strike"],
+            "side": "BUY" if r["qty"] > 0 else "SELL",
+            "lots": max(1, round(abs(r["qty"]) / ls)),
+            "price": r["avg"],
+        }
+        for r in rows
+    ]
+    return {"symbol": symbol, "expiry": expiry, "legs": legs}
+
+
 # --------------------------------------------------------------------------
 # Persistence
 # --------------------------------------------------------------------------

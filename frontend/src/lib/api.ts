@@ -255,6 +255,11 @@ export const api = {
       "/api/strategy/from-paper",
       { method: "POST", body: "{}" }
     ),
+  strategyFromBroker: () =>
+    j<{ symbol: string; expiry: string; legs: StrategyLeg[]; analysis: Analysis }>(
+      "/api/strategy/from-broker",
+      { method: "POST", body: "{}" }
+    ),
 
   listStrategies: () => j<{ strategies: SavedStrategy[] }>("/api/strategies"),
 
