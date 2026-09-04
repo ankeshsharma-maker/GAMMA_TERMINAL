@@ -4,16 +4,23 @@ the existing processing.build_chain() -- and everything downstream of it
 API route) -- keeps working completely unchanged. Only the fetch layer
 changes; nothing that consumes store.get_chain() output needs to know.
 
-Flattrade has no single "give me the live chain" call. The shape is:
-  1. GetOptionChain(anchor tsym, strike) -> the strike list for one expiry,
-     but only *static* contract metadata (token/tsym/strike/lot/tick) --
-     no LTP/OI/bid-ask.
-  2. GetQuotes(exch, token) per strike -> the live data (lp, oi, bp1/sp1,
-     bq1/sq1, v, c). No IV field (we already compute our own via
-     greeks.implied_vol, so that's not a gap) and no change-in-OI field
-     (approximated here as "vs first snapshot seen today" -- resets on a
-     backend restart, same trade-off store.session_open() already makes
-     for the day-open spot reference).
+Flattrade has no single "give me the live chain" call, and live testing
+(2026-09-04) showed GetOptionChain's `cnt` windowing is NOT reliable for
+enumerating a clean strike ladder -- two calls anchored on a CE token and a
+PE token at the same strike came back with different, non-contiguous, gappy
+strike sets rather than complementary halves of one ladder. The one thing
+confirmed reliable across every live test is resolve_nfo() (SearchScrip on
+an exact, directly-constructed tsym): it correctly resolves a specific
+contract to its token every time.
+
+So: discover every strike's CE/PE token via resolve_nfo() **once** per
+(symbol, expiry) and cache it (tokens are static for the life of a contract)
+-- then every refresh after that is just GetQuotes per cached token, which
+does carry the real live data (lp, oi, bp1/sp1, bq1/sq1, v, c). No native IV
+field (build_chain()'s own implied_vol() fills that gap already) and no
+change-in-OI field (approximated as "vs first snapshot seen today", same
+day-anchor trade-off store.session_open() already makes for the day-open
+spot reference).
 """
 from __future__ import annotations
 
@@ -25,14 +32,16 @@ from .config import INDEX_FEED_TOKENS
 
 log = logging.getLogger("flattrade_chain")
 
-# ATM step per underlying, for anchoring the GetOptionChain call. Options with
-# their own step (e.g. 250 for stocks >5000) still get every strike back from
-# Noren around this anchor -- it only needs to be "close enough".
+# ATM step per underlying, for choosing which strikes to discover.
 _STEP_GUESS = {
     "NIFTY": 50, "BANKNIFTY": 100, "FINNIFTY": 50,
     "MIDCPNIFTY": 25, "NIFTYNXT50": 50,
     "SENSEX": 100, "BANKEX": 100,
 }
+
+# (symbol, expiry) -> {strike: {"CE": token, "PE": token}} -- discovered once
+# via resolve_nfo, kept for the process lifetime (a restart re-discovers).
+_contract_cache: dict[tuple[str, str], dict[float, dict[str, str]]] = {}
 
 # token -> first open-interest value seen today, used as the change-in-OI
 # baseline (see module docstring). Cleared once per calendar day.
@@ -53,6 +62,15 @@ def _reset_oi_base_if_new_day() -> None:
     if today != _day_oi_date:
         _day_oi_base.clear()
         _day_oi_date = today
+
+
+def clear_contract_cache(symbol: str | None = None, expiry: str | None = None) -> None:
+    """Force re-discovery (e.g. if a strike was missing because the underlying
+    moved a lot intraday and the exchange added new strikes)."""
+    if symbol and expiry:
+        _contract_cache.pop((symbol.upper(), expiry), None)
+    else:
+        _contract_cache.clear()
 
 
 async def underlying_spot(broker, symbol: str, exch: str = "NSE") -> float | None:
@@ -77,16 +95,42 @@ async def underlying_spot(broker, symbol: str, exch: str = "NSE") -> float | Non
     return spot or None
 
 
+async def _discover_contracts(
+    broker, sym: str, expiry: str, atm: float, step: float, window: int
+) -> dict[float, dict[str, str]]:
+    """Resolve every strike in [atm - window*step, atm + window*step] on both
+    sides to its Noren token, via the confirmed-reliable resolve_nfo()."""
+    strikes = [atm + i * step for i in range(-window, window + 1)]
+
+    async def _resolve(strike: float, ot: str):
+        try:
+            info = await broker.resolve_nfo(sym, expiry, strike, ot)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("resolve_nfo(%s %s %s) failed: %s", sym, strike, ot, exc)
+            return strike, ot, None
+        return strike, ot, info.get("token") if info else None
+
+    tasks = [_resolve(k, ot) for k in strikes for ot in ("CE", "PE")]
+    results = await asyncio.gather(*tasks)
+
+    out: dict[float, dict[str, str]] = {}
+    for strike, ot, token in results:
+        if token:
+            out.setdefault(strike, {})[ot] = str(token)
+    return out
+
+
 async def fetch_chain_payload(
     broker,
     symbol: str,
     expiry: str,
     spot: float | None = None,
     exch: str = "NFO",
-    count: int = 30,
+    count: int = 20,
 ) -> dict | None:
     """One (symbol, expiry) snapshot, returned NSE-payload-shaped so it can go
-    straight into processing.build_chain() unchanged. None on failure."""
+    straight into processing.build_chain() unchanged. `count` = strikes each
+    side of ATM. None on failure."""
     sym = symbol.upper()
     _reset_oi_base_if_new_day()
 
@@ -98,54 +142,29 @@ async def fetch_chain_payload(
     step = _STEP_GUESS.get(sym, 50)
     atm = round(spot / step) * step
 
-    try:
-        anchor_ce = await broker.resolve_nfo(sym, expiry, atm, "CE")
-        anchor_pe = await broker.resolve_nfo(sym, expiry, atm, "PE")
-    except Exception as exc:  # noqa: BLE001
-        log.warning("resolve_nfo failed for %s %s: %s", sym, expiry, exc)
-        return None
-    if not anchor_ce.get("tsym"):
+    key = (sym, expiry)
+    contracts = _contract_cache.get(key)
+    if not contracts:
+        contracts = await _discover_contracts(broker, sym, expiry, atm, step, count)
+        if contracts:
+            _contract_cache[key] = contracts
+    if not contracts:
         return None
 
-    # GetOptionChain's windowing around one anchor isn't reliably symmetric
-    # (seen: count=10 -> clean matched CE+PE strikes, count=20 -> mostly one
-    # side per strike). Anchor on both a CE and a PE token and merge by token
-    # so a strike missing from one call is still covered by the other.
-    async def _oc(tsym: str):
-        if not tsym:
-            return []
+    targets = [(k, ot, tok) for k, sides in contracts.items() for ot, tok in sides.items()]
+
+    async def _q(strike: float, ot: str, token: str):
         try:
-            r = await broker.get_option_chain(exch, tsym, str(int(atm)), count)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("GetOptionChain(%s) failed for %s %s: %s", tsym, sym, expiry, exc)
-            return []
-        return (r or {}).get("values") or []
-
-    ce_vals, pe_vals = await asyncio.gather(_oc(anchor_ce.get("tsym")), _oc(anchor_pe.get("tsym")))
-    by_token: dict[str, dict] = {}
-    for v in [*ce_vals, *pe_vals]:
-        tok = v.get("token")
-        if tok:
-            by_token[str(tok)] = v
-    values = list(by_token.values())
-    if not values:
-        return None
-
-    async def _q(v: dict):
-        try:
-            return v, await broker.quotes(exch, v["token"])
+            return strike, ot, token, await broker.quotes(exch, token)
         except Exception:  # noqa: BLE001
-            return v, None
+            return strike, ot, token, None
 
-    results = await asyncio.gather(*[_q(v) for v in values])
+    results = await asyncio.gather(*[_q(k, ot, tok) for k, ot, tok in targets])
 
     by_strike: dict[float, dict] = {}
-    for v, q in results:
+    for strike, ot, token, q in results:
         if not q or q.get("stat") != "Ok":
             continue
-        strike = _num(v.get("strprc"))
-        ot = "CE" if v.get("optt") == "CE" else "PE"
-        token = str(v.get("token"))
         ltp = _num(q.get("lp"))
         prev_close = _num(q.get("c"))
         oi = _num(q.get("oi"))
