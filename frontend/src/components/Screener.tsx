@@ -108,7 +108,8 @@ function Num({
 }
 
 export function Screener() {
-  const { screener, screenerProgress, screenerPresets, selectSymbol, setView } = useStore();
+  const { screener, screenerProgress, screenerPresets, selectSymbol, setView, symClass, symClassOk } =
+    useStore();
   const openScrip = (sym: string) => {
     selectSymbol(sym, true);
     setView("scrip");
@@ -123,7 +124,10 @@ export function Screener() {
       return { ...s, oiBuildup: [...cur] };
     });
 
-  const rows = useMemo(() => applySpec(screener, spec), [screener, spec]);
+  const rows = useMemo(
+    () => applySpec(screener, spec).filter((r) => symClassOk(r.symbol)),
+    [screener, spec, symClass, symClassOk]
+  );
   const p = screenerProgress;
 
   const applyPreset = (name: string) => {

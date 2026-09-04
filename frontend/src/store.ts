@@ -64,6 +64,8 @@ interface State {
   orderMode: "paper" | "live";
   pending: PendingOrder | null;
   autobot: import("./types").AutoBotState | null;
+  symClass: "all" | "index" | "stock";
+  indexSet: string[];
 
   init: () => void;
   connectBroker: () => Promise<void>;
@@ -128,6 +130,8 @@ interface State {
   builderQueue: import("./types").StrategyLeg[];
   queueBuilderLeg: (leg: import("./types").StrategyLeg, goToBuilder?: boolean) => void;
   clearBuilderQueue: () => void;
+  setSymClass: (c: "all" | "index" | "stock") => void;
+  symClassOk: (sym: string) => boolean;
   loadAutobot: () => Promise<void>;
   autobotMaster: (on: boolean) => Promise<void>;
   autobotMaxLoss: (v: number) => Promise<void>;
@@ -167,6 +171,14 @@ export const useStore = create<State>((set, get) => ({
   orderMode: "paper",
   pending: null,
   autobot: null,
+  symClass: (() => {
+    try {
+      return (localStorage.getItem("symClass") as "all" | "index" | "stock") || "all";
+    } catch {
+      return "all";
+    }
+  })(),
+  indexSet: ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50", "SENSEX", "BANKEX"],
 
   setOrderMode: async (m) => {
     try {
@@ -310,6 +322,25 @@ export const useStore = create<State>((set, get) => ({
     setInterval(() => get().refreshPaper(), 5000);
     get().loadAutobot();
     setInterval(() => get().loadAutobot(), 15000);
+    api.symbols().then(
+      (d) => d.indices?.length && set({ indexSet: d.indices.map((s) => s.toUpperCase()) }),
+      () => {}
+    );
+  },
+
+  setSymClass: (c) => {
+    try {
+      localStorage.setItem("symClass", c);
+    } catch {
+      /* ignore */
+    }
+    set({ symClass: c });
+  },
+  symClassOk: (sym) => {
+    const { symClass, indexSet } = get();
+    if (symClass === "all") return true;
+    const isIdx = indexSet.includes((sym || "").toUpperCase());
+    return symClass === "index" ? isIdx : !isIdx;
   },
 
   loadAutobot: async () => {

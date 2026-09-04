@@ -220,6 +220,7 @@ export function Watchlist() {
     wlClear,
     selectSymbol,
     scalpLots,
+    symClassOk,
   } = useStore();
   const wlAdd = useStore((s) => s.wlAdd);
   const wlAddList = useStore((s) => s.wlAddList);
@@ -304,7 +305,7 @@ export function Watchlist() {
     selectSymbol(v);
   };
 
-  const shown = sortWatch(watch, sort);
+  const shown = sortWatch(watch, sort).filter((w) => symClassOk(w.symbol));
   const nonOpts = shown.filter((w) => w.kind !== "option");
   const optRows = shown.filter((w) => w.kind === "option");
 
@@ -562,6 +563,10 @@ export function Watchlist() {
         {watch.length === 0 ? (
           <div className="p-6 text-center text-[11px] text-term-dim">
             Nothing here yet — search above to add an index or stock.
+          </div>
+        ) : shown.length === 0 ? (
+          <div className="p-6 text-center text-[11px] text-term-dim">
+            No matching rows — the header All / Indices / Stocks filter is hiding this list.
           </div>
         ) : (
           <div className="flex flex-col gap-2 p-2">

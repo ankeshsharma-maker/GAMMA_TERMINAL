@@ -43,6 +43,35 @@ function ViewToggle() {
   );
 }
 
+function ClassFilter() {
+  const symClass = useStore((s) => s.symClass);
+  const setSymClass = useStore((s) => s.setSymClass);
+  return (
+    <div
+      className="flex overflow-hidden rounded border border-term-border text-2xs"
+      title="Filter watchlist / scanner / screener to indices or stocks"
+    >
+      {(
+        [
+          ["all", "All"],
+          ["index", "Indices"],
+          ["stock", "Stocks"],
+        ] as const
+      ).map(([v, label]) => (
+        <button
+          key={v}
+          onClick={() => setSymClass(v)}
+          className={`px-2 py-1 ${
+            symClass === v ? "bg-term-accent text-white" : "bg-term-panel text-term-dim hover:bg-term-border"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function MarginStats() {
   const funds = useStore((s) => s.brokerFunds);
   const paper = useStore((s) => s.paper);
@@ -303,6 +332,7 @@ export function Header() {
     >
       <span className="text-base font-semibold tracking-tight">GammaTerminal</span>
       <ViewToggle />
+      <ClassFilter />
       <OrderModePill />
 
       {chain ? (

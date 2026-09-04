@@ -76,8 +76,8 @@ const TD = ({
 }) => <td className={`border-b border-r border-term-border/60 px-2 py-2 ${cls}`}>{children}</td>;
 
 export function Scanner() {
-  const { scan, selectSymbol, setView } = useStore();
-  const rows = [...scan].sort((a, b) => b.score - a.score);
+  const { scan, selectSymbol, setView, symClassOk } = useStore();
+  const rows = [...scan].filter((r) => symClassOk(r.symbol)).sort((a, b) => b.score - a.score);
   const openScrip = (sym: string) => {
     selectSymbol(sym, true);
     setView("scrip");
