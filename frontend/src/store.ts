@@ -113,6 +113,7 @@ interface State {
     lots?: number
   ) => Promise<void>;
   refreshPaper: () => Promise<void>;
+  loadBrokerFunds: () => Promise<void>;
   placeOrder: (p: {
     strike: number;
     optionType: "CE" | "PE";
@@ -536,6 +537,14 @@ export const useStore = create<State>((set, get) => ({
   refreshPaper: async () => {
     try {
       set({ paper: await api.paper() });
+    } catch {
+      /* ignore */
+    }
+  },
+
+  loadBrokerFunds: async () => {
+    try {
+      set({ brokerFunds: await api.brokerFunds() });
     } catch {
       /* ignore */
     }

@@ -221,7 +221,8 @@ export type View =
   | "builder"
   | "positions"
   | "scalper"
-  | "auto";
+  | "auto"
+  | "funds";
 
 export type AutoCondition = Record<string, unknown> & { kind: string };
 
