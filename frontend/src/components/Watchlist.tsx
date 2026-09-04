@@ -151,7 +151,11 @@ function Leg({
 }) {
   const { selectSymbol, selectExpiry, setChartInstrument, chartInstrument } = useStore();
   const on = !!w && chartInstrument === w.key;
-  const tint = side === "CE" ? "text-up" : "text-down";
+  const ce = side === "CE";
+  const tint = ce ? "text-up" : "text-down";
+  const bg = ce
+    ? "bg-up/15 hover:bg-up/25 border border-up/25"
+    : "bg-down/15 hover:bg-down/25 border border-down/25";
   const open = () => {
     if (!w) return;
     selectSymbol(w.symbol);
@@ -160,7 +164,11 @@ function Leg({
   };
   if (!w)
     return (
-      <span className="flex-1 text-center text-[10px] text-term-dim/50">
+      <span
+        className={`flex-1 rounded border py-1 text-center text-[10px] ${
+          ce ? "border-up/15 bg-up/5" : "border-down/15 bg-down/5"
+        } text-term-dim/50`}
+      >
         no {side}
       </span>
     );
@@ -170,13 +178,13 @@ function Leg({
       title={`Chart ${w.symbol} ${sk(w.strike)} ${side}`}
       className={`flex flex-1 flex-col ${
         align === "right" ? "items-end" : "items-start"
-      } rounded px-1 py-0.5 transition ${
-        on ? "bg-term-accent/15 ring-1 ring-term-accent/50" : "hover:bg-term-border/40"
+      } rounded px-1 py-0.5 transition ${bg} ${
+        on ? "ring-1 ring-term-accent" : ""
       }`}
     >
       <span className="flex items-baseline gap-1 leading-none">
         <span className={`text-[8px] font-bold ${tint}`}>{side}</span>
-        <span className="num text-xs font-semibold tabular-nums">
+        <span className="num text-xs font-semibold tabular-nums text-term-text">
           {w.ltp != null ? nf(w.ltp) : "–"}
         </span>
       </span>
