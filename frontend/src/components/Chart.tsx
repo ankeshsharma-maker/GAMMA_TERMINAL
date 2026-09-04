@@ -76,6 +76,8 @@ export function Chart() {
   const instrument = useStore((s) => s.chartInstrument);
   const setInstrument = useStore((s) => s.setChartInstrument);
   const selectSymbol = useStore((s) => s.selectSymbol);
+  const symClass = useStore((s) => s.symClass);
+  const symClassOk = useStore((s) => s.symClassOk);
   const [symChoices, setSymChoices] = useState<string[]>([]);
   useEffect(() => {
     api.symbols().then(
@@ -84,8 +86,12 @@ export function Chart() {
     );
   }, []);
   const symOptions = useMemo(
-    () => [...new Set([symbol, ...symChoices])].filter(Boolean).sort(),
-    [symbol, symChoices]
+    () =>
+      [...new Set([symbol, ...symChoices])]
+        .filter(Boolean)
+        .filter((s) => s === symbol || symClassOk(s))
+        .sort(),
+    [symbol, symChoices, symClass]
   );
   const [data, setData] = useState<ChartData | null>(null);
   const [intervalS, setIntervalS] = useState(300);

@@ -40,9 +40,15 @@ export function StrategyBuilder() {
   const [busy, setBusy] = useState(false);
   const [templates, setTemplates] = useState<Record<string, StrategyLeg[]>>({});
   const [saved, setSaved] = useState<SavedStrategy[]>([]);
+  const symClass = useStore((s) => s.symClass);
+  const symClassOk = useStore((s) => s.symClassOk);
   const symOptions = useMemo(
-    () => [...new Set([...symChoices, symbol, ...saved.map((s) => s.symbol)])].filter(Boolean).sort(),
-    [symChoices, symbol, saved]
+    () =>
+      [...new Set([...symChoices, symbol, ...saved.map((s) => s.symbol)])]
+        .filter(Boolean)
+        .filter((s) => s === symbol || symClassOk(s))
+        .sort(),
+    [symChoices, symbol, saved, symClass]
   );
   const [saveName, setSaveName] = useState("");
   const timer = useRef<number | null>(null);

@@ -605,8 +605,14 @@ export function AutoBotView() {
   const deleteRule = useStore((s) => s.autobotDeleteRule);
   const kill = useStore((s) => s.autobotKill);
   const storeSymbol = useStore((s) => s.symbol);
+  const symClass = useStore((s) => s.symClass);
+  const symClassOk = useStore((s) => s.symClassOk);
 
-  const [symbols, setSymbols] = useState<string[]>([]);
+  const [allSymbols, setAllSymbols] = useState<string[]>([]);
+  const symbols = useMemo(
+    () => (symClass === "all" ? allSymbols : allSymbols.filter((s) => symClassOk(s))),
+    [allSymbols, symClass, symClassOk]
+  );
   const [editing, setEditing] = useState<Partial<AutoRule> | null>(null);
   const [lossDraft, setLossDraft] = useState("");
 
@@ -618,9 +624,9 @@ export function AutoBotView() {
         const merged = Array.from(
           new Set([...(d.indices || []), ...(d.defaults || []), ...(d.fo || [])])
         ).sort();
-        setSymbols(merged.length ? merged : [storeSymbol]);
+        setAllSymbols(merged.length ? merged : [storeSymbol]);
       })
-      .catch(() => setSymbols([storeSymbol]));
+      .catch(() => setAllSymbols([storeSymbol]));
   }, [load, storeSymbol]);
 
   useEffect(() => {
