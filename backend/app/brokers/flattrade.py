@@ -425,6 +425,7 @@ class FlattradeBroker:
         prctyp = {"MKT": "MKT", "LMT": "LMT", "SL": "SL-LMT", "SL-MKT": "SL-MKT"}.get(
             order_type.upper(), "MKT"
         )
+        # field set + order matches Flattrade support's canonical PlaceOrder example
         payload = {
             "actid": self.client_id,
             "exch": exch,
@@ -435,7 +436,6 @@ class FlattradeBroker:
             "trantype": "B" if side.upper() == "BUY" else "S",
             "prctyp": prctyp,
             "ret": validity,
-            "ordersource": "API",
         }
         out = await self._post("PlaceOrder", payload)
         if isinstance(out, dict) and out.get("stat") == "Ok":

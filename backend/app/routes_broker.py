@@ -107,12 +107,31 @@ def logout():
 
 
 @router.get("/last-request")
-def last_request(endpoint: str = Query("", description="e.g. PlaceOrder; blank = all endpoints")):
+def last_request(
+    request: Request,
+    endpoint: str = Query("", description="e.g. PlaceOrder; blank = all endpoints"),
+    reveal: int = Query(0, description="1 = include the real jKey token (server-local calls only)"),
+):
     """The raw request GammaTerminal last sent to Flattrade (jKey masked) plus their
     response — copy this into a broker support ticket. `?endpoint=PlaceOrder` for the
-    last order punch specifically."""
+    last order punch. `?reveal=1` swaps the real session token back in, but only when
+    the call is made directly on the server (not through the public nginx proxy)."""
     b = get_broker()
-    return b.last_exchange(endpoint or None)
+    data = b.last_exchange(endpoint or None)
+    if not reveal:
+        return data
+    # nginx adds X-Forwarded-For; a bare curl on the box does not -> only reveal then
+    local = "x-forwarded-for" not in {k.lower() for k in request.headers}
+    if not (local and b._token):
+        return {"_note": "reveal=1 ignored: run this directly on the server, not via the public URL",
+                "data": data}
+
+    def _unmask(d: dict) -> dict:
+        if isinstance(d, dict) and isinstance(d.get("requestBody"), str):
+            return {**d, "requestBody": f"jData={d.get('jData', '')}&jKey={b._token}", "jKey": b._token}
+        return d
+
+    return _unmask(data) if endpoint else {k: _unmask(v) for k, v in data.items()}
 
 
 @router.post("/refresh")
