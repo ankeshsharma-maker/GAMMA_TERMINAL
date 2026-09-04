@@ -71,6 +71,21 @@ async def callback(request: Request):
     )
 
 
+@router.post("/direct-login")
+async def direct_login(body: dict):
+    """Noren QuickAuth: {uid, pwd, totp, vc?, apiKey?} -> session, no OAuth redirect."""
+    b = get_broker()
+    d = body or {}
+    try:
+        res = await b.direct_login(
+            d.get("uid", ""), d.get("pwd", ""), d.get("totp", ""),
+            d.get("vc", ""), d.get("apiKey", ""),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {**res, **b.status()}
+
+
 @router.post("/token")
 def set_token(body: dict):
     """Manually install a Flattrade session token (from the portal's 'Generate

@@ -14,12 +14,30 @@ WS:   wss://piconnect.flattrade.in/PiConnectWSTp/
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import hmac
 import json
 import logging
+import struct
 import time
 from datetime import datetime
 from typing import Awaitable, Callable
+
+
+def _totp(secret: str) -> str:
+    """RFC-6238 TOTP (30s, 6 digits, SHA-1). `secret` is the base32 string from
+    the broker's 2FA setup. If a 6-digit code is passed instead, it's returned
+    as-is so the same field accepts either."""
+    s = (secret or "").strip().replace(" ", "")
+    if s.isdigit() and len(s) == 6:
+        return s
+    key = base64.b32decode(s.upper() + "=" * ((8 - len(s) % 8) % 8))
+    counter = struct.pack(">Q", int(time.time()) // 30)
+    digest = hmac.new(key, counter, hashlib.sha1).digest()
+    off = digest[-1] & 0x0F
+    code = (struct.unpack(">I", digest[off:off + 4])[0] & 0x7FFFFFFF) % 1_000_000
+    return f"{code:06d}"
 
 import httpx
 
@@ -115,6 +133,48 @@ class FlattradeBroker:
 
     def login_url(self) -> str:
         return f"{_AUTH_URL}?app_key={self.api_key}"
+
+    async def direct_login(
+        self, uid: str, pwd: str, totp: str, vc: str = "", api_key: str = ""
+    ) -> dict:
+        """Noren QuickAuth: uid + password + TOTP -> session token, no OAuth redirect.
+        `totp` may be the base32 2FA secret (code computed here) or a live 6-digit code.
+        `vc` (vendor code) defaults to `<uid>_U`; `api_key` defaults to the .env key."""
+        uid = uid.strip().upper()
+        vc = (vc or f"{uid}_U").strip()
+        key = (api_key or self.api_key or "").strip()
+        code = _totp(totp)
+        payload = {
+            "source": "API",
+            "apkversion": "1.0.0",
+            "uid": uid,
+            "pwd": hashlib.sha256(pwd.encode()).hexdigest(),
+            "factor2": code,
+            "vc": vc,
+            "appkey": hashlib.sha256(f"{uid}|{key}".encode()).hexdigest(),
+            "imei": "gammaterminal",
+        }
+        raw = f"jData={json.dumps(payload, separators=(',', ':'))}"
+        r = await self._http.post(
+            f"{_REST}/QuickAuth",
+            content=raw,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        try:
+            data = r.json()
+        except ValueError:
+            raise RuntimeError(f"QuickAuth: non-JSON response ({r.status_code}) {r.text[:200]}")
+        log.info("Flattrade QuickAuth: http=%s stat=%s emsg=%s", r.status_code, data.get("stat"), data.get("emsg"))
+        if data.get("stat") == "Ok" and data.get("susertoken"):
+            self._token = data["susertoken"]
+            self.client_id = uid
+            self._save_session()
+            if self._ws_task:
+                self._ws_task.cancel()
+                self._ws_task = None
+            log.info("Flattrade QuickAuth ok for %s", uid)
+            return {"ok": True, "client": uid}
+        raise RuntimeError(f"QuickAuth failed: {data.get('emsg') or data}")
 
     def set_token(self, token: str, client: str | None = None) -> dict:
         """Manually install a session token (e.g. one generated from the Flattrade

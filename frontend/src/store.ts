@@ -68,6 +68,12 @@ interface State {
   connectBroker: () => Promise<void>;
   disconnectBroker: () => Promise<void>;
   setBrokerToken: (token: string) => Promise<void>;
+  brokerDirectLogin: (creds: {
+    uid: string;
+    pwd: string;
+    totp: string;
+    vc?: string;
+  }) => Promise<void>;
   setOrderMode: (m: "paper" | "live") => Promise<string | null>;
   requestStrategyExecute: (legs: import("./types").StrategyLeg[]) => void;
   confirmPending: () => Promise<void>;
@@ -214,6 +220,11 @@ export const useStore = create<State>((set, get) => ({
   },
   setBrokerToken: async (token: string) => {
     const b = await api.brokerSetToken(token.trim());
+    set({ broker: b });
+    api.brokerFunds().then((f) => set({ brokerFunds: f }), () => {});
+  },
+  brokerDirectLogin: async (creds: { uid: string; pwd: string; totp: string; vc?: string }) => {
+    const b = await api.brokerDirectLogin(creds);
     set({ broker: b });
     api.brokerFunds().then((f) => set({ brokerFunds: f }), () => {});
   },

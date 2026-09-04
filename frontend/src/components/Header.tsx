@@ -70,9 +70,10 @@ function MarginStats() {
 }
 
 function BrokerPill() {
-  const { broker, connectBroker, disconnectBroker, setBrokerToken } = useStore();
-  const [paste, setPaste] = useState(false);
+  const { broker, connectBroker, disconnectBroker, setBrokerToken, brokerDirectLogin } = useStore();
+  const [mode, setMode] = useState<"" | "token" | "login">("");
   const [tok, setTok] = useState("");
+  const [cred, setCred] = useState({ uid: "", pwd: "", totp: "", vc: "" });
   const [busy, setBusy] = useState(false);
 
   if (!broker || !broker.configured)
@@ -82,83 +83,121 @@ function BrokerPill() {
       </span>
     );
 
-  const submitToken = async () => {
-    if (!tok.trim()) return;
+  const run = async (fn: () => Promise<void>, label: string) => {
     setBusy(true);
     try {
-      await setBrokerToken(tok);
-      setPaste(false);
+      await fn();
+      setMode("");
       setTok("");
+      setCred({ uid: "", pwd: "", totp: "", vc: "" });
     } catch (e: any) {
-      alert("Token rejected: " + (e?.message || e));
+      alert(`${label} failed: ${e?.message || e}`);
     } finally {
       setBusy(false);
     }
   };
 
-  const tokenForm = paste && (
+  const tokenForm = mode === "token" && (
     <span className="flex items-center gap-1">
       <input
         autoFocus
         value={tok}
         onChange={(e) => setTok(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && submitToken()}
+        onKeyDown={(e) => e.key === "Enter" && tok.trim() && run(() => setBrokerToken(tok), "Token")}
         placeholder="paste Flattrade token"
-        className="w-52 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs outline-none focus:border-term-accent"
+        className="w-48 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs outline-none focus:border-term-accent"
       />
       <button
-        onClick={submitToken}
+        onClick={() => tok.trim() && run(() => setBrokerToken(tok), "Token")}
         disabled={busy}
         className="rounded bg-term-accent px-1.5 py-0.5 text-2xs text-white disabled:opacity-40"
       >
         {busy ? "…" : "set"}
       </button>
-      <button onClick={() => setPaste(false)} className="text-term-dim hover:text-down">
+      <button onClick={() => setMode("")} className="text-term-dim hover:text-down">
         ✕
       </button>
     </span>
   );
 
-  if (!broker.authed)
-    return (
-      <span className="flex items-center gap-1.5">
+  const loginForm = mode === "login" && (
+    <span className="flex items-center gap-1">
+      <input
+        autoFocus
+        value={cred.uid}
+        onChange={(e) => setCred({ ...cred, uid: e.target.value })}
+        placeholder="client id"
+        className="w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs outline-none focus:border-term-accent"
+      />
+      <input
+        type="password"
+        value={cred.pwd}
+        onChange={(e) => setCred({ ...cred, pwd: e.target.value })}
+        placeholder="password"
+        className="w-24 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs outline-none focus:border-term-accent"
+      />
+      <input
+        value={cred.totp}
+        onChange={(e) => setCred({ ...cred, totp: e.target.value })}
+        placeholder="TOTP code or secret"
+        className="w-32 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs outline-none focus:border-term-accent"
+      />
+      <button
+        onClick={() =>
+          cred.uid && cred.pwd && cred.totp && run(() => brokerDirectLogin(cred), "Login")
+        }
+        disabled={busy}
+        className="rounded bg-term-accent px-1.5 py-0.5 text-2xs text-white disabled:opacity-40"
+      >
+        {busy ? "…" : "login"}
+      </button>
+      <button onClick={() => setMode("")} className="text-term-dim hover:text-down">
+        ✕
+      </button>
+    </span>
+  );
+
+  const altBtns = !mode && (
+    <>
+      <button
+        onClick={() => setMode("login")}
+        title="Direct login: client id + password + TOTP (no OAuth redirect)"
+        className="rounded border border-term-border px-1.5 py-1 text-2xs text-term-dim hover:text-term-text"
+      >
+        ⚿ login
+      </button>
+      <button
+        onClick={() => setMode("token")}
+        title="Paste a token generated from the Flattrade portal"
+        className="rounded border border-term-border px-1.5 py-1 text-2xs text-term-dim hover:text-term-text"
+      >
+        ⌗
+      </button>
+    </>
+  );
+
+  return (
+    <span className="flex flex-wrap items-center gap-1.5">
+      {broker.authed ? (
+        <button
+          onClick={disconnectBroker}
+          title={`${broker.clientId} · ${broker.wsConnected ? "feed live" : "feed connecting"} · click to disconnect`}
+          className="flex items-center gap-1.5 rounded border border-up/40 bg-up/10 px-2 py-1 text-2xs text-up"
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${broker.wsConnected ? "bg-up" : "bg-amber-500 animate-pulse"}`} />
+          FT · {broker.clientId}
+        </button>
+      ) : (
         <button
           onClick={connectBroker}
           className="rounded border border-amber-500/50 bg-amber-500/15 px-2 py-1 text-2xs text-amber-400 hover:bg-amber-500/25"
         >
           Connect Flattrade
         </button>
-        {tokenForm || (
-          <button
-            onClick={() => setPaste(true)}
-            title="Paste a token generated from the Flattrade portal directly"
-            className="rounded border border-term-border px-1.5 py-1 text-2xs text-term-dim hover:text-term-text"
-          >
-            ⌗ token
-          </button>
-        )}
-      </span>
-    );
-
-  return (
-    <span className="flex items-center gap-1.5">
-      <button
-        onClick={disconnectBroker}
-        title={`${broker.clientId} · ${broker.wsConnected ? "feed live" : "feed connecting"} · click to disconnect`}
-        className="flex items-center gap-1.5 rounded border border-up/40 bg-up/10 px-2 py-1 text-2xs text-up"
-      >
-        <span className={`h-1.5 w-1.5 rounded-full ${broker.wsConnected ? "bg-up" : "bg-amber-500 animate-pulse"}`} />
-        FT · {broker.clientId}
-      </button>
-      {tokenForm || (
-        <button
-          onClick={() => setPaste(true)}
-          title="Replace the session token with one from the Flattrade portal"
-          className="rounded border border-term-border px-1.5 py-1 text-2xs text-term-dim hover:text-term-text"
-        >
-          ⌗
-        </button>
       )}
+      {tokenForm}
+      {loginForm}
+      {altBtns}
     </span>
   );
 }

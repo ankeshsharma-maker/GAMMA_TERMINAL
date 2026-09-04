@@ -306,6 +306,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ token, client }),
     }),
+  brokerDirectLogin: (b: { uid: string; pwd: string; totp: string; vc?: string }) =>
+    j<BrokerStatus>("/api/broker/direct-login", { method: "POST", body: JSON.stringify(b) }),
   brokerFunds: () => j<import("../types").BrokerFunds>("/api/broker/funds"),
   brokerPositions: () => j<{ positions: any[] }>("/api/broker/positions"),
   brokerHoldings: () => j<{ holdings: any[] }>("/api/broker/holdings"),
