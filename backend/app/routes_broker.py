@@ -353,6 +353,50 @@ async def holdings():
         raise HTTPException(status_code=502, detail=str(exc))
 
 
+@router.get("/chain-preview")
+async def chain_preview(
+    symbol: str = Query("NIFTY"),
+    expiry: str = Query(""),
+    exch: str = Query("NFO"),
+    count: int = Query(20, ge=4, le=40),
+):
+    """NSE->Flattrade migration, phase 1: fetch one live chain snapshot purely
+    from Flattrade (GetOptionChain + GetQuotes per strike) and run it through
+    the *unmodified* build_chain() so you can eyeball it before the poller is
+    switched over. Does not touch the store or NSE at all."""
+    import time as _time
+
+    from .flattrade_chain import fetch_chain_payload
+    from .processing import build_chain
+
+    b = _require_auth()
+    sym = symbol.upper()
+    exp = expiry or store.nearest_expiry(sym)
+    if not exp:
+        raise HTTPException(
+            status_code=400,
+            detail=f"no expiry known for {sym} yet -- pass ?expiry=DD-Mon-YYYY explicitly",
+        )
+
+    t0 = _time.time()
+    payload = await fetch_chain_payload(b, sym, exp, exch=exch, count=count)
+    fetch_ms = round((_time.time() - t0) * 1000)
+    if not payload:
+        raise HTTPException(status_code=502, detail="Flattrade returned no usable chain data")
+
+    try:
+        chain = build_chain(payload, sym, exp)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"build_chain() choked on the Flattrade payload: {exc}")
+
+    return {
+        "source": "flattrade",
+        "fetchMs": fetch_ms,
+        "strikesReturned": len(payload["records"]["data"]),
+        "chain": chain,
+    }
+
+
 @router.get("/probe")
 async def probe(symbol: str = Query("NIFTY"), strike: float = Query(0), exch: str = Query("NFO")):
     """Diagnostic: raw Flattrade responses for the pieces the NSE->Flattrade
