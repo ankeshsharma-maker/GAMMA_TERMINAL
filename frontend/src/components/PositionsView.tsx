@@ -188,6 +188,23 @@ function BrokerTab() {
     );
   };
 
+  const squareOffAll = () => {
+    const targets = withPnl.filter((w) => (n(w.r.netqty) ?? 0) !== 0);
+    if (!targets.length) return;
+    if (
+      !window.confirm(
+        `SQUARE OFF ALL ${targets.length} open position(s) — this places ${targets.length} real MARKET order(s) right now. This cannot be undone. Continue?`
+      )
+    )
+      return;
+    targets.forEach(({ r }) =>
+      withBusy(r.tsym, () =>
+        api.brokerSquareOff({ tsym: r.tsym, exch: r.exch || "NFO", qty: n(r.netqty) ?? 0, prd: r.prd })
+      )
+    );
+    setSelected(new Set());
+  };
+
   const squareOffSelected = () => {
     const targets = withPnl.filter((w) => selected.has(w.key) && (n(w.r.netqty) ?? 0) !== 0);
     if (!targets.length) return;
@@ -227,7 +244,15 @@ function BrokerTab() {
           +
         </button>
         <button
-          className="btn btn-sell ml-auto disabled:opacity-40"
+          className="btn btn-sell ml-auto font-semibold disabled:opacity-40"
+          disabled={withPnl.every((w) => (n(w.r.netqty) ?? 0) === 0)}
+          onClick={squareOffAll}
+          title="Flatten every open position in one click, no selection needed"
+        >
+          ⚡ Square off ALL
+        </button>
+        <button
+          className="btn btn-sell disabled:opacity-40"
           disabled={selected.size === 0}
           onClick={squareOffSelected}
         >
