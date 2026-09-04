@@ -167,6 +167,20 @@ export function OIProfile() {
     return null;
   }, [rows]);
 
+  // current spot / close: fractional column index for a vertical marker line
+  const spotMark = useMemo(() => {
+    if (!chain || rows.length < 2) return null;
+    const sp = chain.liveSpot?.ltp ?? chain.spot;
+    if (sp <= rows[0].strike) return { index: 0, spot: sp };
+    if (sp >= rows[rows.length - 1].strike) return { index: rows.length - 1, spot: sp };
+    for (let i = 0; i < rows.length - 1; i++) {
+      const a = rows[i].strike;
+      const b = rows[i + 1].strike;
+      if (sp >= a && sp <= b) return { index: i + (sp - a) / (b - a || 1), spot: sp };
+    }
+    return null;
+  }, [rows, chain]);
+
   // ---- overall OI-analysis verdict (bullish / bearish / neutral) ----
   const verdict = useMemo(() => {
     if (!chain) return null;
@@ -300,6 +314,17 @@ export function OIProfile() {
           >
             <span className="absolute -top-0 left-1 whitespace-nowrap rounded-sm bg-fuchsia-500 px-1 text-[8px] font-bold text-white">
               γ-flip {sk(gammaFlip.strike)}
+            </span>
+          </div>
+        )}
+        {spotMark && (
+          <div
+            className="pointer-events-none absolute bottom-0 top-0 z-20 border-l-2 border-sky-400"
+            style={{ left: 12 + spotMark.index * COLW + COLW / 2 }}
+            title={`Spot / close ${nf(spotMark.spot, 1)}`}
+          >
+            <span className="absolute bottom-0 left-1 whitespace-nowrap rounded-sm bg-sky-500 px-1 text-[8px] font-bold text-white">
+              ● spot {nf(spotMark.spot, 1)}
             </span>
           </div>
         )}
