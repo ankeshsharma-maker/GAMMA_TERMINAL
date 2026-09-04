@@ -188,6 +188,14 @@ async def run_poller(stop: asyncio.Event) -> None:
             log.warning("scanner failed: %s", exc)
 
         try:
+            from .autobot import autobot
+
+            if await autobot.tick():
+                await hub.broadcast_all({"type": "autobot", "data": autobot.snapshot()})
+        except Exception as exc:  # noqa: BLE001
+            log.warning("autobot tick failed: %s", exc)
+
+        try:
             hits = store.check_stops()
             for h in hits:
                 sev = "warning" if (h.get("pnl") or 0) < 0 else "info"

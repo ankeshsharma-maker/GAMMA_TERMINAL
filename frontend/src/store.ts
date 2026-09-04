@@ -63,6 +63,7 @@ interface State {
   liveSpots: Record<string, LiveSpot>;
   orderMode: "paper" | "live";
   pending: PendingOrder | null;
+  autobot: import("./types").AutoBotState | null;
 
   init: () => void;
   connectBroker: () => Promise<void>;
@@ -126,6 +127,13 @@ interface State {
   builderQueue: import("./types").StrategyLeg[];
   queueBuilderLeg: (leg: import("./types").StrategyLeg, goToBuilder?: boolean) => void;
   clearBuilderQueue: () => void;
+  loadAutobot: () => Promise<void>;
+  autobotMaster: (on: boolean) => Promise<void>;
+  autobotMaxLoss: (v: number) => Promise<void>;
+  autobotSaveRule: (r: Partial<import("./types").AutoRule>) => Promise<void>;
+  autobotEnableRule: (id: string, on: boolean) => Promise<void>;
+  autobotDeleteRule: (id: string) => Promise<void>;
+  autobotKill: () => Promise<void>;
 }
 
 export const useStore = create<State>((set, get) => ({
@@ -157,6 +165,7 @@ export const useStore = create<State>((set, get) => ({
   liveSpots: {},
   orderMode: "paper",
   pending: null,
+  autobot: null,
 
   setOrderMode: async (m) => {
     try {
@@ -251,6 +260,8 @@ export const useStore = create<State>((set, get) => ({
           set({ unusual: msg.data });
         } else if (msg.type === "screener") {
           set({ screener: msg.data, screenerProgress: msg.progress ?? get().screenerProgress });
+        } else if (msg.type === "autobot") {
+          set({ autobot: msg.data });
         } else if (msg.type === "tick") {
           const d = msg.data;
           set({ liveSpots: { ...get().liveSpots, [d.symbol]: { ltp: d.ltp, chgPct: d.chgPct, ts: d.ts } } });
@@ -290,7 +301,23 @@ export const useStore = create<State>((set, get) => ({
     );
     get().refreshPaper();
     setInterval(() => get().refreshPaper(), 5000);
+    get().loadAutobot();
+    setInterval(() => get().loadAutobot(), 15000);
   },
+
+  loadAutobot: async () => {
+    try {
+      set({ autobot: await api.autobot() });
+    } catch {
+      /* ignore */
+    }
+  },
+  autobotMaster: async (on) => set({ autobot: await api.autobotMaster(on) }),
+  autobotMaxLoss: async (v) => set({ autobot: await api.autobotMaxLoss(v) }),
+  autobotSaveRule: async (r) => set({ autobot: await api.autobotSaveRule(r) }),
+  autobotEnableRule: async (id, on) => set({ autobot: await api.autobotEnableRule(id, on) }),
+  autobotDeleteRule: async (id) => set({ autobot: await api.autobotDeleteRule(id) }),
+  autobotKill: async () => set({ autobot: await api.autobotKill() }),
 
   selectSymbol: (s, keepView = false) => {
     const { socket, symbol } = get();

@@ -26,6 +26,7 @@ function ViewToggle() {
           ["builder", "builder"],
           ["positions", "positions"],
           ["scalper", "scalper"],
+          ["auto", "auto"],
         ] as const
       ).map(([v, label]) => (
         <button

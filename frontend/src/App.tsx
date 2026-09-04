@@ -13,6 +13,7 @@ import { Chart } from "./components/Chart";
 import { StrategyBuilder } from "./components/StrategyBuilder";
 import { PositionsView } from "./components/PositionsView";
 import { ScalpPanel } from "./components/ScalpPanel";
+import { AutoBotView } from "./components/AutoBot";
 import { OrderConfirm } from "./components/OrderConfirm";
 import { NotificationPanel } from "./components/NotificationPanel";
 
@@ -68,7 +69,8 @@ export default function App() {
     init();
   }, [init]);
 
-  const wide = view === "builder" || view === "positions" || view === "scrip";
+  const wide =
+    view === "builder" || view === "positions" || view === "scrip" || view === "auto";
   const [leftW, setLeftW] = useState(() => readNum(LS.left, 190));
   const [rightW, setRightW] = useState(() => readNum(LS.right, view === "scalper" ? 360 : 300));
   const [zoom, setZoom] = useState(() => readNum(LS.zoom, 100));
@@ -152,6 +154,7 @@ export default function App() {
           {(view === "chart" || view === "scalper") && <Chart />}
           {view === "builder" && <StrategyBuilder />}
           {view === "positions" && <PositionsView />}
+          {view === "auto" && <AutoBotView />}
         </main>
 
         {showRight && <VSplit onDrag={bumpRight} />}

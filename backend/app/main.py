@@ -15,6 +15,7 @@ from .hub import hub
 from .nse_client import client
 from .poller import run_poller, run_universe_scan
 from .routes import router
+from .routes_autobot import router as autobot_router
 from .routes_broker import router as broker_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -51,6 +52,7 @@ app.add_middleware(
 )
 app.include_router(router)
 app.include_router(broker_router)
+app.include_router(autobot_router)
 
 
 @app.get("/api/health")

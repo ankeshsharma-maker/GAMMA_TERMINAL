@@ -298,6 +298,32 @@ export const api = {
     }),
   liveOrderLog: () => j<{ orders: any[] }>("/api/order/live-log"),
 
+  autobot: () => j<import("../types").AutoBotState>("/api/autobot"),
+  autobotMaster: (on: boolean) =>
+    j<import("../types").AutoBotState>("/api/autobot/master", {
+      method: "POST",
+      body: JSON.stringify({ on }),
+    }),
+  autobotMaxLoss: (value: number) =>
+    j<import("../types").AutoBotState>("/api/autobot/max-loss", {
+      method: "POST",
+      body: JSON.stringify({ value }),
+    }),
+  autobotSaveRule: (rule: Partial<import("../types").AutoRule>) =>
+    j<import("../types").AutoBotState>("/api/autobot/rules", {
+      method: "POST",
+      body: JSON.stringify(rule),
+    }),
+  autobotEnableRule: (id: string, on: boolean) =>
+    j<import("../types").AutoBotState>(`/api/autobot/rules/${id}/enabled`, {
+      method: "POST",
+      body: JSON.stringify({ on }),
+    }),
+  autobotDeleteRule: (id: string) =>
+    j<import("../types").AutoBotState>(`/api/autobot/rules/${id}`, { method: "DELETE" }),
+  autobotKill: () =>
+    j<import("../types").AutoBotState>("/api/autobot/kill", { method: "POST" }),
+
   brokerStatus: () => j<BrokerStatus>("/api/broker/status"),
   brokerLogin: () => j<{ url: string }>("/api/broker/login"),
   brokerLogout: () => j<{ ok: boolean }>("/api/broker/logout", { method: "POST" }),

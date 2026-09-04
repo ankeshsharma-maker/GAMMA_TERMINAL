@@ -220,7 +220,60 @@ export type View =
   | "chart"
   | "builder"
   | "positions"
-  | "scalper";
+  | "scalper"
+  | "auto";
+
+export type AutoCondition = Record<string, unknown> & { kind: string };
+
+export interface AutoRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  symbol: string;
+  expiry?: string | null;
+  instrument: string; // ATM_CE | OTM1_PE | ...
+  side: Side;
+  lots: number;
+  product: "NRML" | "MIS";
+  mode: "paper" | "live";
+  entry: AutoCondition[];
+  exit: AutoCondition[];
+  slPct?: number;
+  targetPct?: number;
+  maxTradesPerDay: number;
+  cooldownMin: number;
+  squareOff: string;
+  noEntryAfter?: string;
+  _state?: {
+    open: null | {
+      side: Side;
+      strike: number;
+      ot: "CE" | "PE";
+      expiry: string;
+      entryPx: number;
+      lots: number;
+      mode: string;
+    };
+    tradesToday: number;
+  };
+}
+
+export interface AutoLogEntry {
+  ts: number;
+  ruleId: string;
+  ruleName: string;
+  level: string;
+  msg: string;
+}
+
+export interface AutoBotState {
+  master: boolean;
+  maxLossPerDay: number;
+  marketOpen: boolean;
+  dailyPnl: number;
+  rules: AutoRule[];
+  log: AutoLogEntry[];
+}
 
 export type OptionType = "CE" | "PE" | "FUT";
 export type Side = "BUY" | "SELL";
