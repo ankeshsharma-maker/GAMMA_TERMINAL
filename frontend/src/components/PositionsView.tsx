@@ -134,6 +134,17 @@ function BrokerTab() {
   if (err) return <Empty>{err}</Empty>;
   if (rows.length === 0) return <Empty>No open broker positions.</Empty>;
 
+  let totalMtm = 0;
+  let totalRealized = 0;
+  const withPnl = rows.map((r) => {
+    const mtm = n(r.urmtom) ?? n(r.mtm) ?? 0;
+    const rpnl = n(r.rpnl) ?? 0;
+    totalMtm += mtm;
+    totalRealized += rpnl;
+    return { r, mtm, rpnl, today: mtm + rpnl };
+  });
+  const totalToday = totalMtm + totalRealized;
+
   return (
     <div className="min-h-0 flex-1 overflow-auto p-3">
       <table className="w-full border-separate border-spacing-0 border border-term-border text-xs">
@@ -146,13 +157,12 @@ function BrokerTab() {
             <TH>LTP</TH>
             <TH>MTM</TH>
             <TH>Realized</TH>
+            <TH>Today's P&L</TH>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => {
+          {withPnl.map(({ r, mtm, rpnl, today }, i) => {
             const qty = n(r.netqty) ?? 0;
-            const mtm = n(r.urmtom) ?? n(r.mtm);
-            const rpnl = n(r.rpnl);
             return (
               <tr key={i}>
                 <TD cls="num font-medium">{r.tsym ?? r.symname ?? "—"}</TD>
@@ -160,12 +170,25 @@ function BrokerTab() {
                 <TD cls={`num ${qty > 0 ? "text-up" : qty < 0 ? "text-down" : ""}`}>{qty}</TD>
                 <TD cls="num">{nf(n(r.netavgprc) ?? n(r.daybuyavgprc))}</TD>
                 <TD cls="num">{nf(n(r.lp))}</TD>
-                <TD cls={`num ${signColor(mtm)}`}>{mtm != null ? `₹${nf(mtm, 0)}` : "—"}</TD>
-                <TD cls={`num ${signColor(rpnl)}`}>{rpnl != null ? `₹${nf(rpnl, 0)}` : "—"}</TD>
+                <TD cls={`num ${signColor(mtm)}`}>₹{nf(mtm, 0)}</TD>
+                <TD cls={`num ${signColor(rpnl)}`}>₹{nf(rpnl, 0)}</TD>
+                <TD cls={`num ${signColor(today)}`}>₹{nf(today, 0)}</TD>
               </tr>
             );
           })}
         </tbody>
+        <tfoot>
+          <tr className="bg-term-panel2 font-semibold">
+            <TD cls="font-semibold">TOTAL</TD>
+            <TD>{" "}</TD>
+            <TD>{" "}</TD>
+            <TD>{" "}</TD>
+            <TD>{" "}</TD>
+            <TD cls={`num ${signColor(totalMtm)}`}>₹{nf(totalMtm, 0)}</TD>
+            <TD cls={`num ${signColor(totalRealized)}`}>₹{nf(totalRealized, 0)}</TD>
+            <TD cls={`num ${signColor(totalToday)}`}>₹{nf(totalToday, 0)}</TD>
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
