@@ -541,7 +541,9 @@ export function OptionChain() {
         key={row.strike}
         ref={isATM ? atmRef : undefined}
         className={`hover:bg-term-panel/60 ${
-          isATM ? "bg-term-accent/10 outline outline-1 outline-term-accent/70" : ""
+          isATM
+            ? "bg-term-accent/20 font-semibold text-term-text outline outline-2 -outline-offset-2 outline-term-accent"
+            : ""
         } ${hotRow ? "bg-amber-500/10" : ""}`}
       >
         {/* ---- CALL side ---- */}
@@ -561,11 +563,22 @@ export function OptionChain() {
 
         {/* ---- STRIKE ---- */}
         <td
-          className={`num border-x-2 border-term-border bg-term-bg px-2 text-center text-xs font-semibold ${
-            isATM ? "text-term-accent" : "text-term-text"
+          className={`num border-x-2 px-2 text-center text-xs font-semibold ${
+            isATM
+              ? "border-term-accent bg-term-accent text-white"
+              : "border-term-border bg-term-bg text-term-text"
           }`}
         >
-          {sk(row.strike)}
+          {isATM ? (
+            <span className="inline-flex items-center gap-1">
+              {sk(row.strike)}
+              <span className="rounded-sm bg-white/25 px-1 text-[8px] font-bold leading-none tracking-wide">
+                ATM
+              </span>
+            </span>
+          ) : (
+            sk(row.strike)
+          )}
         </td>
 
         {/* ---- PUT side ---- */}
