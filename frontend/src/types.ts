@@ -163,6 +163,8 @@ export interface PaperState {
   realized: number;
   unrealized: number;
   total: number;
+  todayRealized: number;
+  todayPnl: number;
   capital: number;
   marginUsed: number;
   marginAvailable: number;

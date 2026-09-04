@@ -40,7 +40,8 @@ function PaperTab() {
   if (!paper) return <Empty>loading…</Empty>;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="grid grid-cols-3 gap-2 p-3">
+      <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-4">
+        <Tile label="Today's P&L" value={`₹${nf(paper.todayPnl, 0)}`} cls={signColor(paper.todayPnl)} />
         <Tile label="Realized" value={`₹${nf(paper.realized, 0)}`} cls={signColor(paper.realized)} />
         <Tile label="Unrealized" value={`₹${nf(paper.unrealized, 0)}`} cls={signColor(paper.unrealized)} />
         <Tile label="Total P&L" value={`₹${nf(paper.total, 0)}`} cls={signColor(paper.total)} />

@@ -903,12 +903,30 @@ class Store:
                 positions.append({**pos, "ltp": round(ltp, 2), "pnl": round(pnl, 2)})
             realized = self.paper["realized"]
             available = PAPER_CAPITAL + realized - margin_used
+
+            # realized P&L booked so far *today* (IST) -- anchored once per calendar
+            # day against the cumulative realized figure, so today's P&L = today's
+            # closes + whatever is still open, separate from the all-time total.
+            from datetime import datetime as _dt
+            from zoneinfo import ZoneInfo as _ZI
+
+            today = _dt.now(_ZI("Asia/Kolkata")).strftime("%Y-%m-%d")
+            anchor = self.paper.get("dayAnchor")
+            if not anchor or anchor.get("date") != today:
+                anchor = {"date": today, "realized": realized}
+                self.paper["dayAnchor"] = anchor
+                _save(_PAPER_FILE, self.paper)
+            today_realized = realized - anchor["realized"]
+            today_pnl = today_realized + unrealized
+
             return {
                 "positions": positions,
                 "orders": self.paper["orders"][:100],
                 "realized": round(realized, 2),
                 "unrealized": round(unrealized, 2),
                 "total": round(realized + unrealized, 2),
+                "todayRealized": round(today_realized, 2),
+                "todayPnl": round(today_pnl, 2),
                 "capital": round(PAPER_CAPITAL, 2),
                 "marginUsed": round(margin_used, 2),
                 "marginAvailable": round(available, 2),

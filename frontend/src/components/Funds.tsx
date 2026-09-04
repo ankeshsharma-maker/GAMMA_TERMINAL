@@ -157,6 +157,8 @@ export function Funds() {
               {(
                 [
                   ["Starting capital", paper.capital],
+                  ["Today's P&L", paper.todayPnl],
+                  ["Total P&L", paper.total],
                   ["Realised P&L", paper.realized],
                   ["Unrealised P&L", paper.unrealized],
                   ["Margin used", paper.marginUsed],
