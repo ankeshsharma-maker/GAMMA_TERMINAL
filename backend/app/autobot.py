@@ -127,12 +127,19 @@ class _Ctx:
     def __init__(self, symbol: str):
         hist = list(store.history.get(symbol, []))
         self.n = len(hist)
+        self.hist = hist
+        self.ts = [float(h.get("t") or 0) for h in hist]
         self.spot = [float(h["spot"]) for h in hist if h.get("spot") is not None]
         self.pcr = [float(h["pcr"]) for h in hist if h.get("pcr") is not None]
         self.gex = [float(h["netGex"]) for h in hist if h.get("netGex") is not None]
         self.maxpain = [float(h["maxPain"]) for h in hist if h.get("maxPain")]
+        self.gflip = [float(h["gammaFlip"]) for h in hist if h.get("gammaFlip")]
         self.ce_oi_chg = [float(h.get("ceOIChg") or 0) for h in hist]
         self.pe_oi_chg = [float(h.get("peOIChg") or 0) for h in hist]
+        self.ce_vol = [float(h.get("ceVol") or 0) for h in hist]
+        self.pe_vol = [float(h.get("peVol") or 0) for h in hist]
+        self.ce_iv = [float(h["atmCEIV"]) for h in hist if h.get("atmCEIV")]
+        self.pe_iv = [float(h["atmPEIV"]) for h in hist if h.get("atmPEIV")]
 
     # -- indicator conditions ------------------------------------------------ #
     def _rsi(self, c) -> bool:
@@ -242,10 +249,131 @@ class _Ctx:
             return prev >= 0 > cur
         return False
 
+    # -- smart-money / structure conditions ------------------------------ #
+    def _bos(self, c) -> bool:
+        """Break of structure: spot takes out the prior N-bar swing high/low."""
+        lb = int(c.get("lookback", 20))
+        if len(self.spot) < lb + 2:
+            return False
+        window = self.spot[-lb - 1 : -1]
+        if c.get("dir", "up") == "up":
+            return self.spot[-1] > max(window)
+        return self.spot[-1] < min(window)
+
+    def _opening_range(self, c) -> bool:
+        """Break of the high/low set in the first `rangeMin` minutes of the session."""
+        rng = float(c.get("rangeMin", 15))
+        if not self.ts or not self.hist:
+            return False
+        today = datetime.fromtimestamp(self.ts[-1], IST).date()
+        day = [
+            h for h in self.hist
+            if h.get("t") and datetime.fromtimestamp(h["t"], IST).date() == today
+            and h.get("spot") is not None
+        ]
+        if len(day) < 3:
+            return False
+        t0 = day[0]["t"]
+        opening = [h["spot"] for h in day if h["t"] - t0 <= rng * 60]
+        later = [h["spot"] for h in day if h["t"] - t0 > rng * 60]
+        if len(opening) < 2 or not later:
+            return False
+        hi, lo, last = max(opening), min(opening), day[-1]["spot"]
+        return last > hi if c.get("dir", "up") == "up" else last < lo
+
+    @staticmethod
+    def _surge(series: list[float], bars: int, mult: float) -> bool:
+        """|Δseries over last `bars`| exceeds `mult` x the median |per-bar Δ|."""
+        if len(series) < bars + 5:
+            return False
+        deltas = [abs(series[i] - series[i - 1]) for i in range(1, len(series))]
+        med = sorted(deltas)[len(deltas) // 2] or 1.0
+        recent = abs(series[-1] - series[-1 - bars])
+        return recent >= mult * med and series[-1] != series[-1 - bars]
+
+    def _oi_velocity(self, c) -> bool:
+        s = self.ce_oi_chg if c.get("leg", "call") == "call" else self.pe_oi_chg
+        if not self._surge(s, int(c.get("bars", 3)), float(c.get("mult", 2.0))):
+            return False
+        rising = s[-1] > s[-1 - int(c.get("bars", 3))]
+        want = c.get("action", "build")
+        return rising if want == "build" else not rising
+
+    def _vol_surge(self, c) -> bool:
+        s = self.ce_vol if c.get("leg", "call") == "call" else self.pe_vol
+        return self._surge(s, int(c.get("bars", 3)), float(c.get("mult", 2.0)))
+
+    def _oi_divergence(self, c) -> bool:
+        """Price/OI divergence: new extreme in price while positioning fades it."""
+        n = int(c.get("lookback", 10))
+        if len(self.spot) < n + 2 or len(self.ce_oi_chg) < 3:
+            return False
+        d_ce = self.ce_oi_chg[-1] - self.ce_oi_chg[-3]
+        d_pe = self.pe_oi_chg[-1] - self.pe_oi_chg[-3]
+        if c.get("dir", "bearish") == "bearish":
+            new_high = self.spot[-1] >= max(self.spot[-n:])
+            return new_high and d_ce > 0 and d_ce > d_pe  # call writing into strength
+        new_low = self.spot[-1] <= min(self.spot[-n:])
+        return new_low and d_pe > 0 and d_pe > d_ce  # put writing into weakness
+
+    def _maxpain_shift(self, c) -> bool:
+        bars = int(c.get("bars", 10))
+        if len(self.maxpain) < bars + 1:
+            return False
+        delta = self.maxpain[-1] - self.maxpain[-1 - bars]
+        pts = float(c.get("minPts", 0) or 0)
+        if c.get("dir", "up") == "up":
+            return delta > 0 and delta >= pts
+        return delta < 0 and abs(delta) >= pts
+
+    def _pcr_roc(self, c) -> bool:
+        bars = int(c.get("bars", 5))
+        if len(self.pcr) < bars + 1:
+            return False
+        roc = self.pcr[-1] - self.pcr[-1 - bars]
+        v = float(c.get("value", 0.1))
+        return roc > v if c.get("op", ">") == ">" else roc < -abs(v)
+
+    def _iv_skew(self, c) -> bool:
+        if len(self.pe_iv) < 2 or len(self.ce_iv) < 2:
+            return False
+        skew_now = self.pe_iv[-1] - self.ce_iv[-1]
+        skew_prev = self.pe_iv[-2] - self.ce_iv[-2]
+        op = c.get("op", "put_rich")
+        if op == "put_rich":
+            return skew_now > float(c.get("value", 0))
+        if op == "call_rich":
+            return skew_now < -float(c.get("value", 0))
+        if op == "put_rising":
+            return skew_now > skew_prev
+        if op == "call_rising":
+            return skew_now < skew_prev
+        return False
+
+    def _gamma_flip(self, c) -> bool:
+        if len(self.gflip) < 2 or len(self.spot) < 2:
+            return False
+        op = c.get("op", "below")
+        cur_above = self.spot[-1] > self.gflip[-1]
+        prev_above = self.spot[-2] > self.gflip[-2]
+        if op == "above":
+            return cur_above
+        if op == "below":
+            return not cur_above
+        if op == "cross_up":
+            return cur_above and not prev_above
+        if op == "cross_down":
+            return not cur_above and prev_above
+        return False
+
     _DISPATCH = {
         "rsi": _rsi, "ema_cross": _ema_cross, "price_vs_ema": _price_vs_ema,
         "macd": _macd, "spot_move_pct": _spot_move_pct, "pcr": _pcr,
         "oi_change": _oi_change, "spot_vs_maxpain": _spot_vs_maxpain, "net_gex": _net_gex,
+        "bos": _bos, "opening_range": _opening_range, "oi_velocity": _oi_velocity,
+        "vol_surge": _vol_surge, "oi_divergence": _oi_divergence,
+        "maxpain_shift": _maxpain_shift, "pcr_roc": _pcr_roc, "iv_skew": _iv_skew,
+        "gamma_flip": _gamma_flip,
     }
 
     def eval_one(self, cond: dict) -> bool:
@@ -446,14 +574,52 @@ class AutoBot:
                 ltp = store._mark_price(sym, pos["expiry"], pos["strike"], pos["ot"]) \
                     or pos["entryPx"]
                 base = pos["entryPx"] or 1.0
+                buy = pos["side"] == "BUY"
                 move = (ltp - base) / base * 100
-                signed = move if pos["side"] == "BUY" else -move
+                signed = move if buy else -move  # favourable P&L %
+
+                # peak = best favourable premium seen; fav = favourable run-up %
+                peak = pos.get("peak", base)
+                peak = max(peak, ltp) if buy else min(peak, ltp)
+                pos["peak"] = round(peak, 2)
+                fav = (peak - base) / base * 100 if buy else (base - peak) / base * 100
+
+                # assemble the effective stop price: fixed SL, then ratcheted up
+                # by breakeven-arm and trailing-stop once their triggers are hit
+                stop_px = None
+                sl_pct = float(rule["slPct"]) if rule.get("slPct") not in (None, "") else None
+                if sl_pct is not None:
+                    stop_px = base * (1 - sl_pct / 100) if buy else base * (1 + sl_pct / 100)
+                be_arm = float(rule.get("beArmPct") or 0)
+                be_on = be_arm > 0 and fav >= be_arm
+                if be_on:
+                    stop_px = base if stop_px is None else (
+                        max(stop_px, base) if buy else min(stop_px, base)
+                    )
+                trail_pct = float(rule.get("trailPct") or 0)
+                trail_arm = float(rule.get("trailArmPct") or 0)
+                trail_on = trail_pct > 0 and fav >= trail_arm
+                if trail_on:
+                    ts_px = peak * (1 - trail_pct / 100) if buy else peak * (1 + trail_pct / 100)
+                    stop_px = ts_px if stop_px is None else (
+                        max(stop_px, ts_px) if buy else min(stop_px, ts_px)
+                    )
+                new_stop = round(stop_px, 2) if stop_px is not None else None
+                if new_stop != pos.get("stopPx"):
+                    pos["stopPx"] = new_stop
+                    changed = True
+
                 reason = None
                 sq = _parse_hhmm(rule.get("squareOff"))
+                stop_hit = stop_px is not None and (ltp <= stop_px if buy else ltp >= stop_px)
                 if pos.get("forceExit"):
                     reason = "kill"
-                elif rule.get("slPct") and signed <= -abs(float(rule["slPct"])):
-                    reason = f"SL {rule['slPct']}%"
+                elif stop_hit:
+                    reason = (
+                        "trailing stop" if trail_on
+                        else "breakeven stop" if be_on
+                        else f"SL {rule.get('slPct')}%"
+                    )
                 elif rule.get("targetPct") and signed >= abs(float(rule["targetPct"])):
                     reason = f"target {rule['targetPct']}%"
                 elif not open_mkt or (sq and now.time() >= sq):
@@ -522,6 +688,7 @@ class AutoBot:
                 "entryPx": float(entry_px), "lots": lots,
                 "lotSize": chain.get("lotSize", 1), "ts": time.time(),
                 "mode": res.get("mode", "paper"),
+                "peak": float(entry_px), "stopPx": None,
             }
             st["tradesToday"] = st.get("tradesToday", 0) + 1
             self._emit(

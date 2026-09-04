@@ -106,6 +106,19 @@ def logout():
     return {"ok": True}
 
 
+@router.post("/refresh")
+async def refresh():
+    """Reload the saved session, re-validate the token, and reconnect the feed."""
+    b = get_broker()
+    if not b.configured:
+        raise HTTPException(status_code=400, detail="Flattrade not configured")
+    try:
+        res = await b.refresh()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+    return res
+
+
 def _require_auth():
     b = get_broker()
     if not b.authed:

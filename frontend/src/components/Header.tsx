@@ -71,11 +71,25 @@ function MarginStats() {
 }
 
 function BrokerPill() {
-  const { broker, connectBroker, disconnectBroker, setBrokerToken, brokerDirectLogin } = useStore();
+  const { broker, connectBroker, disconnectBroker, refreshBroker, setBrokerToken, brokerDirectLogin } =
+    useStore();
   const [mode, setMode] = useState<"" | "token" | "login">("");
   const [tok, setTok] = useState("");
   const [cred, setCred] = useState({ uid: "", pwd: "", totp: "", vc: "" });
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const doRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const err = await refreshBroker();
+      if (err) alert(`Broker refresh: ${err}`);
+    } catch (e: any) {
+      alert(`Broker refresh failed: ${e?.message || e}`);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   if (!broker || !broker.configured)
     return (
@@ -160,6 +174,14 @@ function BrokerPill() {
 
   const altBtns = !mode && (
     <>
+      <button
+        onClick={doRefresh}
+        disabled={refreshing}
+        title="Reload the saved session, re-validate the token and reconnect the live feed"
+        className="rounded border border-term-border px-1.5 py-1 text-2xs text-term-dim hover:text-term-text disabled:opacity-40"
+      >
+        {refreshing ? "…" : "⟳ refresh"}
+      </button>
       <button
         onClick={() => setMode("login")}
         title="Direct login: client id + password + TOTP (no OAuth redirect)"

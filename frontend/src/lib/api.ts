@@ -327,6 +327,10 @@ export const api = {
   brokerStatus: () => j<BrokerStatus>("/api/broker/status"),
   brokerLogin: () => j<{ url: string }>("/api/broker/login"),
   brokerLogout: () => j<{ ok: boolean }>("/api/broker/logout", { method: "POST" }),
+  brokerRefresh: () =>
+    j<BrokerStatus & { ok: boolean; error?: string | null }>("/api/broker/refresh", {
+      method: "POST",
+    }),
   brokerSetToken: (token: string, client?: string) =>
     j<BrokerStatus>("/api/broker/token", {
       method: "POST",

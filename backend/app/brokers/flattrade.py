@@ -234,6 +234,35 @@ class FlattradeBroker:
             "wsConnected": self._ws_connected,
         }
 
+    async def refresh(self) -> dict:
+        """Re-read the persisted session, validate the token with a live call,
+        and bounce the WebSocket feed so it reconnects. Driven by the header
+        'refresh broker' button."""
+        self._load_session()
+        ok, err = False, None
+        if self._token:
+            try:
+                r = await self._post("UserDetails", {})
+                ok = isinstance(r, dict) and r.get("stat") == "Ok"
+                if not ok:
+                    err = (r or {}).get("emsg") or "token rejected"
+            except Exception as exc:  # noqa: BLE001
+                err = str(exc)
+        else:
+            err = "no session token"
+        # bounce the WS regardless so a dropped/stale socket reconnects
+        if self._ws_task:
+            self._ws_task.cancel()
+            self._ws_task = None
+        self._ws_connected = False
+        self._subs.clear()
+        if ok and self._on_tick:
+            try:
+                await self.start_ws(self._on_tick)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("refresh: WS restart failed: %s", exc)
+        return {"ok": ok, "error": err, **self.status()}
+
     # ---- REST helper -----------------------------------------------
     async def _post(self, endpoint: str, payload: dict) -> dict | list:
         if not self._token:

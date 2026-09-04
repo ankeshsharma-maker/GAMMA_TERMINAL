@@ -174,6 +174,22 @@ def build_chain(
     max_pain = min(strikes, key=lambda k: pain_ce[k] + pain_pe[k]) if strikes else atm
     pcr = round(tot_pe_oi / tot_ce_oi, 3) if tot_ce_oi else None
 
+    # gamma-flip / zero-gamma strike: where the running sum of
+    # (put gamma*OI - call gamma*OI) changes sign (dealer positioning flips
+    # from short-gamma / trend-amplifying to long-gamma / mean-reverting).
+    gamma_flip = None
+    cum = 0.0
+    _pts: list[tuple[float, float]] = []
+    for r in rows:
+        cum += r["put"]["gamma"] * r["put"]["oi"] - r["call"]["gamma"] * r["call"]["oi"]
+        _pts.append((r["strike"], cum))
+    for (k0, v0), (k1, v1) in zip(_pts, _pts[1:]):
+        if (v0 <= 0 <= v1 or v0 >= 0 >= v1) and v0 != v1:
+            gamma_flip = round(k0 + (-v0) / (v1 - v0) * (k1 - k0), 2)
+            break
+    if gamma_flip is None and rows:
+        gamma_flip = atm
+
     atm_row = next((r for r in rows if r["strike"] == atm), None)
     atm_iv = None
     atm_straddle = None
@@ -209,6 +225,7 @@ def build_chain(
         "atmGammaOI": atm_gamma_oi,
         "pcr": pcr,
         "maxPain": max_pain,
+        "gammaFlip": gamma_flip,
         "netGex": round(net_gex, 2),
         "totals": {
             "ceOI": tot_ce_oi,

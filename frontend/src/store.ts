@@ -68,6 +68,7 @@ interface State {
   init: () => void;
   connectBroker: () => Promise<void>;
   disconnectBroker: () => Promise<void>;
+  refreshBroker: () => Promise<string | null>;
   setBrokerToken: (token: string) => Promise<void>;
   brokerDirectLogin: (creds: {
     uid: string;
@@ -226,6 +227,12 @@ export const useStore = create<State>((set, get) => ({
   disconnectBroker: async () => {
     await api.brokerLogout();
     set({ broker: await api.brokerStatus().catch(() => null) });
+  },
+  refreshBroker: async () => {
+    const b = await api.brokerRefresh();
+    set({ broker: b });
+    api.brokerFunds().then((f) => set({ brokerFunds: f }), () => {});
+    return b.ok ? null : b.error || "refresh failed";
   },
   setBrokerToken: async (token: string) => {
     const b = await api.brokerSetToken(token.trim());

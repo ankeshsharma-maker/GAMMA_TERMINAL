@@ -220,20 +220,32 @@ class Store:
         if self.nearest_expiry(symbol) not in (None, expiry):
             return  # only track the front-month series
         dq = self.history.setdefault(symbol, deque(maxlen=HISTORY_MAXLEN))
+        atm_row = next(
+            (r for r in chain.get("rows", []) if r["strike"] == chain.get("atmStrike")), None
+        )
+        atm_ce_iv = atm_pe_iv = None
+        if atm_row:
+            atm_ce_iv = atm_row["call"].get("ivCalc") or atm_row["call"].get("iv")
+            atm_pe_iv = atm_row["put"].get("ivCalc") or atm_row["put"].get("iv")
         dq.append(
             {
                 "t": now,
                 "expiry": expiry,
                 "spot": chain["spot"],
                 "atmIV": chain["atmIV"],
+                "atmCEIV": atm_ce_iv,
+                "atmPEIV": atm_pe_iv,
                 "atmStraddle": chain.get("atmStraddle"),
                 "atmGammaOI": chain.get("atmGammaOI"),
                 "pcr": chain["pcr"],
                 "netGex": chain["netGex"],
+                "gammaFlip": chain.get("gammaFlip"),
                 "maxPain": chain["maxPain"],
                 "dte": chain["dte"],
                 "ceOIChg": chain["totals"]["ceOIChg"],
                 "peOIChg": chain["totals"]["peOIChg"],
+                "ceVol": chain["totals"].get("ceVol"),
+                "peVol": chain["totals"].get("peVol"),
             }
         )
         self._hist_writes += 1

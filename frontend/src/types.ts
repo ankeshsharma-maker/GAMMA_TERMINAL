@@ -240,6 +240,9 @@ export interface AutoRule {
   exit: AutoCondition[];
   slPct?: number;
   targetPct?: number;
+  trailPct?: number;
+  trailArmPct?: number;
+  beArmPct?: number;
   maxTradesPerDay: number;
   cooldownMin: number;
   squareOff: string;
@@ -253,6 +256,8 @@ export interface AutoRule {
       entryPx: number;
       lots: number;
       mode: string;
+      peak?: number;
+      stopPx?: number | null;
     };
     tradesToday: number;
   };

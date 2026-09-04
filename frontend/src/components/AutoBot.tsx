@@ -10,7 +10,9 @@ type Field =
   | { key: string; label: string; type: "num"; def: number }
   | { key: string; label: string; type: "sel"; def: string; opts: string[] };
 
-const COND_DEFS: Record<string, { label: string; group: "indicator" | "oi"; fields: Field[] }> = {
+type CondGroup = "indicator" | "oi" | "smart";
+
+const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field[] }> = {
   rsi: {
     label: "RSI",
     group: "indicator",
@@ -105,6 +107,108 @@ const COND_DEFS: Record<string, { label: string; group: "indicator" | "oi"; fiel
       },
     ],
   },
+
+  /* ---- smart-money / market-structure ---- */
+  bos: {
+    label: "Break of structure (swing high/low)",
+    group: "smart",
+    fields: [
+      { key: "lookback", label: "bars", type: "num", def: 20 },
+      { key: "dir", label: "dir", type: "sel", def: "up", opts: ["up", "down"] },
+    ],
+  },
+  opening_range: {
+    label: "Opening-range break",
+    group: "smart",
+    fields: [
+      { key: "rangeMin", label: "range min", type: "num", def: 15 },
+      { key: "dir", label: "dir", type: "sel", def: "up", opts: ["up", "down"] },
+    ],
+  },
+  oi_velocity: {
+    label: "OI surge (velocity vs baseline)",
+    group: "smart",
+    fields: [
+      { key: "leg", label: "leg", type: "sel", def: "call", opts: ["call", "put"] },
+      { key: "action", label: "action", type: "sel", def: "build", opts: ["build", "unwind"] },
+      { key: "bars", label: "bars", type: "num", def: 3 },
+      { key: "mult", label: "× median", type: "num", def: 2 },
+    ],
+  },
+  vol_surge: {
+    label: "Volume surge",
+    group: "smart",
+    fields: [
+      { key: "leg", label: "leg", type: "sel", def: "call", opts: ["call", "put"] },
+      { key: "bars", label: "bars", type: "num", def: 3 },
+      { key: "mult", label: "× median", type: "num", def: 2 },
+    ],
+  },
+  oi_divergence: {
+    label: "Price / OI divergence",
+    group: "smart",
+    fields: [
+      {
+        key: "dir",
+        label: "type",
+        type: "sel",
+        def: "bearish",
+        opts: ["bearish", "bullish"],
+      },
+      { key: "lookback", label: "bars", type: "num", def: 10 },
+    ],
+  },
+  maxpain_shift: {
+    label: "Max-pain migration",
+    group: "smart",
+    fields: [
+      { key: "dir", label: "dir", type: "sel", def: "up", opts: ["up", "down"] },
+      { key: "bars", label: "bars", type: "num", def: 10 },
+      { key: "minPts", label: "min pts", type: "num", def: 0 },
+    ],
+  },
+  pcr_roc: {
+    label: "PCR rate-of-change",
+    group: "smart",
+    fields: [
+      { key: "op", label: "op", type: "sel", def: ">", opts: [">", "<"] },
+      { key: "bars", label: "bars", type: "num", def: 5 },
+      { key: "value", label: "Δ", type: "num", def: 0.1 },
+    ],
+  },
+  iv_skew: {
+    label: "IV skew (put vs call)",
+    group: "smart",
+    fields: [
+      {
+        key: "op",
+        label: "op",
+        type: "sel",
+        def: "put_rich",
+        opts: ["put_rich", "call_rich", "put_rising", "call_rising"],
+      },
+      { key: "value", label: "min gap", type: "num", def: 0 },
+    ],
+  },
+  gamma_flip: {
+    label: "Gamma flip (spot vs zero-γ)",
+    group: "smart",
+    fields: [
+      {
+        key: "op",
+        label: "op",
+        type: "sel",
+        def: "below",
+        opts: ["above", "below", "cross_up", "cross_down"],
+      },
+    ],
+  },
+};
+
+const GROUP_LABEL: Record<CondGroup, string> = {
+  indicator: "Indicator",
+  oi: "OI / chain",
+  smart: "Smart money / structure",
 };
 
 const INSTRUMENTS = [
@@ -141,6 +245,9 @@ function blankRule(symbol: string): Partial<AutoRule> {
     exit: [],
     slPct: 30,
     targetPct: 60,
+    trailPct: 0,
+    trailArmPct: 0,
+    beArmPct: 0,
     maxTradesPerDay: 3,
     cooldownMin: 5,
     squareOff: "15:20",
@@ -170,24 +277,17 @@ function CondRow({
         onChange={(e) => onChange(mkCond(e.target.value))}
         className="rounded border border-term-border bg-term-panel px-1 py-0.5 text-2xs"
       >
-        <optgroup label="Indicator">
-          {Object.entries(COND_DEFS)
-            .filter(([, v]) => v.group === "indicator")
-            .map(([k, v]) => (
-              <option key={k} value={k}>
-                {v.label}
-              </option>
-            ))}
-        </optgroup>
-        <optgroup label="OI / chain">
-          {Object.entries(COND_DEFS)
-            .filter(([, v]) => v.group === "oi")
-            .map(([k, v]) => (
-              <option key={k} value={k}>
-                {v.label}
-              </option>
-            ))}
-        </optgroup>
+        {(["indicator", "oi", "smart"] as CondGroup[]).map((g) => (
+          <optgroup key={g} label={GROUP_LABEL[g]}>
+            {Object.entries(COND_DEFS)
+              .filter(([, v]) => v.group === g)
+              .map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v.label}
+                </option>
+              ))}
+          </optgroup>
+        ))}
       </select>
 
       {def?.fields.map((f) => (
@@ -390,6 +490,36 @@ function RuleEditor({
             value={r.targetPct ?? ""}
             onChange={(e) => set({ targetPct: num(e.target.value) })}
             className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
+          />
+        </label>
+        <label className="flex flex-col text-[10px] text-term-dim" title="0 = off. Trails the stop this % behind the best favourable premium.">
+          trail %
+          <input
+            type="number"
+            step="any"
+            value={r.trailPct ?? ""}
+            onChange={(e) => set({ trailPct: num(e.target.value) })}
+            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
+          />
+        </label>
+        <label className="flex flex-col text-[10px] text-term-dim" title="Arm the trailing stop only after the trade is this % in profit.">
+          trail arm %
+          <input
+            type="number"
+            step="any"
+            value={r.trailArmPct ?? ""}
+            onChange={(e) => set({ trailArmPct: num(e.target.value) })}
+            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
+          />
+        </label>
+        <label className="flex flex-col text-[10px] text-term-dim" title="Move the stop to breakeven once the trade is this % in profit. 0 = off.">
+          breakeven arm %
+          <input
+            type="number"
+            step="any"
+            value={r.beArmPct ?? ""}
+            onChange={(e) => set({ beArmPct: num(e.target.value) })}
+            className="num w-24 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
           />
         </label>
         <label className="flex flex-col text-[10px] text-term-dim">
@@ -626,6 +756,10 @@ export function AutoBotView() {
                     <span className="rounded bg-up/15 px-1.5 py-0.5 text-2xs text-up">
                       IN TRADE {open.side} {open.strike}
                       {open.ot} @{open.entryPx.toFixed(1)}
+                      {open.peak != null && ` · peak ${open.peak.toFixed(1)}`}
+                      {open.stopPx != null && (
+                        <span className="text-amber-400"> · stop {open.stopPx.toFixed(1)}</span>
+                      )}
                     </span>
                   )}
                   <span className="text-2xs text-term-dim">
@@ -663,8 +797,9 @@ export function AutoBotView() {
                   </div>
                   <div>
                     <span className="uppercase tracking-wide text-term-dim">
-                      exit (any) · SL {r.slPct ?? "–"}% · tgt {r.targetPct ?? "–"}% · sq{" "}
-                      {r.squareOff}
+                      exit (any) · SL {r.slPct ?? "–"}% · tgt {r.targetPct ?? "–"}%
+                      {r.trailPct ? ` · trail ${r.trailPct}%${r.trailArmPct ? `@+${r.trailArmPct}%` : ""}` : ""}
+                      {r.beArmPct ? ` · BE@+${r.beArmPct}%` : ""} · sq {r.squareOff}
                     </span>
                     <ul className="mt-0.5 space-y-0.5">
                       {(r.exit ?? []).map((c, i) => (
@@ -739,6 +874,24 @@ function describe(c: AutoCondition): string {
       return `spot ${g("op")} maxpain${Number(g("bufferPct")) ? ` ±${g("bufferPct")}%` : ""}`;
     case "net_gex":
       return `net GEX ${g("op")}`;
+    case "bos":
+      return `break of structure ${g("dir")} (${g("lookback")} bars)`;
+    case "opening_range":
+      return `opening range ${g("rangeMin")}m break ${g("dir")}`;
+    case "oi_velocity":
+      return `${g("leg")} OI ${g("action")} surge ≥${g("mult")}× (${g("bars")} bars)`;
+    case "vol_surge":
+      return `${g("leg")} volume surge ≥${g("mult")}× (${g("bars")} bars)`;
+    case "oi_divergence":
+      return `${g("dir")} price/OI divergence (${g("lookback")} bars)`;
+    case "maxpain_shift":
+      return `max-pain migrating ${g("dir")}${Number(g("minPts")) ? ` ≥${g("minPts")}pts` : ""} (${g("bars")} bars)`;
+    case "pcr_roc":
+      return `PCR Δ ${g("op")} ${g("value")} over ${g("bars")} bars`;
+    case "iv_skew":
+      return `IV skew ${g("op")}${Number(g("value")) ? ` ${g("value")}` : ""}`;
+    case "gamma_flip":
+      return `spot ${g("op")} gamma-flip`;
     default:
       return c.kind;
   }
