@@ -32,6 +32,7 @@ interface Ctx {
   isMaxPutGamma: boolean;
   // LTP tab (OI-style)
   maxLtp: number;
+  maxChgPct: number;
   maxBidQty: number;
   maxAskQty: number;
   maxIV: number;
@@ -134,88 +135,88 @@ function OIBar({
   );
 }
 
+/** LTP tab: price only (change moved to its own column). */
+const ltpCol: Col = {
+  key: "ltp",
+  label: "LTP",
+  render: (l, side, ctx) =>
+    ltpBarCell(
+      l.ltp,
+      ctx.maxLtp,
+      side,
+      side === "l" ? "call" : "put",
+      <span className="font-semibold text-term-text">{nf(l.ltp)}</span>
+    ),
+};
+
+/** LTP tab: % change from previous close, own column, signed bar. */
+const chgPctCol: Col = {
+  key: "chgpct",
+  label: "Chg %",
+  render: (l, side, ctx) =>
+    ltpBarCell(
+      Math.abs(l.chgPct),
+      ctx.maxChgPct,
+      side,
+      l.chgPct >= 0 ? "pos" : "neg",
+      <span className={`font-medium ${signColor(l.chgPct)}`}>
+        {l.chgPct >= 0 ? "+" : ""}
+        {nf(l.chgPct, 2)}%
+      </span>
+    ),
+};
+
+const deltaCol: Col = {
+  key: "delta",
+  label: "Δ Delta",
+  render: (l, side, ctx) =>
+    greekCell(
+      l.delta,
+      ctx.maxDelta,
+      side,
+      3,
+      (side === "l" ? ctx.hotCE : ctx.hotPE) === "DELTA_JUMP"
+        ? "rounded bg-term-accent/25 px-0.5 font-bold text-term-accent ring-1 ring-term-accent/70"
+        : "",
+      (side === "l" ? ctx.hotCE : ctx.hotPE) === "DELTA_JUMP" ? "!" : ""
+    ),
+};
+const gammaCol: Col = {
+  key: "gamma",
+  label: "Γ Gamma",
+  render: (l, side, ctx) => {
+    const k = side === "l" ? ctx.hotCE : ctx.hotPE;
+    const hot = k === "GAMMA_SPIKE" || k === "GAMMA_COLLAPSE";
+    const peak = side === "l" ? ctx.isMaxCallGamma : ctx.isMaxPutGamma;
+    const cls = hot
+      ? `rounded px-0.5 font-bold ring-1 ${
+          k === "GAMMA_SPIKE"
+            ? "bg-amber-500/25 text-amber-400 ring-amber-500/70"
+            : "bg-down/25 text-down ring-down/70"
+        }`
+      : peak
+      ? "font-bold text-term-text"
+      : "";
+    const tag = hot ? (k === "GAMMA_SPIKE" ? "▲" : "▼") : peak ? "Γ" : "";
+    return greekCell(l.gamma, ctx.maxGamma, side, 4, cls, tag);
+  },
+};
+const thetaCol: Col = {
+  key: "theta",
+  label: "Θ Theta",
+  render: (l, side, ctx) => greekCell(l.theta, ctx.maxTheta, side, 2, "", ""),
+};
+const vegaCol: Col = {
+  key: "vega",
+  label: "V Vega",
+  render: (l, side, ctx) => greekCell(l.vega, ctx.maxVega, side, 2, "", ""),
+};
+const ivCol: Col = { key: "iv", label: "IV", render: (l) => nf(l.ivCalc ?? l.iv, 1) };
+
 const COLS: Record<TabKey, Col[]> = {
-  ltp: [
-    {
-      key: "ltp",
-      label: "LTP",
-      render: (l, side, ctx) =>
-        ltpBarCell(
-          l.ltp,
-          ctx.maxLtp,
-          side,
-          side === "l" ? "call" : "put",
-          <>
-            <span className="text-term-text">{nf(l.ltp)}</span>{" "}
-            <span className={`text-[10px] ${signColor(l.chg)}`}>{nf(l.chg, 1)}</span>
-          </>
-        ),
-    },
-    {
-      key: "bid",
-      label: "Bid",
-      render: (l, side, ctx) => {
-        const top = side === "l" ? ctx.isMaxCallBidQty : ctx.isMaxPutBidQty;
-        return ltpBarCell(
-          l.bidQty,
-          ctx.maxBidQty,
-          side,
-          "pos",
-          <span className={top ? "rounded bg-up/20 px-0.5 font-bold text-up ring-1 ring-up/60" : ""}>
-            {nf(l.bid, 1)}
-            {l.bidQty ? (
-              <span className="ml-0.5 text-[9px] text-term-dim">×{compact(l.bidQty)}</span>
-            ) : null}
-            {top && <sup className="ml-0.5 text-[8px]">B</sup>}
-          </span>,
-          top
-        );
-      },
-    },
-    {
-      key: "ask",
-      label: "Ask",
-      render: (l, side, ctx) => {
-        const top = side === "l" ? ctx.isMaxCallAskQty : ctx.isMaxPutAskQty;
-        return ltpBarCell(
-          l.askQty,
-          ctx.maxAskQty,
-          side,
-          "neg",
-          <span
-            className={top ? "rounded bg-down/20 px-0.5 font-bold text-down ring-1 ring-down/60" : ""}
-          >
-            {nf(l.ask, 1)}
-            {l.askQty ? (
-              <span className="ml-0.5 text-[9px] text-term-dim">×{compact(l.askQty)}</span>
-            ) : null}
-            {top && <sup className="ml-0.5 text-[8px]">A</sup>}
-          </span>,
-          top
-        );
-      },
-    },
-    {
-      key: "iv",
-      label: "IV",
-      render: (l, side, ctx) => {
-        const peak = side === "l" ? ctx.isMaxCallIV : ctx.isMaxPutIV;
-        const iv = l.ivCalc ?? l.iv ?? 0;
-        return ltpBarCell(
-          iv,
-          ctx.maxIV,
-          side,
-          side === "l" ? "call" : "put",
-          <span className={peak ? "font-bold text-term-text" : ""}>
-            {nf(iv, 1)}
-            {peak && <sup className="ml-0.5 text-[8px]">IV</sup>}
-          </span>,
-          peak
-        );
-      },
-    },
-    volCol,
-  ],
+  // reading from the centre STRIKE outward: LTP · Chg% · Δ · Γ · Θ · V
+  // (array order = calls left→right, so the last entry sits against STRIKE)
+  ltp: [vegaCol, thetaCol, gammaCol, deltaCol, chgPctCol, ltpCol],
   oi: [
     {
       key: "oi",
@@ -276,54 +277,7 @@ const COLS: Record<TabKey, Col[]> = {
     },
     volCol,
   ],
-  greeks: [
-    {
-      key: "delta",
-      label: "Δ Delta",
-      render: (l, side, ctx) =>
-        greekCell(
-          l.delta,
-          ctx.maxDelta,
-          side,
-          3,
-          (side === "l" ? ctx.hotCE : ctx.hotPE) === "DELTA_JUMP"
-            ? "rounded bg-term-accent/25 px-0.5 font-bold text-term-accent ring-1 ring-term-accent/70"
-            : "",
-          (side === "l" ? ctx.hotCE : ctx.hotPE) === "DELTA_JUMP" ? "!" : ""
-        ),
-    },
-    {
-      key: "gamma",
-      label: "Γ Gamma",
-      render: (l, side, ctx) => {
-        const k = side === "l" ? ctx.hotCE : ctx.hotPE;
-        const hot = k === "GAMMA_SPIKE" || k === "GAMMA_COLLAPSE";
-        const peak = side === "l" ? ctx.isMaxCallGamma : ctx.isMaxPutGamma;
-        const cls = hot
-          ? `rounded px-0.5 font-bold ring-1 ${
-              k === "GAMMA_SPIKE"
-                ? "bg-amber-500/25 text-amber-400 ring-amber-500/70"
-                : "bg-down/25 text-down ring-down/70"
-            }`
-          : peak
-          ? "font-bold text-term-text"
-          : "";
-        const tag = hot ? (k === "GAMMA_SPIKE" ? "▲" : "▼") : peak ? "Γ" : "";
-        return greekCell(l.gamma, ctx.maxGamma, side, 4, cls, tag);
-      },
-    },
-    {
-      key: "theta",
-      label: "Θ Theta",
-      render: (l, side, ctx) => greekCell(l.theta, ctx.maxTheta, side, 2, "", ""),
-    },
-    {
-      key: "vega",
-      label: "V Vega",
-      render: (l, side, ctx) => greekCell(l.vega, ctx.maxVega, side, 2, "", ""),
-    },
-    { key: "iv", label: "IV", render: (l) => nf(l.ivCalc ?? l.iv, 1) },
-  ],
+  greeks: [deltaCol, gammaCol, thetaCol, vegaCol, ivCol],
 };
 
 function QuickTrade({
@@ -419,6 +373,7 @@ export function OptionChain() {
       maxCallGammaStrike: -1,
       maxPutGammaStrike: -1,
       maxLtp: 1,
+      maxChgPct: 1,
       maxBidQty: 1,
       maxAskQty: 1,
       maxIV: 1,
@@ -447,6 +402,7 @@ export function OptionChain() {
     let maxCallGamma = { v: -1, k: -1 };
     let maxPutGamma = { v: -1, k: -1 };
     let maxLtp = 0.01;
+    let maxChgPct = 0.01;
     let maxBidQty = 1;
     let maxAskQty = 1;
     let maxIV = 0.01;
@@ -460,6 +416,7 @@ export function OptionChain() {
       const cIV = r.call.ivCalc ?? r.call.iv ?? 0;
       const pIV = r.put.ivCalc ?? r.put.iv ?? 0;
       maxLtp = Math.max(maxLtp, r.call.ltp, r.put.ltp);
+      maxChgPct = Math.max(maxChgPct, Math.abs(r.call.chgPct || 0), Math.abs(r.put.chgPct || 0));
       maxBidQty = Math.max(maxBidQty, r.call.bidQty || 0, r.put.bidQty || 0);
       maxAskQty = Math.max(maxAskQty, r.call.askQty || 0, r.put.askQty || 0);
       maxIV = Math.max(maxIV, cIV, pIV);
@@ -504,6 +461,7 @@ export function OptionChain() {
       maxCallGammaStrike: maxCallGamma.k,
       maxPutGammaStrike: maxPutGamma.k,
       maxLtp,
+      maxChgPct,
       maxBidQty,
       maxAskQty,
       maxIV,
@@ -564,6 +522,7 @@ export function OptionChain() {
       isMaxCallGamma: row.strike === oiStats.maxCallGammaStrike,
       isMaxPutGamma: row.strike === oiStats.maxPutGammaStrike,
       maxLtp: oiStats.maxLtp,
+      maxChgPct: oiStats.maxChgPct,
       maxBidQty: oiStats.maxBidQty,
       maxAskQty: oiStats.maxAskQty,
       maxIV: oiStats.maxIV,
@@ -677,13 +636,9 @@ export function OptionChain() {
             <span className="text-term-dim">→ Unusual Activity 🔔</span>
           </span>
         ) : (
-          <span className="ml-auto">
-            <span className="text-term-dim">bars: premium · </span>
-            <span className="text-up">■ bid depth</span>{" "}
-            <span className="text-down">■ ask depth</span>{" "}
-            <span className="text-term-dim">
-              · B/A = biggest bid/ask · IV = vol peak · HV = high volume
-            </span>
+          <span className="ml-auto text-term-dim">
+            from STRIKE outward: LTP · Chg% · Δ · Γ · Θ · V{"  "}
+            <span className="text-up">■ up</span> <span className="text-down">■ down</span> bars
           </span>
         )}
       </div>
