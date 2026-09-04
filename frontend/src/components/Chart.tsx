@@ -102,6 +102,8 @@ export function Chart() {
   const plRefs = useRef<any[]>([]);
   const drawRef = useRef(false);
   const [legend, setLegend] = useState<string>("");
+  const [rsiVal, setRsiVal] = useState<number | null>(null);
+  const lastRsiRef = useRef<number | null>(null);
   useEffect(() => {
     drawRef.current = drawMode;
   }, [drawMode]);
@@ -130,6 +132,10 @@ export function Chart() {
     straddle: true,
     score: false,
   });
+  const onRef = useRef(on);
+  useEffect(() => {
+    onRef.current = on;
+  }, [on]);
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -174,6 +180,7 @@ export function Chart() {
       const bar: any = p.seriesData?.get(cs) || p.seriesData?.get(s.current.barS);
       if (!bar || bar.open == null) {
         setLegend("");
+        setRsiVal(lastRsiRef.current); // not hovering -> show the latest RSI, not nothing
         return;
       }
       const ch = bar.close - bar.open;
@@ -183,6 +190,10 @@ export function Chart() {
           ch >= 0 ? "+" : ""
         }${ch.toFixed(1)} (${chp.toFixed(2)}%)`
       );
+      if (onRef.current.rsi) {
+        const rp: any = p.seriesData?.get(s.current.rsi as any);
+        setRsiVal(rp?.value != null ? rp.value : lastRsiRef.current);
+      }
     });
 
     // click to drop a horizontal line (draw mode)
@@ -223,8 +234,8 @@ export function Chart() {
       color: "#e879f9",
       lineWidth: 1,
       priceScaleId: "rsi",
-      priceLineVisible: false,
-      lastValueVisible: false,
+      priceLineVisible: true,
+      lastValueVisible: true,
     });
     chart.priceScale("rsi").applyOptions({ scaleMargins: { top: 0.74, bottom: 0.14 }, visible: false });
 
@@ -324,7 +335,10 @@ export function Chart() {
 
     // rsi
     chartRef.current.priceScale("rsi").applyOptions({ visible: on.rsi });
-    setLine("rsi", rsi(cd, 14), on.rsi);
+    const rsiPts = rsi(cd, 14);
+    setLine("rsi", rsiPts, on.rsi);
+    lastRsiRef.current = on.rsi && rsiPts.length ? rsiPts[rsiPts.length - 1].value : null;
+    setRsiVal(lastRsiRef.current);
 
     // macd
     const m = on.macd ? macd(cd) : { macd: [], signal: [], hist: [] };
@@ -545,6 +559,21 @@ export function Chart() {
         {legend && (
           <div className="pointer-events-none absolute left-2 top-1 z-10 rounded bg-term-panel/80 px-2 py-0.5 text-[10px] num text-term-text">
             {symbol} · {legend}
+          </div>
+        )}
+        {on.rsi && rsiVal != null && (
+          <div
+            className="pointer-events-none absolute left-2 z-10 rounded bg-term-panel/80 px-2 py-0.5 text-[10px] num"
+            style={{ top: "calc(74% - 16px)" }}
+          >
+            <span style={{ color: "#e879f9" }}>RSI(14)</span>{" "}
+            <span
+              className={
+                rsiVal >= 70 ? "text-down" : rsiVal <= 30 ? "text-up" : "text-term-text"
+              }
+            >
+              {rsiVal.toFixed(1)}
+            </span>
           </div>
         )}
         {drawMode && (
