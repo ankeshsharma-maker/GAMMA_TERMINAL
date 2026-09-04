@@ -8,8 +8,9 @@ Auth flow:
      -> {token, client}
 Session token is good for the trading day; cached in data/broker_session.json.
 
-REST: POST https://piconnect.flattrade.in/PiConnectTP/<Endpoint>  body: jData=<json>&jKey=<token>
-WS:   wss://piconnect.flattrade.in/PiConnectWSTp/
+REST: POST https://piconnect.flattrade.in/PiConnectAPI/<Endpoint>  body: jData=<json>&jKey=<token>
+WS:   wss://piconnect.flattrade.in/PiConnectWSAPI/
+(host + WS match flattrade's own reference client: github.com/flattrade/pythonAPI)
 """
 from __future__ import annotations
 
@@ -59,8 +60,13 @@ log = logging.getLogger("flattrade")
 
 _AUTH_URL = "https://auth.flattrade.in/"
 _TOKEN_URL = "https://authapi.flattrade.in/trade/apitoken"
-_REST = "https://piconnect.flattrade.in/NorenWClientTP"
-_WS = "wss://piconnect.flattrade.in/PiConnectWSTp/"
+# Base URLs per flattrade's official python client (github.com/flattrade/pythonAPI):
+#   host      = https://piconnect.flattrade.in/PiConnectAPI/
+#   websocket = wss://piconnect.flattrade.in/PiConnectWSAPI/
+# (was NorenWClientTP / PiConnectWSTp — a legacy path that pattern-matches but
+#  rejects current-gen session tokens with "Invalid Session Key".)
+_REST = "https://piconnect.flattrade.in/PiConnectAPI"
+_WS = "wss://piconnect.flattrade.in/PiConnectWSAPI/"
 _SESSION_FILE = DATA_DIR / "broker_session.json"
 
 # Flattrade sits behind Cloudflare, which 404s/blocks header-less datacentre requests.
