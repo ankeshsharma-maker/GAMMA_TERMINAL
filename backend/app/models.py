@@ -96,6 +96,15 @@ class HedgeIn(BaseModel):
     legs: list[StrategyLeg]
     max_loss: float = Field(..., gt=0, alias="maxLoss")
     max_lots: int = Field(1, ge=1, le=20, alias="maxLots")
+    # optional extra targets/caps on the resulting (post-hedge) position —
+    # all unset by default, i.e. no extra constraint.
+    max_profit_cap: Optional[float] = Field(None, gt=0, alias="maxProfitCap")
+    min_pop: Optional[float] = Field(None, ge=0, le=100, alias="minPop")
+    max_abs_delta: Optional[float] = Field(None, ge=0, alias="maxAbsDelta")
+    max_abs_theta: Optional[float] = Field(None, ge=0, alias="maxAbsTheta")
+    max_abs_vega: Optional[float] = Field(None, ge=0, alias="maxAbsVega")
+    max_abs_gamma: Optional[float] = Field(None, ge=0, alias="maxAbsGamma")
+    max_hedge_iv: Optional[float] = Field(None, gt=0, alias="maxHedgeIv")
 
     model_config = {"populate_by_name": True}
 

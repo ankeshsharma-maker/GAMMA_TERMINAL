@@ -7,6 +7,32 @@ import { PayoffChart } from "./PayoffChart";
 
 const OT: OptionType[] = ["CE", "PE", "FUT"];
 
+/** compact labelled number input for the hedge finder's advanced targets */
+function AdvNum({
+  label,
+  value,
+  onChange,
+  title,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  title?: string;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-1 text-[10px] text-term-dim" title={title}>
+      {label}
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="off"
+        className="w-16 rounded border border-term-border bg-term-bg px-1 py-0.5 text-right text-2xs num text-term-text outline-none focus:border-term-accent"
+      />
+    </label>
+  );
+}
+
 /** one column of the strategy-details table: label on top, value below, bordered */
 function StatCol({ label, value, cls = "" }: { label: string; value: React.ReactNode; cls?: string }) {
   return (
@@ -56,6 +82,24 @@ export function StrategyBuilder() {
   const timer = useRef<number | null>(null);
 
   const [hedgeMax, setHedgeMax] = useState<number>(5000);
+  const [hedgeAdvOpen, setHedgeAdvOpen] = useState(false);
+  const [hedgeAdv, setHedgeAdv] = useState<{
+    maxProfitCap: string;
+    minPop: string;
+    maxAbsDelta: string;
+    maxAbsTheta: string;
+    maxAbsVega: string;
+    maxAbsGamma: string;
+    maxHedgeIv: string;
+  }>({
+    maxProfitCap: "",
+    minPop: "",
+    maxAbsDelta: "",
+    maxAbsTheta: "",
+    maxAbsVega: "",
+    maxAbsGamma: "",
+    maxHedgeIv: "",
+  });
   const [hedge, setHedge] = useState<Awaited<ReturnType<typeof api.findHedge>> | null>(null);
   const [hedgeBusy, setHedgeBusy] = useState(false);
   const [fromBroker, setFromBroker] = useState(false);
@@ -145,6 +189,7 @@ export function StrategyBuilder() {
   const findHedge = async () => {
     if (!legs.length || !expiry || !(hedgeMax > 0)) return;
     setHedgeBusy(true);
+    const n = (v: string) => (v.trim() === "" ? undefined : Number(v));
     try {
       setHedge(
         await api.findHedge({
@@ -152,6 +197,13 @@ export function StrategyBuilder() {
           expiry,
           legs: scaled(legs),
           maxLoss: hedgeMax,
+          maxProfitCap: n(hedgeAdv.maxProfitCap),
+          minPop: n(hedgeAdv.minPop),
+          maxAbsDelta: n(hedgeAdv.maxAbsDelta),
+          maxAbsTheta: n(hedgeAdv.maxAbsTheta),
+          maxAbsVega: n(hedgeAdv.maxAbsVega),
+          maxAbsGamma: n(hedgeAdv.maxAbsGamma),
+          maxHedgeIv: n(hedgeAdv.maxHedgeIv),
         })
       );
     } catch (e: any) {
@@ -415,16 +467,89 @@ export function StrategyBuilder() {
               >
                 {hedgeBusy ? "Searching…" : "Find best hedge"}
               </button>
+              <button
+                onClick={() => setHedgeAdvOpen((o) => !o)}
+                title="Also target Delta / IV / POP / Theta / Vega / Gamma, or cap max profit"
+                className={`btn px-1.5 py-1 text-2xs ${hedgeAdvOpen ? "text-term-accent" : ""}`}
+              >
+                ⚙
+              </button>
             </div>
+
+            {hedgeAdvOpen && (
+              <div className="mt-1.5 grid grid-cols-2 gap-x-2 gap-y-1 rounded border border-term-border bg-term-bg/50 p-1.5">
+                <AdvNum
+                  label="Cap max profit ₹"
+                  value={hedgeAdv.maxProfitCap}
+                  onChange={(v) => setHedgeAdv((a) => ({ ...a, maxProfitCap: v }))}
+                  title="Also sell a wing so max profit doesn't exceed this — not just cap the loss"
+                />
+                <AdvNum
+                  label="Min POP %"
+                  value={hedgeAdv.minPop}
+                  onChange={(v) => setHedgeAdv((a) => ({ ...a, minPop: v }))}
+                />
+                <AdvNum
+                  label="Max |Δ Delta|"
+                  value={hedgeAdv.maxAbsDelta}
+                  onChange={(v) => setHedgeAdv((a) => ({ ...a, maxAbsDelta: v }))}
+                  title="Keep the resulting position within this delta band (0 = delta-neutral)"
+                />
+                <AdvNum
+                  label="Max |Θ| /day"
+                  value={hedgeAdv.maxAbsTheta}
+                  onChange={(v) => setHedgeAdv((a) => ({ ...a, maxAbsTheta: v }))}
+                />
+                <AdvNum
+                  label="Max |Vega|"
+                  value={hedgeAdv.maxAbsVega}
+                  onChange={(v) => setHedgeAdv((a) => ({ ...a, maxAbsVega: v }))}
+                />
+                <AdvNum
+                  label="Max |Γ Gamma|"
+                  value={hedgeAdv.maxAbsGamma}
+                  onChange={(v) => setHedgeAdv((a) => ({ ...a, maxAbsGamma: v }))}
+                />
+                <AdvNum
+                  label="Max hedge IV %"
+                  value={hedgeAdv.maxHedgeIv}
+                  onChange={(v) => setHedgeAdv((a) => ({ ...a, maxHedgeIv: v }))}
+                  title="Skip hedge legs whose own IV is above this (avoid overpaying for inflated IV)"
+                />
+                <button
+                  className="col-span-2 text-left text-[10px] text-term-dim hover:text-down"
+                  onClick={() =>
+                    setHedgeAdv({
+                      maxProfitCap: "",
+                      minPop: "",
+                      maxAbsDelta: "",
+                      maxAbsTheta: "",
+                      maxAbsVega: "",
+                      maxAbsGamma: "",
+                      maxHedgeIv: "",
+                    })
+                  }
+                >
+                  clear targets
+                </button>
+              </div>
+            )}
+
             {hedge && (
               <div className="mt-2 flex flex-col gap-1.5 text-2xs">
-                <div className="text-term-dim">
+                <div className="num text-term-dim">
                   now: max loss{" "}
                   <span className="text-down">
                     {hedge.current.maxLossUnbounded
                       ? "Unlimited"
                       : `₹${nf(Math.abs(hedge.current.maxLoss), 0)}`}
-                  </span>
+                  </span>{" "}
+                  · max profit{" "}
+                  <span className="text-up">
+                    {hedge.current.maxProfitUnbounded ? "Unlimited" : `₹${nf(hedge.current.maxProfit, 0)}`}
+                  </span>{" "}
+                  · Δ {nf(hedge.current.greeks.delta, 1)} · Θ {nf(hedge.current.greeks.theta, 0)} · V{" "}
+                  {nf(hedge.current.greeks.vega, 0)}
                 </div>
                 {hedge.note && <div className="text-amber-400">{hedge.note}</div>}
                 {hedge.suggestions.map((s, i) => (
@@ -439,12 +564,16 @@ export function StrategyBuilder() {
                       </button>
                     </div>
                     <div className="num mt-0.5 text-[10px] text-term-dim">
-                      cost ₹{nf(s.cost, 0)} · max loss{" "}
+                      {s.cost >= 0 ? "cost" : "credit"} ₹{nf(Math.abs(s.cost), 0)} · max loss{" "}
                       <span className="text-down">₹{nf(Math.abs(s.resultMaxLoss), 0)}</span> · keeps{" "}
                       <span className="text-up">
                         {s.resultMaxProfitUnbounded ? "∞" : `₹${nf(s.resultMaxProfit, 0)}`}
                       </span>{" "}
                       · POP {s.resultPop != null ? `${nf(s.resultPop, 0)}%` : "–"}
+                    </div>
+                    <div className="num mt-0.5 text-[10px] text-term-dim">
+                      Δ {nf(s.resultGreeks.delta, 1)} · Γ {nf(s.resultGreeks.gamma, 3)} · Θ{" "}
+                      {nf(s.resultGreeks.theta, 0)} · V {nf(s.resultGreeks.vega, 0)}
                     </div>
                   </div>
                 ))}

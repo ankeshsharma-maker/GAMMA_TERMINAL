@@ -225,6 +225,13 @@ def find_hedge(
     max_loss: float,
     max_lots: int = 1,
     span: int = 16,
+    max_profit_cap: float | None = None,
+    min_pop: float | None = None,
+    max_abs_delta: float | None = None,
+    max_abs_theta: float | None = None,
+    max_abs_vega: float | None = None,
+    max_abs_gamma: float | None = None,
+    max_hedge_iv: float | None = None,
 ) -> dict:
     base = analyze(chain, legs)
     target = abs(float(max_loss))
@@ -234,6 +241,35 @@ def find_hedge(
     # ratio hedge up to that multiple of the position size.
     pos_lots = max((int(l["lots"]) for l in legs), default=1)
     lot_choices = [pos_lots * m for m in range(1, max(1, max_lots) + 1)]
+
+    def _passes_extra(a: dict) -> bool:
+        """Optional extra targets on the resulting (post-hedge) position."""
+        if max_profit_cap is not None:
+            if a["maxProfitUnbounded"] or (a["maxProfit"] or 0) > max_profit_cap + 1:
+                return False
+        if min_pop is not None and (a["pop"] is None or a["pop"] < min_pop):
+            return False
+        g = a["greeks"]
+        if max_abs_delta is not None and abs(g["delta"]) > max_abs_delta:
+            return False
+        if max_abs_theta is not None and abs(g["theta"]) > max_abs_theta:
+            return False
+        if max_abs_vega is not None and abs(g["vega"]) > max_abs_vega:
+            return False
+        if max_abs_gamma is not None and abs(g["gamma"]) > max_abs_gamma:
+            return False
+        return True
+
+    def _leg_iv_ok(*legs_rows) -> bool:
+        """Optional cap on the IV of the option(s) used to build the hedge itself
+        (skip hedges that are only cheap in premium because IV is blown out)."""
+        if max_hedge_iv is None:
+            return True
+        for leg in legs_rows:
+            iv = leg.get("ivCalc") or leg.get("iv")
+            if iv is not None and iv > max_hedge_iv:
+                return False
+        return True
 
     out = {
         "target": -round(target, 2),
@@ -246,14 +282,21 @@ def find_hedge(
             "pop": base["pop"],
             "rr": base["rr"],
             "breakevens": base["breakevens"],
+            "greeks": base["greeks"],
         },
         "suggestions": [],
         "note": "",
     }
 
-    if not base["maxLossUnbounded"] and abs(base["maxLoss"]) <= target + 1:
-        out["note"] = "Position max loss is already within your target — no hedge needed."
+    already_ok = not base["maxLossUnbounded"] and abs(base["maxLoss"]) <= target + 1
+    if already_ok and _passes_extra(base):
+        out["note"] = "Position already meets your target(s) — no hedge needed."
         return out
+
+    # capping max profit needs a SOLD wing (a bought hedge alone can't cap unlimited
+    # upside), so open the search to SELL candidates too when that's requested — the
+    # existing max-loss check below still guards against introducing new naked risk.
+    sides = ("BUY", "SELL") if max_profit_cap is not None else ("BUY",)
 
     cands: list[dict] = []
     for off in range(-span, span + 1):
@@ -262,34 +305,40 @@ def find_hedge(
         if not row:
             continue
         for ot in ("CE", "PE"):
-            leg_px = (row["call"] if ot == "CE" else row["put"])["ltp"]
+            leg_row = row["call"] if ot == "CE" else row["put"]
+            leg_px = leg_row["ltp"]
             if not leg_px or leg_px <= 0:
                 continue
-            for lots in lot_choices:
-                hedge = {"optionType": ot, "strike": strike, "side": "BUY", "lots": lots}
-                a = analyze(chain, legs + [hedge])
-                if a["maxLossUnbounded"] or abs(a["maxLoss"]) > target + 1:
-                    continue
-                cost = round(a["netPremium"] - base["netPremium"], 0)  # extra debit
-                profit_give_up = round((base["maxProfit"] or 0) - (a["maxProfit"] or 0), 0)
-                cands.append(
-                    {
-                        "leg": hedge,
-                        "label": f"BUY {lots}× {int(strike)} {ot}",
-                        "entry": round(leg_px, 2),
-                        "cost": cost,
-                        "profitGiveUp": profit_give_up,
-                        "resultMaxLoss": a["maxLoss"],
-                        "resultMaxProfit": a["maxProfit"],
-                        "resultMaxProfitUnbounded": a["maxProfitUnbounded"],
-                        "resultPop": a["pop"],
-                        "resultRR": a["rr"],
-                        "resultBreakevens": a["breakevens"],
-                        "resultGreeks": a["greeks"],
-                        "resultMargin": a["margin"]["estimate"],
-                    }
-                )
-                break  # cheapest (fewest lots) that works for this strike/side
+            for side in sides:
+                for lots in lot_choices:
+                    hedge = {"optionType": ot, "strike": strike, "side": side, "lots": lots}
+                    a = analyze(chain, legs + [hedge])
+                    if a["maxLossUnbounded"] or abs(a["maxLoss"]) > target + 1:
+                        continue
+                    if not _passes_extra(a):
+                        continue
+                    if not _leg_iv_ok(leg_row):
+                        continue
+                    cost = round(a["netPremium"] - base["netPremium"], 0)  # extra debit (credit if -ve)
+                    profit_give_up = round((base["maxProfit"] or 0) - (a["maxProfit"] or 0), 0)
+                    cands.append(
+                        {
+                            "leg": hedge,
+                            "label": f"{side} {lots}× {int(strike)} {ot}",
+                            "entry": round(leg_px, 2),
+                            "cost": cost,
+                            "profitGiveUp": profit_give_up,
+                            "resultMaxLoss": a["maxLoss"],
+                            "resultMaxProfit": a["maxProfit"],
+                            "resultMaxProfitUnbounded": a["maxProfitUnbounded"],
+                            "resultPop": a["pop"],
+                            "resultRR": a["rr"],
+                            "resultBreakevens": a["breakevens"],
+                            "resultGreeks": a["greeks"],
+                            "resultMargin": a["margin"]["estimate"],
+                        }
+                    )
+                    break  # cheapest (fewest lots) that works for this strike/side/direction
 
     # ---- pair pass: buy a CE wing + a PE wing (two-sided risk) ----
     if not cands and base["maxLossUnbounded"]:
@@ -311,6 +360,10 @@ def find_hedge(
                     ]
                     a = analyze(chain, legs + pair)
                     if a["maxLossUnbounded"] or abs(a["maxLoss"]) > target + 1:
+                        continue
+                    if not _passes_extra(a):
+                        continue
+                    if not _leg_iv_ok(cr["call"], pr["put"]):
                         continue
                     cost = round(a["netPremium"] - base["netPremium"], 0)
                     cands.append(
@@ -334,8 +387,23 @@ def find_hedge(
                     )
                     break
 
-    # rank: cheapest hedge, then least profit given up, then best POP
-    cands.sort(key=lambda c: (c["cost"], c["profitGiveUp"], -(c["resultPop"] or 0)))
+    # rank: cheapest hedge, then least profit given up, then best POP, then (if a
+    # delta target was set) closer to it. When capping max profit, lead instead
+    # with "lands closest to the cap" -- otherwise cost-ascending would surface
+    # the most aggressive deep-ITM short (biggest credit) instead of a sane one.
+    def _rank(c: dict) -> tuple:
+        base_key = (
+            c["cost"],
+            c["profitGiveUp"],
+            -(c["resultPop"] or 0),
+            abs(c["resultGreeks"]["delta"]) if max_abs_delta is not None else 0,
+        )
+        if max_profit_cap is not None:
+            closeness = abs(max_profit_cap - (c["resultMaxProfit"] or 0))
+            return (closeness, *base_key)
+        return base_key
+
+    cands.sort(key=_rank)
     seen: set = set()
     for c in cands:
         legk = c["leg"] if isinstance(c["leg"], list) else [c["leg"]]
@@ -348,8 +416,15 @@ def find_hedge(
             break
 
     if not out["suggestions"]:
+        extras = any(
+            v is not None
+            for v in (max_profit_cap, min_pop, max_abs_delta, max_abs_theta, max_abs_vega, max_abs_gamma, max_hedge_iv)
+        )
         out["note"] = (
-            "Couldn't cap the loss at that level with a simple bought hedge. "
+            "Couldn't find a hedge that meets all your targets at once "
+            "(loss cap + the extra Greeks/POP/profit constraints). Loosen one and retry."
+            if extras
+            else "Couldn't cap the loss at that level with a simple bought hedge. "
             "Raise the target amount or reduce position size."
         )
     return out

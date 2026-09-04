@@ -489,7 +489,17 @@ async def strategy_hedge(body: HedgeIn):
         raise HTTPException(status_code=422, detail="at least one leg required")
     chain = await _ensure_chain(body.symbol, body.expiry)
     return strat.find_hedge(
-        chain, [leg.dump() for leg in body.legs], body.max_loss, body.max_lots
+        chain,
+        [leg.dump() for leg in body.legs],
+        body.max_loss,
+        body.max_lots,
+        max_profit_cap=body.max_profit_cap,
+        min_pop=body.min_pop,
+        max_abs_delta=body.max_abs_delta,
+        max_abs_theta=body.max_abs_theta,
+        max_abs_vega=body.max_abs_vega,
+        max_abs_gamma=body.max_abs_gamma,
+        max_hedge_iv=body.max_hedge_iv,
     )
 
 

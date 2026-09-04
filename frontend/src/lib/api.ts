@@ -219,6 +219,13 @@ export const api = {
     legs: StrategyLeg[];
     maxLoss: number;
     maxLots?: number;
+    maxProfitCap?: number;
+    minPop?: number;
+    maxAbsDelta?: number;
+    maxAbsTheta?: number;
+    maxAbsVega?: number;
+    maxAbsGamma?: number;
+    maxHedgeIv?: number;
   }) =>
     j<{
       target: number;
@@ -231,6 +238,7 @@ export const api = {
         pop: number | null;
         rr: number | null;
         breakevens: number[];
+        greeks: Record<string, number>;
       };
       suggestions: {
         leg: StrategyLeg | StrategyLeg[];
