@@ -5,6 +5,7 @@ import { Watchlist } from "./components/Watchlist";
 import { ExpiryTabs } from "./components/ExpiryTabs";
 import { OptionChain } from "./components/OptionChain";
 import { OIProfile } from "./components/OIProfile";
+import { ScripView } from "./components/ScripView";
 import { Positions } from "./components/Positions";
 import { ScannerView } from "./components/ScannerView";
 import { Alerts } from "./components/Alerts";
@@ -67,7 +68,7 @@ export default function App() {
     init();
   }, [init]);
 
-  const wide = view === "builder" || view === "positions";
+  const wide = view === "builder" || view === "positions" || view === "scrip";
   const [leftW, setLeftW] = useState(() => readNum(LS.left, 190));
   const [rightW, setRightW] = useState(() => readNum(LS.right, view === "scalper" ? 360 : 300));
   const [zoom, setZoom] = useState(() => readNum(LS.zoom, 100));
@@ -146,6 +147,7 @@ export default function App() {
             </>
           )}
           {view === "oiprofile" && <OIProfile />}
+          {view === "scrip" && <ScripView />}
           {view === "scanner" && <ScannerView />}
           {(view === "chart" || view === "scalper") && <Chart />}
           {view === "builder" && <StrategyBuilder />}

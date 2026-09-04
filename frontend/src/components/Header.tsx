@@ -19,6 +19,7 @@ function ViewToggle() {
       {(
         [
           ["chain", "chain"],
+          ["scrip", "scrip"],
           ["oiprofile", "OI"],
           ["scanner", "scanner"],
           ["chart", "chart"],

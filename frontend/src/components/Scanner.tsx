@@ -76,8 +76,12 @@ const TD = ({
 }) => <td className={`border-b border-r border-term-border/60 px-2 py-2 ${cls}`}>{children}</td>;
 
 export function Scanner() {
-  const { scan, selectSymbol } = useStore();
+  const { scan, selectSymbol, setView } = useStore();
   const rows = [...scan].sort((a, b) => b.score - a.score);
+  const openScrip = (sym: string) => {
+    selectSymbol(sym, true);
+    setView("scrip");
+  };
 
   return (
     <div className="min-h-0 flex-1 overflow-auto p-2">
@@ -111,7 +115,8 @@ export function Scanner() {
           {rows.map((r, i) => (
             <tr
               key={r.symbol}
-              onClick={() => selectSymbol(r.symbol)}
+              onClick={() => openScrip(r.symbol)}
+              title="Open scrip dashboard (chart + OI + chain)"
               className={`cursor-pointer hover:bg-term-panel ${i % 2 ? "bg-term-panel2/40" : ""}`}
             >
               <TD cls="font-semibold text-sm">{r.symbol}</TD>

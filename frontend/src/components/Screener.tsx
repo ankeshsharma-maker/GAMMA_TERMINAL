@@ -91,7 +91,11 @@ function Num({
 }
 
 export function Screener() {
-  const { screener, screenerProgress, screenerPresets, selectSymbol } = useStore();
+  const { screener, screenerProgress, screenerPresets, selectSymbol, setView } = useStore();
+  const openScrip = (sym: string) => {
+    selectSymbol(sym, true);
+    setView("scrip");
+  };
   const [spec, setSpec] = useState<Spec>({ sortBy: "ivRank", sortDir: "desc" });
 
   const patch = (p: Partial<Spec>) => setSpec((s) => ({ ...s, ...p }));
@@ -212,7 +216,8 @@ export function Screener() {
             {rows.map((r) => (
               <tr
                 key={r.symbol}
-                onClick={() => selectSymbol(r.symbol)}
+                onClick={() => openScrip(r.symbol)}
+                title="Open scrip dashboard (chart + OI + chain)"
                 className="cursor-pointer border-b border-term-border/40 hover:bg-term-panel/60"
               >
                 <td className="px-2 py-1.5 font-semibold">{r.symbol}</td>

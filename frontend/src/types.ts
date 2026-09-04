@@ -212,7 +212,15 @@ export interface Alert {
   score: number;
 }
 
-export type View = "chain" | "oiprofile" | "scanner" | "chart" | "builder" | "positions" | "scalper";
+export type View =
+  | "chain"
+  | "scrip"
+  | "oiprofile"
+  | "scanner"
+  | "chart"
+  | "builder"
+  | "positions"
+  | "scalper";
 
 export type OptionType = "CE" | "PE" | "FUT";
 export type Side = "BUY" | "SELL";
