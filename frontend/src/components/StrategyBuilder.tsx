@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
-import { compact, nf, signColor, sk } from "../lib/format";
+import { nf, signColor, sk } from "../lib/format";
 import type { Analysis, OptionType, SavedStrategy, StrategyLeg } from "../types";
 import { PayoffChart } from "./PayoffChart";
 
@@ -463,17 +463,17 @@ export function StrategyBuilder() {
                 <tbody>
                   <StatRow
                     label="Net Premium"
-                    value={`${compact(Math.abs(analysis.netPremium))} ${analysis.netPremiumType}`}
+                    value={`₹${nf(Math.abs(analysis.netPremium), 0)} ${analysis.netPremiumType}`}
                     cls={analysis.netPremiumType === "CREDIT" ? "text-up" : "text-down"}
                   />
                   <StatRow
                     label="Total Profit (max)"
-                    value={analysis.maxProfitUnbounded ? "Unlimited" : compact(analysis.maxProfit)}
+                    value={analysis.maxProfitUnbounded ? "Unlimited" : `₹${nf(analysis.maxProfit, 0)}`}
                     cls="text-up"
                   />
                   <StatRow
                     label="Total Loss (max)"
-                    value={analysis.maxLossUnbounded ? "Unlimited" : compact(analysis.maxLoss)}
+                    value={analysis.maxLossUnbounded ? "Unlimited" : `₹${nf(analysis.maxLoss, 0)}`}
                     cls="text-down"
                   />
                   <StatRow
@@ -482,7 +482,7 @@ export function StrategyBuilder() {
                   />
                   <StatRow label="POP" value={analysis.pop != null ? `${nf(analysis.pop, 1)}%` : "–"} />
                   <StatRow label="R : R" value={analysis.rr != null ? `1:${nf(analysis.rr, 2)}` : "–"} />
-                  <StatRow label="Margin est." value={`~${compact(analysis.margin.estimate)}`} />
+                  <StatRow label="Margin est." value={`~₹${nf(analysis.margin.estimate, 0)}`} />
                   <StatRow
                     label="Δ Delta"
                     value={nf(analysis.greeks.delta, 1)}
