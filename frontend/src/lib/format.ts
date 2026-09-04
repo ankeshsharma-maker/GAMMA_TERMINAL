@@ -3,6 +3,10 @@ export const nf = (n: number | null | undefined, d = 2): string =>
     ? "–"
     : n.toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d });
 
+/** always-lakhs formatter (unlike compact(), never switches to K/Cr) */
+export const lakhs = (n: number | null | undefined): string =>
+  n === null || n === undefined || Number.isNaN(n) ? "–" : `${(n / 1e5).toFixed(2)}L`;
+
 export const compact = (n: number | null | undefined): string => {
   if (n === null || n === undefined || Number.isNaN(n)) return "–";
   const abs = Math.abs(n);

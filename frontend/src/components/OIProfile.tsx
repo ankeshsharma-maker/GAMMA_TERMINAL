@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
-import { compact, nf, sk } from "../lib/format";
+import { compact, lakhs, nf, sk } from "../lib/format";
 import type { ChainRow } from "../types";
 
 type Metric = "oi" | "chg" | "combined";
@@ -680,7 +680,8 @@ export function OIProfile() {
       {/* legend / totals */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-term-border bg-term-panel px-3 py-1 text-[10px]">
         <span className="text-term-dim">
-          <span className="font-semibold text-down">Call OI</span> {compact(chain.totals.ceOI)} ·{" "}
+          <span className="font-semibold text-down">Call OI</span>{" "}
+          <span className="num">{lakhs(chain.totals.ceOI)}</span> ·{" "}
           <Sw c={addGrad(CALL_ADD)} /> added <span style={{ color: CALL_ADD }}>+{compact(flow.ceAdd)}</span> ·{" "}
           <Sw c={CALL_CUT} /> reduced <span style={{ color: CALL_CUT }}>{compact(flow.ceCut)}</span>
         </span>
@@ -688,7 +689,8 @@ export function OIProfile() {
           Resistance {sk(stats.resistance)} · Floor {sk(stats.floor)} · ATM {sk(chain.atmStrike)}
         </span>
         <span className="text-term-dim">
-          <span className="font-semibold text-up">Put OI</span> {compact(chain.totals.peOI)} ·{" "}
+          <span className="font-semibold text-up">Put OI</span>{" "}
+          <span className="num">{lakhs(chain.totals.peOI)}</span> ·{" "}
           <Sw c={addGrad(PUT_ADD)} /> added <span style={{ color: PUT_ADD }}>+{compact(flow.peAdd)}</span> ·{" "}
           <Sw c={PUT_CUT} /> reduced <span style={{ color: PUT_CUT }}>{compact(flow.peCut)}</span>
         </span>

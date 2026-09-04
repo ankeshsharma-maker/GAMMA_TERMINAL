@@ -361,4 +361,20 @@ export const api = {
   brokerPositions: () => j<{ positions: any[] }>("/api/broker/positions"),
   brokerHoldings: () => j<{ holdings: any[] }>("/api/broker/holdings"),
   brokerOrders: () => j<{ orders: any[] }>("/api/broker/orders"),
+  brokerSquareOff: (body: { tsym: string; exch?: string; qty: number; prd?: string }) =>
+    j<{ ok: boolean; orderId?: string; raw?: any }>("/api/broker/square-off", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  brokerOrderTsym: (body: {
+    tsym: string;
+    exch?: string;
+    side: "BUY" | "SELL";
+    lots?: number;
+    prd?: string;
+  }) =>
+    j<{ ok: boolean; orderId?: string; qty: number; raw?: any }>("/api/broker/order-tsym", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };

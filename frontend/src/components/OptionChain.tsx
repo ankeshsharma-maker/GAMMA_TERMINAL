@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useStore } from "../store";
-import { compact, nf, signColor, sk } from "../lib/format";
+import { compact, lakhs, nf, signColor, sk } from "../lib/format";
 import type { ChainRow, Leg, UnusualKind } from "../types";
 import { OrderTicket } from "./OrderTicket";
 
@@ -664,14 +664,20 @@ export function OptionChain() {
                 colSpan={cols.length + 1}
                 className="border-b-2 border-up/50 bg-up/15 py-1 text-center text-[11px] font-bold uppercase tracking-wider text-up"
               >
-                Calls ▸
+                Calls ▸{" "}
+                <span className="num text-[9px] font-semibold normal-case text-up/80">
+                  Total OI {lakhs(chain.totals.ceOI)}
+                </span>
               </th>
               <th className="border-x-2 border-term-border bg-term-bg" />
               <th
                 colSpan={cols.length + 1}
                 className="border-b-2 border-down/50 bg-down/15 py-1 text-center text-[11px] font-bold uppercase tracking-wider text-down"
               >
-                ◂ Puts
+                ◂ Puts{" "}
+                <span className="num text-[9px] font-semibold normal-case text-down/80">
+                  Total OI {lakhs(chain.totals.peOI)}
+                </span>
               </th>
             </tr>
             <tr>

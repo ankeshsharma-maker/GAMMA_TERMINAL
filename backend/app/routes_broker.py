@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
 from .brokers import get_broker
+from .store import store
 
 router = APIRouter(prefix="/api/broker")
 
@@ -253,6 +254,85 @@ async def positions():
         return {"positions": await b.positions()}
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
+
+
+@router.post("/square-off")
+async def square_off(body: dict):
+    """Flatten one live position with a single opposite-side MARKET order.
+    Body: {tsym, exch, qty (signed net qty from PositionBook), prd}."""
+    from .brokers.flattrade import parse_noren_tsym
+
+    b = _require_auth()
+    d = body or {}
+    tsym = d.get("tsym")
+    exch = d.get("exch") or "NFO"
+    prd = d.get("prd") or "M"
+    try:
+        net_qty = float(d.get("qty"))
+    except (TypeError, ValueError):
+        net_qty = 0.0
+    if not tsym or not net_qty:
+        raise HTTPException(status_code=422, detail="tsym and a non-zero qty are required")
+
+    side = "SELL" if net_qty > 0 else "BUY"
+    qty = int(round(abs(net_qty)))
+    parsed = parse_noren_tsym(tsym) or {}
+    log_base = {
+        "mode": "live", "tsym": tsym, "side": side, "qty": qty,
+        "symbol": parsed.get("symbol"), "strike": parsed.get("strike"),
+        "optionType": parsed.get("optionType"), "note": "square-off",
+    }
+    try:
+        res = await b.place_order(
+            exch=exch, tsym=tsym, qty=qty, side=side,
+            order_type="MKT", price=0.0, product=prd,
+        )
+    except Exception as exc:  # noqa: BLE001
+        store.log_live_order({**log_base, "status": "REJECTED", "error": str(exc)})
+        raise HTTPException(status_code=502, detail=f"broker rejected: {exc}")
+    store.log_live_order({**log_base, "status": "PLACED", "orderId": res.get("orderId")})
+    return res
+
+
+@router.post("/order-tsym")
+async def order_tsym(body: dict):
+    """Place a live order directly against a known Noren tsym (the Broker
+    Positions B/S quick-trade buttons). `lots` (default 1) x that symbol's
+    configured lot size -> qty; no strike/expiry resolution needed since the
+    tsym is already known from the open position."""
+    from .brokers.flattrade import parse_noren_tsym
+    from .processing import lot_size
+
+    b = _require_auth()
+    d = body or {}
+    tsym = d.get("tsym")
+    exch = d.get("exch") or "NFO"
+    prd = d.get("prd") or "M"
+    side = str(d.get("side") or "").upper()
+    try:
+        lots = max(1, int(d.get("lots") or 1))
+    except (TypeError, ValueError):
+        lots = 1
+    if not tsym or side not in ("BUY", "SELL"):
+        raise HTTPException(status_code=422, detail="tsym and side (BUY/SELL) are required")
+
+    parsed = parse_noren_tsym(tsym) or {}
+    qty = lots * (lot_size(parsed.get("symbol") or "") or 1)
+    log_base = {
+        "mode": "live", "tsym": tsym, "side": side, "qty": qty,
+        "symbol": parsed.get("symbol"), "strike": parsed.get("strike"),
+        "optionType": parsed.get("optionType"),
+    }
+    try:
+        res = await b.place_order(
+            exch=exch, tsym=tsym, qty=qty, side=side,
+            order_type="MKT", price=0.0, product=prd,
+        )
+    except Exception as exc:  # noqa: BLE001
+        store.log_live_order({**log_base, "status": "REJECTED", "error": str(exc)})
+        raise HTTPException(status_code=502, detail=f"broker rejected: {exc}")
+    store.log_live_order({**log_base, "status": "PLACED", "orderId": res.get("orderId")})
+    return {**res, "qty": qty}
 
 
 @router.get("/orders")
