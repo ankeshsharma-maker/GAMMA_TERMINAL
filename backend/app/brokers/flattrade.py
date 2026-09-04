@@ -410,6 +410,36 @@ class FlattradeBroker:
             log.debug("resolve_nfo search failed for %s: %s", tsym, exc)
         return {"tsym": tsym, "token": token, "lotSize": lot, "confirmed": token is not None}
 
+    def build_order_payload(
+        self,
+        *,
+        exch: str,
+        tsym: str,
+        qty: int,
+        side: str,
+        order_type: str = "MKT",
+        price: float = 0.0,
+        product: str = "M",
+        validity: str = "DAY",
+    ) -> dict:
+        """The exact `jData` object PlaceOrder sends. Field set + order matches
+        Flattrade support's canonical example."""
+        prctyp = {"MKT": "MKT", "LMT": "LMT", "SL": "SL-LMT", "SL-MKT": "SL-MKT"}.get(
+            order_type.upper(), "MKT"
+        )
+        return {
+            "uid": self.client_id,
+            "actid": self.client_id,
+            "exch": exch,
+            "tsym": tsym,
+            "qty": str(int(qty)),
+            "prc": str(price if prctyp != "MKT" else 0),
+            "prd": product,
+            "trantype": "B" if side.upper() == "BUY" else "S",
+            "prctyp": prctyp,
+            "ret": validity,
+        }
+
     async def place_order(
         self,
         *,
@@ -422,21 +452,11 @@ class FlattradeBroker:
         product: str = "M",
         validity: str = "DAY",
     ) -> dict:
-        prctyp = {"MKT": "MKT", "LMT": "LMT", "SL": "SL-LMT", "SL-MKT": "SL-MKT"}.get(
-            order_type.upper(), "MKT"
+        payload = self.build_order_payload(
+            exch=exch, tsym=tsym, qty=qty, side=side, order_type=order_type,
+            price=price, product=product, validity=validity,
         )
-        # field set + order matches Flattrade support's canonical PlaceOrder example
-        payload = {
-            "actid": self.client_id,
-            "exch": exch,
-            "tsym": tsym,
-            "qty": str(int(qty)),
-            "prc": str(price if prctyp != "MKT" else 0),
-            "prd": product,
-            "trantype": "B" if side.upper() == "BUY" else "S",
-            "prctyp": prctyp,
-            "ret": validity,
-        }
+        payload.pop("uid", None)  # _post adds uid itself
         out = await self._post("PlaceOrder", payload)
         if isinstance(out, dict) and out.get("stat") == "Ok":
             return {"ok": True, "orderId": out.get("norenordno"), "raw": out}

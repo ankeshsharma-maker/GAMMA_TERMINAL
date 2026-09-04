@@ -134,6 +134,59 @@ def last_request(
     return _unmask(data) if endpoint else {k: _unmask(v) for k, v in data.items()}
 
 
+@router.get("/build-order")
+async def build_order(
+    request: Request,
+    symbol: str = Query("NIFTY"),
+    strike: float = Query(...),
+    ot: str = Query("CE", description="CE or PE"),
+    side: str = Query("BUY", description="BUY or SELL"),
+    lots: int = Query(1, ge=1),
+    expiry: str = Query("", description="DD-Mon-YYYY; blank = nearest"),
+    product: str = Query("NRML", description="NRML or MIS"),
+    order_type: str = Query("MKT", description="MKT or LMT"),
+    price: float = Query(0.0),
+):
+    """Build the *exact* PlaceOrder payload GammaTerminal would send — without
+    sending it. Use this to give Flattrade support the request format when a real
+    LIVE order can't be punched. `jKey` is masked unless the call is made directly
+    on the server (see /last-request)."""
+    from .processing import lot_size
+    from .store import store
+
+    b = _require_auth()
+    exp = expiry or store.nearest_expiry(symbol.upper()) or ""
+    if not exp:
+        raise HTTPException(status_code=400, detail=f"no expiry known for {symbol}; pass ?expiry=")
+    info = await b.resolve_nfo(symbol.upper(), exp, strike, ot)
+    lot = info.get("lotSize") or lot_size(symbol)
+    qty = lots * lot
+    jdata_obj = b.build_order_payload(
+        exch="NFO", tsym=info["tsym"], qty=qty, side=side, order_type=order_type,
+        price=price, product="I" if product.upper() == "MIS" else "M",
+    )
+    jdata = _json_compact(jdata_obj)
+    local = "x-forwarded-for" not in {k.lower() for k in request.headers}
+    jkey = b._token if (local and b._token) else f"<{len(b._token or '')}-char token, masked>"
+    return {
+        "method": "POST",
+        "url": "https://piconnect.flattrade.in/NorenWClientTP/PlaceOrder",
+        "contentType": "application/x-www-form-urlencoded",
+        "jData": jdata,
+        "requestBody": f"jData={jdata}&jKey={jkey}",
+        "resolved": info,
+        "lotSize": lot,
+        "qty": qty,
+        "note": "This is the request format only — nothing was sent to Flattrade.",
+    }
+
+
+def _json_compact(obj: dict) -> str:
+    import json as _j
+
+    return _j.dumps(obj, separators=(",", ":"))
+
+
 @router.post("/refresh")
 async def refresh():
     """Reload the saved session, re-validate the token, and reconnect the feed."""
