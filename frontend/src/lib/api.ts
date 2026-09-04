@@ -27,10 +27,11 @@ export const api = {
   symbols: () =>
     j<{ indices: string[]; defaults: string[]; fo?: string[]; watchlist: string[] }>("/api/symbols"),
 
-  indicesHeader: () =>
+  indicesHeader: (symbols?: string[]) =>
     j<{ indices: { symbol: string; spot: number | null; chgPct: number | null }[] }>(
-      "/api/indices/header"
+      `/api/indices/header?symbols=${encodeURIComponent((symbols ?? []).join(","))}`
     ),
+  indicesHeaderOptions: () => j<{ options: string[] }>("/api/indices/header/options"),
 
   chain: (symbol: string, expiry?: string) =>
     j<Chain>(

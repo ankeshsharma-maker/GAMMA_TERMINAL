@@ -65,32 +65,49 @@ def expiries(symbol: str):
     return {"symbol": symbol.upper(), "expiries": store.expiries.get(symbol.upper(), [])}
 
 
-_HDR_NSE_NAME = {"NIFTY": "NIFTY 50", "BANKNIFTY": "NIFTY BANK"}
+_HDR_NSE_NAME = {
+    "NIFTY": "NIFTY 50",
+    "BANKNIFTY": "NIFTY BANK",
+    "FINNIFTY": "NIFTY FIN SERVICE",
+    "MIDCPNIFTY": "NIFTY MID SELECT",
+    "NIFTYNXT50": "NIFTY NEXT 50",
+}
+_HDR_AVAILABLE = list(_HDR_NSE_NAME) + ["INDIA VIX"]
 
 
-@router.get("/indices/header")
-def indices_header():
-    """Compact always-on header ticker strip: NIFTY, BANKNIFTY, INDIA VIX."""
-    out = []
-    for sym in ("NIFTY", "BANKNIFTY"):
-        chain = store.get_chain(sym)
-        live = store.live_spot.get(sym)
-        idx = store.index_quotes.get(_HDR_NSE_NAME[sym])
+def _resolve_header_index(sym: str) -> dict:
+    su = sym.strip().upper()
+    if su in _HDR_NSE_NAME:
+        chain = store.get_chain(su)
+        live = store.live_spot.get(su)
+        idx = store.index_quotes.get(_HDR_NSE_NAME[su])
         spot = (
             (live.get("ltp") if live else None)
             or (chain.get("spot") if chain else None)
             or (idx.get("last") if idx else None)
         )
         chg = (live.get("chgPct") if live else None) or (idx.get("pChange") if idx else None)
-        out.append({"symbol": sym, "spot": spot, "chgPct": chg})
-
-    vix = None
+        return {"symbol": su, "spot": spot, "chgPct": chg}
+    # anything else (INDIA VIX, SENSEX, BANKEX, ...): fuzzy-match the NSE index catalog
+    needle = su.replace(" ", "")
     for name, q in store.index_quotes.items():
-        if "VIX" in name.upper():
-            vix = {"symbol": "INDIA VIX", "spot": q.get("last"), "chgPct": q.get("pChange")}
-            break
-    out.append(vix or {"symbol": "INDIA VIX", "spot": None, "chgPct": None})
-    return {"indices": out}
+        if needle in name.upper().replace(" ", ""):
+            return {"symbol": su, "spot": q.get("last"), "chgPct": q.get("pChange")}
+    return {"symbol": su, "spot": None, "chgPct": None}
+
+
+@router.get("/indices/header")
+def indices_header(symbols: str = Query("NIFTY,BANKNIFTY,INDIA VIX")):
+    """Compact always-on header ticker strip. `?symbols=` = comma-separated list,
+    up to 6, from `/api/indices/header/options`."""
+    syms = [s.strip() for s in symbols.split(",") if s.strip()][:6] or ["NIFTY", "BANKNIFTY", "INDIA VIX"]
+    return {"indices": [_resolve_header_index(s) for s in syms]}
+
+
+@router.get("/indices/header/options")
+def indices_header_options():
+    """Every index the header ticker can show."""
+    return {"options": _HDR_AVAILABLE}
 
 
 @router.get("/symbols/search")

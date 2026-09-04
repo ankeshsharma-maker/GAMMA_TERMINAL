@@ -45,24 +45,58 @@ function ViewToggle() {
   );
 }
 
-const HDR_LABEL: Record<string, string> = { NIFTY: "NIFTY50", BANKNIFTY: "BANKNIFTY", "INDIA VIX": "INDIA VIX" };
+const HDR_LABEL: Record<string, string> = { NIFTY: "NIFTY50", BANKNIFTY: "BANKNIFTY" };
+const HDR_DEFAULT = ["NIFTY", "BANKNIFTY", "INDIA VIX"];
+const HDR_LS_KEY = "hdrIndices";
+const HDR_MAX = 6;
+
+function loadHdrSymbols(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HDR_LS_KEY) || "null");
+    return Array.isArray(raw) && raw.length ? raw : HDR_DEFAULT;
+  } catch {
+    return HDR_DEFAULT;
+  }
+}
 
 function HeaderIndices() {
+  const [symbols, setSymbols] = useState<string[]>(loadHdrSymbols);
   const [rows, setRows] = useState<{ symbol: string; spot: number | null; chgPct: number | null }[]>([]);
+  const [options, setOptions] = useState<string[]>([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    api.indicesHeaderOptions().then((d) => setOptions(d.options), () => {});
+  }, []);
+
   useEffect(() => {
     let alive = true;
     const load = () =>
-      api.indicesHeader().then((d) => alive && setRows(d.indices), () => {});
+      api.indicesHeader(symbols).then((d) => alive && setRows(d.indices), () => {});
     load();
     const t = setInterval(load, 10000);
     return () => {
       alive = false;
       clearInterval(t);
     };
-  }, []);
-  if (rows.length === 0) return null;
+  }, [symbols]);
+
+  const setAndPersist = (next: string[]) => {
+    setSymbols(next);
+    try {
+      localStorage.setItem(HDR_LS_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+  };
+  const toggle = (sym: string) => {
+    const has = symbols.includes(sym);
+    if (has) setAndPersist(symbols.filter((s) => s !== sym));
+    else if (symbols.length < HDR_MAX) setAndPersist([...symbols, sym]);
+  };
+
   return (
-    <div className="flex items-center gap-2">
+    <div className="relative flex items-center gap-1.5">
       {rows.map((r) => (
         <div
           key={r.symbol}
@@ -81,6 +115,43 @@ function HeaderIndices() {
           )}
         </div>
       ))}
+
+      <button
+        onClick={() => setOpen((o) => !o)}
+        title="Choose which indices show here"
+        className={`rounded border px-1 py-0.5 text-[10px] ${
+          open ? "border-term-accent text-term-accent" : "border-term-border text-term-dim hover:text-term-text"
+        }`}
+      >
+        ⚙
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1 w-48 rounded-md border border-term-border bg-term-panel p-2 shadow-xl">
+          <div className="mb-1.5 text-[10px] uppercase tracking-wide text-term-dim">
+            Header indices (max {HDR_MAX})
+          </div>
+          <div className="flex flex-col gap-1">
+            {options.map((o) => (
+              <label
+                key={o}
+                className="flex items-center gap-1.5 rounded px-1 py-0.5 text-2xs hover:bg-term-border/50"
+              >
+                <input
+                  type="checkbox"
+                  checked={symbols.includes(o)}
+                  onChange={() => toggle(o)}
+                  disabled={!symbols.includes(o) && symbols.length >= HDR_MAX}
+                />
+                {HDR_LABEL[o] ?? o}
+              </label>
+            ))}
+          </div>
+          <button onClick={() => setOpen(false)} className="btn mt-2 w-full text-2xs">
+            Done
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -381,7 +452,6 @@ export function Header() {
       {chain ? (
         <>
           <div className="flex items-baseline gap-2">
-            <span className="text-base font-semibold tracking-tight">{chain.symbol}</span>
             <span className="num text-lg font-semibold">
               {nf(liveFresh ? live!.ltp : chain.spot)}
             </span>

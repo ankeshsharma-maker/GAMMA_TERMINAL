@@ -7,13 +7,13 @@ import { PayoffChart } from "./PayoffChart";
 
 const OT: OptionType[] = ["CE", "PE", "FUT"];
 
-/** one row of the strategy-details table: label left, value right, bordered */
-function StatRow({ label, value, cls = "" }: { label: string; value: React.ReactNode; cls?: string }) {
+/** one column of the strategy-details table: label on top, value below, bordered */
+function StatCol({ label, value, cls = "" }: { label: string; value: React.ReactNode; cls?: string }) {
   return (
-    <tr className="border-b border-term-border/50 last:border-b-0">
-      <td className="border-r border-term-border/50 px-3 py-1.5 text-left text-term-dim">{label}</td>
-      <td className={`num px-3 py-1.5 text-right font-semibold ${cls}`}>{value}</td>
-    </tr>
+    <td className="border-r border-term-border/60 px-3 py-1.5 text-left last:border-r-0">
+      <div className="text-[9px] uppercase tracking-wide text-term-dim">{label}</div>
+      <div className={`num text-sm font-semibold ${cls}`}>{value}</div>
+    </td>
   );
 }
 
@@ -455,81 +455,84 @@ export function StrategyBuilder() {
 
       {/* ---- payoff + metrics ---- */}
       <div className="flex min-h-0 flex-col">
-        <div className="flex min-h-0 flex-1">
-          {/* one row per item */}
-          <div className="w-56 shrink-0 overflow-y-auto border-r border-term-border bg-term-panel">
-            {analysis ? (
+        <div className="border-b border-term-border bg-term-panel">
+          {analysis ? (
+            <div className="overflow-x-auto">
               <table className="w-full border-separate border-spacing-0 text-xs">
                 <tbody>
-                  <StatRow
-                    label="Net Premium"
-                    value={`₹${nf(Math.abs(analysis.netPremium), 0)} ${analysis.netPremiumType}`}
-                    cls={analysis.netPremiumType === "CREDIT" ? "text-up" : "text-down"}
-                  />
-                  <StatRow
-                    label="Total Profit (max)"
-                    value={analysis.maxProfitUnbounded ? "Unlimited" : `₹${nf(analysis.maxProfit, 0)}`}
-                    cls="text-up"
-                  />
-                  <StatRow
-                    label="Total Loss (max)"
-                    value={analysis.maxLossUnbounded ? "Unlimited" : `₹${nf(analysis.maxLoss, 0)}`}
-                    cls="text-down"
-                  />
-                  <StatRow
-                    label="Breakeven"
-                    value={analysis.breakevens.map((b) => nf(b, 0)).join(" / ") || "–"}
-                  />
-                  <StatRow label="POP" value={analysis.pop != null ? `${nf(analysis.pop, 1)}%` : "–"} />
-                  <StatRow label="R : R" value={analysis.rr != null ? `1:${nf(analysis.rr, 2)}` : "–"} />
-                  <StatRow label="Margin est." value={`~₹${nf(analysis.margin.estimate, 0)}`} />
-                  <StatRow
-                    label="Δ Delta"
-                    value={nf(analysis.greeks.delta, 1)}
-                    cls={signColor(analysis.greeks.delta)}
-                  />
-                  <StatRow label="Γ Gamma" value={nf(analysis.greeks.gamma, 3)} />
-                  <StatRow
-                    label="Θ Theta / day"
-                    value={nf(analysis.greeks.theta, 0)}
-                    cls={signColor(analysis.greeks.theta)}
-                  />
-                  <StatRow
-                    label="V Vega"
-                    value={nf(analysis.greeks.vega, 0)}
-                    cls={signColor(analysis.greeks.vega)}
-                  />
-                  <StatRow label="Legs" value={legs.length} />
-                  <StatRow label="Spot" value={nf(analysis.spot, 1)} />
+                  <tr className="border-b border-term-border/60">
+                    <StatCol
+                      label="Net Premium"
+                      value={`₹${nf(Math.abs(analysis.netPremium), 0)} ${analysis.netPremiumType}`}
+                      cls={analysis.netPremiumType === "CREDIT" ? "text-up" : "text-down"}
+                    />
+                    <StatCol
+                      label="Total Profit (max)"
+                      value={analysis.maxProfitUnbounded ? "Unlimited" : `₹${nf(analysis.maxProfit, 0)}`}
+                      cls="text-up"
+                    />
+                    <StatCol
+                      label="Total Loss (max)"
+                      value={analysis.maxLossUnbounded ? "Unlimited" : `₹${nf(analysis.maxLoss, 0)}`}
+                      cls="text-down"
+                    />
+                    <StatCol
+                      label="Breakeven"
+                      value={analysis.breakevens.map((b) => nf(b, 0)).join(" / ") || "–"}
+                    />
+                    <StatCol label="POP" value={analysis.pop != null ? `${nf(analysis.pop, 1)}%` : "–"} />
+                    <StatCol label="R : R" value={analysis.rr != null ? `1:${nf(analysis.rr, 2)}` : "–"} />
+                    <StatCol label="Margin est." value={`~₹${nf(analysis.margin.estimate, 0)}`} />
+                  </tr>
+                  <tr>
+                    <StatCol
+                      label="Δ Delta"
+                      value={nf(analysis.greeks.delta, 1)}
+                      cls={signColor(analysis.greeks.delta)}
+                    />
+                    <StatCol label="Γ Gamma" value={nf(analysis.greeks.gamma, 3)} />
+                    <StatCol
+                      label="Θ Theta / day"
+                      value={nf(analysis.greeks.theta, 0)}
+                      cls={signColor(analysis.greeks.theta)}
+                    />
+                    <StatCol
+                      label="V Vega"
+                      value={nf(analysis.greeks.vega, 0)}
+                      cls={signColor(analysis.greeks.vega)}
+                    />
+                    <StatCol label="Legs" value={legs.length} />
+                    <StatCol label="Spot" value={nf(analysis.spot, 1)} />
+                    <StatCol label="" value={busy ? "updating…" : ""} cls="text-term-dim" />
+                  </tr>
                 </tbody>
               </table>
-            ) : (
-              <div className="p-3 text-xs text-term-dim">
-                {err ? <span className="text-down">{err}</span> : "Pick a template or add legs to build a position."}
-              </div>
-            )}
-            {busy && <div className="px-3 py-1 text-2xs text-term-dim">updating…</div>}
-          </div>
+            </div>
+          ) : (
+            <div className="px-4 py-2 text-xs text-term-dim">
+              {err ? <span className="text-down">{err}</span> : "Pick a template or add legs to build a position."}
+            </div>
+          )}
+        </div>
 
-          <div className="relative min-h-0 flex-1 p-3">
-            {analysis && (
-              <PayoffChart
-                x={analysis.x}
-                expiryPnl={analysis.expiryPnl}
-                nowPnl={analysis.nowPnl}
-                spot={analysis.spot}
-                breakevens={analysis.breakevens}
-              />
-            )}
-            {analysis && (
-              <div className="pointer-events-none absolute bottom-4 right-5 flex gap-3 text-[10px] text-term-dim">
-                <span className="text-term-text">─ at expiry</span>
-                <span className="text-[#a855f7]">╌ now (T+0)</span>
-                <span className="text-[#3b82f6]">┆ spot</span>
-                <span className="text-[#eab308]">● breakeven</span>
-              </div>
-            )}
-          </div>
+        <div className="relative min-h-0 flex-1 p-3">
+          {analysis && (
+            <PayoffChart
+              x={analysis.x}
+              expiryPnl={analysis.expiryPnl}
+              nowPnl={analysis.nowPnl}
+              spot={analysis.spot}
+              breakevens={analysis.breakevens}
+            />
+          )}
+          {analysis && (
+            <div className="pointer-events-none absolute bottom-4 right-5 flex gap-3 text-[10px] text-term-dim">
+              <span className="text-term-text">─ at expiry</span>
+              <span className="text-[#a855f7]">╌ now (T+0)</span>
+              <span className="text-[#3b82f6]">┆ spot</span>
+              <span className="text-[#eab308]">● breakeven</span>
+            </div>
+          )}
         </div>
 
         <div className="border-t border-term-border px-4 py-1 text-[10px] text-term-dim">
