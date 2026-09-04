@@ -31,7 +31,7 @@ function MarginBar() {
         <div className="h-full bg-amber-500" style={{ width: `${pct}%` }} />
       </div>
       <div className="mt-0.5 flex justify-between">
-        <span className="num text-up">available ₹{avail != null ? nf(avail, 0) : "–"}</span>
+        <span className="num text-up">Available ₹{avail != null ? nf(avail, 0) : "–"}</span>
         {funds?.error && <span className="text-down">{funds.error}</span>}
       </div>
     </div>
