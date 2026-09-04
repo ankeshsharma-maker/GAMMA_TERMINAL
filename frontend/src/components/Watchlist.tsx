@@ -130,35 +130,81 @@ function SymbolRow({ w }: { w: WatchQuote }) {
   );
 }
 
-function OptionRow({ w }: { w: WatchQuote }) {
-  const { selectSymbol, selectExpiry, removeWatch, setChartInstrument, chartInstrument } = useStore();
-  const charted = chartInstrument === w.key;
-  const ce = w.optionType === "CE";
-  const otChip = ce ? "bg-up/15 text-up" : "bg-down/15 text-down";
+type StrikePair = {
+  gkey: string;
+  symbol: string;
+  expiry?: string;
+  strike?: number;
+  ce?: WatchQuote;
+  pe?: WatchQuote;
+};
 
-  const openChart = () => {
+/** one clickable option leg: price + %chg, tinted, opens the chart for that leg */
+function Leg({
+  w,
+  side,
+  align,
+}: {
+  w: WatchQuote | undefined;
+  side: "CE" | "PE";
+  align: "left" | "right";
+}) {
+  const { selectSymbol, selectExpiry, setChartInstrument, chartInstrument } = useStore();
+  const on = !!w && chartInstrument === w.key;
+  const tint = side === "CE" ? "text-up" : "text-down";
+  const open = () => {
+    if (!w) return;
     selectSymbol(w.symbol);
     if (w.expiry) selectExpiry(w.expiry);
     setChartInstrument(w.key);
   };
-
+  if (!w)
+    return (
+      <span className="flex-1 text-center text-[10px] text-term-dim/50">
+        no {side}
+      </span>
+    );
   return (
-    <div
-      className={`${ROW} ${charted ? "border-term-accent/70 bg-term-accent/[0.08]" : "border-term-border/50"}`}
+    <button
+      onClick={open}
+      title={`Chart ${w.symbol} ${sk(w.strike)} ${side}`}
+      className={`flex flex-1 flex-col ${
+        align === "right" ? "items-end" : "items-start"
+      } rounded px-1 py-0.5 transition ${
+        on ? "bg-term-accent/15 ring-1 ring-term-accent/50" : "hover:bg-term-border/40"
+      }`}
     >
-      <span
-        className={`absolute inset-y-1 left-0 w-[3px] rounded-full ${
-          charted ? "bg-term-accent" : ce ? "bg-up/40" : "bg-down/40"
-        }`}
-      />
-      <NavBtn onClick={openChart} title={`Chart ${w.symbol} ${sk(w.strike)} ${w.optionType}`} active={charted}>
-        <span className="flex items-center gap-1 truncate text-xs font-semibold">
-          <span className={`shrink-0 rounded px-1 text-[9px] font-bold ${otChip}`}>{w.optionType}</span>
-          <span className="num truncate">{sk(w.strike)}</span>
+      <span className="flex items-baseline gap-1 leading-none">
+        <span className={`text-[8px] font-bold ${tint}`}>{side}</span>
+        <span className="num text-xs font-semibold tabular-nums">
+          {w.ltp != null ? nf(w.ltp) : "–"}
         </span>
-      </NavBtn>
-      <Px px={w.ltp} pct={w.chgPct} />
-      <DelBtn onClick={() => removeWatch(w.key)} title="Delete strike" />
+      </span>
+      {w.chgPct != null && (
+        <span className={`num text-[9px] tabular-nums ${signColor(w.chgPct)}`}>
+          {w.chgPct >= 0 ? "▲" : "▼"}
+          {nf(Math.abs(w.chgPct), 2)}%
+        </span>
+      )}
+    </button>
+  );
+}
+
+/** CALL | STRIKE | PUT row so both legs of a strike are visible at a glance */
+function StrikeRow({ p }: { p: StrikePair }) {
+  const removeWatch = useStore((s) => s.removeWatch);
+  const removeBoth = async () => {
+    if (p.ce) await removeWatch(p.ce.key);
+    if (p.pe) await removeWatch(p.pe.key);
+  };
+  return (
+    <div className={`${ROW} border-term-border/50 gap-1`}>
+      <Leg w={p.ce} side="CE" align="right" />
+      <span className="num shrink-0 rounded bg-term-bg px-1.5 py-0.5 text-xs font-bold tabular-nums text-term-text">
+        {sk(p.strike)}
+      </span>
+      <Leg w={p.pe} side="PE" align="left" />
+      <DelBtn onClick={removeBoth} title="Remove this strike (CE + PE)" />
     </div>
   );
 }
@@ -259,14 +305,59 @@ export function Watchlist() {
   };
 
   const shown = sortWatch(watch, sort);
-  const rowFor = (w: WatchQuote) =>
-    w.kind === "option" ? (
-      <OptionRow key={w.key} w={w} />
-    ) : w.kind === "index" ? (
-      <IndexRow key={w.key} w={w} />
-    ) : (
-      <SymbolRow key={w.key} w={w} />
+  const nonOpts = shown.filter((w) => w.kind !== "option");
+  const optRows = shown.filter((w) => w.kind === "option");
+
+  // pair CE + PE of the same (symbol, expiry, strike) into one row
+  const pairMap = new Map<string, StrikePair>();
+  for (const w of optRows) {
+    const gkey = `${w.symbol}|${w.expiry ?? ""}|${w.strike ?? ""}`;
+    let pr = pairMap.get(gkey);
+    if (!pr) {
+      pr = { gkey, symbol: w.symbol, expiry: w.expiry, strike: w.strike };
+      pairMap.set(gkey, pr);
+    }
+    if (w.optionType === "PE") pr.pe = w;
+    else pr.ce = w;
+  }
+  const pairs = [...pairMap.values()];
+  if (sort.k === "none") {
+    pairs.sort(
+      (a, b) =>
+        a.symbol.localeCompare(b.symbol) ||
+        String(a.expiry).localeCompare(String(b.expiry)) ||
+        (a.strike ?? 0) - (b.strike ?? 0)
     );
+  }
+
+  // group headers (symbol · expiry) between strike rows
+  const strikeBlocks: { head: string; items: StrikePair[] }[] = [];
+  for (const pr of pairs) {
+    const head = `${pr.symbol}${pr.expiry ? ` · ${pr.expiry}` : ""}`;
+    const last = strikeBlocks[strikeBlocks.length - 1];
+    if (last && last.head === head) last.items.push(pr);
+    else strikeBlocks.push({ head, items: [pr] });
+  }
+
+  const rowFor = (w: WatchQuote) =>
+    w.kind === "index" ? <IndexRow key={w.key} w={w} /> : <SymbolRow key={w.key} w={w} />;
+
+  const optionSection = (
+    <div className="flex flex-col gap-2">
+      {strikeBlocks.map((blk) => (
+        <div key={blk.head} className="flex flex-col gap-1">
+          <div className="flex items-center gap-1.5 px-1 pt-0.5 text-[9px] font-semibold uppercase tracking-wide text-term-dim">
+            <span className="h-px flex-1 bg-term-border/60" />
+            {blk.head}
+            <span className="h-px flex-1 bg-term-border/60" />
+          </div>
+          {blk.items.map((p) => (
+            <StrikeRow key={p.gkey} p={p} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
 
   const counts = watch.reduce(
     (a, w) => {
@@ -472,15 +563,21 @@ export function Watchlist() {
           <div className="p-6 text-center text-[11px] text-term-dim">
             Nothing here yet — search above to add an index or stock.
           </div>
-        ) : view === "grid" ? (
-          <div
-            className="grid gap-1 p-2"
-            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}
-          >
-            {shown.map(rowFor)}
-          </div>
         ) : (
-          <div className="flex flex-col gap-1 p-2">{shown.map(rowFor)}</div>
+          <div className="flex flex-col gap-2 p-2">
+            {nonOpts.length > 0 &&
+              (view === "grid" ? (
+                <div
+                  className="grid gap-1"
+                  style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}
+                >
+                  {nonOpts.map(rowFor)}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1">{nonOpts.map(rowFor)}</div>
+              ))}
+            {strikeBlocks.length > 0 && optionSection}
+          </div>
         )}
       </div>
 
