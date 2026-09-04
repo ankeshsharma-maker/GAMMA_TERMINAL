@@ -116,6 +116,23 @@ class FlattradeBroker:
     def login_url(self) -> str:
         return f"{_AUTH_URL}?app_key={self.api_key}"
 
+    def set_token(self, token: str, client: str | None = None) -> dict:
+        """Manually install a session token (e.g. one generated from the Flattrade
+        portal directly), bypassing the OAuth redirect."""
+        token = (token or "").strip()
+        if not token:
+            raise RuntimeError("empty token")
+        self._token = token
+        if client:
+            self.client_id = client.strip().upper()
+        self._save_session()
+        log.info("Flattrade token set manually for %s (len=%s)", self.client_id, len(token))
+        # kick the WS to reconnect with the new token
+        if self._ws_task:
+            self._ws_task.cancel()
+            self._ws_task = None
+        return {"ok": True, "client": self.client_id}
+
     async def exchange_token(self, request_code: str) -> dict:
         if not self.configured:
             raise RuntimeError("Flattrade API key / secret / client id not set in .env")

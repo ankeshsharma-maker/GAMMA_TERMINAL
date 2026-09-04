@@ -301,6 +301,11 @@ export const api = {
   brokerStatus: () => j<BrokerStatus>("/api/broker/status"),
   brokerLogin: () => j<{ url: string }>("/api/broker/login"),
   brokerLogout: () => j<{ ok: boolean }>("/api/broker/logout", { method: "POST" }),
+  brokerSetToken: (token: string, client?: string) =>
+    j<BrokerStatus>("/api/broker/token", {
+      method: "POST",
+      body: JSON.stringify({ token, client }),
+    }),
   brokerFunds: () => j<import("../types").BrokerFunds>("/api/broker/funds"),
   brokerPositions: () => j<{ positions: any[] }>("/api/broker/positions"),
   brokerHoldings: () => j<{ holdings: any[] }>("/api/broker/holdings"),

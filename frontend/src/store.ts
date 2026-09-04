@@ -67,6 +67,7 @@ interface State {
   init: () => void;
   connectBroker: () => Promise<void>;
   disconnectBroker: () => Promise<void>;
+  setBrokerToken: (token: string) => Promise<void>;
   setOrderMode: (m: "paper" | "live") => Promise<string | null>;
   requestStrategyExecute: (legs: import("./types").StrategyLeg[]) => void;
   confirmPending: () => Promise<void>;
@@ -210,6 +211,11 @@ export const useStore = create<State>((set, get) => ({
   disconnectBroker: async () => {
     await api.brokerLogout();
     set({ broker: await api.brokerStatus().catch(() => null) });
+  },
+  setBrokerToken: async (token: string) => {
+    const b = await api.brokerSetToken(token.trim());
+    set({ broker: b });
+    api.brokerFunds().then((f) => set({ brokerFunds: f }), () => {});
   },
 
   init: () => {

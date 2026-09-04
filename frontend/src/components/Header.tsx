@@ -70,31 +70,96 @@ function MarginStats() {
 }
 
 function BrokerPill() {
-  const { broker, connectBroker, disconnectBroker } = useStore();
+  const { broker, connectBroker, disconnectBroker, setBrokerToken } = useStore();
+  const [paste, setPaste] = useState(false);
+  const [tok, setTok] = useState("");
+  const [busy, setBusy] = useState(false);
+
   if (!broker || !broker.configured)
     return (
       <span className="text-[10px] text-term-dim" title="Set FLATTRADE_* in backend/.env">
         broker off
       </span>
     );
+
+  const submitToken = async () => {
+    if (!tok.trim()) return;
+    setBusy(true);
+    try {
+      await setBrokerToken(tok);
+      setPaste(false);
+      setTok("");
+    } catch (e: any) {
+      alert("Token rejected: " + (e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const tokenForm = paste && (
+    <span className="flex items-center gap-1">
+      <input
+        autoFocus
+        value={tok}
+        onChange={(e) => setTok(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && submitToken()}
+        placeholder="paste Flattrade token"
+        className="w-52 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs outline-none focus:border-term-accent"
+      />
+      <button
+        onClick={submitToken}
+        disabled={busy}
+        className="rounded bg-term-accent px-1.5 py-0.5 text-2xs text-white disabled:opacity-40"
+      >
+        {busy ? "…" : "set"}
+      </button>
+      <button onClick={() => setPaste(false)} className="text-term-dim hover:text-down">
+        ✕
+      </button>
+    </span>
+  );
+
   if (!broker.authed)
     return (
-      <button
-        onClick={connectBroker}
-        className="rounded border border-amber-500/50 bg-amber-500/15 px-2 py-1 text-2xs text-amber-400 hover:bg-amber-500/25"
-      >
-        Connect Flattrade
-      </button>
+      <span className="flex items-center gap-1.5">
+        <button
+          onClick={connectBroker}
+          className="rounded border border-amber-500/50 bg-amber-500/15 px-2 py-1 text-2xs text-amber-400 hover:bg-amber-500/25"
+        >
+          Connect Flattrade
+        </button>
+        {tokenForm || (
+          <button
+            onClick={() => setPaste(true)}
+            title="Paste a token generated from the Flattrade portal directly"
+            className="rounded border border-term-border px-1.5 py-1 text-2xs text-term-dim hover:text-term-text"
+          >
+            ⌗ token
+          </button>
+        )}
+      </span>
     );
+
   return (
-    <button
-      onClick={disconnectBroker}
-      title={`${broker.clientId} · ${broker.wsConnected ? "feed live" : "feed connecting"} · click to disconnect`}
-      className="flex items-center gap-1.5 rounded border border-up/40 bg-up/10 px-2 py-1 text-2xs text-up"
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${broker.wsConnected ? "bg-up" : "bg-amber-500 animate-pulse"}`} />
-      FT · {broker.clientId}
-    </button>
+    <span className="flex items-center gap-1.5">
+      <button
+        onClick={disconnectBroker}
+        title={`${broker.clientId} · ${broker.wsConnected ? "feed live" : "feed connecting"} · click to disconnect`}
+        className="flex items-center gap-1.5 rounded border border-up/40 bg-up/10 px-2 py-1 text-2xs text-up"
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${broker.wsConnected ? "bg-up" : "bg-amber-500 animate-pulse"}`} />
+        FT · {broker.clientId}
+      </button>
+      {tokenForm || (
+        <button
+          onClick={() => setPaste(true)}
+          title="Replace the session token with one from the Flattrade portal"
+          className="rounded border border-term-border px-1.5 py-1 text-2xs text-term-dim hover:text-term-text"
+        >
+          ⌗
+        </button>
+      )}
+    </span>
   );
 }
 

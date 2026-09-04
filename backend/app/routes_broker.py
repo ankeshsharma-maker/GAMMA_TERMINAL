@@ -71,6 +71,20 @@ async def callback(request: Request):
     )
 
 
+@router.post("/token")
+def set_token(body: dict):
+    """Manually install a Flattrade session token (from the portal's 'Generate
+    Token' button) when the OAuth redirect flow isn't producing a working one."""
+    b = get_broker()
+    tok = (body or {}).get("token", "")
+    client = (body or {}).get("client")
+    try:
+        res = b.set_token(tok, client)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {**res, **b.status()}
+
+
 @router.post("/logout")
 def logout():
     get_broker().logout()
