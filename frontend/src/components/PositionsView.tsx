@@ -57,9 +57,9 @@ function PaperTab() {
         <Tile label="Unrealized" value={`₹${nf(paper.unrealized, 0)}`} cls={signColor(paper.unrealized)} />
         <Tile label="Total P&L" value={`₹${nf(paper.total, 0)}`} cls={signColor(paper.total)} />
       </div>
-      <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full border-separate border-spacing-0 text-xs">
-          <thead className="sticky top-0 bg-term-panel text-[10px] uppercase text-term-dim">
+      <div className="min-h-0 flex-1 overflow-auto p-3 pt-0">
+        <table className="w-full border-separate border-spacing-0 border border-term-border text-xs">
+          <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
             <tr>
               <TH>Contract</TH>
               <TH>Side</TH>
@@ -74,32 +74,32 @@ function PaperTab() {
           <tbody>
             {paper.positions.length === 0 && (
               <tr>
-                <td colSpan={8}>
+                <td colSpan={8} className="border-b border-term-border">
                   <Empty>No open paper positions. Use B / S on the chain or Execute a strategy.</Empty>
                 </td>
               </tr>
             )}
             {paper.positions.map((p) => (
-              <tr key={p.id} className="border-b border-term-border/40">
-                <td className="num px-3 py-1.5 font-medium">
+              <tr key={p.id}>
+                <TD cls="num font-medium">
                   {p.symbol} {sk(p.strike)} {p.optionType}
                   <span className="ml-2 text-[10px] text-term-dim">{p.expiry}</span>
-                </td>
-                <td className={`px-3 py-1.5 ${p.qty > 0 ? "text-up" : "text-down"}`}>
-                  {p.qty > 0 ? "LONG" : "SHORT"}
-                </td>
-                <td className="num px-3 py-1.5">{Math.abs(p.qty / p.lotSize)}L ({Math.abs(p.qty)})</td>
-                <td className="num px-3 py-1.5">{nf(p.avgPrice)}</td>
-                <td className="num px-3 py-1.5">{nf(p.ltp)}</td>
-                <td className={`num px-3 py-1.5 ${signColor(p.pnl)}`}>₹{nf(p.pnl, 0)}</td>
-                <td className="px-3 py-1.5">
+                </TD>
+                <TD cls={p.qty > 0 ? "text-up" : "text-down"}>{p.qty > 0 ? "LONG" : "SHORT"}</TD>
+                <TD cls="num">
+                  {Math.abs(p.qty / p.lotSize)}L ({Math.abs(p.qty)})
+                </TD>
+                <TD cls="num">{nf(p.avgPrice)}</TD>
+                <TD cls="num">{nf(p.ltp)}</TD>
+                <TD cls={`num ${signColor(p.pnl)}`}>₹{nf(p.pnl, 0)}</TD>
+                <TD>
                   <StopEditor p={p} />
-                </td>
-                <td className="px-3 py-1.5">
+                </TD>
+                <TD>
                   <button className="btn px-2 py-0.5 text-[10px]" onClick={() => closePosition(p.id)}>
                     Square off
                   </button>
-                </td>
+                </TD>
               </tr>
             ))}
           </tbody>
@@ -135,9 +135,9 @@ function BrokerTab() {
   if (rows.length === 0) return <Empty>No open broker positions.</Empty>;
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto">
-      <table className="w-full border-separate border-spacing-0 text-xs">
-        <thead className="sticky top-0 bg-term-panel text-[10px] uppercase text-term-dim">
+    <div className="min-h-0 flex-1 overflow-auto p-3">
+      <table className="w-full border-separate border-spacing-0 border border-term-border text-xs">
+        <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
           <tr>
             <TH>Symbol</TH>
             <TH>Product</TH>
@@ -154,14 +154,14 @@ function BrokerTab() {
             const mtm = n(r.urmtom) ?? n(r.mtm);
             const rpnl = n(r.rpnl);
             return (
-              <tr key={i} className="border-b border-term-border/40">
-                <td className="num px-3 py-1.5 font-medium">{r.tsym ?? r.symname ?? "—"}</td>
-                <td className="px-3 py-1.5 text-term-dim">{r.prd ?? "—"}</td>
-                <td className={`num px-3 py-1.5 ${qty > 0 ? "text-up" : qty < 0 ? "text-down" : ""}`}>{qty}</td>
-                <td className="num px-3 py-1.5">{nf(n(r.netavgprc) ?? n(r.daybuyavgprc))}</td>
-                <td className="num px-3 py-1.5">{nf(n(r.lp))}</td>
-                <td className={`num px-3 py-1.5 ${signColor(mtm)}`}>{mtm != null ? `₹${nf(mtm, 0)}` : "—"}</td>
-                <td className={`num px-3 py-1.5 ${signColor(rpnl)}`}>{rpnl != null ? `₹${nf(rpnl, 0)}` : "—"}</td>
+              <tr key={i}>
+                <TD cls="num font-medium">{r.tsym ?? r.symname ?? "—"}</TD>
+                <TD cls="text-term-dim">{r.prd ?? "—"}</TD>
+                <TD cls={`num ${qty > 0 ? "text-up" : qty < 0 ? "text-down" : ""}`}>{qty}</TD>
+                <TD cls="num">{nf(n(r.netavgprc) ?? n(r.daybuyavgprc))}</TD>
+                <TD cls="num">{nf(n(r.lp))}</TD>
+                <TD cls={`num ${signColor(mtm)}`}>{mtm != null ? `₹${nf(mtm, 0)}` : "—"}</TD>
+                <TD cls={`num ${signColor(rpnl)}`}>{rpnl != null ? `₹${nf(rpnl, 0)}` : "—"}</TD>
               </tr>
             );
           })}
@@ -197,9 +197,9 @@ function HoldingsTab() {
   if (rows.length === 0) return <Empty>No holdings.</Empty>;
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto">
-      <table className="w-full border-separate border-spacing-0 text-xs">
-        <thead className="sticky top-0 bg-term-panel text-[10px] uppercase text-term-dim">
+    <div className="min-h-0 flex-1 overflow-auto p-3">
+      <table className="w-full border-separate border-spacing-0 border border-term-border text-xs">
+        <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
           <tr>
             <TH>Symbol</TH>
             <TH>Qty</TH>
@@ -217,12 +217,12 @@ function HoldingsTab() {
             const ltp = n(r.exch_tsym?.[0]?.lp) ?? n(r.lp);
             const pnl = avg != null && ltp != null ? (ltp - avg) * qty : null;
             return (
-              <tr key={i} className="border-b border-term-border/40">
-                <td className="num px-3 py-1.5 font-medium">{sym}</td>
-                <td className="num px-3 py-1.5">{qty}</td>
-                <td className="num px-3 py-1.5">{nf(avg)}</td>
-                <td className="num px-3 py-1.5">{nf(ltp)}</td>
-                <td className={`num px-3 py-1.5 ${signColor(pnl)}`}>{pnl != null ? `₹${nf(pnl, 0)}` : "—"}</td>
+              <tr key={i}>
+                <TD cls="num font-medium">{sym}</TD>
+                <TD cls="num">{qty}</TD>
+                <TD cls="num">{nf(avg)}</TD>
+                <TD cls="num">{nf(ltp)}</TD>
+                <TD cls={`num ${signColor(pnl)}`}>{pnl != null ? `₹${nf(pnl, 0)}` : "—"}</TD>
               </tr>
             );
           })}

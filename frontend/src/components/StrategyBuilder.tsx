@@ -7,12 +7,13 @@ import { PayoffChart } from "./PayoffChart";
 
 const OT: OptionType[] = ["CE", "PE", "FUT"];
 
-function Metric({ label, value, cls = "" }: { label: string; value: React.ReactNode; cls?: string }) {
+/** one column of the strategy-details table: label on top, value below, bordered */
+function StatCol({ label, value, cls = "" }: { label: string; value: React.ReactNode; cls?: string }) {
   return (
-    <div className="flex flex-col leading-tight">
-      <span className="text-[10px] uppercase tracking-wide text-term-dim">{label}</span>
-      <span className={`num text-sm ${cls}`}>{value}</span>
-    </div>
+    <td className="border-r border-term-border/60 px-3 py-1.5 text-left last:border-r-0">
+      <div className="text-[9px] uppercase tracking-wide text-term-dim">{label}</div>
+      <div className={`num text-sm font-semibold ${cls}`}>{value}</div>
+    </td>
   );
 }
 
@@ -454,39 +455,63 @@ export function StrategyBuilder() {
 
       {/* ---- payoff + metrics ---- */}
       <div className="flex min-h-0 flex-col">
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-term-border bg-term-panel px-4 py-2">
+        <div className="border-b border-term-border bg-term-panel">
           {analysis ? (
-            <>
-              <Metric
-                label="Net Premium"
-                value={`${compact(Math.abs(analysis.netPremium))} ${analysis.netPremiumType}`}
-                cls={analysis.netPremiumType === "CREDIT" ? "text-up" : "text-down"}
-              />
-              <Metric
-                label="Max Profit"
-                value={analysis.maxProfitUnbounded ? "Unlimited" : compact(analysis.maxProfit)}
-                cls="text-up"
-              />
-              <Metric
-                label="Max Loss"
-                value={analysis.maxLossUnbounded ? "Unlimited" : compact(analysis.maxLoss)}
-                cls="text-down"
-              />
-              <Metric label="Breakeven" value={analysis.breakevens.map((b) => nf(b, 0)).join(" / ") || "–"} />
-              <Metric label="POP" value={analysis.pop != null ? `${nf(analysis.pop, 1)}%` : "–"} />
-              <Metric label="R:R" value={analysis.rr != null ? `1:${nf(analysis.rr, 2)}` : "–"} />
-              <Metric label="Margin est." value={`~${compact(analysis.margin.estimate)}`} />
-              <div className="mx-1 h-7 w-px bg-term-border" />
-              <Metric label="Δ" value={nf(analysis.greeks.delta, 1)} cls={signColor(analysis.greeks.delta)} />
-              <Metric label="Γ" value={nf(analysis.greeks.gamma, 3)} />
-              <Metric label="Θ/day" value={nf(analysis.greeks.theta, 0)} cls={signColor(analysis.greeks.theta)} />
-              <Metric label="Vega" value={nf(analysis.greeks.vega, 0)} cls={signColor(analysis.greeks.vega)} />
-              {busy && <span className="text-2xs text-term-dim">updating…</span>}
-            </>
+            <div className="overflow-x-auto">
+              <table className="w-full border-separate border-spacing-0 text-xs">
+                <tbody>
+                  <tr className="border-b border-term-border/60">
+                    <StatCol
+                      label="Net Premium"
+                      value={`${compact(Math.abs(analysis.netPremium))} ${analysis.netPremiumType}`}
+                      cls={analysis.netPremiumType === "CREDIT" ? "text-up" : "text-down"}
+                    />
+                    <StatCol
+                      label="Total Profit (max)"
+                      value={analysis.maxProfitUnbounded ? "Unlimited" : compact(analysis.maxProfit)}
+                      cls="text-up"
+                    />
+                    <StatCol
+                      label="Total Loss (max)"
+                      value={analysis.maxLossUnbounded ? "Unlimited" : compact(analysis.maxLoss)}
+                      cls="text-down"
+                    />
+                    <StatCol
+                      label="Breakeven"
+                      value={analysis.breakevens.map((b) => nf(b, 0)).join(" / ") || "–"}
+                    />
+                    <StatCol label="POP" value={analysis.pop != null ? `${nf(analysis.pop, 1)}%` : "–"} />
+                    <StatCol label="R : R" value={analysis.rr != null ? `1:${nf(analysis.rr, 2)}` : "–"} />
+                    <StatCol label="Margin est." value={`~${compact(analysis.margin.estimate)}`} />
+                  </tr>
+                  <tr>
+                    <StatCol
+                      label="Δ Delta"
+                      value={nf(analysis.greeks.delta, 1)}
+                      cls={signColor(analysis.greeks.delta)}
+                    />
+                    <StatCol label="Γ Gamma" value={nf(analysis.greeks.gamma, 3)} />
+                    <StatCol
+                      label="Θ Theta / day"
+                      value={nf(analysis.greeks.theta, 0)}
+                      cls={signColor(analysis.greeks.theta)}
+                    />
+                    <StatCol
+                      label="V Vega"
+                      value={nf(analysis.greeks.vega, 0)}
+                      cls={signColor(analysis.greeks.vega)}
+                    />
+                    <StatCol label="Legs" value={legs.length} />
+                    <StatCol label="Spot" value={nf(analysis.spot, 1)} />
+                    <StatCol label="" value={busy ? "updating…" : ""} cls="text-term-dim" />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           ) : (
-            <span className="text-xs text-term-dim">
+            <div className="px-4 py-2 text-xs text-term-dim">
               {err ? <span className="text-down">{err}</span> : "Pick a template or add legs to build a position."}
-            </span>
+            </div>
           )}
         </div>
 
