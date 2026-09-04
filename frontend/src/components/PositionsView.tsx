@@ -31,7 +31,18 @@ function Empty({ children }: { children: React.ReactNode }) {
 }
 
 function TH({ children }: { children: React.ReactNode }) {
-  return <th className="border-b border-term-border px-3 py-1.5 text-left font-medium">{children}</th>;
+  return (
+    <th className="border-b border-r border-term-border px-3 py-1.5 text-left font-medium last:border-r-0">
+      {children}
+    </th>
+  );
+}
+function TD({ children, cls = "" }: { children: React.ReactNode; cls?: string }) {
+  return (
+    <td className={`border-b border-r border-term-border/50 px-3 py-1.5 last:border-r-0 ${cls}`}>
+      {children}
+    </td>
+  );
 }
 
 // ---------------- Paper ----------------
@@ -269,8 +280,8 @@ function OrdersTab() {
       {log.length === 0 ? (
         <Empty>No orders this session.</Empty>
       ) : (
-        <table className="w-full border-separate border-spacing-0 text-xs">
-          <thead className="text-[10px] uppercase text-term-dim">
+        <table className="w-full border-separate border-spacing-0 border border-term-border text-xs">
+          <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
             <tr>
               <TH>Time</TH>
               <TH>Contract</TH>
@@ -283,21 +294,19 @@ function OrdersTab() {
           </thead>
           <tbody>
             {log.map((o, i) => (
-              <tr key={i} className="border-b border-term-border/40">
-                <td className="num px-3 py-1.5 text-term-dim">{hhmm(o.ts)}</td>
-                <td className="num px-3 py-1.5">
+              <tr key={i}>
+                <TD cls="num text-term-dim">{hhmm(o.ts)}</TD>
+                <TD cls="num">
                   {o.symbol} {sk(o.strike)}
                   {o.optionType}
-                </td>
-                <td className={`px-3 py-1.5 ${o.side === "BUY" ? "text-up" : "text-down"}`}>{o.side}</td>
-                <td className="num px-3 py-1.5">
+                </TD>
+                <TD cls={o.side === "BUY" ? "text-up" : "text-down"}>{o.side}</TD>
+                <TD cls="num">
                   {o.qtyLots}L {o.qty ? `(${o.qty})` : ""}
-                </td>
-                <td className="px-3 py-1.5 text-term-dim">{o.mode}</td>
-                <td className={`px-3 py-1.5 ${stCls(o.status || "")}`}>{o.status}</td>
-                <td className="px-3 py-1.5 text-[10px] text-term-dim">
-                  {o.error || o.orderId || o.tsym || ""}
-                </td>
+                </TD>
+                <TD cls="text-term-dim">{o.mode}</TD>
+                <TD cls={stCls(o.status || "")}>{o.status}</TD>
+                <TD cls="text-[10px] text-term-dim">{o.error || o.orderId || o.tsym || ""}</TD>
               </tr>
             ))}
           </tbody>
@@ -312,8 +321,8 @@ function OrdersTab() {
           {book.length === 0 ? (
             <Empty>Order book empty.</Empty>
           ) : (
-            <table className="w-full border-separate border-spacing-0 text-xs">
-              <thead className="text-[10px] uppercase text-term-dim">
+            <table className="w-full border-separate border-spacing-0 border border-term-border text-xs">
+              <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
                 <tr>
                   <TH>Symbol</TH>
                   <TH>Side</TH>
@@ -325,15 +334,15 @@ function OrdersTab() {
               </thead>
               <tbody>
                 {book.map((o, i) => (
-                  <tr key={i} className="border-b border-term-border/40">
-                    <td className="num px-3 py-1.5">{o.tsym}</td>
-                    <td className={`px-3 py-1.5 ${o.trantype === "B" ? "text-up" : "text-down"}`}>
+                  <tr key={i}>
+                    <TD cls="num">{o.tsym}</TD>
+                    <TD cls={o.trantype === "B" ? "text-up" : "text-down"}>
                       {o.trantype === "B" ? "BUY" : "SELL"}
-                    </td>
-                    <td className="num px-3 py-1.5">{o.qty}</td>
-                    <td className="num px-3 py-1.5">{nf(n(o.prc))}</td>
-                    <td className={`px-3 py-1.5 ${stCls(o.status || "")}`}>{o.status}</td>
-                    <td className="px-3 py-1.5 text-[10px] text-term-dim">{o.rejreason || ""}</td>
+                    </TD>
+                    <TD cls="num">{o.qty}</TD>
+                    <TD cls="num">{nf(n(o.prc))}</TD>
+                    <TD cls={stCls(o.status || "")}>{o.status}</TD>
+                    <TD cls="text-[10px] text-term-dim">{o.rejreason || ""}</TD>
                   </tr>
                 ))}
               </tbody>
