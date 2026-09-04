@@ -1,5 +1,6 @@
 import { useStore } from "../store";
 import { compact, nf, ago, sk } from "../lib/format";
+import { api } from "../lib/api";
 import { ConnBadge } from "./ConnBadge";
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -39,6 +40,46 @@ function ViewToggle() {
         >
           {label}
         </button>
+      ))}
+    </div>
+  );
+}
+
+const HDR_LABEL: Record<string, string> = { NIFTY: "NIFTY50", BANKNIFTY: "BANKNIFTY", "INDIA VIX": "INDIA VIX" };
+
+function HeaderIndices() {
+  const [rows, setRows] = useState<{ symbol: string; spot: number | null; chgPct: number | null }[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      api.indicesHeader().then((d) => alive && setRows(d.indices), () => {});
+    load();
+    const t = setInterval(load, 10000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+  if (rows.length === 0) return null;
+  return (
+    <div className="flex items-center gap-2">
+      {rows.map((r) => (
+        <div
+          key={r.symbol}
+          className="flex items-baseline gap-1 rounded border border-term-border bg-term-bg/60 px-1.5 py-0.5"
+          title={r.symbol}
+        >
+          <span className="text-[9px] font-semibold uppercase text-term-dim">
+            {HDR_LABEL[r.symbol] ?? r.symbol}
+          </span>
+          <span className="num text-xs font-medium">{r.spot != null ? nf(r.spot) : "–"}</span>
+          {r.chgPct != null && (
+            <span className={`num text-[10px] ${r.chgPct >= 0 ? "text-up" : "text-down"}`}>
+              {r.chgPct >= 0 ? "▲" : "▼"}
+              {nf(Math.abs(r.chgPct), 2)}%
+            </span>
+          )}
+        </div>
       ))}
     </div>
   );
@@ -332,6 +373,7 @@ export function Header() {
       }`}
     >
       <span className="text-base font-semibold tracking-tight">GammaTerminal</span>
+      <HeaderIndices />
       <ViewToggle />
       <ClassFilter />
       <OrderModePill />

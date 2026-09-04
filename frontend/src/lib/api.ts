@@ -27,6 +27,11 @@ export const api = {
   symbols: () =>
     j<{ indices: string[]; defaults: string[]; fo?: string[]; watchlist: string[] }>("/api/symbols"),
 
+  indicesHeader: () =>
+    j<{ indices: { symbol: string; spot: number | null; chgPct: number | null }[] }>(
+      "/api/indices/header"
+    ),
+
   chain: (symbol: string, expiry?: string) =>
     j<Chain>(
       `/api/option-chain/${symbol}` + (expiry ? `?expiry=${encodeURIComponent(expiry)}` : "")

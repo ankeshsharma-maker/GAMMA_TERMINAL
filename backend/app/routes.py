@@ -65,6 +65,34 @@ def expiries(symbol: str):
     return {"symbol": symbol.upper(), "expiries": store.expiries.get(symbol.upper(), [])}
 
 
+_HDR_NSE_NAME = {"NIFTY": "NIFTY 50", "BANKNIFTY": "NIFTY BANK"}
+
+
+@router.get("/indices/header")
+def indices_header():
+    """Compact always-on header ticker strip: NIFTY, BANKNIFTY, INDIA VIX."""
+    out = []
+    for sym in ("NIFTY", "BANKNIFTY"):
+        chain = store.get_chain(sym)
+        live = store.live_spot.get(sym)
+        idx = store.index_quotes.get(_HDR_NSE_NAME[sym])
+        spot = (
+            (live.get("ltp") if live else None)
+            or (chain.get("spot") if chain else None)
+            or (idx.get("last") if idx else None)
+        )
+        chg = (live.get("chgPct") if live else None) or (idx.get("pChange") if idx else None)
+        out.append({"symbol": sym, "spot": spot, "chgPct": chg})
+
+    vix = None
+    for name, q in store.index_quotes.items():
+        if "VIX" in name.upper():
+            vix = {"symbol": "INDIA VIX", "spot": q.get("last"), "chgPct": q.get("pChange")}
+            break
+    out.append(vix or {"symbol": "INDIA VIX", "spot": None, "chgPct": None})
+    return {"indices": out}
+
+
 @router.get("/symbols/search")
 def symbols_search(q: str = "", limit: int = Query(25, ge=1, le=60)):
     return {"results": store.search_symbols(q, limit)}
