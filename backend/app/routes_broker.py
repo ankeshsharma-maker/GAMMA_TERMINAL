@@ -354,14 +354,16 @@ async def holdings():
 
 
 @router.get("/probe")
-async def probe(symbol: str = Query("NIFTY"), strike: float = Query(0)):
+async def probe(symbol: str = Query("NIFTY"), strike: float = Query(0), exch: str = Query("NFO")):
     """Diagnostic: raw Flattrade responses for the pieces the NSE->Flattrade
-    data migration needs (limits, index quote, scrip search, option chain)."""
+    data migration needs (limits, index quote, exact-match scrip search,
+    resolved ATM CE/PE + their live GetQuotes, GetOptionChain)."""
     import json as _json
     from datetime import datetime as _dt
 
     b = _require_auth()
-    out: dict = {"symbol": symbol.upper(), "token_len": len(b._token or "")}
+    sym = symbol.upper()
+    out: dict = {"symbol": sym, "exch": exch, "token_len": len(b._token or "")}
 
     async def safe(name, coro):
         try:
@@ -372,37 +374,53 @@ async def probe(symbol: str = Query("NIFTY"), strike: float = Query(0)):
     await safe("user_details", b._post("UserDetails", {}))
     await safe("limits", b.funds())
 
-    # index feed token + a quote on it
+    # underlying feed token + a quote on it (index or, for BFO, still via NSE/BSE cash)
     tok = None
     try:
-        tok = await b.feed_token(symbol)
+        tok = await b.feed_token(sym)
         out["feed_token"] = tok
     except Exception as exc:  # noqa: BLE001
         out["feed_token"] = {"__error__": str(exc)}
     if tok:
         await safe("index_quote", b.quotes(tok[0], tok[1]))
 
-    # NFO option scrip search — see what tsym / expiry / strike fields look like
-    await safe("searchscrip_nfo", b.search_scrip("NFO", symbol.upper()))
-
-    # try a GetOptionChain around an ATM-ish strike using a constructed near-expiry tsym
+    # SearchScrip is a substring match ("NIFTY" also matches NIFTYFPI, NIFTYNXT50,
+    # ...) -- filter to the exact underlying so downstream anchoring is reliable.
+    raw_search = []
     try:
-        raw_idx = out.get("index_quote") or {}
-        spot = float(raw_idx.get("lp") or raw_idx.get("c") or 0) or strike or 24000
-        atm = round(spot / 50) * 50 if "NIFTY" in symbol.upper() else round(spot / 100) * 100
-        vals = out.get("searchscrip_nfo") or []
-        base_tsym = None
-        if isinstance(vals, list) and vals:
-            # pick any CE near atm to use as the anchor tsym
-            base_tsym = next(
-                (v.get("tsym") for v in vals if v.get("tsym", "").upper().endswith(f"C{int(atm)}")),
-                vals[0].get("tsym"),
-            )
-        out["oc_anchor"] = {"spot": spot, "atm": atm, "base_tsym": base_tsym}
-        if base_tsym:
-            await safe("option_chain", b.get_option_chain("NFO", base_tsym, str(int(atm)), 8))
+        raw_search = await b.search_scrip(exch, sym)
     except Exception as exc:  # noqa: BLE001
-        out["oc_anchor"] = {"__error__": str(exc)}
+        out["searchscrip_error"] = str(exc)
+    exact = [v for v in (raw_search or []) if str(v.get("symname", "")).upper() == sym]
+    out["searchscrip_total"] = len(raw_search or [])
+    out["searchscrip_exact_count"] = len(exact)
+    out["searchscrip_exact_sample"] = exact[:8]
+
+    # build the ATM CE/PE tsym directly (known-good SYMBOL+DDMMMYY+C/P+STRIKE
+    # convention) off our own nearest-expiry knowledge, then pull live quotes.
+    raw_idx = out.get("index_quote") or {}
+    spot = float(raw_idx.get("lp") or raw_idx.get("c") or 0) or strike or 24000
+    step = 100 if "BANK" in sym or "SENSEX" in sym else 50
+    atm = round(spot / step) * step
+    exp = store.nearest_expiry(sym)
+    out["atm"] = atm
+    out["expiry_used"] = exp
+
+    if exp:
+        try:
+            info_ce = await b.resolve_nfo(sym, exp, atm, "CE")
+            info_pe = await b.resolve_nfo(sym, exp, atm, "PE")
+            out["resolved_ce"] = info_ce
+            out["resolved_pe"] = info_pe
+            if info_ce.get("token"):
+                await safe("quote_ce", b.quotes(exch, info_ce["token"]))
+            if info_pe.get("token"):
+                await safe("quote_pe", b.quotes(exch, info_pe["token"]))
+            await safe("option_chain", b.get_option_chain(exch, info_ce["tsym"], str(int(atm)), 10))
+        except Exception as exc:  # noqa: BLE001
+            out["resolve_error"] = str(exc)
+    else:
+        out["resolve_error"] = f"no expiry known for {sym} yet (store.expiries empty)"
 
     out["_at"] = _dt.now().isoformat(timespec="seconds")
     # keep the payload compact in the response
