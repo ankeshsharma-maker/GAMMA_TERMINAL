@@ -92,6 +92,7 @@ class FlattradeBroker:
         )
         self._ws = None
         self._ws_task: asyncio.Task | None = None
+        self._exchanges: dict[str, dict] = {}  # endpoint -> last {request, response} (jKey masked)
         self._subs: set[str] = set()
         self._on_tick: TickHandler | None = None
         self._ws_connected = False
@@ -234,6 +235,12 @@ class FlattradeBroker:
             "wsConnected": self._ws_connected,
         }
 
+    def last_exchange(self, endpoint: str | None = None) -> dict:
+        """The last request/response per Noren endpoint (jKey masked), for support tickets."""
+        if endpoint:
+            return self._exchanges.get(endpoint, {})
+        return dict(self._exchanges)
+
     async def refresh(self) -> dict:
         """Re-read the persisted session, validate the token with a live call,
         and bounce the WebSocket feed so it reconnects. Driven by the header
@@ -271,10 +278,23 @@ class FlattradeBroker:
         url = f"{_REST}/{endpoint}"
         # Noren wants the body as the literal string `jData=<compact-json>&jKey=<token>`
         # (NOT form-encoded key/values — that yields "jData is not valid json object").
-        raw = f"jData={json.dumps(body, separators=(',', ':'))}&jKey={self._token}"
+        jdata = json.dumps(body, separators=(",", ":"))
+        raw = f"jData={jdata}&jKey={self._token}"
         r = await self._http.post(
             url, content=raw, headers={"Content-Type": "application/x-www-form-urlencoded"}
         )
+        # keep the last request/response per endpoint so it can be handed to
+        # broker support verbatim (jKey masked). See GET /api/broker/last-request.
+        self._exchanges[endpoint] = {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "method": "POST",
+            "url": url,
+            "contentType": "application/x-www-form-urlencoded",
+            "jData": jdata,
+            "requestBody": f"jData={jdata}&jKey=<{len(self._token or '')}-char session token, masked>",
+            "httpStatus": r.status_code,
+            "responseText": (r.text or "")[:2000],
+        }
         try:
             data = r.json()
         except ValueError:

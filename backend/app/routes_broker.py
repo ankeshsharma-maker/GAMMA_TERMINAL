@@ -106,6 +106,15 @@ def logout():
     return {"ok": True}
 
 
+@router.get("/last-request")
+def last_request(endpoint: str = Query("", description="e.g. PlaceOrder; blank = all endpoints")):
+    """The raw request GammaTerminal last sent to Flattrade (jKey masked) plus their
+    response — copy this into a broker support ticket. `?endpoint=PlaceOrder` for the
+    last order punch specifically."""
+    b = get_broker()
+    return b.last_exchange(endpoint or None)
+
+
 @router.post("/refresh")
 async def refresh():
     """Reload the saved session, re-validate the token, and reconnect the feed."""
