@@ -25,6 +25,8 @@ export function OIProfile() {
   const expiry = useStore((s) => s.expiry) ?? chain?.expiry ?? "";
   const selectSymbol = useStore((s) => s.selectSymbol);
   const selectExpiry = useStore((s) => s.selectExpiry);
+  const symClass = useStore((s) => s.symClass);
+  const symClassOk = useStore((s) => s.symClassOk);
 
   const [metric, setMetric] = useState<Metric>("combined");
   const [layout, setLayout] = useState<"chart" | "pcr">("chart");
@@ -49,8 +51,12 @@ export function OIProfile() {
     );
   }, []);
   const symOptions = useMemo(
-    () => [...new Set([...symChoices, symbol])].filter(Boolean).sort(),
-    [symChoices, symbol]
+    () =>
+      [...new Set([...symChoices, symbol])]
+        .filter(Boolean)
+        .filter((s) => s === symbol || symClassOk(s))
+        .sort(),
+    [symChoices, symbol, symClass]
   );
 
   // rolling-window OI change (polls the backend snapshot series)
