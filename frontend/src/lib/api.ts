@@ -25,7 +25,7 @@ async function j<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   symbols: () =>
-    j<{ indices: string[]; defaults: string[]; watchlist: string[] }>("/api/symbols"),
+    j<{ indices: string[]; defaults: string[]; fo?: string[]; watchlist: string[] }>("/api/symbols"),
 
   chain: (symbol: string, expiry?: string) =>
     j<Chain>(

@@ -44,7 +44,7 @@ export function OIProfile() {
 
   useEffect(() => {
     api.symbols().then(
-      (d) => setSymChoices([...new Set([...(d.indices ?? []), ...(d.defaults ?? [])])].sort()),
+      (d) => setSymChoices([...new Set([...(d.indices ?? []), ...(d.fo ?? []), ...(d.defaults ?? [])])].sort()),
       () => {}
     );
   }, []);

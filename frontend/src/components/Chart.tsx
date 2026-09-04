@@ -75,6 +75,18 @@ export function Chart() {
   const watch = useStore((s) => s.watch);
   const instrument = useStore((s) => s.chartInstrument);
   const setInstrument = useStore((s) => s.setChartInstrument);
+  const selectSymbol = useStore((s) => s.selectSymbol);
+  const [symChoices, setSymChoices] = useState<string[]>([]);
+  useEffect(() => {
+    api.symbols().then(
+      (d) => setSymChoices([...new Set([...(d.indices ?? []), ...(d.fo ?? []), ...(d.defaults ?? [])])].sort()),
+      () => {}
+    );
+  }, []);
+  const symOptions = useMemo(
+    () => [...new Set([symbol, ...symChoices])].filter(Boolean).sort(),
+    [symbol, symChoices]
+  );
   const [data, setData] = useState<ChartData | null>(null);
   const [intervalS, setIntervalS] = useState(300);
   const [ctype, setCtype] = useState<"candle" | "heikin" | "line" | "area" | "bar">("candle");
@@ -369,6 +381,18 @@ export function Chart() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs">
+        <select
+          value={symbol}
+          onChange={(e) => selectSymbol(e.target.value, true)}
+          className="rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs font-bold text-term-text outline-none focus:border-term-accent"
+          title="Index / stock to chart"
+        >
+          {symOptions.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
         <select
           value={instrument}
           onChange={(e) => setInstrument(e.target.value)}

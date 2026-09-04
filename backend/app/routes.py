@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from . import screener as scr
 from . import strategy as strat
 from .charting import build_chart
-from .config import DEFAULT_SYMBOLS, INDEX_SYMBOLS
+from .config import DEFAULT_SYMBOLS, FO_UNIVERSE, INDEX_SYMBOLS
 from .models import (
     AnalyzeIn,
     HedgeIn,
@@ -55,6 +55,7 @@ def symbols():
     return {
         "indices": sorted(INDEX_SYMBOLS),
         "defaults": DEFAULT_SYMBOLS,
+        "fo": sorted(FO_UNIVERSE),
         "watchlist": store.watchlist,
     }
 

@@ -5,6 +5,33 @@ import { nf, signColor, sk } from "../lib/format";
 import type { WatchQuote } from "../types";
 
 type WlView = "list" | "grid";
+type SortKey = "none" | "az" | "ltp" | "pct" | "chg";
+
+const wPx = (w: WatchQuote) => (w.kind === "option" ? w.ltp : w.liveSpot ?? w.spot) ?? null;
+const wPct = (w: WatchQuote) => (w.kind === "option" ? w.chgPct : w.liveChgPct) ?? null;
+const wChg = (w: WatchQuote) => {
+  const p = wPx(w);
+  const c = wPct(w);
+  return p != null && c != null ? (p * c) / 100 : null; // approx rupee move
+};
+const wName = (w: WatchQuote) =>
+  w.kind === "option" ? `${w.symbol} ${w.strike} ${w.optionType}` : w.symbol;
+
+function sortWatch(rows: WatchQuote[], { k, dir }: { k: SortKey; dir: 1 | -1 }) {
+  if (k === "none") return rows;
+  const val = (w: WatchQuote): number | string | null =>
+    k === "az" ? wName(w) : k === "ltp" ? wPx(w) : k === "pct" ? wPct(w) : wChg(w);
+  return [...rows].sort((a, b) => {
+    const x = val(a);
+    const y = val(b);
+    if (x == null && y == null) return 0;
+    if (x == null) return 1; // nulls last
+    if (y == null) return -1;
+    if (typeof x === "string" || typeof y === "string")
+      return dir * String(x).localeCompare(String(y));
+    return dir * (x - y);
+  });
+}
 
 /** remove button */
 function DelBtn({ onClick, title }: { onClick: (e: React.MouseEvent) => void; title: string }) {
@@ -162,6 +189,26 @@ export function Watchlist() {
       return "list";
     }
   });
+  const [sort, setSort] = useState<{ k: SortKey; dir: 1 | -1 }>(() => {
+    try {
+      const raw = localStorage.getItem("wlSort");
+      return raw ? JSON.parse(raw) : { k: "none", dir: 1 };
+    } catch {
+      return { k: "none", dir: 1 };
+    }
+  });
+  const setSortPersist = (k: SortKey) => {
+    setSort((s) => {
+      const next: { k: SortKey; dir: 1 | -1 } =
+        s.k === k ? { k, dir: (s.dir === 1 ? -1 : 1) as 1 | -1 } : { k, dir: k === "az" ? 1 : -1 };
+      try {
+        localStorage.setItem("wlSort", JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
   const hasOptions = watch.some((w) => w.kind === "option");
   const active = watchlists?.active ?? 0;
   const searchTimer = useRef<number | null>(null);
@@ -211,6 +258,7 @@ export function Watchlist() {
     selectSymbol(v);
   };
 
+  const shown = sortWatch(watch, sort);
   const rowFor = (w: WatchQuote) =>
     w.kind === "option" ? (
       <OptionRow key={w.key} w={w} />
@@ -253,6 +301,41 @@ export function Watchlist() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* sort bar */}
+      <div className="flex items-center gap-1 px-3 pb-1.5 text-[10px]">
+        <span className="text-term-dim">Sort</span>
+        {(
+          [
+            ["az", "A–Z"],
+            ["ltp", "LTP"],
+            ["pct", "Chg%"],
+            ["chg", "P&L"],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            onClick={() => setSortPersist(k)}
+            className={`rounded border px-1.5 py-0.5 transition ${
+              sort.k === k
+                ? "border-term-accent bg-term-accent/15 text-term-text"
+                : "border-term-border text-term-dim hover:text-term-text"
+            }`}
+          >
+            {label}
+            {sort.k === k && <span className="ml-0.5">{sort.dir === 1 ? "▲" : "▼"}</span>}
+          </button>
+        ))}
+        {sort.k !== "none" && (
+          <button
+            onClick={() => setSortPersist("none" as SortKey)}
+            className="ml-auto text-term-dim hover:text-down"
+            title="Clear sort (list order)"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {/* list tabs — pills */}
@@ -394,10 +477,10 @@ export function Watchlist() {
             className="grid gap-1 p-2"
             style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}
           >
-            {watch.map(rowFor)}
+            {shown.map(rowFor)}
           </div>
         ) : (
-          <div className="flex flex-col gap-1 p-2">{watch.map(rowFor)}</div>
+          <div className="flex flex-col gap-1 p-2">{shown.map(rowFor)}</div>
         )}
       </div>
 
