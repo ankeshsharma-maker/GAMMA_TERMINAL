@@ -14,6 +14,11 @@ type Spec = {
   sessionMoveMax?: number;
   straddlePctMin?: number;
   oiBuildup?: OIBuildup[];
+  smartScoreMin?: number;
+  smartScoreMax?: number;
+  wallBreak?: string[];
+  gammaRegime?: string[];
+  compression?: boolean;
   sortBy?: keyof ScreenerRow;
   sortDir?: "asc" | "desc";
 };
@@ -41,6 +46,11 @@ const buildupLabel: Record<OIBuildup, string> = {
   NEUTRAL: "—",
 };
 
+const wallArrow: Record<string, string> = {
+  ABOVE_CALL_WALL: "▲ call wall",
+  BELOW_PUT_WALL: "▼ put wall",
+};
+
 function applySpec(rows: ScreenerRow[], s: Spec): ScreenerRow[] {
   const ok = (r: ScreenerRow) =>
     (s.ivRankMin == null || (r.ivRank != null && r.ivRank >= s.ivRankMin)) &&
@@ -53,7 +63,14 @@ function applySpec(rows: ScreenerRow[], s: Spec): ScreenerRow[] {
     (s.sessionMoveMax == null || r.sessionMovePct <= s.sessionMoveMax) &&
     (s.straddlePctMin == null ||
       (r.straddlePctOfSpot != null && r.straddlePctOfSpot >= s.straddlePctMin)) &&
-    (!s.oiBuildup?.length || s.oiBuildup.includes(r.oiBuildup));
+    (!s.oiBuildup?.length || s.oiBuildup.includes(r.oiBuildup)) &&
+    (s.smartScoreMin == null ||
+      (r.smartMoneyScore != null && r.smartMoneyScore >= s.smartScoreMin)) &&
+    (s.smartScoreMax == null ||
+      (r.smartMoneyScore != null && r.smartMoneyScore <= s.smartScoreMax)) &&
+    (!s.wallBreak?.length || (!!r.wallBreak && s.wallBreak.includes(r.wallBreak))) &&
+    (!s.gammaRegime?.length || (!!r.gammaRegime && s.gammaRegime.includes(r.gammaRegime))) &&
+    (!s.compression || r.compression === true);
 
   const sortBy = s.sortBy ?? "ivRank";
   const dir = s.sortDir === "asc" ? 1 : -1;
@@ -125,6 +142,16 @@ export function Screener() {
         <Num label="DTE≤" value={spec.dteMax} onChange={(v) => patch({ dteMax: v })} />
         <Num label="Move%≥" value={spec.sessionMoveMin} onChange={(v) => patch({ sessionMoveMin: v })} />
         <Num label="Strd%≥" value={spec.straddlePctMin} onChange={(v) => patch({ straddlePctMin: v })} />
+        <Num label="Smart≥" value={spec.smartScoreMin} onChange={(v) => patch({ smartScoreMin: v })} />
+        <Num label="Smart≤" value={spec.smartScoreMax} onChange={(v) => patch({ smartScoreMax: v })} />
+        <button
+          onClick={() => patch({ compression: spec.compression ? undefined : true })}
+          className={`rounded px-1.5 py-0.5 text-[10px] ${
+            spec.compression ? "bg-term-accent text-white" : "bg-term-panel text-term-dim"
+          }`}
+        >
+          Coiled
+        </button>
         <div className="flex gap-1">
           {BUILDUPS.map((b) => (
             <button
@@ -184,6 +211,7 @@ export function Screener() {
                   ["straddlePctOfSpot", "Strd %"],
                   ["maxPainDistPct", "MP dist"],
                   ["dte", "DTE"],
+                  ["smartMoneyScore", "Smart$"],
                 ] as [keyof ScreenerRow, string][]
               ).map(([key, label]) => (
                 <th
@@ -206,7 +234,7 @@ export function Screener() {
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-3 py-8 text-center text-term-dim">
+                <td colSpan={11} className="px-3 py-8 text-center text-term-dim">
                   {screener.length === 0
                     ? "scanning the F&O universe — first rows appear within a minute…"
                     : "no symbols match these filters"}
@@ -249,6 +277,39 @@ export function Screener() {
                   {nf(r.maxPainDistPct, 2)}
                 </td>
                 <td className="num px-2 py-1.5">{nf(r.dte, 1)}</td>
+                <td
+                  className="px-2 py-1.5"
+                  title={r.smartSignals?.length ? r.smartSignals.join(" · ") : "no smart-money signals"}
+                >
+                  {r.smartMoneyScore != null ? (
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`num w-8 text-right font-semibold ${
+                          r.smartMoneyScore >= 25
+                            ? "text-up"
+                            : r.smartMoneyScore <= -25
+                            ? "text-down"
+                            : "text-term-dim"
+                        }`}
+                      >
+                        {r.smartMoneyScore > 0 ? "+" : ""}
+                        {nf(r.smartMoneyScore, 0)}
+                      </span>
+                      {r.wallBreak && (
+                        <span
+                          className={`text-[9px] ${
+                            r.wallBreak === "ABOVE_CALL_WALL" ? "text-up" : "text-down"
+                          }`}
+                        >
+                          {wallArrow[r.wallBreak]}
+                        </span>
+                      )}
+                      {r.compression && <span className="text-[9px] text-amber-400">coil</span>}
+                    </div>
+                  ) : (
+                    <span className="text-term-dim">–</span>
+                  )}
+                </td>
                 <td className="px-2 py-1.5">
                   <span className={`rounded px-1.5 py-0.5 text-[10px] ${buildupStyle[r.oiBuildup]}`}>
                     {buildupLabel[r.oiBuildup]}

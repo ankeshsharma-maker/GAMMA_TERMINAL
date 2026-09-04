@@ -357,6 +357,25 @@ export interface ScreenerRow {
   peOIChg: number;
   oiBuildup: OIBuildup;
   ts: number;
+  // smart-money read (optional; older rows may lack them)
+  callWall?: number | null;
+  putWall?: number | null;
+  wallBreak?: "" | "ABOVE_CALL_WALL" | "BELOW_PUT_WALL";
+  maxCallAddStrike?: number | null;
+  maxCallAdd?: number;
+  maxPutAddStrike?: number | null;
+  maxPutAdd?: number;
+  atmBias?: "PUT_WRITING" | "CALL_WRITING" | "MIXED";
+  flowBias?: number;
+  volOiRatio?: number;
+  ivSkew?: number | null;
+  gammaFlip?: number;
+  gammaRegime?: "SHORT_GAMMA" | "LONG_GAMMA";
+  gammaFlipDistPct?: number;
+  compression?: boolean;
+  smartMoneyScore?: number;
+  smartBias?: "BULLISH" | "BEARISH" | "NEUTRAL";
+  smartSignals?: string[];
 }
 
 export interface ScreenerProgress {
