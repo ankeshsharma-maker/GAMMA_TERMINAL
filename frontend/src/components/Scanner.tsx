@@ -117,9 +117,14 @@ export function Scanner() {
               key={r.symbol}
               onClick={() => openScrip(r.symbol)}
               title="Open scrip dashboard (chart + OI + chain)"
-              className={`cursor-pointer hover:bg-term-panel ${i % 2 ? "bg-term-panel2/40" : ""}`}
+              className={`click-row ${i % 2 ? "bg-term-panel2/40" : ""}`}
             >
-              <TD cls="font-semibold text-sm">{r.symbol}</TD>
+              <TD cls="text-sm">
+                <span className="chipbtn font-semibold text-term-text">
+                  {r.symbol}
+                  <span className="text-term-accent">›</span>
+                </span>
+              </TD>
               <TD>
                 <ScoreCell r={r} />
               </TD>

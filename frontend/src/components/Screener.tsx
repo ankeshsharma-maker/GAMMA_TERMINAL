@@ -250,9 +250,14 @@ export function Screener() {
                 key={r.symbol}
                 onClick={() => openScrip(r.symbol)}
                 title="Open scrip dashboard (chart + OI + chain)"
-                className="cursor-pointer border-b border-term-border/40 hover:bg-term-panel/60"
+                className="click-row border-b border-term-border/40"
               >
-                <td className="px-2 py-1.5 font-semibold">{r.symbol}</td>
+                <td className="px-2 py-1.5">
+                  <span className="chipbtn font-semibold text-term-text">
+                    {r.symbol}
+                    <span className="text-term-accent">›</span>
+                  </span>
+                </td>
                 <td className="num px-2 py-1.5">{nf(r.spot, 1)}</td>
                 <td className={`num px-2 py-1.5 ${signColor(r.sessionMovePct)}`}>
                   {nf(r.sessionMovePct, 2)}

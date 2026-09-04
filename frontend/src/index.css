@@ -16,6 +16,27 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* every interactive control reads as interactive (Tailwind's preflight drops this) */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+summary,
+label > input[type="checkbox"],
+label > input[type="radio"],
+select {
+  cursor: pointer;
+}
+button:disabled,
+[role="button"][aria-disabled="true"] {
+  cursor: not-allowed;
+}
+button:focus-visible,
+[role="button"]:focus-visible,
+a:focus-visible,
+select:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 1px;
+}
+
 .num {
   font-variant-numeric: tabular-nums;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -63,12 +84,24 @@ body {
     @apply text-term-dim hover:bg-term-border;
   }
   .btn {
-    @apply px-2 py-1 rounded border border-term-border bg-term-panel hover:bg-term-border text-xs transition-colors;
+    @apply px-2 py-1 rounded border border-term-border bg-term-panel hover:bg-term-border hover:border-term-accent/60 text-xs transition-colors disabled:opacity-40 disabled:hover:bg-term-panel disabled:hover:border-term-border;
   }
   .btn-buy {
     @apply bg-up/20 border-up/40 hover:bg-up/30 text-up;
   }
   .btn-sell {
     @apply bg-down/20 border-down/40 hover:bg-down/30 text-down;
+  }
+  /* a small pill that marks plain text / icons as clickable */
+  .chipbtn {
+    @apply inline-flex items-center gap-1 rounded border border-term-border bg-term-bg/60 px-1.5 py-0.5 text-2xs text-term-dim transition-colors hover:border-term-accent/60 hover:text-term-text;
+  }
+  /* a table row that navigates when clicked */
+  .click-row {
+    @apply cursor-pointer transition-colors;
+  }
+  .click-row:hover {
+    background: rgba(59, 130, 246, 0.08);
+    box-shadow: inset 3px 0 0 #3b82f6;
   }
 }
