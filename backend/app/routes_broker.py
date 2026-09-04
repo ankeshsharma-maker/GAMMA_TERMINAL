@@ -1,7 +1,7 @@
 """Broker (Flattrade) auth + read-only account/data endpoints."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
 from .brokers import get_broker
@@ -36,17 +36,24 @@ def login():
 
 
 @router.get("/callback", response_class=HTMLResponse)
-async def callback(
-    code: str | None = Query(None),
-    request_code: str | None = Query(None),
-    client: str | None = Query(None),
-):
+async def callback(request: Request):
+    import logging as _lg
+
     b = get_broker()
-    rc = code or request_code
+    qp = dict(request.query_params)
+    _lg.getLogger("flattrade").info("callback query params: %s", qp)
+    # accept any of the names Noren brokers have used for the request code
+    rc = next(
+        (qp[k] for k in ("code", "request_code", "requestCode", "reqcode", "request_token", "authcode")
+         if qp.get(k)),
+        None,
+    )
     if not rc:
         return HTMLResponse(
             _CALLBACK_HTML.format(
-                color="#dc2626", title="No request code", msg="Flattrade did not return a code."
+                color="#dc2626",
+                title="No request code",
+                msg=f"Flattrade returned no code. Params seen: {qp or '(none)'}",
             ),
             status_code=400,
         )
