@@ -425,8 +425,10 @@ class FlattradeBroker:
         tsym = f"{name.upper()}{d.strftime('%d%b%y').upper()}{cp}{strike_s}"
         token: str | None = None
         lot: int | None = None
+        error: str | None = None
         try:
-            for r in await self.search_scrip("NFO", tsym):
+            rows = await self.search_scrip("NFO", tsym)
+            for r in rows:
                 if r.get("tsym", "").upper() == tsym.upper():
                     token = r.get("token")
                     tsym = r["tsym"]
@@ -435,9 +437,15 @@ class FlattradeBroker:
                     except (TypeError, ValueError):
                         lot = None
                     break
+            else:
+                error = f"not found in {len(rows)} SearchScrip results"
         except Exception as exc:  # noqa: BLE001
-            log.debug("resolve_nfo search failed for %s: %s", tsym, exc)
-        return {"tsym": tsym, "token": token, "lotSize": lot, "confirmed": token is not None}
+            error = str(exc)
+            log.warning("resolve_nfo search failed for %s: %s", tsym, exc)
+        return {
+            "tsym": tsym, "token": token, "lotSize": lot,
+            "confirmed": token is not None, "error": error,
+        }
 
     def build_order_payload(
         self,

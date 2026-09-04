@@ -366,7 +366,7 @@ async def chain_preview(
     switched over. Does not touch the store or NSE at all."""
     import time as _time
 
-    from .flattrade_chain import fetch_chain_payload
+    from . import flattrade_chain
     from .processing import build_chain
 
     b = _require_auth()
@@ -379,10 +379,13 @@ async def chain_preview(
         )
 
     t0 = _time.time()
-    payload = await fetch_chain_payload(b, sym, exp, exch=exch, count=count)
+    payload = await flattrade_chain.fetch_chain_payload(b, sym, exp, exch=exch, count=count)
     fetch_ms = round((_time.time() - t0) * 1000)
     if not payload:
-        raise HTTPException(status_code=502, detail="Flattrade returned no usable chain data")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Flattrade returned no usable chain data. Sample discovery errors: {flattrade_chain.last_discovery_errors}",
+        )
 
     try:
         chain = build_chain(payload, sym, exp)
@@ -393,6 +396,7 @@ async def chain_preview(
         "source": "flattrade",
         "fetchMs": fetch_ms,
         "strikesReturned": len(payload["records"]["data"]),
+        "discoveryErrorSample": flattrade_chain.last_discovery_errors,
         "chain": chain,
     }
 

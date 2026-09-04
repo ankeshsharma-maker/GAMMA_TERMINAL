@@ -43,18 +43,28 @@ _STEP_GUESS = {
 # via resolve_nfo, kept for the process lifetime (a restart re-discovers).
 _contract_cache: dict[tuple[str, str], dict[float, dict[str, str]]] = {}
 
-# Firing 60-100 requests at Flattrade in one asyncio.gather() burst got a
-# chunk of them silently dropped/throttled (confirmed live: strikes right
-# around ATM failing while far OTM ones succeeded, different ones each run).
-# Cap how many requests are in flight at once.
-_CONCURRENCY = 4
+# Firing 60-100 requests at Flattrade in one asyncio.gather() burst hits some
+# rate limit / quota -- confirmed live: the first ~16 requests (in submission
+# order) succeed and every request after that fails outright, both at an
+# unthrottled burst and at concurrency=4. Go slow and steady instead: a low
+# concurrency AND a floor on how often a new request can start.
+_CONCURRENCY = 2
+_MIN_GAP_S = 0.25
 
 
 async def _gather_limited(coros) -> list:
     sem = asyncio.Semaphore(_CONCURRENCY)
+    lock = asyncio.Lock()
+    last_start = 0.0
 
     async def _run(coro):
+        nonlocal last_start
         async with sem:
+            async with lock:
+                wait = last_start + _MIN_GAP_S - asyncio.get_event_loop().time()
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                last_start = asyncio.get_event_loop().time()
             return await coro
 
     return await asyncio.gather(*[_run(c) for c in coros])
@@ -111,23 +121,39 @@ async def underlying_spot(broker, symbol: str, exch: str = "NSE") -> float | Non
     return spot or None
 
 
+# last discovery's failures, for the /chain-preview diagnostic (not per-call
+# state, just "what happened most recently" for whoever is debugging live).
+last_discovery_errors: list[str] = []
+
+
 async def _discover_contracts(
     broker, sym: str, expiry: str, atm: float, step: float, window: int
 ) -> dict[float, dict[str, str]]:
     """Resolve every strike in [atm - window*step, atm + window*step] on both
     sides to its Noren token, via the confirmed-reliable resolve_nfo()."""
+    global last_discovery_errors
     strikes = [atm + i * step for i in range(-window, window + 1)]
+    errors: list[str] = []
 
     async def _resolve(strike: float, ot: str):
         try:
             info = await broker.resolve_nfo(sym, expiry, strike, ot)
         except Exception as exc:  # noqa: BLE001
-            log.debug("resolve_nfo(%s %s %s) failed: %s", sym, strike, ot, exc)
+            errors.append(f"{strike}{ot}: exception {exc}")
             return strike, ot, None
-        return strike, ot, info.get("token") if info else None
+        if not info or not info.get("token"):
+            errors.append(f"{strike}{ot}: {(info or {}).get('error') or 'no token'}")
+            return strike, ot, None
+        return strike, ot, info.get("token")
 
     tasks = [_resolve(k, ot) for k in strikes for ot in ("CE", "PE")]
     results = await _gather_limited(tasks)
+    last_discovery_errors = errors[:10]
+    if errors:
+        log.warning(
+            "%s %s discovery: %d/%d legs failed, e.g. %s",
+            sym, expiry, len(errors), len(tasks), errors[:3],
+        )
 
     out: dict[float, dict[str, str]] = {}
     for strike, ot, token in results:
