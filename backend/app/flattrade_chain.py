@@ -43,6 +43,22 @@ _STEP_GUESS = {
 # via resolve_nfo, kept for the process lifetime (a restart re-discovers).
 _contract_cache: dict[tuple[str, str], dict[float, dict[str, str]]] = {}
 
+# Firing 60-100 requests at Flattrade in one asyncio.gather() burst got a
+# chunk of them silently dropped/throttled (confirmed live: strikes right
+# around ATM failing while far OTM ones succeeded, different ones each run).
+# Cap how many requests are in flight at once.
+_CONCURRENCY = 4
+
+
+async def _gather_limited(coros) -> list:
+    sem = asyncio.Semaphore(_CONCURRENCY)
+
+    async def _run(coro):
+        async with sem:
+            return await coro
+
+    return await asyncio.gather(*[_run(c) for c in coros])
+
 # token -> first open-interest value seen today, used as the change-in-OI
 # baseline (see module docstring). Cleared once per calendar day.
 _day_oi_base: dict[str, float] = {}
@@ -111,7 +127,7 @@ async def _discover_contracts(
         return strike, ot, info.get("token") if info else None
 
     tasks = [_resolve(k, ot) for k in strikes for ot in ("CE", "PE")]
-    results = await asyncio.gather(*tasks)
+    results = await _gather_limited(tasks)
 
     out: dict[float, dict[str, str]] = {}
     for strike, ot, token in results:
@@ -146,8 +162,15 @@ async def fetch_chain_payload(
     contracts = _contract_cache.get(key)
     if not contracts:
         contracts = await _discover_contracts(broker, sym, expiry, atm, step, count)
-        if contracts:
+        expected = (2 * count + 1) * 2
+        got = sum(len(sides) for sides in contracts.values())
+        if contracts and got >= expected * 0.7:
             _contract_cache[key] = contracts
+        elif contracts:
+            log.warning(
+                "discovery for %s %s only got %d/%d legs (rate-limited?) -- not caching, will retry next fetch",
+                sym, expiry, got, expected,
+            )
     if not contracts:
         return None
 
@@ -159,7 +182,7 @@ async def fetch_chain_payload(
         except Exception:  # noqa: BLE001
             return strike, ot, token, None
 
-    results = await asyncio.gather(*[_q(k, ot, tok) for k, ot, tok in targets])
+    results = await _gather_limited([_q(k, ot, tok) for k, ot, tok in targets])
 
     by_strike: dict[float, dict] = {}
     for strike, ot, token, q in results:
