@@ -99,19 +99,35 @@ async def fetch_chain_payload(
     atm = round(spot / step) * step
 
     try:
-        anchor = await broker.resolve_nfo(sym, expiry, atm, "CE")
+        anchor_ce = await broker.resolve_nfo(sym, expiry, atm, "CE")
+        anchor_pe = await broker.resolve_nfo(sym, expiry, atm, "PE")
     except Exception as exc:  # noqa: BLE001
         log.warning("resolve_nfo failed for %s %s: %s", sym, expiry, exc)
         return None
-    if not anchor.get("tsym"):
+    if not anchor_ce.get("tsym"):
         return None
 
-    try:
-        oc = await broker.get_option_chain(exch, anchor["tsym"], str(int(atm)), count)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("GetOptionChain failed for %s %s: %s", sym, expiry, exc)
-        return None
-    values = (oc or {}).get("values") or []
+    # GetOptionChain's windowing around one anchor isn't reliably symmetric
+    # (seen: count=10 -> clean matched CE+PE strikes, count=20 -> mostly one
+    # side per strike). Anchor on both a CE and a PE token and merge by token
+    # so a strike missing from one call is still covered by the other.
+    async def _oc(tsym: str):
+        if not tsym:
+            return []
+        try:
+            r = await broker.get_option_chain(exch, tsym, str(int(atm)), count)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("GetOptionChain(%s) failed for %s %s: %s", tsym, sym, expiry, exc)
+            return []
+        return (r or {}).get("values") or []
+
+    ce_vals, pe_vals = await asyncio.gather(_oc(anchor_ce.get("tsym")), _oc(anchor_pe.get("tsym")))
+    by_token: dict[str, dict] = {}
+    for v in [*ce_vals, *pe_vals]:
+        tok = v.get("token")
+        if tok:
+            by_token[str(tok)] = v
+    values = list(by_token.values())
     if not values:
         return None
 
