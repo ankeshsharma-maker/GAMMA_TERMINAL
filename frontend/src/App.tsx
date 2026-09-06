@@ -28,6 +28,8 @@ const LS = {
   left: "layout.leftW",
   right: "layout.rightW",
   zoom: "layout.zoom",
+  hideLeft: "layout.hideLeft",
+  hideRight: "layout.hideRight",
 };
 const readNum = (k: string, d: number) => {
   try {
@@ -127,10 +129,24 @@ function DesktopShell() {
     setZoom(100);
   };
 
-  const showRight = !wide;
+  const [hideLeft, setHideLeft] = useState(() => localStorage.getItem(LS.hideLeft) === "1");
+  const [hideRight, setHideRight] = useState(() => localStorage.getItem(LS.hideRight) === "1");
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS.hideLeft, hideLeft ? "1" : "0");
+    } catch {}
+  }, [hideLeft]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS.hideRight, hideRight ? "1" : "0");
+    } catch {}
+  }, [hideRight]);
+
+  const showRight = !wide && !hideRight;
+  const leftCols = hideLeft ? "0px" : `${leftW}px 4px`;
   const cols = showRight
-    ? `${leftW}px 4px minmax(0,1fr) 4px ${rightW}px`
-    : `${leftW}px 4px minmax(0,1fr)`;
+    ? `${leftCols} minmax(0,1fr) 4px ${rightW}px`
+    : `${leftCols} minmax(0,1fr)`;
 
   return (
     <div className="relative flex h-full flex-col bg-term-bg text-term-text">
@@ -151,6 +167,23 @@ function DesktopShell() {
         <button className="btn ml-2 px-2 py-0" onClick={resetLayout}>
           Reset
         </button>
+        <span className="ml-3">Panels</span>
+        <button
+          className={`btn px-2 py-0 ${hideLeft ? "text-term-dim" : "text-term-text"}`}
+          onClick={() => setHideLeft((v) => !v)}
+          title="Show / hide the watchlist panel"
+        >
+          {hideLeft ? "▸ Watchlist" : "◂ Watchlist"}
+        </button>
+        {!wide && (
+          <button
+            className={`btn px-2 py-0 ${hideRight ? "text-term-dim" : "text-term-text"}`}
+            onClick={() => setHideRight((v) => !v)}
+            title="Show / hide the right panel"
+          >
+            {hideRight ? "◂ Right" : "▸ Right"}
+          </button>
+        )}
         <span className="ml-auto hidden sm:inline">drag the dividers to stretch panels</span>
       </div>
 
@@ -164,10 +197,10 @@ function DesktopShell() {
         }
       >
         <aside className="min-h-0 overflow-hidden border-r border-term-border">
-          <Watchlist />
+          {!hideLeft && <Watchlist />}
         </aside>
 
-        <VSplit onDrag={bumpLeft} />
+        {!hideLeft && <VSplit onDrag={bumpLeft} />}
 
         <main className="flex min-h-0 flex-col overflow-hidden">
           {view === "chain" && (
