@@ -282,58 +282,44 @@ const COLS: Record<TabKey, Col[]> = {
   greeks: [deltaCol, gammaCol, thetaCol, vegaCol, ivCol],
 };
 
-function QuickTrade({
-  strike,
+/** classify one option leg's activity from its price change + OI change
+ *  price↑ OI↑ = fresh longs (buying) · price↓ OI↑ = fresh shorts (writing)
+ *  price↑ OI↓ = short covering · price↓ OI↓ = long unwinding */
+function classifyLeg(leg: Leg, ot: "CE" | "PE") {
+  const pUp = (leg.chg ?? 0) >= 0;
+  const oUp = (leg.oiChg ?? 0) >= 0;
+  const side = ot === "CE" ? "Call" : "Put";
+  if (Math.abs(leg.oiChg ?? 0) < 1)
+    return { label: "—", cls: "text-term-dim/50" };
+  if (pUp && oUp) return { label: `${side} Buying`, cls: "bg-up/20 text-up" };
+  if (!pUp && oUp) return { label: `${side} Writing`, cls: "bg-down/20 text-down" };
+  if (pUp && !oUp) return { label: "Short Covering", cls: "bg-sky-500/20 text-sky-400" };
+  return { label: "Long Unwinding", cls: "bg-amber-500/20 text-amber-400" };
+}
+
+function ActivityCell({
+  leg,
   ot,
-  lots,
   onTicket,
 }: {
-  strike: number;
+  leg: Leg;
   ot: "CE" | "PE";
-  lots: number;
   onTicket: () => void;
 }) {
-  const placeOrder = useStore((s) => s.placeOrder);
-  const queueBuilderLeg = useStore((s) => s.queueBuilderLeg);
+  const a = classifyLeg(leg, ot);
   return (
-    <div className="flex gap-0.5">
-      <button
-        title={`Buy ${lots} lot(s)`}
-        onClick={() => placeOrder({ strike, optionType: ot, side: "BUY", lots })}
-        className="rounded bg-up/15 px-1 text-[10px] font-bold text-up hover:bg-up/30"
-      >
-        B
-      </button>
-      <button
-        title={`Sell ${lots} lot(s)`}
-        onClick={() => placeOrder({ strike, optionType: ot, side: "SELL", lots })}
-        className="rounded bg-down/15 px-1 text-[10px] font-bold text-down hover:bg-down/30"
-      >
-        S
-      </button>
-      <button
-        title={`Add ${ot} ${strike} to the Strategy Builder (Buy ${lots} lot — flip side in the builder)`}
-        onClick={() =>
-          queueBuilderLeg({ optionType: ot, strike, side: "BUY", lots: Math.max(1, lots) })
-        }
-        className="rounded bg-term-accent/20 px-1 text-[10px] font-bold text-term-accent hover:bg-term-accent/40"
-      >
-        ＋
-      </button>
-      <button
-        title="Order ticket"
-        onClick={onTicket}
-        className="rounded bg-term-border px-1 text-[10px] text-term-dim hover:text-term-text"
-      >
-        ⋯
-      </button>
-    </div>
+    <button
+      onClick={onTicket}
+      title="tap to trade this strike"
+      className={`w-full whitespace-nowrap rounded px-1 py-0.5 text-[9px] font-semibold leading-tight ${a.cls} hover:brightness-110`}
+    >
+      {a.label}
+    </button>
   );
 }
 
 export function OptionChain() {
   const { chain, chainError } = useStore();
-  const [lots, setLots] = useState(1);
   const [tab, setTab] = useState<TabKey>("ltp");
   const [count, setCount] = useState<number>(20);
   const [oiTf, setOiTf] = useState(0); // ΔOI window in minutes; 0 = day (since open)
@@ -600,10 +586,9 @@ export function OptionChain() {
       >
         {/* ---- CALL side ---- */}
         <td className={`cell border-l-2 border-up/40 text-left ${cbg}`}>
-          <QuickTrade
-            strike={row.strike}
+          <ActivityCell
+            leg={c}
             ot="CE"
-            lots={lots}
             onTicket={() => setTicket({ strike: row.strike, ot: "CE", ltp: c.ltp })}
           />
         </td>
@@ -640,10 +625,9 @@ export function OptionChain() {
           </td>
         ))}
         <td className={`cell border-r-2 border-down/40 text-right ${pbg}`}>
-          <QuickTrade
-            strike={row.strike}
+          <ActivityCell
+            leg={p}
             ot="PE"
-            lots={lots}
             onTicket={() => setTicket({ strike: row.strike, ot: "PE", ltp: p.ltp })}
           />
         </td>
@@ -699,15 +683,14 @@ export function OptionChain() {
           ))}
         </div>
 
-        <span className="ml-1">Lots</span>
-        <div className="seg">
-          <button onClick={() => setLots((l) => Math.max(1, l - 1))}>−</button>
-          <button className="on pointer-events-none">{lots}</button>
-          <button onClick={() => setLots((l) => l + 1)}>+</button>
-        </div>
-
         <span className="ml-3 text-up">■ CALLS</span>
         <span className="text-down">■ PUTS</span>
+        <span className="text-term-dim">
+          · Activity: <span className="text-up">Buying</span> /{" "}
+          <span className="text-down">Writing</span> /{" "}
+          <span className="text-sky-400">Short covering</span> /{" "}
+          <span className="text-amber-400">Long unwinding</span> — tap to trade
+        </span>
         {tab === "oi" ? (
           <span className="ml-auto">
             <span className="text-down">■ Call OI = Resistance</span>
@@ -757,7 +740,7 @@ export function OptionChain() {
               </th>
             </tr>
             <tr>
-              <th className="border-l-2 border-up/50 text-left">Trade</th>
+              <th className="border-l-2 border-up/50 text-left">Activity</th>
               {cols.map((col) => (
                 <th key={"hc" + col.key} className="text-right">
                   {col.label}
@@ -771,7 +754,7 @@ export function OptionChain() {
                   {col.label}
                 </th>
               ))}
-              <th className="border-r-2 border-down/50 text-right">Trade</th>
+              <th className="border-r-2 border-down/50 text-right">Activity</th>
             </tr>
           </thead>
           <tbody>{visibleRows.map(renderRow)}</tbody>
