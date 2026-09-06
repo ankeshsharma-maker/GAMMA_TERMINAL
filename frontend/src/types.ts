@@ -246,6 +246,8 @@ export interface AutoRule {
   mode: "paper" | "live";
   entry: AutoCondition[];
   exit: AutoCondition[];
+  entryLogic?: "all" | "any";
+  exitLogic?: "all" | "any";
   slPct?: number;
   targetPct?: number;
   trailPct?: number;

@@ -393,6 +393,10 @@ class _Ctx:
     def eval_any(self, conds: list) -> bool:
         return any(self.eval_one(c) for c in (conds or []))
 
+    def eval_conds(self, conds: list, logic: str = "all") -> bool:
+        """AND ('all') or OR ('any') over the condition list."""
+        return self.eval_any(conds) if (logic or "all") == "any" else self.eval_all(conds)
+
 
 # --------------------------------------------------------------------------- #
 # instrument resolution                                                        #
@@ -626,7 +630,7 @@ class AutoBot:
                     reason = "square-off"
                 else:
                     cx = ctx_cache.setdefault(sym, _Ctx(sym))
-                    if cx.eval_any(rule.get("exit", [])):
+                    if cx.eval_conds(rule.get("exit", []), rule.get("exitLogic", "any")):
                         reason = "exit signal"
                 if reason:
                     exit_side = "SELL" if pos["side"] == "BUY" else "BUY"
@@ -660,7 +664,7 @@ class AutoBot:
                 continue
 
             cx = ctx_cache.setdefault(sym, _Ctx(sym))
-            if cx.n < 5 or not cx.eval_all(rule.get("entry", [])):
+            if cx.n < 5 or not cx.eval_conds(rule.get("entry", []), rule.get("entryLogic", "all")):
                 continue
 
             chain = store.get_chain(sym, rule.get("expiry"))

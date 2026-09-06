@@ -209,7 +209,7 @@ async def backtest_rule(rule: dict, from_date: str, to_date: str) -> dict:
                 reason = f"target {tp:.0f}%"
             elif trl > 0 and open_pos["peak"] >= trl_arm and spct <= open_pos["peak"] - trl:
                 reason = f"trail ({open_pos['peak']:.0f}%→{spct:.0f}%)"
-            elif exit_conds and ctx.eval_any(exit_conds):
+            elif exit_conds and ctx.eval_conds(exit_conds, rule.get("exitLogic", "any")):
                 reason = "exit signal"
             elif i == len(dates) - 1:
                 reason = "range end"
@@ -228,7 +228,7 @@ async def backtest_rule(rule: dict, from_date: str, to_date: str) -> dict:
             continue
         if sum(1 for t in trades if t["entryDate"] == d) >= max_pd:
             continue
-        if not ctx.eval_all(entry_conds):
+        if not ctx.eval_conds(entry_conds, rule.get("entryLogic", "all")):
             continue
         base = round(by_date[d] / step) * step
         strike, ot = _resolve_instrument(rule.get("instrument", "ATM_CE"), base, step)

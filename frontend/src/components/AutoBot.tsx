@@ -244,6 +244,8 @@ function blankRule(symbol: string): Partial<AutoRule> {
     mode: "paper",
     entry: [mkCond("rsi")],
     exit: [],
+    entryLogic: "all",
+    exitLogic: "any",
     slPct: 30,
     targetPct: 60,
     trailPct: 0,
@@ -330,17 +332,34 @@ function CondList({
   hint,
   list,
   onChange,
+  logic = "all",
+  onLogic,
 }: {
   title: string;
   hint: string;
   list: AutoCondition[];
   onChange: (l: AutoCondition[]) => void;
+  logic?: "all" | "any";
+  onLogic?: (l: "all" | "any") => void;
 }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-2xs font-semibold uppercase tracking-wide text-term-dim">
-          {title} <span className="normal-case text-[10px] text-term-dim/70">· {hint}</span>
+        <span className="flex items-center gap-2 text-2xs font-semibold uppercase tracking-wide text-term-dim">
+          {title}
+          {onLogic && list.length > 1 && (
+            <span className="seg text-[10px]">
+              <button onClick={() => onLogic("all")} className={logic === "all" ? "on" : ""}>
+                AND
+              </button>
+              <button onClick={() => onLogic("any")} className={logic === "any" ? "on" : ""}>
+                OR
+              </button>
+            </span>
+          )}
+          <span className="normal-case text-[10px] text-term-dim/70">
+            · {logic === "any" ? "any one true" : "all true"} {hint}
+          </span>
         </span>
         <button
           className="btn px-1.5 py-0.5 text-2xs"
@@ -386,15 +405,36 @@ function RuleEditor({
 
   return (
     <div className="space-y-3 rounded-lg border border-term-accent/50 bg-term-panel p-3">
+      <label className="flex flex-col text-[10px] text-term-dim">
+        name
+        <input
+          value={r.name ?? ""}
+          onChange={(e) => set({ name: e.target.value })}
+          className="w-48 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
+        />
+      </label>
+
+      {/* entry / exit conditions — kept above the instrument config */}
+      <div className="space-y-3 rounded border border-term-border/60 bg-term-bg/40 p-2">
+        <CondList
+          title="Entry"
+          hint="to open"
+          list={r.entry ?? []}
+          onChange={(l) => set({ entry: l })}
+          logic={r.entryLogic ?? "all"}
+          onLogic={(l) => set({ entryLogic: l })}
+        />
+        <CondList
+          title="Exit"
+          hint="(SL / target / square-off always apply)"
+          list={r.exit ?? []}
+          onChange={(l) => set({ exit: l })}
+          logic={r.exitLogic ?? "any"}
+          onLogic={(l) => set({ exitLogic: l })}
+        />
+      </div>
+
       <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col text-[10px] text-term-dim">
-          name
-          <input
-            value={r.name ?? ""}
-            onChange={(e) => set({ name: e.target.value })}
-            className="w-48 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
-          />
-        </label>
         <label className="flex flex-col text-[10px] text-term-dim">
           symbol
           <select
@@ -563,19 +603,6 @@ function RuleEditor({
         </label>
       </div>
 
-      <CondList
-        title="Entry"
-        hint="all must be true"
-        list={r.entry ?? []}
-        onChange={(l) => set({ entry: l })}
-      />
-      <CondList
-        title="Exit"
-        hint="any true → exit (SL / target / square-off always apply)"
-        list={r.exit ?? []}
-        onChange={(l) => set({ exit: l })}
-      />
-
       <div className="flex items-center gap-2">
         <button className="btn btn-buy" onClick={() => onSave(r)}>
           Save rule
@@ -617,6 +644,7 @@ export function AutoBotView() {
   const [editing, setEditing] = useState<Partial<AutoRule> | null>(null);
   const [btId, setBtId] = useState<string | null>(null);
   const [lossDraft, setLossDraft] = useState("");
+  const [tab, setTab] = useState<"rules" | "backtest">("rules");
 
   useEffect(() => {
     load();
@@ -704,6 +732,34 @@ export function AutoBotView() {
         </div>
       )}
 
+      {/* tabs */}
+      <div className="flex items-center gap-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs">
+        {(
+          [
+            ["rules", "Rules"],
+            ["backtest", "⏱ Backtest"],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            onClick={() => setTab(k)}
+            className={`rounded px-2.5 py-1 font-semibold ${
+              tab === k ? "bg-term-accent text-white" : "text-term-dim hover:bg-term-border"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+        <span className="ml-2 text-term-dim">
+          {tab === "backtest"
+            ? "Replay a rule's indicator / OI conditions against Upstox daily history"
+            : `${rules.length} rule${rules.length === 1 ? "" : "s"}`}
+        </span>
+      </div>
+
+      {tab === "backtest" && <AutoBacktestTab rules={rules} />}
+
+      {tab === "rules" && (
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3 md:flex-row md:overflow-hidden">
         {/* rules + editor */}
         <div className="min-h-0 flex-1 space-y-3 md:overflow-auto md:pr-1">
@@ -866,6 +922,46 @@ export function AutoBotView() {
           </div>
         </div>
       </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* backtest tab                                                        */
+/* ------------------------------------------------------------------ */
+function AutoBacktestTab({ rules }: { rules: AutoRule[] }) {
+  const [id, setId] = useState<string>(rules[0]?.id ?? "");
+  const rule = rules.find((r) => r.id === id) ?? rules[0];
+
+  if (rules.length === 0)
+    return (
+      <div className="p-6 text-center text-xs text-term-dim">
+        Create a rule in the Rules tab first, then come back to backtest it.
+      </div>
+    );
+
+  return (
+    <div className="min-h-0 flex-1 overflow-auto p-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-2xs">
+        <span className="uppercase tracking-wide text-term-dim">Rule</span>
+        <select
+          value={id || rule?.id}
+          onChange={(e) => setId(e.target.value)}
+          className="rounded border border-term-border bg-term-bg px-2 py-1 text-xs text-term-text"
+        >
+          {rules.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name} · {r.symbol} · {r.instrument} {r.side}
+            </option>
+          ))}
+        </select>
+        <span className="text-term-dim">
+          entry {(rule?.entry ?? []).length} · exit {(rule?.exit ?? []).length} · SL{" "}
+          {rule?.slPct ?? "–"}% · tgt {rule?.targetPct ?? "–"}%
+        </span>
+      </div>
+      {rule && <RuleBacktest key={rule.id} rule={rule} onClose={() => {}} />}
     </div>
   );
 }
