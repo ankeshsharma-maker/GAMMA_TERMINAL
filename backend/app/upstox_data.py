@@ -369,3 +369,52 @@ _LOT_GUESS = {
     "NIFTY": 75, "BANKNIFTY": 30, "FINNIFTY": 65, "MIDCPNIFTY": 120,
     "NIFTYNXT50": 25, "SENSEX": 20, "BANKEX": 30,
 }
+
+
+async def scan_history(symbols: list[str], as_of: str, lookback_days: int = 6) -> list[dict]:
+    """For each symbol, the OI state / spot / PCR / max-pain as of `as_of`
+    ('YYYY-MM-DD'), from a short daily window ending that day. Small curated
+    lists only (each symbol = one chain call + ~40 strike history calls)."""
+    from datetime import datetime, timedelta
+
+    ux = get_upstox()
+    await ux.load_instruments()
+    end = datetime.strptime(as_of, "%Y-%m-%d")
+    start = (end - timedelta(days=lookback_days + 4)).strftime("%Y-%m-%d")
+
+    async def _one(sym: str) -> dict | None:
+        sym = sym.upper()
+        if not ux.underlying_key(sym):
+            return None
+        try:
+            exps = await fetch_expiries(sym)
+            exp = exps[0] if exps else ""
+            if not exp:
+                return None
+            hc = await fetch_history_chain(sym, exp, start, as_of)
+            rows = [r for r in hc.get("series", []) if r["date"] <= as_of]
+            if not rows:
+                return None
+            r = rows[-1]
+            return {
+                "symbol": sym,
+                "date": r["date"],
+                "spot": r.get("spot"),
+                "dSpot": r.get("dSpot"),
+                "ceOI": r.get("ceOI"),
+                "peOI": r.get("peOI"),
+                "pcr": r.get("pcr"),
+                "maxPain": r.get("maxPain"),
+                "state": r.get("state"),
+            }
+        except Exception:  # noqa: BLE001
+            return None
+
+    sem = asyncio.Semaphore(4)
+
+    async def _guard(s):
+        async with sem:
+            return await _one(s)
+
+    out = await asyncio.gather(*[_guard(s) for s in symbols[:25]])
+    return [o for o in out if o]

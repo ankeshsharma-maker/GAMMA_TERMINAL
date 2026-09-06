@@ -85,6 +85,22 @@ async def expiries(symbol: str = Query(...)):
         raise HTTPException(502, f"Upstox expiries failed: {exc}")
 
 
+@router.post("/scan-history")
+async def scan_history(body: dict):
+    """OI state / spot / PCR / max-pain as of a past date, for a curated list
+    (<=25). body: {symbols:[...], date:'YYYY-MM-DD'}."""
+    _need_auth()
+    syms = [s.upper() for s in (body.get("symbols") or []) if s]
+    date = body.get("date") or ""
+    if not syms or not date:
+        raise HTTPException(400, "symbols and date required")
+    try:
+        rows = await upstox_data.scan_history(syms, date)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"scan-history failed: {exc}")
+    return {"date": date, "rows": rows}
+
+
 @router.post("/backtest")
 async def backtest(body: dict):
     """Replay a strategy against Upstox daily history.
