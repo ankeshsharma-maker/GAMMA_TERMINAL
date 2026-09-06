@@ -52,19 +52,39 @@ export function OIHistory() {
     setErr(null);
     api.upstoxHistoryChain(symbol, expiry, from, to).then(
       (d) => {
-        setRows(d.series as Row[]);
+        setRows((d.series as Row[]) ?? []);
         setBusy(false);
       },
       (e) => {
         setErr(e?.message || "failed");
+        setRows([]);
         setBusy(false);
       }
     );
   };
 
-  // auto-load once on mount / symbol change
+  // auto-load when the pane opens and whenever the symbol / expiry changes
   useEffect(() => {
     setRows([]);
+    setErr(null);
+    if (!expiry) return;
+    setBusy(true);
+    let alive = true;
+    api.upstoxHistoryChain(symbol, expiry, from, to).then(
+      (d) => {
+        if (!alive) return;
+        setRows((d.series as Row[]) ?? []);
+        setBusy(false);
+      },
+      (e) => {
+        if (!alive) return;
+        setErr(e?.message || "failed");
+        setBusy(false);
+      }
+    );
+    return () => {
+      alive = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, expiry]);
 
@@ -74,9 +94,10 @@ export function OIHistory() {
     const H = 320;
     const pad = { l: 54, r: 52, t: 12, b: 22 };
     const spots = rows.map((r) => r.spot ?? 0).filter(Boolean);
+    const haveSpot = spots.length > 0;
     const ois = rows.flatMap((r) => [r.ceOI, r.peOI]);
-    let slo = Math.min(...spots);
-    let shi = Math.max(...spots);
+    let slo = haveSpot ? Math.min(...spots) : 0;
+    let shi = haveSpot ? Math.max(...spots) : 1;
     const sp = (shi - slo) * 0.1 || 1;
     slo -= sp;
     shi += sp;
@@ -134,7 +155,7 @@ export function OIHistory() {
             />
           </g>
         ))}
-        <path d={spotPath} fill="none" stroke="#38bdf8" strokeWidth={2} />
+        {haveSpot && <path d={spotPath} fill="none" stroke="#38bdf8" strokeWidth={2} />}
         {rows.map((r, i) =>
           i % Math.ceil(rows.length / 6) === 0 ? (
             <text key={"t" + i} x={x(i)} y={H - 6} fontSize={9} textAnchor="middle" className="fill-term-dim">
@@ -218,12 +239,18 @@ export function OIHistory() {
         </div>
       )}
 
-      <div className="min-h-[240px] shrink-0 p-3">
-        {chart ?? (
-          <div className="flex h-full items-center justify-center text-xs text-term-dim">
+      <div className="h-[240px] shrink-0 p-3">
+        {chart ? (
+          <div className="h-full w-full">{chart}</div>
+        ) : (
+          <div className="flex h-full items-center justify-center text-center text-xs text-term-dim">
             {busy
               ? "pulling historical OI from Upstox…"
-              : "Set a date range and hit Load. Needs Upstox connected (index or F&O stock)."}
+              : err
+              ? "no chart — see the message above"
+              : rows.length === 1
+              ? "only one day in range — widen the date range"
+              : "Pick a date range and hit Load. Needs Upstox connected (index or F&O stock)."}
           </div>
         )}
       </div>
