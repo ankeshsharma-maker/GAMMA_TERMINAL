@@ -118,6 +118,7 @@ export function StrategyBuilder() {
   const [newLegSide, setNewLegSide] = useState<"BUY" | "SELL">("BUY");
   const [newLegLots, setNewLegLots] = useState(1);
   const [newLegStrike, setNewLegStrike] = useState(0); // 0 => ATM
+  const [addingLeg, setAddingLeg] = useState(false); // collapse the add-leg form
   const doExecute = useCallback(async () => {
     const ls = scaled(legs);
     const tgt = parseFloat(bookProfit);
@@ -280,6 +281,7 @@ export function StrategyBuilder() {
   const loadTemplate = (name: string) => {
     if (name && templates[name]) {
       setFromBroker(false);
+      setAddingLeg(false);
       update(templates[name].map((l) => ({ ...l })));
     }
   };
@@ -518,63 +520,97 @@ export function StrategyBuilder() {
           ))}
         </div>
 
-        {/* ---- add a leg (separate from the legs above) ---- */}
+        {/* ---- add a leg (collapsed by default; hidden clutter when a template is loaded) ---- */}
         <div className="border-t-2 border-term-border bg-term-panel2 p-2">
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-term-dim">
-            Add a leg
-          </div>
-          <div className="flex flex-wrap items-center gap-1 text-2xs">
+          {!addingLeg ? (
             <button
-              onClick={() =>
-                setNewLegOT((o) => (o === "CE" ? "PE" : o === "PE" ? "FUT" : "CE"))
-              }
-              title="tap to switch CE / PE / FUT"
-              className={`rounded px-2 py-1 font-bold ${
-                newLegOT === "CE"
-                  ? "bg-up/20 text-up"
-                  : newLegOT === "PE"
-                  ? "bg-down/20 text-down"
-                  : "bg-term-border text-term-dim"
-              }`}
+              onClick={() => setAddingLeg(true)}
+              className="btn w-full py-1.5 text-2xs font-semibold"
             >
-              {newLegOT}
-            </button>
-            {newLegOT !== "FUT" && strikes.length > 0 && (
-              <select
-                value={newLegStrike || atm}
-                onChange={(e) => setNewLegStrike(Number(e.target.value))}
-                className="num rounded border border-term-border bg-term-bg px-1 py-1"
-              >
-                {strikes.map((k) => (
-                  <option key={k} value={k}>
-                    {sk(k)}
-                    {k === atm ? "  (ATM)" : ""}
-                  </option>
-                ))}
-              </select>
-            )}
-            <button
-              onClick={() => setNewLegSide((s) => (s === "BUY" ? "SELL" : "BUY"))}
-              className={`rounded px-2 py-1 font-bold ${
-                newLegSide === "BUY" ? "bg-up/20 text-up" : "bg-down/20 text-down"
-              }`}
-            >
-              {newLegSide}
-            </button>
-            <label className="flex items-center gap-1 text-term-dim">
-              lots
-              <input
-                type="number"
-                min="1"
-                value={newLegLots}
-                onChange={(e) => setNewLegLots(Math.max(1, Number(e.target.value) || 1))}
-                className="num w-12 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text"
-              />
-            </label>
-            <button onClick={() => addLeg()} className="btn ml-auto px-2 py-1 font-semibold">
               + Add leg
             </button>
-          </div>
+          ) : (
+            <div className="text-2xs">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-term-dim">
+                  New leg
+                </span>
+                <button
+                  onClick={() => setAddingLeg(false)}
+                  className="text-term-dim hover:text-down"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+                <label className="flex flex-col gap-0.5">
+                  <span className="text-[9px] uppercase text-term-dim">Type</span>
+                  <button
+                    onClick={() =>
+                      setNewLegOT((o) => (o === "CE" ? "PE" : o === "PE" ? "FUT" : "CE"))
+                    }
+                    title="tap to switch CE / PE / FUT"
+                    className={`rounded px-3 py-1 font-bold ${
+                      newLegOT === "CE"
+                        ? "bg-up/20 text-up"
+                        : newLegOT === "PE"
+                        ? "bg-down/20 text-down"
+                        : "bg-term-border text-term-dim"
+                    }`}
+                  >
+                    {newLegOT}
+                  </button>
+                </label>
+                {newLegOT !== "FUT" && strikes.length > 0 && (
+                  <label className="flex flex-col gap-0.5">
+                    <span className="text-[9px] uppercase text-term-dim">Strike</span>
+                    <select
+                      value={newLegStrike || atm}
+                      onChange={(e) => setNewLegStrike(Number(e.target.value))}
+                      className="num rounded border border-term-border bg-term-bg px-2 py-1"
+                    >
+                      {strikes.map((k) => (
+                        <option key={k} value={k}>
+                          {sk(k)}
+                          {k === atm ? "  (ATM)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label className="flex flex-col gap-0.5">
+                  <span className="text-[9px] uppercase text-term-dim">Side</span>
+                  <button
+                    onClick={() => setNewLegSide((s) => (s === "BUY" ? "SELL" : "BUY"))}
+                    className={`rounded px-3 py-1 font-bold ${
+                      newLegSide === "BUY" ? "bg-up/20 text-up" : "bg-down/20 text-down"
+                    }`}
+                  >
+                    {newLegSide}
+                  </button>
+                </label>
+                <label className="flex flex-col gap-0.5">
+                  <span className="text-[9px] uppercase text-term-dim">Lots</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newLegLots}
+                    onChange={(e) => setNewLegLots(Math.max(1, Number(e.target.value) || 1))}
+                    className="num w-14 rounded border border-term-border bg-term-bg px-2 py-1 text-term-text"
+                  />
+                </label>
+                <button
+                  onClick={() => {
+                    addLeg();
+                    setAddingLeg(false);
+                  }}
+                  className="btn ml-auto px-4 py-1 font-semibold"
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ---- hedge finder ---- */}
