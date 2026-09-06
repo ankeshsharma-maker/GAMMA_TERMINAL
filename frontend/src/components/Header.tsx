@@ -17,25 +17,27 @@ function Stat({ label, value, cls = "" }: { label: string; value: ReactNode; cls
 function ViewToggle() {
   const { view, setView } = useStore();
   return (
-    <div className="flex overflow-hidden rounded border border-term-border text-2xs">
+    <div className="flex flex-wrap gap-1 text-2xs">
       {(
         [
           ["scrip", "OI"],
-          ["trendingoi", "trend OI"],
-          ["scanner", "scanner"],
-          ["chart", "chart"],
-          ["builder", "builder"],
-          ["positions", "positions"],
-          ["scalper", "scalper"],
-          ["auto", "auto"],
-          ["funds", "funds"],
+          ["trendingoi", "Trend OI"],
+          ["scanner", "Scan"],
+          ["chart", "Chart"],
+          ["builder", "Build"],
+          ["positions", "Positions"],
+          ["scalper", "Scalp"],
+          ["auto", "Auto"],
+          ["funds", "Funds"],
         ] as const
       ).map(([v, label]) => (
         <button
           key={v}
           onClick={() => setView(v)}
-          className={`px-2.5 py-1 capitalize ${
-            view === v ? "bg-term-accent text-white" : "bg-term-panel text-term-dim hover:bg-term-border"
+          className={`rounded-md border px-2.5 py-1 font-bold uppercase tracking-wide transition-all ${
+            view === v
+              ? "border-term-accent bg-term-accent text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_1px_3px_rgba(0,0,0,0.45)]"
+              : "border-term-border bg-gradient-to-b from-term-panel2 to-term-bg text-term-text shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_1px_2px_rgba(0,0,0,0.35)] hover:border-term-accent/60 hover:text-white active:translate-y-px"
           }`}
         >
           {label}
