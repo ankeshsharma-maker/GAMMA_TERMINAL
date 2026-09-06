@@ -6,13 +6,13 @@ import type { ChainRow } from "../types";
 
 type Metric = "oi" | "chg" | "combined";
 
-// total OI = dark saturated; OI added = light tint; OI reduced = a contrasting hue (amber / sky)
 const CALL_OI = "#b91c1c"; // dark red    — total Call OI
 const PUT_OI = "#15803d"; // dark green   — total Put OI
-const CALL_ADD = "rgba(248,113,113,0.9)"; // light red   — Call OI added
-const PUT_ADD = "rgba(74,222,128,0.9)"; // light green  — Put OI added
-const CALL_CUT = "#f59e0b"; // amber      — Call OI reduced
-const PUT_CUT = "#38bdf8"; // sky         — Put OI reduced
+
+// change-in-OI, coloured purely by direction: green = OI added (buildup),
+// red = OI reduced (unwinding). Leg (call/put) stays shown by column position.
+const OI_ADD = "#22c55e";
+const OI_CUT = "#ef4444";
 
 const zClamp = (z: number) => Math.min(3, Math.max(0.5, z));
 // "OI added" fill — flat (no gradient)
@@ -360,8 +360,9 @@ export function OIProfile() {
           const near = Math.abs(r.strike - spot) < (chain.strikeStep || 50) * 0.5;
           const cChg = dCE(r);
           const pChg = dPE(r);
-          const cCol = cChg >= 0 ? CALL_ADD : CALL_CUT;
-          const pCol = pChg >= 0 ? PUT_ADD : PUT_CUT;
+          // change-in-OI: green when OI is added, red when reduced (both legs)
+          const cCol = cChg >= 0 ? OI_ADD : OI_CUT;
+          const pCol = pChg >= 0 ? OI_ADD : OI_CUT;
 
           let content: React.ReactNode;
           if (metric === "oi") {
@@ -605,8 +606,8 @@ export function OIProfile() {
             <MiniDonut
               aVal={dCEnet}
               bVal={dPEnet}
-              aCol={dCEnet >= 0 ? CALL_ADD : CALL_CUT}
-              bCol={dPEnet >= 0 ? PUT_ADD : PUT_CUT}
+              aCol={dCEnet >= 0 ? OI_ADD : OI_CUT}
+              bCol={dPEnet >= 0 ? OI_ADD : OI_CUT}
               center={
                 Math.abs(dPEnet) > Math.abs(dCEnet)
                   ? dPEnet >= 0
@@ -620,12 +621,12 @@ export function OIProfile() {
             />
             <div className="w-full space-y-0.5">
               <Row
-                c={dCEnet >= 0 ? CALL_ADD : CALL_CUT}
+                c={dCEnet >= 0 ? OI_ADD : OI_CUT}
                 label={`Call ${dCEnet >= 0 ? "written" : "unwound"}`}
                 val={`${dCEnet >= 0 ? "+" : ""}${compact(dCEnet)}`}
               />
               <Row
-                c={dPEnet >= 0 ? PUT_ADD : PUT_CUT}
+                c={dPEnet >= 0 ? OI_ADD : OI_CUT}
                 label={`Put ${dPEnet >= 0 ? "written" : "unwound"}`}
                 val={`${dPEnet >= 0 ? "+" : ""}${compact(dPEnet)}`}
               />
@@ -850,8 +851,8 @@ export function OIProfile() {
         <span className="text-term-dim">
           <span className="font-semibold text-down">Call OI</span>{" "}
           <span className="num">{crores(chain.totals.ceOI)}</span> ·{" "}
-          <Sw c={addGrad(CALL_ADD)} /> added <span style={{ color: CALL_ADD }}>+{compact(flow.ceAdd)}</span> ·{" "}
-          <Sw c={CALL_CUT} /> reduced <span style={{ color: CALL_CUT }}>{compact(flow.ceCut)}</span>
+          <Sw c={OI_ADD} /> added <span style={{ color: OI_ADD }}>+{compact(flow.ceAdd)}</span> ·{" "}
+          <Sw c={OI_CUT} /> reduced <span style={{ color: OI_CUT }}>{compact(flow.ceCut)}</span>
         </span>
         <span className="text-term-dim">
           Resistance {sk(stats.resistance)} · Floor {sk(stats.floor)} · ATM {sk(chain.atmStrike)}
@@ -859,8 +860,8 @@ export function OIProfile() {
         <span className="text-term-dim">
           <span className="font-semibold text-up">Put OI</span>{" "}
           <span className="num">{crores(chain.totals.peOI)}</span> ·{" "}
-          <Sw c={addGrad(PUT_ADD)} /> added <span style={{ color: PUT_ADD }}>+{compact(flow.peAdd)}</span> ·{" "}
-          <Sw c={PUT_CUT} /> reduced <span style={{ color: PUT_CUT }}>{compact(flow.peCut)}</span>
+          <Sw c={OI_ADD} /> added <span style={{ color: OI_ADD }}>+{compact(flow.peAdd)}</span> ·{" "}
+          <Sw c={OI_CUT} /> reduced <span style={{ color: OI_CUT }}>{compact(flow.peCut)}</span>
         </span>
       </div>
 
@@ -915,16 +916,13 @@ export function OIProfile() {
 
       <div className="flex flex-wrap items-center gap-x-3 border-t border-term-border px-3 py-1 text-[9px] text-term-dim">
         <span>
-          <Sw c={addGrad(CALL_ADD)} /> Call OI added
+          <Sw c={CALL_OI} /> Call OI &nbsp; <Sw c={PUT_OI} /> Put OI
         </span>
         <span>
-          <Sw c={CALL_CUT} /> Call OI reduced
+          <Sw c={OI_ADD} /> OI added (buildup)
         </span>
         <span>
-          <Sw c={addGrad(PUT_ADD)} /> Put OI added
-        </span>
-        <span>
-          <Sw c={PUT_CUT} /> Put OI reduced
+          <Sw c={OI_CUT} /> OI reduced (unwinding)
         </span>
         <span>
           <span className="mr-1 inline-block border-l-2 border-dashed border-fuchsia-400 align-middle" style={{ height: 10 }} />
