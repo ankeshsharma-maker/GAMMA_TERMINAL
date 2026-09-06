@@ -320,6 +320,71 @@ export function BrokerPill() {
   );
 }
 
+export function UpstoxPill() {
+  const [st, setSt] = useState<{ configured: boolean; authed: boolean; tokenDate: string | null } | null>(
+    null
+  );
+  const [mode, setMode] = useState<"" | "token">("");
+  const [tok, setTok] = useState("");
+  const load = () => api.upstoxStatus().then(setSt, () => setSt(null));
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (!st || !st.configured) return null; // hidden until UPSTOX_* is set on the server
+
+  if (st.authed)
+    return (
+      <span
+        className="flex items-center gap-1 rounded border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-2xs text-sky-300"
+        title={`Upstox data feed live · token ${st.tokenDate}`}
+      >
+        <span className="h-1.5 w-1.5 rounded-full bg-sky-400" /> UX data
+      </span>
+    );
+
+  return (
+    <span className="flex items-center gap-1">
+      <button
+        onClick={() => api.upstoxLoginUrl().then((d) => window.open(d.url, "_blank", "noopener"))}
+        className="rounded border border-sky-500/50 bg-sky-500/15 px-2 py-1 text-2xs text-sky-300 hover:bg-sky-500/25"
+      >
+        Connect Upstox data
+      </button>
+      {mode === "token" ? (
+        <>
+          <input
+            autoFocus
+            value={tok}
+            onChange={(e) => setTok(e.target.value)}
+            placeholder="paste access token"
+            className="w-40 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs outline-none focus:border-term-accent"
+          />
+          <button
+            onClick={() => tok.trim() && api.upstoxSetToken(tok).then(() => (setMode(""), setTok(""), load()))}
+            className="rounded bg-term-accent px-1.5 py-0.5 text-2xs text-white"
+          >
+            set
+          </button>
+          <button onClick={() => setMode("")} className="text-term-dim hover:text-down">
+            ✕
+          </button>
+        </>
+      ) : (
+        <button
+          onClick={() => setMode("token")}
+          title="Paste an Upstox access token instead of the redirect flow"
+          className="rounded border border-term-border px-1 py-1 text-2xs text-term-dim hover:text-term-text"
+        >
+          ⌗
+        </button>
+      )}
+    </span>
+  );
+}
+
 export function OrderModePill() {
   const { orderMode, broker, setOrderMode } = useStore();
   const toLive = async () => {
@@ -443,6 +508,7 @@ export function Header() {
             NSE {chain.nseTimestamp?.split(" ")[1] ?? "–"} · {ago(chain.fetchedAt)}
           </span>
         )}
+        <UpstoxPill />
         <BrokerPill />
         <AlertBell />
         <button

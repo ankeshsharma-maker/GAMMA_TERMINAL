@@ -80,6 +80,16 @@ FO_UNIVERSE = [
 
 # ---- broker (Flattrade / Noren Pi Connect) ---------------------------
 BROKER = os.getenv("BROKER", "flattrade").lower()
+
+# ---- market-data source -------------------------------------------------
+# "nse" (default, the public NSE scrape) or "upstox" (REST /option/chain,
+# also covers BSE/BFO -> SENSEX & BANKEX). Orders always stay on BROKER.
+DATA_SOURCE = os.getenv("DATA_SOURCE", "nse").lower()
+UPSTOX_API_KEY = os.getenv("UPSTOX_API_KEY", "")
+UPSTOX_API_SECRET = os.getenv("UPSTOX_API_SECRET", "")
+UPSTOX_REDIRECT_URL = os.getenv(
+    "UPSTOX_REDIRECT_URL", "http://127.0.0.1:8000/api/upstox/callback"
+)
 FLATTRADE_API_KEY = os.getenv("FLATTRADE_API_KEY", "")
 FLATTRADE_API_SECRET = os.getenv("FLATTRADE_API_SECRET", "")
 FLATTRADE_CLIENT_ID = os.getenv("FLATTRADE_CLIENT_ID", "").upper()

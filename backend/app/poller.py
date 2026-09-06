@@ -7,8 +7,10 @@ import time
 from datetime import datetime, time as dtime
 from zoneinfo import ZoneInfo
 
-from . import scanner, screener
+from . import scanner, screener, upstox_data
+from .brokers.upstox import get_upstox
 from .config import (
+    DATA_SOURCE,
     FO_UNIVERSE,
     OFFHOURS_POLL_INTERVAL,
     POLL_INTERVAL,
@@ -34,12 +36,22 @@ def _in_market_hours(now: datetime | None = None) -> bool:
     return _MKT_OPEN <= now.time() <= _MKT_CLOSE
 
 
+def _use_upstox() -> bool:
+    return DATA_SOURCE == "upstox" and get_upstox().authed
+
+
 async def _ensure_expiries(symbol: str) -> None:
     if store.expiries.get(symbol) and time.time() - _exp_refreshed.get(symbol, 0) < _EXP_TTL:
         return
     try:
-        store.set_expiries(symbol, await client.expiries(symbol))
-        _exp_refreshed[symbol] = time.time()
+        exps = (
+            await upstox_data.fetch_expiries(symbol)
+            if _use_upstox()
+            else await client.expiries(symbol)
+        )
+        if exps:
+            store.set_expiries(symbol, exps)
+            _exp_refreshed[symbol] = time.time()
     except Exception as exc:  # noqa: BLE001
         store.put_error(symbol, f"expiry list: {exc}")
         log.warning("expiry list failed for %s: %s", symbol, exc)
@@ -47,7 +59,12 @@ async def _ensure_expiries(symbol: str) -> None:
 
 async def _refresh(symbol: str, expiry: str) -> None:
     try:
-        payload = await client.option_chain(symbol, expiry)
+        if _use_upstox():
+            payload = await upstox_data.fetch_chain_payload(symbol, expiry)
+            if not payload:  # fall back to NSE for this cycle
+                payload = await client.option_chain(symbol, expiry)
+        else:
+            payload = await client.option_chain(symbol, expiry)
         events = store.put_raw(symbol, expiry, payload)
         await hub.broadcast(symbol, expiry)
         if events:

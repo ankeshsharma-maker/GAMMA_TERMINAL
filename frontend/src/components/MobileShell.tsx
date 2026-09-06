@@ -3,7 +3,7 @@ import { useStore } from "../store";
 import { nf, sk, compact } from "../lib/format";
 import type { View } from "../types";
 
-import { HeaderIndices, OrderModePill, AlertBell, BrokerPill } from "./Header";
+import { HeaderIndices, OrderModePill, AlertBell, BrokerPill, UpstoxPill } from "./Header";
 import { lockNow } from "../lib/auth";
 import { NotificationPanel } from "./NotificationPanel";
 import { OrderConfirm } from "./OrderConfirm";
@@ -163,6 +163,7 @@ export function MobileShell() {
       {brokerOpen && (
         <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-2 py-1.5">
           <BrokerPill />
+          <UpstoxPill />
           <button
             onClick={lockNow}
             className="ml-auto rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:text-term-text"

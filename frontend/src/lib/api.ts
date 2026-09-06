@@ -371,6 +371,18 @@ export const api = {
   autobotKill: () =>
     j<import("../types").AutoBotState>("/api/autobot/kill", { method: "POST" }),
 
+  // Upstox = data feed only (orders stay on Flattrade)
+  upstoxStatus: () =>
+    j<{ configured: boolean; authed: boolean; tokenDate: string | null; redirectUrl: string }>(
+      "/api/upstox/status"
+    ),
+  upstoxLoginUrl: () => j<{ url: string }>("/api/upstox/login-url"),
+  upstoxSetToken: (token: string) =>
+    j<{ configured: boolean; authed: boolean }>("/api/upstox/token", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+
   brokerStatus: () => j<BrokerStatus>("/api/broker/status"),
   brokerLogin: () => j<{ url: string }>("/api/broker/login"),
   brokerLogout: () => j<{ ok: boolean }>("/api/broker/logout", { method: "POST" }),

@@ -19,6 +19,7 @@ from .poller import run_poller, run_universe_scan
 from .routes import router
 from .routes_autobot import router as autobot_router
 from .routes_broker import router as broker_router
+from .routes_upstox import router as upstox_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -43,6 +44,10 @@ async def lifespan(app: FastAPI):
         await client.aclose()
         with contextlib.suppress(Exception):
             await get_broker().aclose()
+        with contextlib.suppress(Exception):
+            from .brokers.upstox import get_upstox
+
+            await get_upstox().aclose()
 
 
 app = FastAPI(title="GammaTerminal API", version="0.1.0", lifespan=lifespan)
@@ -58,6 +63,7 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(broker_router)
 app.include_router(autobot_router)
+app.include_router(upstox_router)
 
 
 @app.get("/api/health")
