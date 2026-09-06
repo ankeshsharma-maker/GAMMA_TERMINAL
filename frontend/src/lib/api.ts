@@ -486,6 +486,23 @@ export const api = {
         smartScore: number;
       }[];
     }>("/api/upstox/scan-history", { method: "POST", body: JSON.stringify({ symbols, from, to }) }),
+  upstoxIndicatorScan: (symbols: string[], date: string) =>
+    j<{
+      date: string;
+      rows: {
+        symbol: string;
+        date: string;
+        spot: number;
+        rsi: number | null;
+        ema9: number | null;
+        ema21: number | null;
+        ema50: number | null;
+        macdHist: number | null;
+        signals: string[];
+        score: number;
+        trend: "BULLISH" | "BEARISH" | "NEUTRAL";
+      }[];
+    }>("/api/upstox/indicator-scan", { method: "POST", body: JSON.stringify({ symbols, date }) }),
   dataSource: () => j<{ source: "nse" | "upstox" }>("/api/upstox/data-source"),
   setDataSource: (source: "nse" | "upstox") =>
     j<{ source: "nse" | "upstox" }>("/api/upstox/data-source", {

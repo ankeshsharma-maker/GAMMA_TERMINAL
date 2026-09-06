@@ -103,6 +103,24 @@ async def scan_history(body: dict):
     return {"from": frm, "to": to, "rows": rows}
 
 
+@router.post("/indicator-scan")
+async def indicator_scan(body: dict):
+    """Daily technical-indicator scan of a curated list.
+    body: {symbols:[...], date:'YYYY-MM-DD'}  (date defaults to today)."""
+    _need_auth()
+    from datetime import date as _date
+
+    syms = [s.upper() for s in (body.get("symbols") or []) if s]
+    as_of = body.get("date") or body.get("to") or _date.today().isoformat()
+    if not syms:
+        raise HTTPException(400, "symbols required")
+    try:
+        rows = await upstox_data.indicator_scan(syms, as_of)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"indicator-scan failed: {exc}")
+    return {"date": as_of, "rows": rows}
+
+
 @router.post("/backtest")
 async def backtest(body: dict):
     """Replay a strategy against Upstox daily history.

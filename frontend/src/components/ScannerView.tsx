@@ -3,9 +3,10 @@ import { Scanner } from "./Scanner";
 import { Screener } from "./Screener";
 import { Alerts } from "./Alerts";
 import { HistoricalScan } from "./HistoricalScan";
+import { IndicatorScan } from "./IndicatorScan";
 
 export function ScannerView() {
-  const [tab, setTab] = useState<"blast" | "screener" | "history">("blast");
+  const [tab, setTab] = useState<"blast" | "screener" | "history" | "indicators">("blast");
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -15,6 +16,7 @@ export function ScannerView() {
             ["blast", "Gamma Blast"],
             ["screener", "Screener"],
             ["history", "History Scan"],
+            ["indicators", "Indicators"],
           ] as const
         ).map(([k, label]) => (
           <button
@@ -32,7 +34,9 @@ export function ScannerView() {
             ? "DTE-gated blend of ATM gamma, breakout, IV pop, straddle expansion, OI unwind & pin-break"
             : tab === "screener"
             ? "Session IV-rank, PCR, straddle, OI-buildup screen across the F&O universe"
-            : "OI state (long/short buildup, unwinding, covering) for your watchlist as of a past date"}
+            : tab === "history"
+            ? "OI state (long/short buildup, unwinding, covering) for your watchlist as of a past date"
+            : "RSI, EMA 9/21/50 crossovers & MACD histogram for your watchlist as of a chosen date"}
         </span>
       </div>
 
@@ -44,6 +48,7 @@ export function ScannerView() {
       )}
       {tab === "screener" && <Screener />}
       {tab === "history" && <HistoricalScan />}
+      {tab === "indicators" && <IndicatorScan />}
     </div>
   );
 }

@@ -115,6 +115,10 @@ export function StrategyBuilder() {
   // freshly-created position so check_stops() auto-squares it off at profit.
   const [bookProfit, setBookProfit] = useState("");
   const [showBacktest, setShowBacktest] = useState(false);
+  // customise "+ Add leg": pick type / side / lots for the next leg
+  const [newLegOT, setNewLegOT] = useState<OptionType>("CE");
+  const [newLegSide, setNewLegSide] = useState<"BUY" | "SELL">("BUY");
+  const [newLegLots, setNewLegLots] = useState(1);
   const doExecute = useCallback(async () => {
     const ls = scaled(legs);
     const tgt = parseFloat(bookProfit);
@@ -254,10 +258,15 @@ export function StrategyBuilder() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, expiry]);
 
-  const addLeg = () =>
+  const addLeg = (ot: OptionType = newLegOT, side: "BUY" | "SELL" = newLegSide) =>
     update([
       ...legs,
-      { optionType: "CE", strike: atm || strikes[Math.floor(strikes.length / 2)] || 0, side: "BUY", lots: 1 },
+      {
+        optionType: ot,
+        strike: atm || strikes[Math.floor(strikes.length / 2)] || 0,
+        side,
+        lots: newLegLots,
+      },
     ]);
 
   const setLeg = (i: number, patch: Partial<StrategyLeg>) =>
@@ -462,17 +471,67 @@ export function StrategyBuilder() {
                 <button className="btn px-1 py-0" onClick={() => setLeg(i, { lots: leg.lots + 1 })}>
                   +
                 </button>
+                <label className="ml-auto flex items-center gap-1">
+                  <span>@</span>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    value={leg.price ?? ""}
+                    placeholder={analysis?.legs[i] ? nf(analysis.legs[i].entry) : "LTP"}
+                    onChange={(e) =>
+                      setLeg(i, { price: e.target.value === "" ? null : Number(e.target.value) })
+                    }
+                    className="num w-16 rounded border border-term-border bg-term-bg px-1 py-0.5 text-right text-term-text"
+                  />
+                  {leg.price != null && (
+                    <button
+                      onClick={() => setLeg(i, { price: null })}
+                      title="use live LTP"
+                      className="text-term-dim hover:text-term-text"
+                    >
+                      ↺
+                    </button>
+                  )}
+                </label>
                 {analysis?.legs[i] && (
-                  <span className="num ml-auto">
-                    @ {nf(analysis.legs[i].entry)} · IV {nf(analysis.legs[i].iv, 1)}
-                  </span>
+                  <span className="num text-term-dim">IV {nf(analysis.legs[i].iv, 1)}</span>
                 )}
               </div>
             </div>
           ))}
-          <button onClick={addLeg} className="btn m-2 text-2xs">
-            + Add leg
-          </button>
+          <div className="m-2 flex flex-wrap items-center gap-1 text-2xs">
+            <select
+              value={newLegOT}
+              onChange={(e) => setNewLegOT(e.target.value as OptionType)}
+              className="rounded border border-term-border bg-term-bg px-1 py-1"
+            >
+              {OT.map((o) => (
+                <option key={o}>{o}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => setNewLegSide((s) => (s === "BUY" ? "SELL" : "BUY"))}
+              className={`rounded px-2 py-1 font-bold ${
+                newLegSide === "BUY" ? "bg-up/20 text-up" : "bg-down/20 text-down"
+              }`}
+            >
+              {newLegSide}
+            </button>
+            <label className="flex items-center gap-1 text-term-dim">
+              lots
+              <input
+                type="number"
+                min="1"
+                value={newLegLots}
+                onChange={(e) => setNewLegLots(Math.max(1, Number(e.target.value) || 1))}
+                className="num w-12 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text"
+              />
+            </label>
+            <button onClick={() => addLeg()} className="btn px-2 py-1">
+              + Add leg
+            </button>
+          </div>
         </div>
 
         {/* ---- hedge finder ---- */}
@@ -695,7 +754,7 @@ export function StrategyBuilder() {
                   <tr className="border-b border-term-border/60">
                     <StatCol
                       label="Net Premium"
-                      value={`₹${nf(Math.abs(analysis.netPremium), 0)} ${analysis.netPremiumType}`}
+                      value={`₹${nf(Math.abs(analysis.netPremium), 0)}`}
                       cls={analysis.netPremiumType === "CREDIT" ? "text-up" : "text-down"}
                     />
                     <StatCol

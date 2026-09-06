@@ -477,3 +477,83 @@ async def scan_history(
 
     out = await asyncio.gather(*[_guard(s) for s in symbols[:25]])
     return [o for o in out if o]
+
+
+# --------------------------------------------------------------- indicator scan
+async def indicator_scan(symbols: list[str], as_of: str, lookback: int = 90) -> list[dict]:
+    """Daily technical-indicator read for each symbol as of `as_of`
+    ('YYYY-MM-DD'): RSI(14), EMA 9/21/50, SMA 20, MACD histogram — plus the
+    active signals and a trend score. Cheap: one underlying-candle call per
+    symbol (no option chain)."""
+    from datetime import datetime, timedelta
+    from .autobot import ema as _ema, rsi as _rsi, macd_hist as _mh
+
+    ux = get_upstox()
+    await ux.load_instruments()
+    end = datetime.strptime(as_of, "%Y-%m-%d")
+    start = (end - timedelta(days=lookback + 20)).strftime("%Y-%m-%d")
+
+    def _sma(vals, n):
+        return [sum(vals[i - n + 1 : i + 1]) / n for i in range(n - 1, len(vals))] if len(vals) >= n else []
+
+    async def _one(sym: str) -> dict | None:
+        sym = sym.upper()
+        key = ux.underlying_key(sym)
+        if not key:
+            return None
+        try:
+            h = await ux.get(f"/historical-candle/{key}/day/{as_of}/{start}")
+            c = h.get("data", {}).get("candles", []) or []
+            c = [x for x in c if x[0][:10] <= as_of]
+            closes = [_num(x[4]) for x in c]
+            if len(closes) < 30:
+                return None
+            r = _rsi(closes, 14)
+            e9, e21, e50 = _ema(closes, 9), _ema(closes, 21), _ema(closes, 50)
+            s20 = _sma(closes, 20)
+            mh = _mh(closes, 12, 26, 9)
+            price = closes[-1]
+
+            sig: list[str] = []
+            score = 0
+            if r:
+                rv = r[-1]
+                if rv < 30: sig.append(f"RSI oversold {rv:.0f}"); score += 2
+                elif rv > 70: sig.append(f"RSI overbought {rv:.0f}"); score -= 2
+                if len(r) >= 2 and r[-2] < 50 <= rv: sig.append("RSI cross 50↑"); score += 1
+                elif len(r) >= 2 and r[-2] > 50 >= rv: sig.append("RSI cross 50↓"); score -= 1
+            if len(e9) >= 2 and len(e21) >= 2:
+                if e9[-2] <= e21[-2] and e9[-1] > e21[-1]: sig.append("EMA 9/21 golden"); score += 2
+                elif e9[-2] >= e21[-2] and e9[-1] < e21[-1]: sig.append("EMA 9/21 death"); score -= 2
+            if e50:
+                if price > e50[-1] * 1.001: sig.append("above EMA50"); score += 1
+                elif price < e50[-1] * 0.999: sig.append("below EMA50"); score -= 1
+            if s20:
+                if price > s20[-1]: score += 0
+            if len(mh) >= 2:
+                if mh[-2] <= 0 < mh[-1]: sig.append("MACD hist ↑"); score += 1
+                elif mh[-2] >= 0 > mh[-1]: sig.append("MACD hist ↓"); score -= 1
+                elif mh[-1] > 0: sig.append("MACD +")
+                elif mh[-1] < 0: sig.append("MACD −")
+
+            trend = "BULLISH" if score >= 3 else "BEARISH" if score <= -3 else "NEUTRAL"
+            return {
+                "symbol": sym, "date": c[-1][0][:10], "spot": round(price, 2),
+                "rsi": round(r[-1], 1) if r else None,
+                "ema9": round(e9[-1], 1) if e9 else None,
+                "ema21": round(e21[-1], 1) if e21 else None,
+                "ema50": round(e50[-1], 1) if e50 else None,
+                "macdHist": round(mh[-1], 2) if mh else None,
+                "signals": sig, "score": score, "trend": trend,
+            }
+        except Exception:  # noqa: BLE001
+            return None
+
+    sem = asyncio.Semaphore(8)
+
+    async def _g(s):
+        async with sem:
+            return await _one(s)
+
+    out = await asyncio.gather(*[_g(s) for s in symbols[:60]])
+    return [o for o in out if o]
