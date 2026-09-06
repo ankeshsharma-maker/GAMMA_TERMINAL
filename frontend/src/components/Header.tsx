@@ -1,5 +1,6 @@
 import { useStore } from "../store";
 import { compact, nf, ago, sk, signColor } from "../lib/format";
+import { ivRegime } from "../lib/iv";
 import { api } from "../lib/api";
 import { lockNow } from "../lib/auth";
 import { ConnBadge } from "./ConnBadge";
@@ -594,6 +595,44 @@ export function AlertBell() {
   );
 }
 
+/** ATM-IV regime chip — where current IV sits in the session's IV range. */
+function IvBadge() {
+  const chain = useStore((s) => s.chain);
+  const [series, setSeries] = useState<number[]>([]);
+  const sym = chain?.symbol;
+  useEffect(() => {
+    if (!sym) return;
+    let alive = true;
+    const load = () =>
+      api.history(sym).then(
+        (d) =>
+          alive &&
+          setSeries(d.points.map((p) => p.atmIV).filter((v): v is number => v != null)),
+        () => {}
+      );
+    load();
+    const id = setInterval(load, 60000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [sym]);
+  if (!chain) return null;
+  const r = ivRegime(series, chain.atmIV);
+  return (
+    <Stat
+      label="IV regime"
+      value={
+        <span title={r.hint}>
+          {r.label}
+          {r.pctile != null && <span className="text-term-dim"> · {r.pctile}%</span>}
+        </span>
+      }
+      cls={r.cls}
+    />
+  );
+}
+
 export function Header() {
   const chain = useStore((s) => s.chain);
   const liveSpots = useStore((s) => s.liveSpots);
@@ -639,6 +678,7 @@ export function Header() {
           </div>
           <Stat label="ATM" value={sk(chain.atmStrike)} />
           <Stat label="ATM IV" value={chain.atmIV ? `${nf(chain.atmIV)}%` : "–"} />
+          <IvBadge />
           <Stat
             label="PCR"
             value={nf(chain.pcr, 2)}

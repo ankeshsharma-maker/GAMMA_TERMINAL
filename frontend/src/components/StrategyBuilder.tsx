@@ -3,6 +3,7 @@ import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
 import { strategyPnlCurve } from "../lib/bs";
+import { ivRegime, ivFit } from "../lib/iv";
 import type { Analysis, OptionType, SavedStrategy, StrategyLeg } from "../types";
 import { PayoffChart } from "./PayoffChart";
 import { BacktestPanel } from "./BacktestPanel";
@@ -118,6 +119,7 @@ export function StrategyBuilder() {
   const [panel, setPanel] = useState<"payoff" | "backtest">("payoff");
   const [payoffTab, setPayoffTab] = useState<"chart" | "table">("chart");
   const [strikeSpan, setStrikeSpan] = useState(10); // ATM ± N strikes in the P&L table
+  const [ivSeries, setIvSeries] = useState<number[]>([]);
   // "time to expiry" payoff: days from today (0 = now / T+0, dte = expiry)
   const [tDays, setTDays] = useState(0);
   // customise "+ Add leg": pick type / strike / side / lots for the next leg
@@ -444,6 +446,23 @@ export function StrategyBuilder() {
 
   const pnlCls = (v: number) => (v >= 0 ? "text-up" : "text-down");
   const pnlTxt = (v: number | null) => (v == null ? "–" : `${v >= 0 ? "+" : ""}${nf(v, 0)}`);
+
+  // session ATM-IV history → IV regime + strategy fit
+  useEffect(() => {
+    if (!symbol) return;
+    let alive = true;
+    api.history(symbol).then(
+      (d) =>
+        alive &&
+        setIvSeries(d.points.map((p) => p.atmIV).filter((v): v is number => v != null)),
+      () => {}
+    );
+    return () => {
+      alive = false;
+    };
+  }, [symbol]);
+  const ivReg = useMemo(() => ivRegime(ivSeries, chain?.atmIV ?? null), [ivSeries, chain?.atmIV]);
+  const ivFitMsg = analysis ? ivFit(ivReg, analysis.greeks.vega) : null;
 
   // discrete "T+n" day chips from today to expiry (capped ~12)
   const dayChips = useMemo(() => {
@@ -1338,6 +1357,23 @@ export function StrategyBuilder() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {analysis && (
+          <div className="flex flex-wrap items-center gap-x-3 border-t border-term-border px-4 py-1 text-[10px]">
+            <span className="uppercase tracking-wide text-term-dim">IV regime</span>
+            <span className={`font-semibold ${ivReg.cls}`} title={ivReg.hint}>
+              {ivReg.label}
+              {ivReg.pctile != null ? ` · ${ivReg.pctile}%ile` : ""}
+            </span>
+            <span className="num text-term-dim">
+              ATM IV {chain?.atmIV ? `${nf(chain.atmIV, 1)}%` : "–"}
+            </span>
+            <span className="num text-term-dim">
+              net vega {nf(analysis.greeks.vega, 0)}
+            </span>
+            {ivFitMsg && <span className={ivFitMsg.cls}>→ {ivFitMsg.txt}</span>}
           </div>
         )}
 
