@@ -6,8 +6,6 @@ import type { Analysis, OptionType, SavedStrategy, StrategyLeg } from "../types"
 import { PayoffChart } from "./PayoffChart";
 import { BacktestPanel } from "./BacktestPanel";
 
-const OT: OptionType[] = ["CE", "PE", "FUT"];
-
 /** compact labelled number input for the hedge finder's advanced targets */
 function AdvNum({
   label,
@@ -421,15 +419,23 @@ export function StrategyBuilder() {
           {legs.map((leg, i) => (
             <div key={i} className="border-b border-term-border/50 p-2 text-2xs">
               <div className="flex items-center gap-1">
-                <select
-                  value={leg.optionType}
-                  onChange={(e) => setLeg(i, { optionType: e.target.value as OptionType })}
-                  className="rounded border border-term-border bg-term-bg px-1 py-1"
+                <button
+                  onClick={() =>
+                    setLeg(i, {
+                      optionType: leg.optionType === "CE" ? "PE" : leg.optionType === "PE" ? "FUT" : "CE",
+                    })
+                  }
+                  title="tap to switch CE / PE / FUT"
+                  className={`rounded px-2 py-1 font-bold ${
+                    leg.optionType === "CE"
+                      ? "bg-up/20 text-up"
+                      : leg.optionType === "PE"
+                      ? "bg-down/20 text-down"
+                      : "bg-term-border text-term-dim"
+                  }`}
                 >
-                  {OT.map((o) => (
-                    <option key={o}>{o}</option>
-                  ))}
-                </select>
+                  {leg.optionType}
+                </button>
                 {leg.optionType !== "FUT" && (
                   <select
                     value={leg.strike}
@@ -501,15 +507,21 @@ export function StrategyBuilder() {
             </div>
           ))}
           <div className="m-2 flex flex-wrap items-center gap-1 text-2xs">
-            <select
-              value={newLegOT}
-              onChange={(e) => setNewLegOT(e.target.value as OptionType)}
-              className="rounded border border-term-border bg-term-bg px-1 py-1"
+            <button
+              onClick={() =>
+                setNewLegOT((o) => (o === "CE" ? "PE" : o === "PE" ? "FUT" : "CE"))
+              }
+              title="tap to switch CE / PE / FUT"
+              className={`rounded px-2 py-1 font-bold ${
+                newLegOT === "CE"
+                  ? "bg-up/20 text-up"
+                  : newLegOT === "PE"
+                  ? "bg-down/20 text-down"
+                  : "bg-term-border text-term-dim"
+              }`}
             >
-              {OT.map((o) => (
-                <option key={o}>{o}</option>
-              ))}
-            </select>
+              {newLegOT}
+            </button>
             <button
               onClick={() => setNewLegSide((s) => (s === "BUY" ? "SELL" : "BUY"))}
               className={`rounded px-2 py-1 font-bold ${
