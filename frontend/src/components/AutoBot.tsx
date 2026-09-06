@@ -702,9 +702,9 @@ export function AutoBotView() {
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 gap-3 overflow-hidden p-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3 md:flex-row md:overflow-hidden">
         {/* rules + editor */}
-        <div className="min-h-0 flex-1 space-y-3 overflow-auto pr-1">
+        <div className="min-h-0 flex-1 space-y-3 md:overflow-auto md:pr-1">
           {editing && (
             <RuleEditor
               seed={editing}
@@ -825,7 +825,7 @@ export function AutoBotView() {
         </div>
 
         {/* activity log */}
-        <div className="flex w-72 shrink-0 flex-col overflow-hidden rounded-lg border border-term-border bg-term-panel">
+        <div className="flex max-h-56 w-full shrink-0 flex-col overflow-hidden rounded-lg border border-term-border bg-term-panel md:max-h-none md:w-72">
           <div className="border-b border-term-border px-2 py-1 text-2xs font-semibold uppercase tracking-wide text-term-dim">
             Activity
           </div>

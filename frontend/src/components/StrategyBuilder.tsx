@@ -283,9 +283,9 @@ export function StrategyBuilder() {
     api.deleteStrategy(id).then((d) => setSaved(d.strategies));
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-[330px_minmax(0,1fr)] overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:grid md:grid-cols-[330px_minmax(0,1fr)] md:overflow-hidden">
       {/* ---- leg editor ---- */}
-      <div className="flex min-h-0 flex-col overflow-y-auto border-r border-term-border bg-term-panel2">
+      <div className="flex flex-col border-r border-term-border bg-term-panel2 md:min-h-0 md:overflow-y-auto">
         <div className="flex items-center gap-2 border-b border-term-border px-3 py-2 text-2xs font-semibold uppercase tracking-wide text-term-dim">
           <span>Builder</span>
           <select
@@ -582,7 +582,7 @@ export function StrategyBuilder() {
           </div>
         )}
 
-        <div className="mt-auto flex flex-col gap-2 border-t border-term-border p-2">
+        <div className="flex flex-col gap-2 border-t border-term-border p-2 md:mt-auto">
           {fromBroker && orderMode !== "live" && (
             <div className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-2xs text-amber-400">
               ⚠ These are your live positions, but order mode is PAPER — switch to LIVE
@@ -686,7 +686,7 @@ export function StrategyBuilder() {
           )}
         </div>
 
-        <div className="relative min-h-0 flex-1 p-3">
+        <div className="relative min-h-[280px] flex-1 p-3 md:min-h-0">
           {analysis && (
             <PayoffChart
               x={analysis.x}
