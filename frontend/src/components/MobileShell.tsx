@@ -29,6 +29,7 @@ const NAV: { v: View; icon: string; label: string }[] = [
   { v: "scanner", icon: "📡", label: "Scan" },
   { v: "builder", icon: "🧱", label: "Build" },
   { v: "positions", icon: "💼", label: "Pos" },
+  { v: "orders", icon: "📜", label: "Orders" },
   { v: "scalper", icon: "⚡", label: "Scalp" },
   { v: "auto", icon: "🤖", label: "Auto" },
   { v: "funds", icon: "💰", label: "Funds" },
@@ -103,6 +104,8 @@ function MobileBody({ view }: { view: View }) {
       return <StrategyBuilder />;
     case "positions":
       return <PositionsView />;
+    case "orders":
+      return <PositionsView initialTab="orders" />;
     case "auto":
       return <AutoBotView />;
     case "funds":

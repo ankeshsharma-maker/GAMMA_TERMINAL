@@ -10,8 +10,10 @@ export function ScalpPanel() {
   const atm = chain?.atmStrike ?? wq?.atmStrike;
   const expiry = chain?.expiry ?? wq?.expiry;
 
-  const myPos = (paper?.positions ?? []).filter((p) => p.symbol === symbol);
+  const allPos = paper?.positions ?? [];
+  const myPos = allPos.filter((p) => p.symbol === symbol);
   const pnl = myPos.reduce((s, p) => s + p.pnl, 0);
+  const livePnl = allPos.reduce((s, p) => s + p.pnl, 0);
 
   const BigBtn = ({
     label,
@@ -26,10 +28,10 @@ export function ScalpPanel() {
   }) => (
     <button
       onClick={() => quickTrade(symbol, ot, side, scalpLots)}
-      className={`flex flex-col items-center rounded-lg py-3 font-bold transition-colors ${cls}`}
+      className={`flex flex-col items-center rounded-md py-1.5 font-bold leading-tight transition-colors ${cls}`}
     >
-      <span className="text-sm">{label}</span>
-      <span className="text-[10px] font-normal opacity-70">
+      <span className="text-xs">{label}</span>
+      <span className="text-[9px] font-normal opacity-70">
         {atm ? `${nf(atm, 0)} ${ot}` : ot} × {scalpLots}
       </span>
     </button>
@@ -51,6 +53,30 @@ export function ScalpPanel() {
         <div className="num mt-0.5 text-2xs text-term-dim">
           ATM {atm ? nf(atm, 0) : "–"} · {expiry ?? "–"} · spot {nf(chain?.liveSpot?.ltp ?? chain?.spot)}
         </div>
+      </div>
+
+      {/* live P&L across all open positions + one-tap flatten */}
+      <div className="flex items-center justify-between gap-2 border-b border-term-border bg-term-panel px-3 py-1.5">
+        <div className="flex flex-col leading-tight">
+          <span className="text-[9px] uppercase tracking-wide text-term-dim">Live P&amp;L ({allPos.length})</span>
+          <span className={`num text-sm font-bold ${signColor(livePnl)}`}>₹{nf(livePnl, 0)}</span>
+        </div>
+        {paper && (
+          <span className="num text-[10px] text-term-dim">
+            day <span className={signColor(paper.todayPnl)}>₹{nf(paper.todayPnl, 0)}</span> · total{" "}
+            <span className={signColor(paper.total)}>₹{nf(paper.total, 0)}</span>
+          </span>
+        )}
+        <button
+          onClick={() => {
+            if (allPos.length && window.confirm(`Square off all ${allPos.length} open position(s)?`))
+              allPos.forEach((p) => closePosition(p.id));
+          }}
+          disabled={allPos.length === 0}
+          className="shrink-0 rounded bg-down px-2 py-1 text-[10px] font-bold text-white disabled:opacity-30"
+        >
+          Square off ALL
+        </button>
       </div>
 
       <div className="flex items-center gap-2 border-b border-term-border px-3 py-2 text-2xs">

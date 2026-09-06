@@ -213,11 +213,9 @@ function MarginStats() {
 }
 
 export function BrokerPill() {
-  const { broker, connectBroker, disconnectBroker, refreshBroker, setBrokerToken, brokerDirectLogin } =
-    useStore();
-  const [mode, setMode] = useState<"" | "token" | "login">("");
+  const { broker, connectBroker, disconnectBroker, refreshBroker, setBrokerToken } = useStore();
+  const [mode, setMode] = useState<"" | "token">("");
   const [tok, setTok] = useState("");
-  const [cred, setCred] = useState({ uid: "", pwd: "", totp: "", vc: "" });
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -246,7 +244,6 @@ export function BrokerPill() {
       await fn();
       setMode("");
       setTok("");
-      setCred({ uid: "", pwd: "", totp: "", vc: "" });
     } catch (e: any) {
       alert(`${label} failed: ${e?.message || e}`);
     } finally {
@@ -277,43 +274,6 @@ export function BrokerPill() {
     </span>
   );
 
-  const loginForm = mode === "login" && (
-    <span className="flex items-center gap-1">
-      <input
-        autoFocus
-        value={cred.uid}
-        onChange={(e) => setCred({ ...cred, uid: e.target.value })}
-        placeholder="client id"
-        className="w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs outline-none focus:border-term-accent"
-      />
-      <input
-        type="password"
-        value={cred.pwd}
-        onChange={(e) => setCred({ ...cred, pwd: e.target.value })}
-        placeholder="password"
-        className="w-24 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs outline-none focus:border-term-accent"
-      />
-      <input
-        value={cred.totp}
-        onChange={(e) => setCred({ ...cred, totp: e.target.value })}
-        placeholder="TOTP code or secret"
-        className="w-32 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs outline-none focus:border-term-accent"
-      />
-      <button
-        onClick={() =>
-          cred.uid && cred.pwd && cred.totp && run(() => brokerDirectLogin(cred), "Login")
-        }
-        disabled={busy}
-        className="rounded bg-term-accent px-1.5 py-0.5 text-2xs text-white disabled:opacity-40"
-      >
-        {busy ? "…" : "login"}
-      </button>
-      <button onClick={() => setMode("")} className="text-term-dim hover:text-down">
-        ✕
-      </button>
-    </span>
-  );
-
   const altBtns = !mode && (
     <>
       <button
@@ -325,18 +285,11 @@ export function BrokerPill() {
         {refreshing ? "…" : "⟳ refresh"}
       </button>
       <button
-        onClick={() => setMode("login")}
-        title="Direct login: client id + password + TOTP (no OAuth redirect)"
-        className="rounded border border-term-border px-1.5 py-1 text-2xs text-term-dim hover:text-term-text"
-      >
-        ⚿ login
-      </button>
-      <button
         onClick={() => setMode("token")}
         title="Paste a token generated from the Flattrade portal"
         className="rounded border border-term-border px-1.5 py-1 text-2xs text-term-dim hover:text-term-text"
       >
-        ⌗
+        ⌗ token
       </button>
     </>
   );
@@ -361,7 +314,6 @@ export function BrokerPill() {
         </button>
       )}
       {tokenForm}
-      {loginForm}
       {altBtns}
     </span>
   );

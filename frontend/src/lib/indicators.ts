@@ -218,6 +218,58 @@ export const supertrend = (candles: Candle[], period = 10, mult = 3): Pt[] => {
 };
 
 /** Heikin-Ashi transform of standard candles. */
+export interface Pivots {
+  pp: number;
+  r1: number;
+  r2: number;
+  r3: number;
+  s1: number;
+  s2: number;
+  s3: number;
+}
+
+const calcPivots = (h: number, l: number, c: number): Pivots => {
+  const pp = (h + l + c) / 3;
+  const range = h - l;
+  return {
+    pp,
+    r1: 2 * pp - l,
+    s1: 2 * pp - h,
+    r2: pp + range,
+    s2: pp - range,
+    r3: h + 2 * (pp - l),
+    s3: l - 2 * (h - pp),
+  };
+};
+
+/** classic (floor-trader) pivot points from the PREVIOUS session's OHLC.
+ *  Groups the (intraday) candle series by IST calendar day and uses the last
+ *  completed day. For a 1D series each candle is a day, so it just uses the
+ *  prior candle. null when there isn't a prior session yet. */
+export const pivots = (candles: Candle[]): Pivots | null => {
+  if (candles.length < 2) return null;
+  const dayKey = (t: number) =>
+    new Date(t * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const days = new Map<string, { h: number; l: number; c: number }>();
+  for (const k of candles) {
+    const key = dayKey(k.time);
+    const d = days.get(key);
+    if (!d) days.set(key, { h: k.high, l: k.low, c: k.close });
+    else {
+      d.h = Math.max(d.h, k.high);
+      d.l = Math.min(d.l, k.low);
+      d.c = k.close;
+    }
+  }
+  const keys = [...days.keys()].sort();
+  if (keys.length >= 2) {
+    const prev = days.get(keys[keys.length - 2])!;
+    return calcPivots(prev.h, prev.l, prev.c);
+  }
+  const k = candles[candles.length - 2];
+  return calcPivots(k.high, k.low, k.close);
+};
+
 export const heikinAshi = (candles: Candle[]): Candle[] => {
   const out: Candle[] = [];
   let prevO = candles[0]?.open ?? 0;

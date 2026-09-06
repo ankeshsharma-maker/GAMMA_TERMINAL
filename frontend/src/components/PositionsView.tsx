@@ -6,10 +6,10 @@ import { StopEditor } from "./StopEditor";
 
 type Tab = "paper" | "broker" | "holdings" | "orders";
 const TABS: [Tab, string][] = [
-  ["paper", "Paper"],
   ["broker", "Broker Positions"],
   ["holdings", "Holdings"],
   ["orders", "Orders"],
+  ["paper", "Paper Trading"],
 ];
 
 const n = (v: any) => {
@@ -536,8 +536,8 @@ function OrdersTab() {
   );
 }
 
-export function PositionsView() {
-  const [tab, setTab] = useState<Tab>("paper");
+export function PositionsView({ initialTab }: { initialTab?: Tab } = {}) {
+  const [tab, setTab] = useState<Tab>(initialTab ?? "broker");
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs">

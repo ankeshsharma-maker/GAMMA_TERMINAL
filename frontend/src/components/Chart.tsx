@@ -15,6 +15,7 @@ import {
   ema,
   heikinAshi,
   macd,
+  pivots,
   rsi,
   sma,
   supertrend,
@@ -53,6 +54,7 @@ const TOGGLES = [
   ["sma20", "SMA 20"],
   ["vwap", "VWAP"],
   ["boll", "Bollinger"],
+  ["pivot", "Pivot Points"],
   ["supertrend", "Supertrend"],
   ["vol", "Volume"],
   ["rsi", "RSI"],
@@ -100,6 +102,7 @@ export function Chart() {
   const [drawMode, setDrawMode] = useState(false);
   const [priceLines, setPriceLines] = useState<number[]>([]);
   const plRefs = useRef<any[]>([]);
+  const pvtRefs = useRef<any[]>([]);
   const drawRef = useRef(false);
   const [legend, setLegend] = useState<string>("");
   const [rsiVal, setRsiVal] = useState<number | null>(null);
@@ -129,6 +132,7 @@ export function Chart() {
     vol: true,
     rsi: false,
     macd: false,
+    pivot: false,
     straddle: true,
     score: false,
   });
@@ -397,6 +401,36 @@ export function Chart() {
       })
     );
   }, [priceLines, data]);
+
+  // classic pivot points from the previous session (PP / R1-3 / S1-3)
+  useEffect(() => {
+    const cs = s.current.candle as ISeriesApi<"Candlestick"> | undefined;
+    if (!cs) return;
+    pvtRefs.current.forEach((pl) => cs.removePriceLine(pl));
+    pvtRefs.current = [];
+    if (!on.pivot) return;
+    const p = pivots(priceCandles);
+    if (!p) return;
+    const rows: [string, number, string, LineStyle][] = [
+      ["R3", p.r3, "#f87171", LineStyle.Dotted],
+      ["R2", p.r2, "#f87171", LineStyle.Dashed],
+      ["R1", p.r1, "#f87171", LineStyle.Dashed],
+      ["PP", p.pp, "#eab308", LineStyle.Solid],
+      ["S1", p.s1, "#4ade80", LineStyle.Dashed],
+      ["S2", p.s2, "#4ade80", LineStyle.Dashed],
+      ["S3", p.s3, "#4ade80", LineStyle.Dotted],
+    ];
+    pvtRefs.current = rows.map(([title, price, color, lineStyle]) =>
+      cs.createPriceLine({
+        price: Number(price.toFixed(2)),
+        color,
+        lineWidth: 1,
+        lineStyle,
+        axisLabelVisible: true,
+        title,
+      })
+    );
+  }, [on.pivot, priceCandles, data]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">

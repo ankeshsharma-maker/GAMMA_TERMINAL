@@ -79,6 +79,7 @@ function DesktopShell() {
   const wide =
     view === "builder" ||
     view === "positions" ||
+    view === "orders" ||
     view === "scrip" ||
     view === "auto" ||
     view === "funds";
@@ -165,6 +166,7 @@ function DesktopShell() {
           {(view === "chart" || view === "scalper") && <Chart />}
           {view === "builder" && <StrategyBuilder />}
           {view === "positions" && <PositionsView />}
+          {view === "orders" && <PositionsView initialTab="orders" />}
           {view === "auto" && <AutoBotView />}
           {view === "funds" && <Funds />}
         </main>
