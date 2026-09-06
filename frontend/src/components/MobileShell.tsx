@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "../store";
+import { api } from "../lib/api";
 import { nf, sk, compact, signColor } from "../lib/format";
+import { ivRegime } from "../lib/iv";
 import type { View } from "../types";
 
 /** compact P&L chips for the mobile top strip */
@@ -67,7 +69,27 @@ const NAV: { v: View; icon: string; label: string }[] = [
 function ChainStrip() {
   const chain = useStore((s) => s.chain);
   const liveSpots = useStore((s) => s.liveSpots);
+  const [ivSeries, setIvSeries] = useState<number[]>([]);
+  const sym = chain?.symbol;
+  useEffect(() => {
+    if (!sym) return;
+    let alive = true;
+    const load = () =>
+      api.history(sym).then(
+        (d) =>
+          alive &&
+          setIvSeries(d.points.map((p) => p.atmIV).filter((v): v is number => v != null)),
+        () => {}
+      );
+    load();
+    const id = window.setInterval(load, 60000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [sym]);
   if (!chain) return null;
+  const reg = ivRegime(ivSeries, chain.atmIV);
   const live = liveSpots[chain.symbol];
   const fresh = live && Date.now() / 1000 - live.ts < 12;
   const spot = fresh ? live!.ltp : chain.spot;
@@ -82,6 +104,11 @@ function ChainStrip() {
       {cell("Spot", nf(spot), "font-semibold text-[12px]")}
       {cell("ATM", sk(chain.atmStrike))}
       {cell("IV", chain.atmIV ? `${nf(chain.atmIV)}%` : "–")}
+      {cell(
+        "IV zone",
+        reg.pctile != null ? `${reg.label} ${reg.pctile}%` : reg.label,
+        reg.cls
+      )}
       {cell(
         "PCR",
         nf(chain.pcr, 2),
