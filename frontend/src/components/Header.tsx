@@ -321,9 +321,12 @@ export function BrokerPill() {
 }
 
 export function UpstoxPill() {
-  const [st, setSt] = useState<{ configured: boolean; authed: boolean; tokenDate: string | null } | null>(
-    null
-  );
+  const [st, setSt] = useState<{
+    configured: boolean;
+    authed: boolean;
+    static?: boolean;
+    tokenDate: string | null;
+  } | null>(null);
   const [mode, setMode] = useState<"" | "token">("");
   const [tok, setTok] = useState("");
   const load = () => api.upstoxStatus().then(setSt, () => setSt(null));
@@ -339,7 +342,7 @@ export function UpstoxPill() {
     return (
       <span
         className="flex items-center gap-1 rounded border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-2xs text-sky-300"
-        title={`Upstox data feed live · token ${st.tokenDate}`}
+        title={`Upstox data feed live${st.static ? " · 1-yr analytics token" : ` · token ${st.tokenDate}`}`}
       >
         <span className="h-1.5 w-1.5 rounded-full bg-sky-400" /> UX data
       </span>

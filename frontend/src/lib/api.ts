@@ -373,9 +373,13 @@ export const api = {
 
   // Upstox = data feed only (orders stay on Flattrade)
   upstoxStatus: () =>
-    j<{ configured: boolean; authed: boolean; tokenDate: string | null; redirectUrl: string }>(
-      "/api/upstox/status"
-    ),
+    j<{
+      configured: boolean;
+      authed: boolean;
+      static?: boolean;
+      tokenDate: string | null;
+      redirectUrl: string;
+    }>("/api/upstox/status"),
   upstoxLoginUrl: () => j<{ url: string }>("/api/upstox/login-url"),
   upstoxSetToken: (token: string) =>
     j<{ configured: boolean; authed: boolean }>("/api/upstox/token", {

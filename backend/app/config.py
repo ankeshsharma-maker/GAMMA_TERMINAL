@@ -85,6 +85,10 @@ BROKER = os.getenv("BROKER", "flattrade").lower()
 # "nse" (default, the public NSE scrape) or "upstox" (REST /option/chain,
 # also covers BSE/BFO -> SENSEX & BANKEX). Orders always stay on BROKER.
 DATA_SOURCE = os.getenv("DATA_SOURCE", "nse").lower()
+# Simplest: a 1-year Upstox "Analytics Access Token" (read-only, market-data).
+# If set, the OAuth flow below is skipped entirely.
+UPSTOX_ACCESS_TOKEN = os.getenv("UPSTOX_ACCESS_TOKEN", "")
+# Only needed for the interactive daily-login OAuth path (not the analytics token).
 UPSTOX_API_KEY = os.getenv("UPSTOX_API_KEY", "")
 UPSTOX_API_SECRET = os.getenv("UPSTOX_API_SECRET", "")
 UPSTOX_REDIRECT_URL = os.getenv(

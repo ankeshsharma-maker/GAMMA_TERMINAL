@@ -21,7 +21,13 @@ from pathlib import Path
 
 import httpx
 
-from ..config import DATA_DIR, UPSTOX_API_KEY, UPSTOX_API_SECRET, UPSTOX_REDIRECT_URL
+from ..config import (
+    DATA_DIR,
+    UPSTOX_ACCESS_TOKEN,
+    UPSTOX_API_KEY,
+    UPSTOX_API_SECRET,
+    UPSTOX_REDIRECT_URL,
+)
 
 log = logging.getLogger("upstox")
 
@@ -51,22 +57,34 @@ class Upstox:
         self._token: str | None = None
         self._token_date: str = ""
         self._http = httpx.AsyncClient(timeout=15.0)
-        self._load_session()
+        if UPSTOX_ACCESS_TOKEN:
+            # 1-year analytics token from the env — no OAuth, no daily login
+            self._token = UPSTOX_ACCESS_TOKEN.strip()
+            self._static = True
+            log.info("upstox: using static analytics access token")
+        else:
+            self._static = False
+            self._load_session()
 
     # ---- config / status --------------------------------------------
     @property
     def configured(self) -> bool:
-        return bool(UPSTOX_API_KEY and UPSTOX_API_SECRET and UPSTOX_REDIRECT_URL)
+        return bool(UPSTOX_ACCESS_TOKEN) or bool(
+            UPSTOX_API_KEY and UPSTOX_API_SECRET and UPSTOX_REDIRECT_URL
+        )
 
     @property
     def authed(self) -> bool:
-        return bool(self._token) and self._token_date == _today()
+        if not self._token:
+            return False
+        return self._static or self._token_date == _today()
 
     def status(self) -> dict:
         return {
             "configured": self.configured,
             "authed": self.authed,
-            "tokenDate": self._token_date or None,
+            "static": self._static,
+            "tokenDate": None if self._static else (self._token_date or None),
             "redirectUrl": UPSTOX_REDIRECT_URL,
         }
 
@@ -123,6 +141,10 @@ class Upstox:
         log.info("upstox token set (%s)", self._token_date)
 
     def clear(self) -> None:
+        if self._static:
+            # env-provided token — nothing to clear; it returns on restart
+            log.warning("upstox: static analytics token was rejected — check it hasn't expired/revoked")
+            return
         self._token = None
         self._token_date = ""
         try:
