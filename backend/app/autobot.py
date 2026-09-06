@@ -124,8 +124,8 @@ def _crossed(a_prev: float, a_cur: float, b_prev: float, b_cur: float, direction
 class _Ctx:
     """Series snapshot for one symbol, derived from ``store.history``."""
 
-    def __init__(self, symbol: str):
-        hist = list(store.history.get(symbol, []))
+    def __init__(self, symbol: str, hist: list | None = None):
+        hist = list(store.history.get(symbol, [])) if hist is None else list(hist)
         self.n = len(hist)
         self.hist = hist
         self.ts = [float(h.get("t") or 0) for h in hist]

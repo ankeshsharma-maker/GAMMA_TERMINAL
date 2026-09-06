@@ -43,3 +43,23 @@ def delete_rule(rid: str):
 @router.post("/kill")
 def kill():
     return autobot.kill()
+
+
+@router.post("/backtest")
+async def backtest(body: dict):
+    """Daily-bar backtest of a rule over [from, to] ('YYYY-MM-DD').
+    body: {rule:{...}}  OR  {ruleId:"..."} to use a saved rule, + from,to."""
+    from .autobot_backtest import backtest_rule
+
+    rule = body.get("rule")
+    if not rule and body.get("ruleId"):
+        rule = next((r for r in autobot.rules if r.get("id") == body["ruleId"]), None)
+    if not rule:
+        raise HTTPException(400, "rule or ruleId required")
+    frm, to = body.get("from"), body.get("to")
+    if not frm or not to:
+        raise HTTPException(400, "from and to required")
+    try:
+        return await backtest_rule(rule, frm, to)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"backtest failed: {exc}")
