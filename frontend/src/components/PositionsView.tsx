@@ -360,8 +360,18 @@ function OrdersTab() {
     };
   }, [broker?.authed]);
 
+  const [filter, setFilter] = useState<"all" | "open" | "executed" | "cancelled">("all");
+
   const stCls = (s: string) =>
-    /complete|placed|filled/i.test(s) ? "text-up" : /reject/i.test(s) ? "text-down" : "text-term-dim";
+    /complete|placed|filled/i.test(s) ? "text-up" : /reject|cancel/i.test(s) ? "text-down" : "text-term-dim";
+
+  const stBucket = (s: string): "open" | "executed" | "cancelled" | "other" => {
+    if (/complete|filled|placed|traded/i.test(s)) return "executed";
+    if (/cancel|reject/i.test(s)) return "cancelled";
+    if (/open|pending|trigger|received/i.test(s)) return "open";
+    return "other";
+  };
+  const passFilter = (s: string) => filter === "all" || stBucket(s || "") === filter;
 
   // unified session order history: live-routed + paper
   const log = [
@@ -380,13 +390,23 @@ function OrdersTab() {
     })),
   ].sort((a, b) => b.ts - a.ts);
 
+  const shownLog = log.filter((o) => passFilter(o.status || ""));
+  const shownBook = book.filter((o) => passFilter(o.status || ""));
+
   return (
     <div className="min-h-0 flex-1 overflow-auto">
-      <div className="px-3 py-1.5 text-[10px] font-semibold uppercase text-term-dim">
-        Session order history
+      <div className="flex items-center gap-2 px-3 py-1.5">
+        <span className="text-[10px] font-semibold uppercase text-term-dim">Session order history</span>
+        <div className="seg ml-auto text-[10px]">
+          {(["all", "open", "executed", "cancelled"] as const).map((f) => (
+            <button key={f} onClick={() => setFilter(f)} className={filter === f ? "on" : ""}>
+              {f[0].toUpperCase() + f.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
-      {log.length === 0 ? (
-        <Empty>No orders this session.</Empty>
+      {shownLog.length === 0 ? (
+        <Empty>{filter === "all" ? "No orders this session." : `No ${filter} orders.`}</Empty>
       ) : (
         <table className="w-full border-separate border-spacing-0 border border-term-border text-xs">
           <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
@@ -394,14 +414,15 @@ function OrdersTab() {
               <TH>Time</TH>
               <TH>Contract</TH>
               <TH>Side</TH>
-              <TH>Qty</TH>
+              <TH>Lots</TH>
+              <TH>Total Qty</TH>
               <TH>Mode</TH>
               <TH>Status</TH>
               <TH>Ref / reason</TH>
             </tr>
           </thead>
           <tbody>
-            {log.map((o, i) => (
+            {shownLog.map((o, i) => (
               <tr key={i}>
                 <TD cls="num text-term-dim">{hhmm(o.ts)}</TD>
                 <TD cls="num">
@@ -409,9 +430,8 @@ function OrdersTab() {
                   {o.optionType}
                 </TD>
                 <TD cls={o.side === "BUY" ? "text-up" : "text-down"}>{o.side}</TD>
-                <TD cls="num">
-                  {o.qtyLots}L {o.qty ? `(${o.qty})` : ""}
-                </TD>
+                <TD cls="num">{o.qtyLots ?? "–"}</TD>
+                <TD cls="num font-medium text-term-text">{o.qty ?? "–"}</TD>
                 <TD cls="text-term-dim">{o.mode}</TD>
                 <TD cls={stCls(o.status || "")}>{o.status}</TD>
                 <TD cls="text-[10px] text-term-dim">{o.error || o.orderId || o.tsym || ""}</TD>
@@ -426,28 +446,28 @@ function OrdersTab() {
           <div className="mt-2 px-3 py-1.5 text-[10px] font-semibold uppercase text-term-dim">
             Flattrade order book
           </div>
-          {book.length === 0 ? (
-            <Empty>Order book empty.</Empty>
+          {shownBook.length === 0 ? (
+            <Empty>{filter === "all" ? "Order book empty." : `No ${filter} orders.`}</Empty>
           ) : (
             <table className="w-full border-separate border-spacing-0 border border-term-border text-xs">
               <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
                 <tr>
                   <TH>Symbol</TH>
                   <TH>Side</TH>
-                  <TH>Qty</TH>
+                  <TH>Total Qty</TH>
                   <TH>Price</TH>
                   <TH>Status</TH>
                   <TH>Reason</TH>
                 </tr>
               </thead>
               <tbody>
-                {book.map((o, i) => (
+                {shownBook.map((o, i) => (
                   <tr key={i}>
                     <TD cls="num">{o.tsym}</TD>
                     <TD cls={o.trantype === "B" ? "text-up" : "text-down"}>
                       {o.trantype === "B" ? "BUY" : "SELL"}
                     </TD>
-                    <TD cls="num">{o.qty}</TD>
+                    <TD cls="num font-medium text-term-text">{o.qty}</TD>
                     <TD cls="num">{nf(n(o.prc))}</TD>
                     <TD cls={stCls(o.status || "")}>{o.status}</TD>
                     <TD cls="text-[10px] text-term-dim">{o.rejreason || ""}</TD>
