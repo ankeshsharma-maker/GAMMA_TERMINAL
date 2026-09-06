@@ -119,3 +119,16 @@ class StrategyExecuteIn(BaseModel):
     mode: Optional[Literal["paper", "live"]] = None
 
     model_config = {"populate_by_name": True}
+
+
+class ScheduleIn(BaseModel):
+    symbol: str
+    expiry: str
+    legs: list[StrategyLeg]
+    entry_time: Optional[str] = Field(None, alias="entryTime")  # "HH:MM" IST
+    exit_time: Optional[str] = Field(None, alias="exitTime")
+    repeat: bool = False
+    mode: Literal["paper", "live"] = "paper"
+    note: str = ""
+
+    model_config = {"populate_by_name": True}

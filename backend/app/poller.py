@@ -234,6 +234,27 @@ async def run_poller(stop: asyncio.Event) -> None:
         except Exception as exc:  # noqa: BLE001
             log.warning("stop check failed: %s", exc)
 
+        try:
+            from . import schedules
+
+            ev = await schedules.tick()
+            for e in ev:
+                store.add_alert(
+                    {
+                        "ts": time.time(), "symbol": e.get("symbol", ""),
+                        "kind": e["kind"], "severity": "info",
+                        "message": e["message"], "score": 0,
+                    }
+                )
+                log.info("SCHEDULE %s", e["message"])
+            if ev:
+                await hub.broadcast_all({"type": "alerts", "data": store.get_alerts(50)})
+                await hub.broadcast_all(
+                    {"type": "schedules", "data": schedules.list_schedules()}
+                )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("schedule tick failed: %s", exc)
+
         interval = POLL_INTERVAL if _in_market_hours() else OFFHOURS_POLL_INTERVAL
         try:
             await asyncio.wait_for(stop.wait(), timeout=interval)

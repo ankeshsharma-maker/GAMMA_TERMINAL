@@ -15,6 +15,7 @@ from .models import (
     PaperOrderClose,
     PaperOrderIn,
     SaveStrategyIn,
+    ScheduleIn,
     StopIn,
     StrategyExecuteIn,
     WatchlistAdd,
@@ -620,3 +621,48 @@ def strategies_save(body: SaveStrategyIn):
 @router.delete("/strategies/{sid}")
 def strategies_delete(sid: str):
     return {"strategies": strat.delete_strategy(sid)}
+
+
+# ---- scheduled runs (time-based entry / exit) -----------------------
+@router.get("/strategy/schedules")
+def strategy_schedules_list():
+    from . import schedules
+
+    return {"schedules": schedules.list_schedules()}
+
+
+@router.post("/strategy/schedule")
+def strategy_schedule_add(body: ScheduleIn):
+    from . import schedules
+
+    if not body.legs:
+        raise HTTPException(status_code=422, detail="at least one leg required")
+    if not (body.entry_time or body.exit_time):
+        raise HTTPException(status_code=422, detail="set an entry and/or exit time")
+    row = schedules.add_schedule(
+        {
+            "symbol": body.symbol,
+            "expiry": body.expiry,
+            "legs": [leg.dump() for leg in body.legs],
+            "entryTime": body.entry_time,
+            "exitTime": body.exit_time,
+            "repeat": body.repeat,
+            "mode": body.mode,
+            "note": body.note,
+        }
+    )
+    return {"schedule": row, "schedules": schedules.list_schedules()}
+
+
+@router.delete("/strategy/schedule/{sid}")
+def strategy_schedule_del(sid: str):
+    from . import schedules
+
+    return {"schedules": schedules.cancel(sid)}
+
+
+@router.post("/strategy/schedules/clear")
+def strategy_schedules_clear():
+    from . import schedules
+
+    return {"schedules": schedules.clear_finished()}

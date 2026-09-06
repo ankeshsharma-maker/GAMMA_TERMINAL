@@ -309,6 +309,27 @@ export const api = {
   deleteStrategy: (id: string) =>
     j<{ strategies: SavedStrategy[] }>(`/api/strategies/${id}`, { method: "DELETE" }),
 
+  strategySchedules: () =>
+    j<{ schedules: import("../types").StrategySchedule[] }>("/api/strategy/schedules"),
+  strategyScheduleAdd: (body: {
+    symbol: string;
+    expiry: string;
+    legs: StrategyLeg[];
+    entryTime?: string | null;
+    exitTime?: string | null;
+    repeat?: boolean;
+    mode?: "paper" | "live";
+    note?: string;
+  }) =>
+    j<{ schedule: import("../types").StrategySchedule; schedules: import("../types").StrategySchedule[] }>(
+      "/api/strategy/schedule",
+      { method: "POST", body: JSON.stringify(body) }
+    ),
+  strategyScheduleDel: (id: string) =>
+    j<{ schedules: import("../types").StrategySchedule[] }>(`/api/strategy/schedule/${id}`, {
+      method: "DELETE",
+    }),
+
   orderModeGet: () =>
     j<{ mode: "paper" | "live"; brokerAuthed: boolean }>("/api/order/mode"),
   orderModeSet: (mode: "paper" | "live") =>

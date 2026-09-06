@@ -352,6 +352,23 @@ export interface SavedStrategy {
   savedAt: number;
 }
 
+export interface StrategySchedule {
+  id: string;
+  createdAt: number;
+  symbol: string;
+  expiry: string;
+  legs: StrategyLeg[];
+  mode: "paper" | "live";
+  entryTime: string | null;
+  exitTime: string | null;
+  repeat: boolean;
+  note: string;
+  status: "armed" | "entered" | "done" | "cancelled";
+  lastEntryDate: string | null;
+  lastExitDate: string | null;
+  log: { ts: number; msg: string }[];
+}
+
 export type OIBuildup =
   | "LONG_BUILDUP"
   | "SHORT_BUILDUP"

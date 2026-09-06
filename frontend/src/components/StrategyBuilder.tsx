@@ -4,7 +4,13 @@ import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
 import { strategyPnlCurve } from "../lib/bs";
 import { ivRegime, ivFit } from "../lib/iv";
-import type { Analysis, OptionType, SavedStrategy, StrategyLeg } from "../types";
+import type {
+  Analysis,
+  OptionType,
+  SavedStrategy,
+  StrategyLeg,
+  StrategySchedule,
+} from "../types";
 import { PayoffChart } from "./PayoffChart";
 import { BacktestPanel } from "./BacktestPanel";
 
@@ -81,6 +87,24 @@ export function StrategyBuilder() {
   );
   const [saveName, setSaveName] = useState("");
   const timer = useRef<number | null>(null);
+
+  // ---- scheduled run (time-based entry / exit) ----
+  const [schedEntry, setSchedEntry] = useState("");
+  const [schedExit, setSchedExit] = useState("");
+  const [schedRepeat, setSchedRepeat] = useState(false);
+  const [schedMode, setSchedMode] = useState<"paper" | "live">("paper");
+  const [schedules, setSchedules] = useState<StrategySchedule[]>([]);
+  const loadSchedules = useCallback(() => {
+    api.strategySchedules().then(
+      (d) => setSchedules(d.schedules),
+      () => {}
+    );
+  }, []);
+  useEffect(() => {
+    loadSchedules();
+    const id = window.setInterval(loadSchedules, 30000);
+    return () => window.clearInterval(id);
+  }, [loadSchedules]);
 
   const [hedgeMax, setHedgeMax] = useState<number>(5000);
   const [hedgeAdvOpen, setHedgeAdvOpen] = useState(false);
@@ -350,6 +374,29 @@ export function StrategyBuilder() {
   const loadSaved = (s: SavedStrategy) => update(s.legs.map((l) => ({ ...l })));
   const delSaved = (id: string) =>
     api.deleteStrategy(id).then((d) => setSaved(d.strategies));
+
+  const addSchedule = async () => {
+    const exp = expiry ?? chain?.expiry;
+    if (!exp || legs.length === 0 || (!schedEntry && !schedExit)) return;
+    try {
+      const d = await api.strategyScheduleAdd({
+        symbol,
+        expiry: exp,
+        legs: scaled(legs),
+        entryTime: schedEntry || null,
+        exitTime: schedExit || null,
+        repeat: schedRepeat,
+        mode: schedMode,
+      });
+      setSchedules(d.schedules);
+      setSchedEntry("");
+      setSchedExit("");
+    } catch {
+      /* ignore */
+    }
+  };
+  const delSchedule = (id: string) =>
+    api.strategyScheduleDel(id).then((d) => setSchedules(d.schedules), () => {});
 
   // clamp the "time to expiry" slider whenever the position / expiry changes
   const dte = Math.max(1, Math.round(analysis?.dte ?? 0));
@@ -972,6 +1019,96 @@ export function StrategyBuilder() {
               </span>
             )}
           </button>
+
+          {/* scheduled run */}
+          <div className="rounded border border-term-border bg-term-bg/40 p-2 text-2xs">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="font-semibold uppercase tracking-wide text-term-dim">
+                ⏰ Schedule run
+              </span>
+              <div className="seg">
+                {(["paper", "live"] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setSchedMode(m)}
+                    className={schedMode === m ? "on" : ""}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <label className="flex items-center gap-1 text-term-dim">
+                Entry
+                <input
+                  type="time"
+                  value={schedEntry}
+                  onChange={(e) => setSchedEntry(e.target.value)}
+                  className="num rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text [color-scheme:dark]"
+                />
+              </label>
+              <label className="flex items-center gap-1 text-term-dim">
+                Exit
+                <input
+                  type="time"
+                  value={schedExit}
+                  onChange={(e) => setSchedExit(e.target.value)}
+                  className="num rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text [color-scheme:dark]"
+                />
+              </label>
+              <label className="flex items-center gap-1 text-term-dim">
+                <input
+                  type="checkbox"
+                  checked={schedRepeat}
+                  onChange={(e) => setSchedRepeat(e.target.checked)}
+                />
+                daily
+              </label>
+              <button
+                disabled={legs.length === 0 || (!schedEntry && !schedExit)}
+                onClick={addSchedule}
+                className="btn ml-auto px-2 py-0.5 font-semibold disabled:opacity-40"
+              >
+                + Schedule
+              </button>
+            </div>
+            {schedMode === "live" && (
+              <div className="mt-1 text-[9px] text-amber-400">
+                ⚠ live places real orders at the set time (IST, market hours).
+              </div>
+            )}
+            {schedules
+              .filter((s) => s.status === "armed" || s.status === "entered")
+              .map((s) => (
+                <div
+                  key={s.id}
+                  className="mt-1 flex items-center justify-between gap-1 rounded bg-term-panel px-1.5 py-1"
+                >
+                  <span className="num truncate">
+                    <span
+                      className={
+                        s.status === "entered" ? "font-semibold text-up" : "text-term-accent"
+                      }
+                    >
+                      {s.status}
+                    </span>{" "}
+                    {s.symbol} · {s.legs.length}L · {s.mode}
+                    {s.entryTime ? ` · in ${s.entryTime}` : ""}
+                    {s.exitTime ? ` · out ${s.exitTime}` : ""}
+                    {s.repeat ? " · daily" : ""}
+                  </span>
+                  <button
+                    className="shrink-0 text-term-dim hover:text-down"
+                    onClick={() => delSchedule(s.id)}
+                    title="cancel schedule"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+          </div>
+
           <div className="flex gap-1">
             <input
               value={saveName}
