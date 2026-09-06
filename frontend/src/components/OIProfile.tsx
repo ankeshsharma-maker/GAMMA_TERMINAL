@@ -135,6 +135,16 @@ export function OIProfile() {
     return { maxOI, resistance: maxCallOI.k, floor: maxPutOI.k };
   }, [rows]);
 
+  // total Call / Put OI across the visible strike window (for the donut)
+  const oiTotals = useMemo(() => {
+    let ce = 0, pe = 0;
+    for (const r of rows) {
+      ce += r.call.oi || 0;
+      pe += r.put.oi || 0;
+    }
+    return { ce, pe, pcr: ce ? pe / ce : null };
+  }, [rows]);
+
   const flow = useMemo(() => {
     let ceAdd = 0, ceCut = 0, peAdd = 0, peCut = 0, maxChg = 1;
     for (const r of rows) {
@@ -470,6 +480,98 @@ export function OIProfile() {
     </div>
   );
 
+  // ---- OI split donut (total Call vs Put OI over the visible strike window) ----
+  const donutEl = (() => {
+    const { ce, pe, pcr } = oiTotals;
+    const tot = ce + pe;
+    if (tot <= 0) return null;
+    const R = 42;
+    const SW = 16;
+    const C = 2 * Math.PI * R;
+    const ceLen = (ce / tot) * C;
+    const fAdd = flow.ceAdd + flow.peAdd;
+    return (
+      <div className="flex w-40 shrink-0 flex-col items-center gap-2 border-r border-term-border/60 p-3">
+        <div className="text-center text-[10px] font-semibold uppercase tracking-wide text-term-dim">
+          OI split · {count}±ATM
+        </div>
+        <svg viewBox="0 0 100 100" className="w-28">
+          <circle cx="50" cy="50" r={R} fill="none" stroke="#1e2733" strokeWidth={SW} />
+          {/* put arc (full ring) then call arc on top */}
+          <circle
+            cx="50"
+            cy="50"
+            r={R}
+            fill="none"
+            stroke={PUT_OI}
+            strokeWidth={SW}
+            strokeDasharray={`${C} ${C}`}
+            transform="rotate(-90 50 50)"
+          />
+          <circle
+            cx="50"
+            cy="50"
+            r={R}
+            fill="none"
+            stroke={CALL_OI}
+            strokeWidth={SW}
+            strokeDasharray={`${ceLen.toFixed(1)} ${C}`}
+            transform="rotate(-90 50 50)"
+          />
+          <text x="50" y="47" textAnchor="middle" className="fill-term-text" fontSize="15" fontWeight="700">
+            {pcr != null ? nf(pcr, 2) : "–"}
+          </text>
+          <text x="50" y="60" textAnchor="middle" className="fill-term-dim" fontSize="8">
+            PCR
+          </text>
+        </svg>
+        <div className="w-full space-y-1 text-[10px]">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1">
+              <Sw c={CALL_OI} /> Call
+            </span>
+            <span className="num text-term-text">
+              {lakhs(ce)} · {nf((ce / tot) * 100, 0)}%
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1">
+              <Sw c={PUT_OI} /> Put
+            </span>
+            <span className="num text-term-text">
+              {lakhs(pe)} · {nf((pe / tot) * 100, 0)}%
+            </span>
+          </div>
+        </div>
+        {tf > 0 && Math.abs(fAdd) > 0 && (
+          <div className="w-full border-t border-term-border/50 pt-1.5">
+            <div className="mb-1 text-[9px] uppercase tracking-wide text-term-dim">
+              OI added · last {tf}m
+            </div>
+            <div className="flex h-2 w-full overflow-hidden rounded-sm bg-term-bg">
+              <div
+                style={{
+                  width: `${(Math.max(0, flow.ceAdd) / (fAdd || 1)) * 100}%`,
+                  background: CALL_ADD,
+                }}
+              />
+              <div
+                style={{
+                  width: `${(Math.max(0, flow.peAdd) / (fAdd || 1)) * 100}%`,
+                  background: PUT_ADD,
+                }}
+              />
+            </div>
+            <div className="mt-1 flex justify-between text-[9px] text-term-dim">
+              <span style={{ color: CALL_ADD }}>C +{compact(flow.ceAdd)}</span>
+              <span style={{ color: PUT_ADD }}>P +{compact(flow.peAdd)}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  })();
+
   // ---- the Sensibull-style data table ----
   // ---- session PCR line chart (with the underlying price overlaid on a right axis) ----
   const pcrEl = (() => {
@@ -728,7 +830,12 @@ export function OIProfile() {
         </div>
       )}
 
-      {layout === "chart" && chartEl}
+      {layout === "chart" && (
+        <div className="flex min-h-0 flex-1">
+          {donutEl}
+          {chartEl}
+        </div>
+      )}
       {layout === "pcr" && pcrEl}
 
       <div className="flex flex-wrap items-center gap-x-3 border-t border-term-border px-3 py-1 text-[9px] text-term-dim">
