@@ -59,7 +59,7 @@ function loadHdrSymbols(): string[] {
   }
 }
 
-function HeaderIndices() {
+export function HeaderIndices() {
   const [symbols, setSymbols] = useState<string[]>(loadHdrSymbols);
   const [rows, setRows] = useState<{ symbol: string; spot: number | null; chgPct: number | null }[]>([]);
   const [options, setOptions] = useState<string[]>([]);
@@ -212,7 +212,7 @@ function MarginStats() {
   );
 }
 
-function BrokerPill() {
+export function BrokerPill() {
   const { broker, connectBroker, disconnectBroker, refreshBroker, setBrokerToken, brokerDirectLogin } =
     useStore();
   const [mode, setMode] = useState<"" | "token" | "login">("");
@@ -367,7 +367,7 @@ function BrokerPill() {
   );
 }
 
-function OrderModePill() {
+export function OrderModePill() {
   const { orderMode, broker, setOrderMode } = useStore();
   const toLive = async () => {
     if (!broker?.authed) {
@@ -401,7 +401,7 @@ function OrderModePill() {
   );
 }
 
-function AlertBell() {
+export function AlertBell() {
   const { alerts, alertsSeen, unusual, unusualSeen, notifOpen, openNotif, closeNotif } = useStore();
   const unseen =
     Math.max(0, alerts.length - alertsSeen) + Math.max(0, unusual.length - unusualSeen);

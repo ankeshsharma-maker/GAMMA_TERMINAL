@@ -8,7 +8,6 @@ import { OIProfile } from "./components/OIProfile";
 import { ScripView } from "./components/ScripView";
 import { Positions } from "./components/Positions";
 import { ScannerView } from "./components/ScannerView";
-import { Alerts } from "./components/Alerts";
 import { Chart } from "./components/Chart";
 import { StrategyBuilder } from "./components/StrategyBuilder";
 import { PositionsView } from "./components/PositionsView";
@@ -17,6 +16,8 @@ import { AutoBotView } from "./components/AutoBot";
 import { Funds } from "./components/Funds";
 import { OrderConfirm } from "./components/OrderConfirm";
 import { NotificationPanel } from "./components/NotificationPanel";
+import { MobileShell } from "./components/MobileShell";
+import { useIsMobile } from "./lib/useIsMobile";
 
 const LS = {
   left: "layout.leftW",
@@ -65,10 +66,15 @@ function VSplit({ onDrag }: { onDrag: (dx: number) => void }) {
 
 export default function App() {
   const init = useStore((s) => s.init);
-  const view = useStore((s) => s.view);
+  const isMobile = useIsMobile();
   useEffect(() => {
     init();
   }, [init]);
+  return isMobile ? <MobileShell /> : <DesktopShell />;
+}
+
+function DesktopShell() {
+  const view = useStore((s) => s.view);
 
   const wide =
     view === "builder" ||
@@ -166,7 +172,7 @@ export default function App() {
         {showRight && <VSplit onDrag={bumpRight} />}
         {showRight && (
           <aside className="min-h-0 overflow-hidden border-l border-term-border">
-            {view === "scanner" ? <Alerts /> : view === "scalper" ? <ScalpPanel /> : <Positions />}
+            {view === "scalper" ? <ScalpPanel /> : <Positions />}
           </aside>
         )}
       </div>

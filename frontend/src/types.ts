@@ -224,7 +224,8 @@ export type View =
   | "positions"
   | "scalper"
   | "auto"
-  | "funds";
+  | "funds"
+  | "watchlist";
 
 export type AutoCondition = Record<string, unknown> & { kind: string };
 
