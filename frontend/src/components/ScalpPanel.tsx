@@ -108,13 +108,13 @@ export function ScalpPanel() {
           label="SELL CALL"
           ot="CE"
           side="SELL"
-          cls="border border-up/40 text-up/80 hover:bg-up/10"
+          cls="border border-down/40 text-down/90 hover:bg-down/10"
         />
         <BigBtn
           label="SELL PUT"
           ot="PE"
           side="SELL"
-          cls="border border-down/40 text-down/80 hover:bg-down/10"
+          cls="border border-up/40 text-up/90 hover:bg-up/10"
         />
       </div>
 

@@ -10,6 +10,7 @@ import {
 } from "lightweight-charts";
 import { useStore } from "../store";
 import { api } from "../lib/api";
+import { MiniChart } from "./MiniChart";
 import {
   bollinger,
   ema,
@@ -79,6 +80,7 @@ export function Chart() {
   const setInstrument = useStore((s) => s.setChartInstrument);
   const selectSymbol = useStore((s) => s.selectSymbol);
   const setView = useStore((s) => s.setView);
+  const view = useStore((s) => s.view);
   const symClass = useStore((s) => s.symClass);
   const symClassOk = useStore((s) => s.symClassOk);
   const [symChoices, setSymChoices] = useState<string[]>([]);
@@ -98,6 +100,8 @@ export function Chart() {
   );
   const [data, setData] = useState<ChartData | null>(null);
   const [intervalS, setIntervalS] = useState(300);
+  const [split, setSplit] = useState(false);
+  const [cmpInstrument, setCmpInstrument] = useState<string>("STRADDLE");
   const [ctype, setCtype] = useState<"candle" | "heikin" | "line" | "area" | "bar">("candle");
   const [logScale, setLogScale] = useState(false);
   const [drawMode, setDrawMode] = useState(false);
@@ -436,24 +440,26 @@ export function Chart() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs">
-        <div className="flex overflow-hidden rounded border border-term-border">
-          {(
-            [
-              ["chain", "Chain"],
-              ["scrip", "OI"],
-              ["trendingoi", "Trend OI"],
-            ] as const
-          ).map(([v, label]) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              title={`Open ${label} for ${symbol}`}
-              className="border-r border-term-border px-2 py-0.5 text-term-dim last:border-r-0 hover:bg-term-border hover:text-term-text"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {view !== "scalper" && (
+          <div className="flex overflow-hidden rounded border border-term-border">
+            {(
+              [
+                ["chain", "Chain"],
+                ["scrip", "OI"],
+                ["trendingoi", "Trend OI"],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                title={`Open ${label} for ${symbol}`}
+                className="border-r border-term-border px-2 py-0.5 text-term-dim last:border-r-0 hover:bg-term-border hover:text-term-text"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <select
           value={symbol}
           onChange={(e) => selectSymbol(e.target.value, true)}
@@ -481,6 +487,38 @@ export function Chart() {
             </option>
           ))}
         </select>
+
+        <button
+          onClick={() =>
+            setSplit((v) => {
+              const next = !v;
+              if (next) setCmpInstrument(instrument === "" ? "STRADDLE" : "");
+              return next;
+            })
+          }
+          className={`rounded border px-1.5 py-0.5 ${
+            split ? "border-term-accent/50 bg-term-accent/15 text-term-text" : "border-term-border text-term-dim"
+          }`}
+          title="Split view — underlying + derivative in one window"
+        >
+          ⊞ Split
+        </button>
+        {split && (
+          <select
+            value={cmpInstrument}
+            onChange={(e) => setCmpInstrument(e.target.value)}
+            className="rounded border border-term-accent/40 bg-term-bg px-1.5 py-0.5 text-2xs font-semibold text-term-text outline-none"
+            title="Second pane instrument"
+          >
+            <option value="">{symbol} spot</option>
+            <option value="STRADDLE">{symbol} ATM straddle</option>
+            {instrOptions.map((w) => (
+              <option key={w.key} value={w.key}>
+                {w.symbol} {w.strike} {w.optionType}
+              </option>
+            ))}
+          </select>
+        )}
 
         {/* pick any strike's CE / PE */}
         {strikes.length > 0 && (
@@ -607,7 +645,7 @@ export function Chart() {
         </span>
       </div>
 
-      <div className="relative min-h-0 flex-1">
+      <div className={`relative min-h-0 ${split ? "flex-[3]" : "flex-1"}`}>
         <div ref={wrapRef} className="absolute inset-0" />
         {legend && (
           <div className="pointer-events-none absolute left-2 top-1 z-10 rounded bg-term-panel/80 px-2 py-0.5 text-[10px] num text-term-text">
@@ -640,6 +678,26 @@ export function Chart() {
           </div>
         )}
       </div>
+
+      {split && (
+        <div className="min-h-0 flex-[2] border-t-2 border-term-border">
+          <MiniChart
+            symbol={symbol}
+            instrument={cmpInstrument}
+            intervalS={intervalS}
+            label={
+              cmpInstrument === ""
+                ? `${symbol} spot`
+                : cmpInstrument === "STRADDLE"
+                ? `${symbol} ATM straddle`
+                : (instrOptions.find((w) => w.key === cmpInstrument) &&
+                    `${symbol} ${instrOptions.find((w) => w.key === cmpInstrument)!.strike} ${
+                      instrOptions.find((w) => w.key === cmpInstrument)!.optionType
+                    }`) || cmpInstrument
+            }
+          />
+        </div>
+      )}
     </div>
   );
 }

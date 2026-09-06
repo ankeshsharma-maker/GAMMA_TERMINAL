@@ -110,6 +110,34 @@ export function StrategyBuilder() {
     [mult]
   );
 
+  // "book at profit": paper only — execute, then attach an amount target to each
+  // freshly-created position so check_stops() auto-squares it off at profit.
+  const [bookProfit, setBookProfit] = useState("");
+  const doExecute = useCallback(async () => {
+    const ls = scaled(legs);
+    const tgt = parseFloat(bookProfit);
+    const exp = expiry ?? chain?.expiry;
+    if (orderMode === "live" || !(tgt > 0) || !exp || ls.length === 0) {
+      requestStrategyExecute(ls);
+      return;
+    }
+    const before = new Set((useStore.getState().paper?.positions ?? []).map((p) => p.id));
+    const r = await api.executeStrategy({ symbol, expiry: exp, legs: ls, mode: "paper" });
+    useStore.setState({ paper: r.paper });
+    const fresh = (r.paper.positions ?? []).filter((p) => !before.has(p.id));
+    const totalQty = fresh.reduce((s, p) => s + Math.abs(p.qty), 0) || 1;
+    for (const p of fresh) {
+      await api.setStop({
+        position_id: p.id,
+        mode: "amount",
+        value: 0,
+        trailValue: 0,
+        targetValue: (tgt * Math.abs(p.qty)) / totalQty,
+      });
+    }
+    useStore.setState({ paper: await api.paper() });
+  }, [scaled, legs, bookProfit, expiry, chain?.expiry, orderMode, symbol, requestStrategyExecute]);
+
   const strikes = useMemo(
     () => (chain ? chain.rows.map((r) => r.strike) : []),
     [chain]
@@ -589,9 +617,21 @@ export function StrategyBuilder() {
               (header) before executing or this hedge won't touch your real position.
             </div>
           )}
+          <label
+            className="flex items-center gap-1.5 text-2xs text-term-dim"
+            title="Paper only: auto-square-off the basket once open P&L reaches this profit"
+          >
+            <span className="uppercase tracking-wide">Book at profit ₹</span>
+            <input
+              value={bookProfit}
+              onChange={(e) => setBookProfit(e.target.value.replace(/[^\d.]/g, ""))}
+              placeholder="0 = off"
+              className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent"
+            />
+          </label>
           <button
             disabled={legs.length === 0}
-            onClick={() => requestStrategyExecute(scaled(legs))}
+            onClick={doExecute}
             className={`btn py-2 font-semibold disabled:opacity-40 ${
               orderMode === "live" ? "btn-sell" : "btn-buy"
             }`}
@@ -599,6 +639,9 @@ export function StrategyBuilder() {
             {orderMode === "live" ? "Execute LIVE" : "Execute (paper)"} · {legs.length} leg
             {legs.length === 1 ? "" : "s"}
             {mult > 1 && <span className="ml-1 text-2xs">(×{mult})</span>}
+            {orderMode !== "live" && parseFloat(bookProfit) > 0 && (
+              <span className="ml-1 text-2xs text-up">· book +₹{parseFloat(bookProfit)}</span>
+            )}
           </button>
           <div className="flex gap-1">
             <input

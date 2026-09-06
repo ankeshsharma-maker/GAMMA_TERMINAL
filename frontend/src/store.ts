@@ -125,7 +125,8 @@ interface State {
     position_id: string,
     mode: "points" | "amount",
     value: number,
-    trailValue: number
+    trailValue: number,
+    targetValue?: number
   ) => Promise<void>;
   clearStop: (position_id: string) => Promise<void>;
   builderQueue: import("./types").StrategyLeg[];
@@ -576,8 +577,8 @@ export const useStore = create<State>((set, get) => ({
     set({ paper: await api.closePosition(id) });
   },
 
-  setStop: async (position_id, mode, value, trailValue) => {
-    set({ paper: await api.setStop({ position_id, mode, value, trailValue }) });
+  setStop: async (position_id, mode, value, trailValue, targetValue = 0) => {
+    set({ paper: await api.setStop({ position_id, mode, value, trailValue, targetValue }) });
   },
   clearStop: async (position_id) => {
     set({ paper: await api.clearStop(position_id) });

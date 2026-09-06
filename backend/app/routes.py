@@ -350,7 +350,9 @@ def paper_close(body: PaperOrderClose):
 
 @router.post("/paper/stop")
 def paper_set_stop(body: StopIn):
-    return store.set_stop(body.position_id, body.mode, body.value, body.trail_value)
+    return store.set_stop(
+        body.position_id, body.mode, body.value, body.trail_value, body.target_value
+    )
 
 
 @router.delete("/paper/stop/{position_id}")

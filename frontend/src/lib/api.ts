@@ -197,8 +197,9 @@ export const api = {
   setStop: (body: {
     position_id: string;
     mode: "points" | "amount";
-    value: number;
+    value: number; // 0 = no stop-loss (target only)
     trailValue: number;
+    targetValue?: number;
   }) => j<PaperState>("/api/paper/stop", { method: "POST", body: JSON.stringify(body) }),
 
   clearStop: (position_id: string) =>

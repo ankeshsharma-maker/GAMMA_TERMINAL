@@ -29,8 +29,9 @@ class PaperOrderClose(BaseModel):
 class StopIn(BaseModel):
     position_id: str
     mode: Literal["points", "amount"] = "points"
-    value: float = Field(..., gt=0)
+    value: float = Field(0.0, ge=0)  # 0 = no stop-loss (target only)
     trail_value: float = Field(0.0, ge=0, alias="trailValue")
+    target_value: float = Field(0.0, ge=0, alias="targetValue")
 
     model_config = {"populate_by_name": True}
 

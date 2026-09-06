@@ -964,7 +964,21 @@ class Store:
         offset = value if mode == "points" else value / qty
         return pos["avgPrice"] - offset if pos["qty"] > 0 else pos["avgPrice"] + offset
 
-    def set_stop(self, position_id: str, mode: str, value: float, trail_value: float) -> dict:
+    @staticmethod
+    def _target_from(pos: dict, mode: str, value: float) -> float:
+        """Take-profit LTP — the mirror of _stop_from."""
+        qty = abs(pos["qty"]) or 1
+        offset = value if mode == "points" else value / qty
+        return pos["avgPrice"] + offset if pos["qty"] > 0 else pos["avgPrice"] - offset
+
+    def set_stop(
+        self,
+        position_id: str,
+        mode: str,
+        value: float,
+        trail_value: float,
+        target_value: float = 0.0,
+    ) -> dict:
         with _lock:
             pos = next(
                 (p for p in self.paper["positions"] if p["id"] == position_id), None
@@ -975,11 +989,19 @@ class Store:
                 pos["symbol"], pos["expiry"], pos["strike"], pos["optionType"]
             ) or pos["avgPrice"]
             mode = "amount" if mode == "amount" else "points"
+            value = float(value or 0.0)
+            target_value = max(0.0, float(target_value or 0.0))
             pos["sl"] = {
                 "mode": mode,
-                "value": float(value),
+                "value": value,
                 "trailValue": max(0.0, float(trail_value or 0.0)),
-                "stopPrice": round(self._stop_from(pos, mode, value), 2),
+                "targetValue": target_value,
+                "stopPrice": round(self._stop_from(pos, mode, value), 2) if value > 0 else None,
+                "targetPrice": (
+                    round(self._target_from(pos, mode, target_value), 2)
+                    if target_value > 0
+                    else None
+                ),
                 "peak": ltp,
                 "createdTs": time.time(),
             }
@@ -1009,8 +1031,10 @@ class Store:
                     continue
                 long = pos["qty"] > 0
                 qty = abs(pos["qty"]) or 1
+                has_sl = sl.get("stopPrice") is not None
+                tgt_px = sl.get("targetPrice")
 
-                if sl["trailValue"] > 0:
+                if has_sl and sl["trailValue"] > 0:
                     step = sl["trailValue"] if sl["mode"] == "points" else sl["trailValue"] / qty
                     if long and ltp > sl["peak"]:
                         sl["peak"] = ltp
@@ -1019,12 +1043,17 @@ class Store:
                         sl["peak"] = ltp
                         sl["stopPrice"] = min(sl["stopPrice"], round(ltp + step, 2))
 
-                hit = (long and ltp <= sl["stopPrice"]) or (not long and ltp >= sl["stopPrice"])
-                if not hit:
+                stop_hit = has_sl and (
+                    (long and ltp <= sl["stopPrice"]) or (not long and ltp >= sl["stopPrice"])
+                )
+                tgt_hit = tgt_px is not None and (
+                    (long and ltp >= tgt_px) or (not long and ltp <= tgt_px)
+                )
+                if not (stop_hit or tgt_hit):
                     continue
                 pnl = round((ltp - pos["avgPrice"]) * pos["qty"], 0)
-                trailed = sl["trailValue"] > 0
-                stop_px = sl["stopPrice"]
+                trailed = has_sl and sl["trailValue"] > 0
+                stop_px = tgt_px if tgt_hit else sl.get("stopPrice")
                 self.close_paper(pos["id"], price=ltp)
                 hits.append(
                     {
@@ -1032,15 +1061,19 @@ class Store:
                         "symbol": pos["symbol"],
                         "strike": pos["strike"],
                         "optionType": pos["optionType"],
-                        "kind": "SL_HIT",
+                        "kind": "TARGET_HIT" if tgt_hit else "SL_HIT",
                         "trailed": trailed,
                         "stopPrice": stop_px,
                         "ltp": round(ltp, 2),
                         "pnl": pnl,
                         "message": (
                             f"{pos['symbol']} {pos['strike']:.0f}{pos['optionType']} "
-                            f"{'trailing ' if trailed else ''}stop hit @ {ltp:.2f} "
-                            f"(stop {stop_px:.2f}, P&L ₹{pnl:.0f})"
+                            + (
+                                f"target hit @ {ltp:.2f} (target {stop_px:.2f}, P&L ₹{pnl:.0f})"
+                                if tgt_hit
+                                else f"{'trailing ' if trailed else ''}stop hit @ {ltp:.2f} "
+                                f"(stop {stop_px:.2f}, P&L ₹{pnl:.0f})"
+                            )
                         ),
                     }
                 )

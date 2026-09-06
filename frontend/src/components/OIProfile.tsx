@@ -31,10 +31,10 @@ export function OIProfile() {
   const [metric, setMetric] = useState<Metric>("combined");
   const [layout, setLayout] = useState<"chart" | "pcr">("chart");
   const [pcrPts, setPcrPts] = useState<{ t: number; pcr: number; spot: number }[]>([]);
-  const [count, setCount] = useState(20);
+  const [count, setCount] = useState(10);
   const [symChoices, setSymChoices] = useState<string[]>([]);
   const [zoom, setZoom] = useState(1);
-  const [tf, setTf] = useState(0); // minutes; 0 = change since day open
+  const [tf, setTf] = useState(5); // minutes; 0 = change since day open
   const [win, setWin] = useState<Record<string, { ceOiChg: number; peOiChg: number }>>({});
   const [winCov, setWinCov] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);

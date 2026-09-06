@@ -9,13 +9,14 @@ export function StopEditor({ p }: { p: Position }) {
   const [mode, setMode] = useState<"points" | "amount">(p.sl?.mode ?? "points");
   const [value, setValue] = useState<number>(p.sl?.value ?? (p.sl?.mode === "amount" ? 2000 : 15));
   const [trail, setTrail] = useState<number>(p.sl?.trailValue ?? 0);
+  const [target, setTarget] = useState<number>(p.sl?.targetValue ?? 0);
   const [busy, setBusy] = useState(false);
 
   const apply = async () => {
-    if (!(value > 0)) return;
+    if (!(value > 0) && !(target > 0)) return;
     setBusy(true);
     try {
-      await setStop(p.id, mode, value, trail);
+      await setStop(p.id, mode, value, trail, target);
       setOpen(false);
     } finally {
       setBusy(false);
@@ -26,13 +27,18 @@ export function StopEditor({ p }: { p: Position }) {
     if (p.sl) {
       return (
         <span className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1 text-[10px] text-amber-400">
-          <button onClick={() => setOpen(true)} className="font-semibold" title="Edit stop">
-            SL {nf(p.sl.stopPrice)}
+          <button onClick={() => setOpen(true)} className="font-semibold" title="Edit stop / target">
+            {p.sl.stopPrice != null && <>SL {nf(p.sl.stopPrice)}</>}
+            {p.sl.targetPrice != null && (
+              <span className={p.sl.stopPrice != null ? "ml-1 text-up" : "text-up"}>
+                TGT {nf(p.sl.targetPrice)}
+              </span>
+            )}
             {p.sl.trailValue > 0 && (
               <span className="ml-1 rounded bg-amber-500/30 px-0.5 text-[8px]">TRL {p.sl.trailValue}</span>
             )}
           </button>
-          <button onClick={() => clearStop(p.id)} className="hover:text-down" title="Remove stop">
+          <button onClick={() => clearStop(p.id)} className="hover:text-down" title="Remove stop / target">
             ×
           </button>
         </span>
@@ -42,9 +48,9 @@ export function StopEditor({ p }: { p: Position }) {
       <button
         onClick={() => setOpen(true)}
         className="rounded border border-term-border px-1 text-[10px] text-term-dim hover:text-term-text"
-        title="Set stop-loss"
+        title="Set stop-loss / target"
       >
-        + SL
+        + SL / TGT
       </button>
     );
   }
@@ -62,13 +68,28 @@ export function StopEditor({ p }: { p: Position }) {
           </button>
         ))}
       </div>
-      <input
-        type="number"
-        value={value}
-        onChange={(e) => setValue(Number(e.target.value))}
-        className="w-14 rounded border border-term-border bg-term-bg px-1 py-0.5 num outline-none focus:border-term-accent"
-        placeholder={mode === "points" ? "pts" : "₹ loss"}
-      />
+      <label className="flex items-center gap-1 text-down">
+        SL
+        <input
+          type="number"
+          value={value}
+          onChange={(e) => setValue(Math.max(0, Number(e.target.value)))}
+          className="w-14 rounded border border-term-border bg-term-bg px-1 py-0.5 num outline-none focus:border-term-accent"
+          placeholder={mode === "points" ? "pts" : "₹"}
+          title="0 = no stop-loss"
+        />
+      </label>
+      <label className="flex items-center gap-1 text-up">
+        TGT
+        <input
+          type="number"
+          value={target}
+          onChange={(e) => setTarget(Math.max(0, Number(e.target.value)))}
+          className="w-14 rounded border border-term-border bg-term-bg px-1 py-0.5 num outline-none focus:border-term-accent"
+          placeholder={mode === "points" ? "pts" : "₹"}
+          title="book the trade at this profit — 0 = off"
+        />
+      </label>
       <label className="flex items-center gap-1 text-term-dim">
         trail
         <input

@@ -123,7 +123,9 @@ export interface StopLoss {
   mode: "points" | "amount";
   value: number;
   trailValue: number;
-  stopPrice: number;
+  targetValue?: number;
+  stopPrice: number | null;
+  targetPrice?: number | null;
   peak: number;
   createdTs: number;
 }
