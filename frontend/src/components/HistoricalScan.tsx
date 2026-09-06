@@ -100,6 +100,7 @@ export function HistoricalScan() {
           from
           <input
             type="date"
+            style={{ colorScheme: "dark" }}
             value={from}
             max={to}
             onChange={(e) => setFrom(e.target.value)}
@@ -110,6 +111,7 @@ export function HistoricalScan() {
           to
           <input
             type="date"
+            style={{ colorScheme: "dark" }}
             value={to}
             min={from}
             max={iso(new Date())}

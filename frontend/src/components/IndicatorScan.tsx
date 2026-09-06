@@ -81,9 +81,20 @@ export function IndicatorScan() {
             value={date}
             max={iso(new Date())}
             onChange={(e) => setDate(e.target.value)}
-            className="rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text"
+            className="w-[9.5rem] rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text [color-scheme:dark]"
           />
         </label>
+        <div className="seg text-[10px]">
+          {([["Today", 0], ["−1d", 1], ["−1w", 7], ["−1m", 30]] as const).map(([l, d]) => {
+            const v = iso(new Date(Date.now() - d * 864e5));
+            return (
+              <button key={l} onClick={() => setDate(v)} className={date === v ? "on" : ""}>
+                {l}
+              </button>
+            );
+          })}
+        </div>
+        <span className="num text-term-dim">{date}</span>
         <button
           onClick={run}
           disabled={busy}

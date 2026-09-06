@@ -326,7 +326,14 @@ export const useStore = create<State>((set, get) => ({
     get().loadAutobot();
     setInterval(() => get().loadAutobot(), 15000);
     api.symbols().then(
-      (d) => d.indices?.length && set({ indexSet: d.indices.map((s) => s.toUpperCase()) }),
+      (d) =>
+        d.indices?.length &&
+        set({
+          // merge — never drop the hand-kept BSE indices (SENSEX / BANKEX)
+          indexSet: [
+            ...new Set([...get().indexSet, ...d.indices.map((s) => s.toUpperCase())]),
+          ],
+        }),
       () => {}
     );
   },

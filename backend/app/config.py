@@ -31,7 +31,7 @@ DEFAULT_SYMBOLS = [
 STRIKE_WINDOW = int(os.getenv("STRIKE_WINDOW", "30"))
 
 # NSE index option-chain symbols (everything else is treated as an equity).
-INDEX_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"}
+INDEX_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50", "SENSEX", "BANKEX"}
 
 # Rolling history depth per symbol for the (future) gamma-blast scanner.
 HISTORY_MAXLEN = int(os.getenv("HISTORY_MAXLEN", "720"))  # ~3h at 15s cadence
