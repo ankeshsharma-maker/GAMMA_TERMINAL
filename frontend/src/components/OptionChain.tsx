@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useStore } from "../store";
+import { api } from "../lib/api";
 import { compact, lakhs, nf, signColor, sk } from "../lib/format";
 import type { ChainRow, Leg, UnusualKind } from "../types";
 import { OrderTicket } from "./OrderTicket";
@@ -334,6 +335,56 @@ export function OptionChain() {
   const [lots, setLots] = useState(1);
   const [tab, setTab] = useState<TabKey>("ltp");
   const [count, setCount] = useState<number>(20);
+  const [oiTf, setOiTf] = useState(0); // ΔOI window in minutes; 0 = day (since open)
+  const [winMap, setWinMap] = useState<Record<string, { ce: number; pe: number }>>({});
+
+  useEffect(() => {
+    if (oiTf === 0 || !chain) {
+      setWinMap({});
+      return;
+    }
+    let alive = true;
+    const load = () =>
+      api.oiChange(chain.symbol, chain.expiry, oiTf).then(
+        (d) => {
+          if (!alive) return;
+          const m: Record<string, { ce: number; pe: number }> = {};
+          for (const [k, v] of Object.entries(d.strikes))
+            m[k] = { ce: v.ceOiChg, pe: v.peOiChg };
+          setWinMap(m);
+        },
+        () => {}
+      );
+    load();
+    const id = window.setInterval(load, 20000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [oiTf, chain?.symbol, chain?.expiry]);
+
+  // rows with the ΔOI window applied (day change stays as-is when oiTf === 0)
+  const wRows = useMemo<ChainRow[]>(() => {
+    if (!chain) return [];
+    if (oiTf === 0 || Object.keys(winMap).length === 0) return chain.rows;
+    return chain.rows.map((r) => {
+      const w = winMap[String(Math.round(r.strike))];
+      if (!w) return r;
+      return {
+        ...r,
+        call: {
+          ...r.call,
+          oiChg: w.ce,
+          oiChgPct: r.call.oi - w.ce ? (w.ce / (r.call.oi - w.ce)) * 100 : 0,
+        },
+        put: {
+          ...r.put,
+          oiChg: w.pe,
+          oiChgPct: r.put.oi - w.pe ? (w.pe / (r.put.oi - w.pe)) * 100 : 0,
+        },
+      };
+    });
+  }, [chain, oiTf, winMap]);
   const [ticket, setTicket] = useState<{ strike: number; ot: "CE" | "PE"; ltp: number } | null>(
     null
   );
@@ -342,11 +393,11 @@ export function OptionChain() {
 
   const visibleRows = useMemo(() => {
     if (!chain) return [];
-    const rows = chain.rows;
+    const rows = wRows;
     let atmIdx = rows.findIndex((r) => r.strike === chain.atmStrike);
     if (atmIdx < 0) atmIdx = Math.floor(rows.length / 2);
     return rows.slice(Math.max(0, atmIdx - count), atmIdx + count + 1);
-  }, [chain, count]);
+  }, [chain, wRows, count]);
 
   const hotMap = useMemo(() => {
     const m = new Map<string, UnusualKind>();
@@ -619,6 +670,28 @@ export function OptionChain() {
           {[10, 20, 30].map((n) => (
             <button key={n} onClick={() => setCount(n)} className={count === n ? "on" : ""}>
               {n}
+            </button>
+          ))}
+        </div>
+
+        <span className="ml-1" title="Change-in-OI window (needs a few minutes of live history for the shorter ones)">
+          ΔOI
+        </span>
+        <div className="seg">
+          {(
+            [
+              [0, "Day"],
+              [1, "1m"],
+              [2, "2m"],
+              [5, "5m"],
+              [15, "15m"],
+              [30, "30m"],
+              [60, "1h"],
+              [240, "4h"],
+            ] as const
+          ).map(([m, l]) => (
+            <button key={m} onClick={() => setOiTf(m)} className={oiTf === m ? "on" : ""}>
+              {l}
             </button>
           ))}
         </div>

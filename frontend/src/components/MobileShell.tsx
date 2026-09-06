@@ -1,7 +1,27 @@
 import { useState } from "react";
 import { useStore } from "../store";
-import { nf, sk, compact } from "../lib/format";
+import { nf, sk, compact, signColor } from "../lib/format";
 import type { View } from "../types";
+
+/** compact P&L chips for the mobile top strip */
+function MobilePnl() {
+  const paper = useStore((s) => s.paper);
+  if (!paper) return null;
+  const cell = (l: string, v: number) => (
+    <span className="flex shrink-0 flex-col items-end leading-none">
+      <span className="text-[8px] uppercase text-term-dim">{l}</span>
+      <span className={`num text-[11px] font-semibold ${signColor(v)}`}>₹{nf(v, 0)}</span>
+    </span>
+  );
+  return (
+    <div className="ml-auto flex shrink-0 items-center gap-2.5 border-l border-term-border pl-2">
+      {cell("MTM", paper.unrealized)}
+      {cell("Total", paper.total)}
+      {cell("Real", paper.realized)}
+      {cell("Unreal", paper.unrealized)}
+    </div>
+  );
+}
 
 import {
   HeaderIndices,
@@ -170,6 +190,7 @@ export function MobileShell() {
       <div className="flex items-center gap-2 overflow-x-auto border-b border-term-border bg-term-panel2 px-2 py-1">
         <span className="shrink-0 text-[9px] uppercase tracking-wide text-term-dim">Show</span>
         <ClassFilter />
+        <MobilePnl />
       </div>
 
       {brokerOpen && (

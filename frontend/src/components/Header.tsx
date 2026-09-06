@@ -1,5 +1,5 @@
 import { useStore } from "../store";
-import { compact, nf, ago, sk } from "../lib/format";
+import { compact, nf, ago, sk, signColor } from "../lib/format";
 import { api } from "../lib/api";
 import { lockNow } from "../lib/auth";
 import { ConnBadge } from "./ConnBadge";
@@ -260,6 +260,41 @@ function MarginStats() {
         label="Margin used"
         value={used != null ? `₹${compact(used)}` : "–"}
         cls={used ? "text-amber-400" : ""}
+      />
+    </div>
+  );
+}
+
+/** live P&L / MTM summary on the dashboard header */
+function PnlStrip() {
+  const paper = useStore((s) => s.paper);
+  const orderMode = useStore((s) => s.orderMode);
+  if (!paper) return null;
+  const src = orderMode === "live" ? "LIVE" : "paper";
+  return (
+    <div
+      className="flex items-center gap-3 border-l border-term-border pl-3"
+      title={`Book P&L (${src})`}
+    >
+      <Stat
+        label="Live P&L (MTM)"
+        value={`₹${nf(paper.unrealized, 0)}`}
+        cls={signColor(paper.unrealized)}
+      />
+      <Stat
+        label="Total MTM"
+        value={`₹${nf(paper.total, 0)}`}
+        cls={signColor(paper.total)}
+      />
+      <Stat
+        label="Realized"
+        value={`₹${nf(paper.realized, 0)}`}
+        cls={signColor(paper.realized)}
+      />
+      <Stat
+        label="Unrealized"
+        value={`₹${nf(paper.unrealized, 0)}`}
+        cls={signColor(paper.unrealized)}
       />
     </div>
   );
@@ -571,6 +606,7 @@ export function Header() {
       )}
 
       <MarginStats />
+      <PnlStrip />
 
       <div className="ml-auto flex items-center gap-3">
         {chain && (
