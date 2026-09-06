@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshChainBtn } from "./RefreshChainBtn";
+import { ClassFilter } from "./Header";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { compact, crores, nf, sk } from "../lib/format";
@@ -746,11 +747,12 @@ export function OIProfile() {
 
         <RefreshChainBtn />
 
+        <ClassFilter />
         <select
           value={symbol}
           onChange={(e) => selectSymbol(e.target.value, true)}
           className="rounded border border-term-border bg-term-bg px-1 py-0.5 font-semibold text-term-text outline-none focus:border-term-accent"
-          title="Underlying"
+          title="Underlying (list filtered by the All / Indices / Stocks toggle)"
         >
           {symOptions.map((s) => (
             <option key={s} value={s}>
