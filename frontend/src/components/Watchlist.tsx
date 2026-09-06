@@ -492,7 +492,7 @@ export function Watchlist() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onFocus={() => results.length && setOpenSearch(true)}
-              onBlur={() => setTimeout(() => setOpenSearch(false), 150)}
+              onBlur={() => setTimeout(() => setOpenSearch(false), 250)}
               placeholder="Search index / VIX / stock…"
               className="w-full rounded-md border border-term-border bg-term-bg py-1 pl-6 pr-2 text-xs outline-none transition focus:border-term-accent"
             />
@@ -529,8 +529,14 @@ export function Watchlist() {
             {results.map((r) => (
               <button
                 key={r.add}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => addResult(r.add, r.optionable)}
+                type="button"
+                // pointerdown fires for mouse AND touch, before the input's
+                // blur closes the list — fixes "can't add" on the Fold / phones
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  addResult(r.add, r.optionable);
+                }}
+                onClick={(e) => e.preventDefault()}
                 className="flex w-full items-center justify-between border-b border-term-border/40 px-2.5 py-1.5 text-2xs transition last:border-0 hover:bg-term-border"
               >
                 <span className="font-medium text-term-text">{r.label}</span>
