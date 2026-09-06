@@ -4,27 +4,17 @@ import { api } from "../lib/api";
 import { nf, signColor, hhmm, sk } from "../lib/format";
 import { StopEditor } from "./StopEditor";
 
-type Tab = "paper" | "broker" | "holdings" | "orders";
+type Tab = "broker" | "holdings" | "orders";
 const TABS: [Tab, string][] = [
   ["broker", "Broker Positions"],
   ["holdings", "Holdings"],
   ["orders", "Orders"],
-  ["paper", "Paper Trading"],
 ];
 
 const n = (v: any) => {
   const x = Number(v);
   return Number.isFinite(x) ? x : null;
 };
-
-function Tile({ label, value, cls = "" }: { label: string; value: React.ReactNode; cls?: string }) {
-  return (
-    <div className="rounded border border-term-border bg-term-panel px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-term-dim">{label}</div>
-      <div className={`num text-base font-semibold ${cls}`}>{value}</div>
-    </div>
-  );
-}
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <div className="p-6 text-center text-xs text-term-dim">{children}</div>;
@@ -42,70 +32,6 @@ function TD({ children, cls = "" }: { children: React.ReactNode; cls?: string })
     <td className={`border-b border-r border-term-border/50 px-3 py-1.5 last:border-r-0 ${cls}`}>
       {children}
     </td>
-  );
-}
-
-// ---------------- Paper ----------------
-function PaperTab() {
-  const { paper, closePosition } = useStore();
-  if (!paper) return <Empty>loading…</Empty>;
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-4">
-        <Tile label="Today's P&L" value={`₹${nf(paper.todayPnl, 0)}`} cls={signColor(paper.todayPnl)} />
-        <Tile label="Realized" value={`₹${nf(paper.realized, 0)}`} cls={signColor(paper.realized)} />
-        <Tile label="Unrealized" value={`₹${nf(paper.unrealized, 0)}`} cls={signColor(paper.unrealized)} />
-        <Tile label="Total P&L" value={`₹${nf(paper.total, 0)}`} cls={signColor(paper.total)} />
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto p-3 pt-0">
-        <table className="w-full border-separate border-spacing-0 border border-term-border text-xs">
-          <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
-            <tr>
-              <TH>Contract</TH>
-              <TH>Side</TH>
-              <TH>Qty</TH>
-              <TH>Avg</TH>
-              <TH>LTP</TH>
-              <TH>P&L</TH>
-              <TH>Stop-loss</TH>
-              <TH> </TH>
-            </tr>
-          </thead>
-          <tbody>
-            {paper.positions.length === 0 && (
-              <tr>
-                <td colSpan={8} className="border-b border-term-border">
-                  <Empty>No open paper positions. Use B / S on the chain or Execute a strategy.</Empty>
-                </td>
-              </tr>
-            )}
-            {paper.positions.map((p) => (
-              <tr key={p.id}>
-                <TD cls="num font-medium">
-                  {p.symbol} {sk(p.strike)} {p.optionType}
-                  <span className="ml-2 text-[10px] text-term-dim">{p.expiry}</span>
-                </TD>
-                <TD cls={p.qty > 0 ? "text-up" : "text-down"}>{p.qty > 0 ? "LONG" : "SHORT"}</TD>
-                <TD cls="num">
-                  {Math.abs(p.qty / p.lotSize)}L ({Math.abs(p.qty)})
-                </TD>
-                <TD cls="num">{nf(p.avgPrice)}</TD>
-                <TD cls="num">{nf(p.ltp)}</TD>
-                <TD cls={`num ${signColor(p.pnl)}`}>₹{nf(p.pnl, 0)}</TD>
-                <TD>
-                  <StopEditor p={p} />
-                </TD>
-                <TD>
-                  <button className="btn px-2 py-0.5 text-[10px]" onClick={() => closePosition(p.id)}>
-                    Square off
-                  </button>
-                </TD>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
   );
 }
 
@@ -553,7 +479,6 @@ export function PositionsView({ initialTab }: { initialTab?: Tab } = {}) {
           </button>
         ))}
       </div>
-      {tab === "paper" && <PaperTab />}
       {tab === "broker" && <BrokerTab />}
       {tab === "holdings" && <HoldingsTab />}
       {tab === "orders" && <OrdersTab />}

@@ -4,40 +4,6 @@ import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
 import { StopEditor } from "./StopEditor";
 
-function MarginBar() {
-  const broker = useStore((s) => s.broker);
-  const funds = useStore((s) => s.brokerFunds);
-  const paper = useStore((s) => s.paper);
-  const orderMode = useStore((s) => s.orderMode);
-
-  const live = orderMode === "live" && funds?.connected && funds.available != null;
-  const avail = live ? funds!.available! : paper?.marginAvailable ?? null;
-  const used = live ? funds!.used! : paper?.marginUsed ?? null;
-  const total = live ? funds!.total ?? null : paper?.capital ?? null;
-  const pct = total && used != null ? Math.min(100, Math.max(0, (used / total) * 100)) : 0;
-
-  return (
-    <div className="border-b border-term-border bg-term-panel/40 px-3 py-1.5 text-2xs">
-      <div className="flex items-center justify-between">
-        <span className={live ? "text-up" : "text-term-dim"}>
-          {live ? `◈ Flattrade ${broker?.clientId ?? ""}` : "Paper margin"}
-        </span>
-        <span className="num text-term-dim">
-          used <span className="text-amber-400">₹{avail != null ? nf(used ?? 0, 0) : "–"}</span> /{" "}
-          {total != null ? `₹${nf(total, 0)}` : "–"}
-        </span>
-      </div>
-      <div className="mt-1 h-1.5 overflow-hidden rounded bg-term-border">
-        <div className="h-full bg-amber-500" style={{ width: `${pct}%` }} />
-      </div>
-      <div className="mt-0.5 flex justify-between">
-        <span className="num text-up">Available ₹{avail != null ? nf(avail, 0) : "–"}</span>
-        {funds?.error && <span className="text-down">{funds.error}</span>}
-      </div>
-    </div>
-  );
-}
-
 function PnlTile({ label, value }: { label: string; value: number }) {
   return (
     <div className="bg-term-panel2 px-2 py-1.5">
@@ -121,8 +87,6 @@ export function Positions() {
 
   return (
     <div className="flex h-full flex-col bg-term-panel2">
-      <MarginBar />
-
       {paper && (
         <div className="grid grid-cols-2 gap-px border-b border-term-border bg-term-border">
           <PnlTile label="Today's P&L" value={paper.todayPnl} />
@@ -194,39 +158,6 @@ export function Positions() {
       </div>
 
       <LiveOrderLog />
-
-      <div className="border-t border-term-border px-3 py-1 text-2xs font-semibold uppercase text-term-dim">
-        Paper Order Log
-      </div>
-      <div className="h-40 overflow-y-auto">
-        {paper && paper.orders.length > 0 ? (
-          <table className="w-full border-separate border-spacing-0 text-[10px]">
-            <thead className="sticky top-0 bg-term-panel2 text-term-dim">
-              <tr>
-                <th className="px-2 py-1 text-left font-medium">Side</th>
-                <th className="px-2 py-1 text-left font-medium">Contract</th>
-                <th className="px-2 py-1 text-right font-medium">Price</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paper.orders.map((o) => (
-                <tr key={o.id} className="border-b border-term-border/40">
-                  <td className={`num px-2 py-1 ${o.side === "BUY" ? "text-up" : "text-down"}`}>
-                    {o.side} {o.qtyLots}L
-                  </td>
-                  <td className="num px-2 py-1 text-term-dim">
-                    {o.symbol} {sk(o.strike)}
-                    {o.optionType}
-                  </td>
-                  <td className="num px-2 py-1 text-right">{nf(o.price)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div className="p-3 text-center text-2xs text-term-dim">No orders yet.</div>
-        )}
-      </div>
     </div>
   );
 }
