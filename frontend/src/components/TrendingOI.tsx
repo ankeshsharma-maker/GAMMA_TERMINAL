@@ -291,51 +291,10 @@ export function TrendingOI() {
     if (!v.length) return null;
     return { open: v[0], lo: Math.min(...v), hi: Math.max(...v) };
   }, [pts]);
-  const pcrSpark = useMemo(() => {
-    const v = pts.filter((p) => p.pcr != null);
-    if (v.length < 2) return null;
-    const W = 300;
-    const H = 92;
-    const pad = 6;
-    const t0 = v[0].t;
-    const t1 = v[v.length - 1].t || t0 + 1;
-    const ys = v.map((p) => p.pcr as number);
-    let lo = Math.min(...ys, 1);
-    let hi = Math.max(...ys, 1);
-    const pd = (hi - lo) * 0.15 || 0.1;
-    lo -= pd;
-    hi += pd;
-    const X = (t: number) => pad + ((t - t0) / (t1 - t0 || 1)) * (W - 2 * pad);
-    const Y = (val: number) => pad + (1 - (val - lo) / (hi - lo || 1)) * (H - 2 * pad);
-    const d = v
-      .map((p, i) => `${i ? "L" : "M"}${X(p.t).toFixed(1)},${Y(p.pcr as number).toFixed(1)}`)
-      .join(" ");
-    const lastV = ys[ys.length - 1];
-    return (
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-full w-full">
-        {lo < 1 && hi > 1 && (
-          <line
-            x1={0}
-            x2={W}
-            y1={Y(1)}
-            y2={Y(1)}
-            stroke={PCRC}
-            strokeOpacity={0.5}
-            strokeDasharray="4 3"
-          />
-        )}
-        <path
-          d={`${d} L${X(t1)},${H} L${X(t0)},${H} Z`}
-          fill={lastV >= 1 ? PE : CE}
-          fillOpacity={0.1}
-        />
-        <path d={d} fill="none" stroke={PCRC} strokeWidth={1.75} />
-        <circle cx={X(t1)} cy={Y(lastV)} r={2.5} fill={PCRC} />
-      </svg>
-    );
-  }, [pts]);
+  const pcrDelta =
+    last?.pcr != null && first?.pcr != null ? (last.pcr as number) - (first.pcr as number) : null;
 
-  // ---- sentiment column chart (right half of the side-by-side row) ----
+  // ---- sentiment mix (right half of the side-by-side row) ----
   const sentBars = useMemo(() => [...intervals].reverse(), [intervals]);
   const sentTally = useMemo(() => {
     let bull = 0;
@@ -346,59 +305,20 @@ export function TrendingOI() {
     }
     return { bull, bear };
   }, [sentBars]);
-  const sentChart = useMemo(() => {
-    if (sentBars.length < 1) return null;
-    const W = 320;
-    const H = 92;
-    const n = sentBars.length;
-    const gap = 2;
-    const bw = Math.max(2, (W - gap * n) / n);
-    const mags = sentBars.map((b) => Math.abs(b.dpe - b.dce));
-    const mx = Math.max(...mags, 1);
-    const midY = H / 2;
-    return (
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-full w-full">
-        <line
-          x1={0}
-          x2={W}
-          y1={midY}
-          y2={midY}
-          stroke="currentColor"
-          strokeOpacity={0.3}
-          className="text-term-dim"
-        />
-        {sentBars.map((b, i) => {
-          const h = (Math.abs(b.dpe - b.dce) / mx) * (H / 2 - 4);
-          const bull = b.dpe >= b.dce;
-          const x = i * (bw + gap);
-          const col = SENT_COL[b.sent.txt] ?? "#3b4657";
-          return (
-            <rect
-              key={i}
-              x={x}
-              width={bw}
-              y={bull ? midY - Math.max(1, h) : midY}
-              height={Math.max(1, h)}
-              fill={col}
-            >
-              <title>
-                {daily
-                  ? new Date(b.t * 1000).toLocaleDateString("en-IN", {
-                      day: "2-digit",
-                      month: "short",
-                    })
-                  : new Date(b.t * 1000).toLocaleTimeString("en-IN", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}{" "}
-                · {b.sent.txt}
-              </title>
-            </rect>
-          );
-        })}
-      </svg>
-    );
-  }, [sentBars, daily]);
+  const sentSplit = useMemo(() => {
+    const cats: { key: string; label: string; col: string }[] = [
+      { key: "▲ Bullish", label: "bull", col: SENT_COL["▲ Bullish"] },
+      { key: "▼ Bearish", label: "bear", col: SENT_COL["▼ Bearish"] },
+      { key: "Put writing ↓", label: "put-wr ↓", col: SENT_COL["Put writing ↓"] },
+      { key: "Call unwind ↑", label: "call-unw ↑", col: SENT_COL["Call unwind ↑"] },
+      { key: "Neutral", label: "neutral", col: SENT_COL["Neutral"] },
+    ];
+    const total = sentBars.length || 1;
+    return cats.map((c) => {
+      const n = sentBars.filter((b) => b.sent.txt === c.key).length;
+      return { ...c, n, pct: (n / total) * 100 };
+    });
+  }, [sentBars]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -474,21 +394,23 @@ export function TrendingOI() {
         )}
       </div>
 
-      {/* PCR value + sentiment chart, side by side */}
-      {(pcrSpark || sentChart) && (
-        <div className="grid h-[116px] shrink-0 grid-cols-2 divide-x divide-term-border border-b border-term-border bg-term-panel">
+      {/* PCR value + sentiment mix, side by side (compact, auto-height) */}
+      {(pcrNow != null || sentBars.length > 0) && (
+        <div className="grid shrink-0 grid-cols-2 divide-x divide-term-border border-b border-term-border bg-term-panel">
           {/* PCR */}
           <div className="flex items-center gap-3 px-3 py-2">
-            <div className="flex shrink-0 flex-col leading-tight">
+            <div className="flex flex-col leading-none">
               <span className="text-[9px] uppercase tracking-wide text-term-dim">PCR</span>
               <span
-                className={`num text-2xl font-bold ${
+                className={`num text-xl font-bold ${
                   pcrNow != null ? (pcrNow >= 1 ? "text-up" : "text-down") : "text-term-dim"
                 }`}
               >
                 {pcrNow != null ? nf(pcrNow, 2) : "–"}
               </span>
-              <span className="text-[10px] text-term-dim">
+            </div>
+            <div className="flex flex-col gap-0.5 text-[10px] text-term-dim">
+              <span>
                 {pcrNow != null
                   ? pcrNow >= 1
                     ? "put-heavy · supportive"
@@ -496,36 +418,57 @@ export function TrendingOI() {
                   : "collecting…"}
               </span>
               {pcrStats && (
-                <span className="num mt-0.5 text-[9px] text-term-dim">
-                  o {nf(pcrStats.open, 2)} · lo {nf(pcrStats.lo, 2)} · hi {nf(pcrStats.hi, 2)}
+                <span className="num">
+                  open {nf(pcrStats.open, 2)} · lo {nf(pcrStats.lo, 2)} · hi {nf(pcrStats.hi, 2)}
+                </span>
+              )}
+              {pcrDelta != null && (
+                <span className={`num ${pcrDelta >= 0 ? "text-up" : "text-down"}`}>
+                  session Δ {pcrDelta >= 0 ? "+" : ""}
+                  {nf(pcrDelta, 2)}
                 </span>
               )}
             </div>
-            <div className="min-h-0 min-w-0 flex-1 self-stretch">{pcrSpark}</div>
           </div>
 
-          {/* Sentiment */}
-          <div className="flex flex-col px-3 py-2">
+          {/* Sentiment mix */}
+          <div className="flex flex-col justify-center gap-1 px-3 py-2">
             <div className="flex items-center justify-between text-[9px] uppercase tracking-wide text-term-dim">
-              <span>Sentiment · {tfLbl} buckets</span>
+              <span>
+                Sentiment · {tfLbl} × {sentBars.length}
+              </span>
               <span className="normal-case">
                 <span className="text-up">▲ {sentTally.bull}</span>{" "}
                 <span className="text-down">▼ {sentTally.bear}</span>
               </span>
             </div>
-            <div className="min-h-0 flex-1">
-              {sentChart ?? (
-                <div className="flex h-full items-center justify-center text-[10px] text-term-dim">
-                  need a few buckets
+            {sentBars.length > 0 ? (
+              <>
+                <div className="flex h-2.5 w-full overflow-hidden rounded-sm bg-term-bg">
+                  {sentSplit.map(
+                    (s) =>
+                      s.pct > 0 && (
+                        <div
+                          key={s.key}
+                          style={{ width: `${s.pct}%`, background: s.col }}
+                          title={`${s.label} · ${s.n}`}
+                        />
+                      )
+                  )}
                 </div>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-x-2 text-[8px] text-term-dim">
-              <span><span style={{ color: SENT_COL["▲ Bullish"] }}>■</span> bull</span>
-              <span><span style={{ color: SENT_COL["▼ Bearish"] }}>■</span> bear</span>
-              <span><span style={{ color: SENT_COL["Put writing ↓"] }}>■</span> put-wr ↓</span>
-              <span><span style={{ color: SENT_COL["Call unwind ↑"] }}>■</span> call-unw ↑</span>
-            </div>
+                <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[8px] text-term-dim">
+                  {sentSplit
+                    .filter((s) => s.n > 0)
+                    .map((s) => (
+                      <span key={s.key}>
+                        <span style={{ color: s.col }}>■</span> {s.label} {s.n}
+                      </span>
+                    ))}
+                </div>
+              </>
+            ) : (
+              <span className="text-[10px] text-term-dim">need a few buckets</span>
+            )}
           </div>
         </div>
       )}
