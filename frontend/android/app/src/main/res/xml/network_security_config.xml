@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The GammaTerminal backend is currently plain HTTP on a bare IP. Android
+     blocks cleartext traffic by default (API 28+), so allow it just for that
+     host. Remove this block once the server has a domain + HTTPS. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">92.4.84.13</domain>
+    </domain-config>
+</network-security-config>

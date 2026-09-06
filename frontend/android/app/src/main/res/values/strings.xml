@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">GammaTerminal</string>
+    <string name="title_activity_main">GammaTerminal</string>
+    <string name="package_name">in.gammaterminal.app</string>
+    <string name="custom_url_scheme">in.gammaterminal.app</string>
+</resources>

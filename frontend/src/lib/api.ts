@@ -11,8 +11,14 @@ import type {
   StrategyLeg,
 } from "../types";
 
+// When the app is served from the same origin as the API (browser / server
+// deploy) this stays "" and every call is a relative /api/... path. In the
+// packaged Android app there is no backend on the WebView origin, so
+// VITE_API_BASE points at the real backend (e.g. http://92.4.84.13).
+export const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/+$/, "");
+
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
+  const res = await fetch(/^https?:\/\//.test(url) ? url : API_BASE + url, {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
   });

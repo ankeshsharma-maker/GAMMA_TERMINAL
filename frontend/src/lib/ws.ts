@@ -14,8 +14,16 @@ export class TerminalSocket {
     handler: Handler,
     onStatus: (s: "connecting" | "open" | "closed") => void
   ) {
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    this.url = `${proto}://${location.host}/ws`;
+    // In the packaged app VITE_WS_BASE (e.g. ws://92.4.84.13) points at the
+    // real backend; in the browser / server deploy it's unset and we use the
+    // page's own origin.
+    const wsBase = import.meta.env.VITE_WS_BASE as string | undefined;
+    if (wsBase) {
+      this.url = `${wsBase.replace(/\/+$/, "")}/ws`;
+    } else {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      this.url = `${proto}://${location.host}/ws`;
+    }
     this.handler = handler;
     this.onStatus = onStatus;
   }
