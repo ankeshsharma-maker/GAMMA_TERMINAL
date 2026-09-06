@@ -477,7 +477,7 @@ export function StrategyBuilder() {
   }, [dte]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:grid md:grid-cols-[330px_minmax(0,1fr)] md:overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-term-border md:grid md:grid-cols-[330px_minmax(0,1fr)] md:overflow-hidden">
       {/* ---- leg editor ---- */}
       <div className="flex flex-col border-r border-term-border bg-term-panel2 md:min-h-0 md:overflow-y-auto">
         <div className="flex items-center gap-2 border-b border-term-border px-3 py-2 text-2xs font-semibold uppercase tracking-wide text-term-dim">
@@ -997,7 +997,7 @@ export function StrategyBuilder() {
       </div>
 
       {/* ---- payoff / backtest ---- */}
-      <div className="flex min-h-0 flex-col">
+      <div className="flex min-h-0 flex-col md:border-l md:border-term-border">
         <div className="flex items-center gap-1 border-b border-term-border bg-term-panel2 px-2 py-1.5 text-2xs">
           {(
             [
@@ -1008,8 +1008,10 @@ export function StrategyBuilder() {
             <button
               key={k}
               onClick={() => setPanel(k)}
-              className={`rounded px-2.5 py-1 font-semibold ${
-                panel === k ? "bg-term-accent text-white" : "text-term-dim hover:bg-term-border"
+              className={`rounded border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide shadow-sm transition-colors ${
+                panel === k
+                  ? "border-term-accent bg-term-accent text-white"
+                  : "border-term-border bg-term-bg/40 text-term-dim hover:text-term-text"
               }`}
             >
               {label}
@@ -1026,8 +1028,10 @@ export function StrategyBuilder() {
                 <button
                   key={k}
                   onClick={() => setPayoffTab(k)}
-                  className={`rounded px-2 py-0.5 font-semibold ${
-                    payoffTab === k ? "bg-term-border text-term-text" : "text-term-dim"
+                  className={`rounded border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide shadow-sm transition-colors ${
+                    payoffTab === k
+                      ? "border-term-accent bg-term-accent text-white"
+                      : "border-term-border bg-term-bg/40 text-term-dim hover:text-term-text"
                   }`}
                 >
                   {k === "chart" ? "Chart" : "P&L table"}
@@ -1169,7 +1173,7 @@ export function StrategyBuilder() {
         )}
 
         {payoffTab === "chart" ? (
-          <div className="relative min-h-[280px] flex-1 p-3 md:min-h-0">
+          <div className="relative m-2 min-h-[280px] flex-1 rounded border border-term-border bg-term-bg/20 p-3 md:min-h-0">
             {analysis && (
               <PayoffChart
                 x={analysis.x}
@@ -1191,11 +1195,11 @@ export function StrategyBuilder() {
             )}
           </div>
         ) : (
-          <div className="min-h-0 flex-1 overflow-auto p-3">
+          <div className="m-2 min-h-0 flex-1 overflow-auto rounded border border-term-border bg-term-bg/20 p-3">
             {analysis && (
               <div className="grid gap-5 lg:grid-cols-2">
                 {/* P&L by strike (ATM ± N from the chain ladder) */}
-                <div>
+                <div className="rounded border border-term-border p-2">
                   <div className="mb-1 flex items-center justify-between gap-2">
                     <span className="text-2xs font-semibold uppercase tracking-wide text-term-dim">
                       P&amp;L by strike — spot {nf(analysis.spot, 0)}
@@ -1286,7 +1290,7 @@ export function StrategyBuilder() {
                 </div>
 
                 {/* Day-by-day P&L (theta decay) */}
-                <div>
+                <div className="rounded border border-term-border p-2">
                   <div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-term-dim">
                     Day-by-day P&amp;L — spot &amp; ±3%
                   </div>
