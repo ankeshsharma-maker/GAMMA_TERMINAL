@@ -371,16 +371,69 @@ _LOT_GUESS = {
 }
 
 
-async def scan_history(symbols: list[str], as_of: str, lookback_days: int = 6) -> list[dict]:
-    """For each symbol, the OI state / spot / PCR / max-pain as of `as_of`
-    ('YYYY-MM-DD'), from a short daily window ending that day. Small curated
-    lists only (each symbol = one chain call + ~40 strike history calls)."""
-    from datetime import datetime, timedelta
+def _smart_read(rows: list[dict]) -> dict:
+    """Smart-money-style read from a daily aggregate series: max-pain drift,
+    PCR trend, net option-writing bias, spot vs max-pain."""
+    if len(rows) < 2:
+        return {"smartBias": "NEUTRAL", "smartSignals": [], "smartScore": 0}
+    a, b = rows[0], rows[-1]
+    sig: list[str] = []
+    score = 0
 
+    mp0, mp1 = a.get("maxPain"), b.get("maxPain")
+    if mp0 and mp1:
+        if mp1 > mp0:
+            sig.append(f"max-pain rising {mp0:.0f}→{mp1:.0f}"); score += 2
+        elif mp1 < mp0:
+            sig.append(f"max-pain falling {mp0:.0f}→{mp1:.0f}"); score -= 2
+
+    sp = b.get("spot")
+    if sp and mp1:
+        if sp > mp1 * 1.002:
+            sig.append("spot above max-pain"); score += 1
+        elif sp < mp1 * 0.998:
+            sig.append("spot below max-pain"); score -= 1
+
+    p0, p1 = a.get("pcr"), b.get("pcr")
+    if p0 and p1:
+        if p1 > p0 * 1.03:
+            sig.append(f"PCR rising {p0:.2f}→{p1:.2f}"); score += 1
+        elif p1 < p0 * 0.97:
+            sig.append(f"PCR falling {p0:.2f}→{p1:.2f}"); score -= 1
+
+    d_ce = b.get("ceOI", 0) - a.get("ceOI", 0)
+    d_pe = b.get("peOI", 0) - a.get("peOI", 0)
+    if d_pe > d_ce * 1.15 and d_pe > 0:
+        sig.append("put writing > call writing"); score += 2
+    elif d_ce > d_pe * 1.15 and d_ce > 0:
+        sig.append("call writing > put writing"); score -= 2
+
+    # trailing OI-state streak
+    states = [r.get("state") for r in rows if r.get("state")]
+    if states:
+        last = states[-1]
+        streak = 0
+        for s in reversed(states):
+            if s == last:
+                streak += 1
+            else:
+                break
+        if streak >= 2:
+            sig.append(f"{last.lower()} × {streak}d")
+            score += 1 if "LONG BUILDUP" in last or "SHORT COVERING" in last else -1
+
+    bias = "BULLISH" if score >= 3 else "BEARISH" if score <= -3 else "NEUTRAL"
+    return {"smartBias": bias, "smartSignals": sig, "smartScore": score}
+
+
+async def scan_history(
+    symbols: list[str], frm: str, to: str
+) -> list[dict]:
+    """OI state + a smart-money read for each symbol over [frm, to]
+    ('YYYY-MM-DD'). Curated lists only (each symbol ≈ 1 chain call + ~40
+    strike-history calls)."""
     ux = get_upstox()
     await ux.load_instruments()
-    end = datetime.strptime(as_of, "%Y-%m-%d")
-    start = (end - timedelta(days=lookback_days + 4)).strftime("%Y-%m-%d")
 
     async def _one(sym: str) -> dict | None:
         sym = sym.upper()
@@ -391,21 +444,27 @@ async def scan_history(symbols: list[str], as_of: str, lookback_days: int = 6) -
             exp = exps[0] if exps else ""
             if not exp:
                 return None
-            hc = await fetch_history_chain(sym, exp, start, as_of)
-            rows = [r for r in hc.get("series", []) if r["date"] <= as_of]
+            hc = await fetch_history_chain(sym, exp, frm, to)
+            rows = [r for r in hc.get("series", []) if frm <= r["date"] <= to]
             if not rows:
                 return None
             r = rows[-1]
+            first = rows[0]
             return {
                 "symbol": sym,
                 "date": r["date"],
                 "spot": r.get("spot"),
                 "dSpot": r.get("dSpot"),
+                "spotMove": round((r.get("spot") or 0) - (first.get("spot") or 0), 1),
                 "ceOI": r.get("ceOI"),
                 "peOI": r.get("peOI"),
+                "netOI": round((r.get("ceOI", 0) + r.get("peOI", 0))
+                               - (first.get("ceOI", 0) + first.get("peOI", 0)), 0),
                 "pcr": r.get("pcr"),
                 "maxPain": r.get("maxPain"),
                 "state": r.get("state"),
+                "states": [x.get("state") for x in rows],
+                **_smart_read(rows),
             }
         except Exception:  # noqa: BLE001
             return None

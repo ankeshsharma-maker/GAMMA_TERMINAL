@@ -87,18 +87,20 @@ async def expiries(symbol: str = Query(...)):
 
 @router.post("/scan-history")
 async def scan_history(body: dict):
-    """OI state / spot / PCR / max-pain as of a past date, for a curated list
-    (<=25). body: {symbols:[...], date:'YYYY-MM-DD'}."""
+    """OI state + smart-money read over a date range, for a curated list
+    (<=25). body: {symbols:[...], from:'YYYY-MM-DD', to:'YYYY-MM-DD'}
+    ('date' accepted as an alias for both)."""
     _need_auth()
     syms = [s.upper() for s in (body.get("symbols") or []) if s]
-    date = body.get("date") or ""
-    if not syms or not date:
-        raise HTTPException(400, "symbols and date required")
+    to = body.get("to") or body.get("date") or ""
+    frm = body.get("from") or body.get("date") or ""
+    if not syms or not to or not frm:
+        raise HTTPException(400, "symbols, from and to required")
     try:
-        rows = await upstox_data.scan_history(syms, date)
+        rows = await upstox_data.scan_history(syms, frm, to)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(502, f"scan-history failed: {exc}")
-    return {"date": date, "rows": rows}
+    return {"from": frm, "to": to, "rows": rows}
 
 
 @router.post("/backtest")
