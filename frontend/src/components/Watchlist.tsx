@@ -90,9 +90,15 @@ function QuoteRow({ w }: { w: WatchQuote }) {
         <span className={`num text-sm font-semibold tabular-nums ${col}`}>
           {px != null ? nf(px) : "–"}
         </span>
+        {(chg != null || pct != null) && (
+          <span className={`num text-[10px] tabular-nums ${col}`}>
+            {up ? "▲" : "▼"} {chg != null ? `${chg >= 0 ? "+" : "−"}${nf(Math.abs(chg))}` : "–"}
+          </span>
+        )}
         {pct != null && (
           <span className={`num text-[10px] tabular-nums ${col}`}>
-            {up ? "▲" : "▼"} {chg != null ? nf(Math.abs(chg)) : "–"} ({nf(Math.abs(pct), 2)}%)
+            {pct >= 0 ? "+" : "−"}
+            {nf(Math.abs(pct), 2)}%
           </span>
         )}
       </div>

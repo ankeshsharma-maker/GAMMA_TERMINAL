@@ -96,6 +96,14 @@ export function HeaderIndices() {
     else if (symbols.length < HDR_MAX) setAndPersist([...symbols, sym]);
   };
 
+  const [addTxt, setAddTxt] = useState("");
+  const addCustom = () => {
+    const s = addTxt.trim().toUpperCase();
+    if (!s) return;
+    if (!symbols.includes(s) && symbols.length < HDR_MAX) setAndPersist([...symbols, s]);
+    setAddTxt("");
+  };
+
   return (
     <div className="relative flex items-center gap-1.5">
       {rows.map((r) => (
@@ -128,25 +136,68 @@ export function HeaderIndices() {
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-48 rounded-md border border-term-border bg-term-panel p-2 shadow-xl">
+        <div className="absolute left-0 top-full z-30 mt-1 w-52 rounded-md border border-term-border bg-term-panel p-2 shadow-xl">
           <div className="mb-1.5 text-[10px] uppercase tracking-wide text-term-dim">
-            Header indices (max {HDR_MAX})
+            Header indices ({symbols.length}/{HDR_MAX})
           </div>
-          <div className="flex flex-col gap-1">
-            {options.map((o) => (
-              <label
-                key={o}
-                className="flex items-center gap-1.5 rounded px-1 py-0.5 text-2xs hover:bg-term-border/50"
-              >
-                <input
-                  type="checkbox"
-                  checked={symbols.includes(o)}
-                  onChange={() => toggle(o)}
-                  disabled={!symbols.includes(o) && symbols.length >= HDR_MAX}
-                />
-                {HDR_LABEL[o] ?? o}
-              </label>
-            ))}
+
+          {/* currently shown — removable */}
+          {symbols.length > 0 && (
+            <div className="mb-1.5 flex flex-wrap gap-1">
+              {symbols.map((s) => (
+                <span
+                  key={s}
+                  className="flex items-center gap-1 rounded bg-term-bg px-1.5 py-0.5 text-2xs text-term-text"
+                >
+                  {HDR_LABEL[s] ?? s}
+                  <button
+                    onClick={() => setAndPersist(symbols.filter((x) => x !== s))}
+                    className="text-term-dim hover:text-down"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* add any symbol */}
+          <div className="mb-1.5 flex gap-1">
+            <input
+              value={addTxt}
+              onChange={(e) => setAddTxt(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addCustom()}
+              placeholder="Add symbol (e.g. SENSEX)"
+              disabled={symbols.length >= HDR_MAX}
+              className="min-w-0 flex-1 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs text-term-text outline-none focus:border-term-accent disabled:opacity-40"
+            />
+            <button
+              onClick={addCustom}
+              disabled={symbols.length >= HDR_MAX}
+              className="btn px-2 py-0.5 text-2xs disabled:opacity-40"
+            >
+              Add
+            </button>
+          </div>
+
+          <div className="max-h-44 overflow-y-auto">
+            <div className="mb-0.5 text-[9px] uppercase tracking-wide text-term-dim">Quick pick</div>
+            <div className="flex flex-col gap-1">
+              {options.map((o) => (
+                <label
+                  key={o}
+                  className="flex items-center gap-1.5 rounded px-1 py-0.5 text-2xs hover:bg-term-border/50"
+                >
+                  <input
+                    type="checkbox"
+                    checked={symbols.includes(o)}
+                    onChange={() => toggle(o)}
+                    disabled={!symbols.includes(o) && symbols.length >= HDR_MAX}
+                  />
+                  {HDR_LABEL[o] ?? o}
+                </label>
+              ))}
+            </div>
           </div>
           <button onClick={() => setOpen(false)} className="btn mt-2 w-full text-2xs">
             Done

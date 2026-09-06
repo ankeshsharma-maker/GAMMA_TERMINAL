@@ -72,28 +72,32 @@ _HDR_NSE_NAME = {
     "MIDCPNIFTY": "NIFTY MID SELECT",
     "NIFTYNXT50": "NIFTY NEXT 50",
 }
-_HDR_AVAILABLE = list(_HDR_NSE_NAME) + ["INDIA VIX"]
+_HDR_AVAILABLE = list(_HDR_NSE_NAME) + ["INDIA VIX", "SENSEX", "BANKEX"]
 
 
 def _resolve_header_index(sym: str) -> dict:
     su = sym.strip().upper()
-    if su in _HDR_NSE_NAME:
-        chain = store.get_chain(su)
-        live = store.live_spot.get(su)
+
+    # 1. live chain / spot cache — covers every polled symbol, NSE *and* BSE
+    #    (SENSEX / BANKEX come through the Upstox poller) and F&O stocks
+    chain = store.get_chain(su)
+    live = store.live_spot.get(su)
+    spot = (live.get("ltp") if live else None) or (chain.get("spot") if chain else None)
+    chg = live.get("chgPct") if live else None
+
+    # 2. NSE index catalog (exact, then fuzzy) for anything not live-polled
+    if spot is None and su in _HDR_NSE_NAME:
         idx = store.index_quotes.get(_HDR_NSE_NAME[su])
-        spot = (
-            (live.get("ltp") if live else None)
-            or (chain.get("spot") if chain else None)
-            or (idx.get("last") if idx else None)
-        )
-        chg = (live.get("chgPct") if live else None) or (idx.get("pChange") if idx else None)
-        return {"symbol": su, "spot": spot, "chgPct": chg}
-    # anything else (INDIA VIX, SENSEX, BANKEX, ...): fuzzy-match the NSE index catalog
-    needle = su.replace(" ", "")
-    for name, q in store.index_quotes.items():
-        if needle in name.upper().replace(" ", ""):
-            return {"symbol": su, "spot": q.get("last"), "chgPct": q.get("pChange")}
-    return {"symbol": su, "spot": None, "chgPct": None}
+        if idx:
+            spot, chg = idx.get("last"), chg or idx.get("pChange")
+    if spot is None:
+        needle = su.replace(" ", "")
+        for name, q in store.index_quotes.items():
+            if needle and needle in name.upper().replace(" ", ""):
+                spot, chg = q.get("last"), q.get("pChange")
+                break
+
+    return {"symbol": su, "spot": spot, "chgPct": chg}
 
 
 @router.get("/indices/header")
