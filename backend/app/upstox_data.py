@@ -76,6 +76,9 @@ async def fetch_expiries(symbol: str) -> list[str]:
     ux = get_upstox()
     key = ux.instrument_key(symbol)
     if not key:
+        await ux.load_instruments()
+        key = ux.underlying_key(symbol)
+    if not key:
         return []
     d = await ux.get("/option/contract", {"instrument_key": key})
     seen: list[str] = []
@@ -171,9 +174,10 @@ async def fetch_history_chain(
     OI state) across [from_date, to_date] ('YYYY-MM-DD'), built from Upstox
     per-contract historical OI candles. Cached — past days don't change."""
     ux = get_upstox()
-    key = ux.instrument_key(symbol)
+    await ux.load_instruments()
+    key = ux.underlying_key(symbol)
     if not key:
-        raise RuntimeError(f"no Upstox instrument_key for {symbol}")
+        raise RuntimeError(f"no Upstox key for {symbol} (index or F&O stock)")
 
     ck = (symbol.upper(), expiry, from_date, to_date)
     if ck in _HIST_CACHE:
@@ -260,9 +264,10 @@ async def run_backtest(
     Entry = each leg's close on the first available day. Returns a daily P&L
     series + summary. 'YYYY-MM-DD' dates."""
     ux = get_upstox()
-    key = ux.instrument_key(symbol)
+    await ux.load_instruments()
+    key = ux.underlying_key(symbol)
     if not key:
-        raise RuntimeError(f"no Upstox instrument_key for {symbol}")
+        raise RuntimeError(f"no Upstox key for {symbol}")
 
     chain = await ux.get(
         "/option/chain", {"instrument_key": key, "expiry_date": _nse_to_iso(expiry)}

@@ -47,7 +47,8 @@ async def backtest_rule(rule: dict, from_date: str, to_date: str) -> dict:
     symbol = (rule.get("symbol") or "NIFTY").upper()
     expiry = rule.get("_btExpiry") or ""       # optional: which expiry's chain to price from
     ux = get_upstox()
-    if not ux.instrument_key(symbol):
+    await ux.load_instruments()
+    if not ux.underlying_key(symbol):
         raise RuntimeError(f"Upstox has no key for {symbol} (index symbols only)")
 
     # 1. daily chain history -> pcr / maxPain / OI  +  underlying spot
@@ -90,7 +91,7 @@ async def backtest_rule(rule: dict, from_date: str, to_date: str) -> dict:
         base = round(h["spot"] / step) * step
         for i in range(-3, 4):
             atm_range.add(base + i * step)
-    key = ux.instrument_key(symbol)
+    key = ux.underlying_key(symbol)
     chain = await ux.get(
         "/option/chain", {"instrument_key": key, "expiry_date": upstox_data._nse_to_iso(expiry)}
     )

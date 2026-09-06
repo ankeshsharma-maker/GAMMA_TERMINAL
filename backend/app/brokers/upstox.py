@@ -14,6 +14,8 @@ issued; a stale one is dropped on load.
 """
 from __future__ import annotations
 
+import gzip
+import io
 import json
 import logging
 from datetime import datetime
@@ -56,6 +58,9 @@ class Upstox:
     def __init__(self) -> None:
         self._token: str | None = None
         self._token_date: str = ""
+        self._eq_keys: dict[str, str] = {}
+        self._opt_keys: dict[tuple, str] = {}
+        self._instr_date: str = ""
         self._http = httpx.AsyncClient(timeout=15.0)
         if UPSTOX_ACCESS_TOKEN:
             # 1-year analytics token from the env — no OAuth, no daily login
@@ -182,7 +187,60 @@ class Upstox:
         return r.json()
 
     def instrument_key(self, symbol: str) -> str | None:
+        """Indices + BSE only — the live poller uses this to decide the data
+        source, and stocks stay on NSE for the live feed."""
         return INDEX_KEYS.get(symbol.upper())
+
+    def underlying_key(self, symbol: str) -> str | None:
+        """Indices, BSE *and* equities (from the instrument master) — used by
+        the historical / backtest / screener-history paths."""
+        return INDEX_KEYS.get(symbol.upper()) or self._eq_keys.get(symbol.upper())
+
+    # ---- instrument master (equities + F&O) ---------------------------
+    _INSTRUMENTS_URL = "https://assets.upstox.com/market-quote/instruments/exchange/complete.json.gz"
+
+    async def load_instruments(self, force: bool = False) -> None:
+        """Populate equity spot keys and the option-key lookup from Upstox's
+        daily instrument dump. Cheap to keep in RAM (~a few MB parsed)."""
+        if self._instr_date == _today() and not force:
+            return
+        try:
+            r = await self._http.get(self._INSTRUMENTS_URL, timeout=60.0)
+            r.raise_for_status()
+            raw = gzip.GzipFile(fileobj=io.BytesIO(r.content)).read()
+            rows = json.loads(raw)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("upstox instrument master failed: %s", exc)
+            return
+        eq: dict[str, str] = {}
+        opt: dict[tuple, str] = {}
+        for it in rows:
+            seg = it.get("segment")
+            ik = it.get("instrument_key")
+            if not ik:
+                continue
+            if seg in ("NSE_EQ", "BSE_EQ") and it.get("instrument_type") == "EQ":
+                eq.setdefault(str(it.get("trading_symbol", "")).upper(), ik)
+            elif it.get("instrument_type") in ("CE", "PE") and seg in ("NSE_FO", "BSE_FO"):
+                name = str(it.get("asset_symbol") or it.get("underlying_symbol") or "").upper()
+                exp = it.get("expiry")  # epoch ms or ISO
+                strike = it.get("strike_price")
+                ot = it.get("instrument_type")
+                if name and exp and strike is not None:
+                    try:
+                        d = (
+                            datetime.utcfromtimestamp(int(exp) / 1000).strftime("%Y-%m-%d")
+                            if str(exp).isdigit()
+                            else str(exp)[:10]
+                        )
+                    except Exception:  # noqa: BLE001
+                        continue
+                    opt[(name, d, float(strike), ot)] = ik
+        self._eq_keys, self._opt_keys, self._instr_date = eq, opt, _today()
+        log.info("upstox instruments: %d equities, %d option contracts", len(eq), len(opt))
+
+    def option_key(self, symbol: str, iso_expiry: str, strike: float, ot: str) -> str | None:
+        return self._opt_keys.get((symbol.upper(), iso_expiry, float(strike), ot.upper()))
 
     async def aclose(self) -> None:
         await self._http.aclose()
