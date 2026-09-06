@@ -24,3 +24,6 @@ gammaterminal-deploy.zip
 
 # built APKs
 /GammaTerminal-v*.apk
+
+# built APKs
+*.apk
