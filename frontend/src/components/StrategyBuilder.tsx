@@ -421,6 +421,11 @@ export function StrategyBuilder() {
         </div>
 
         <div className="flex flex-col">
+          {legs.length === 0 && (
+            <div className="px-2 py-3 text-center text-2xs text-term-dim">
+              No legs yet — load a template or build one below.
+            </div>
+          )}
           {legs.map((leg, i) => (
             <div key={i} className="border-b border-term-border/50 p-2 text-2xs">
               <div className="flex items-center gap-1">
@@ -511,7 +516,14 @@ export function StrategyBuilder() {
               </div>
             </div>
           ))}
-          <div className="m-2 flex flex-wrap items-center gap-1 text-2xs">
+        </div>
+
+        {/* ---- add a leg (separate from the legs above) ---- */}
+        <div className="border-t-2 border-term-border bg-term-panel2 p-2">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-term-dim">
+            Add a leg
+          </div>
+          <div className="flex flex-wrap items-center gap-1 text-2xs">
             <button
               onClick={() =>
                 setNewLegOT((o) => (o === "CE" ? "PE" : o === "PE" ? "FUT" : "CE"))
@@ -559,7 +571,7 @@ export function StrategyBuilder() {
                 className="num w-12 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text"
               />
             </label>
-            <button onClick={() => addLeg()} className="btn px-2 py-1">
+            <button onClick={() => addLeg()} className="btn ml-auto px-2 py-1 font-semibold">
               + Add leg
             </button>
           </div>
