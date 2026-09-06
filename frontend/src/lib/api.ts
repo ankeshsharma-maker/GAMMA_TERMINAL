@@ -464,21 +464,28 @@ export const api = {
         maxDrawdown: number;
       };
     }>("/api/autobot/backtest", { method: "POST", body: JSON.stringify(body) }),
-  upstoxScanHistory: (symbols: string[], date: string) =>
+  upstoxScanHistory: (symbols: string[], from: string, to: string) =>
     j<{
-      date: string;
+      from: string;
+      to: string;
       rows: {
         symbol: string;
         date: string;
         spot: number | null;
         dSpot: number;
+        spotMove: number;
         ceOI: number;
         peOI: number;
+        netOI: number;
         pcr: number | null;
         maxPain: number | null;
         state: string | null;
+        states: (string | null)[];
+        smartBias: "BULLISH" | "BEARISH" | "NEUTRAL";
+        smartSignals: string[];
+        smartScore: number;
       }[];
-    }>("/api/upstox/scan-history", { method: "POST", body: JSON.stringify({ symbols, date }) }),
+    }>("/api/upstox/scan-history", { method: "POST", body: JSON.stringify({ symbols, from, to }) }),
   dataSource: () => j<{ source: "nse" | "upstox" }>("/api/upstox/data-source"),
   setDataSource: (source: "nse" | "upstox") =>
     j<{ source: "nse" | "upstox" }>("/api/upstox/data-source", {
