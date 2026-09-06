@@ -24,6 +24,19 @@ from .routes_upstox import router as upstox_router
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
+async def _load_lot_sizes() -> None:
+    """Pull the exchange lot-size map from the Upstox instrument dump so the
+    builder / analyzer / paper book use real F&O stock lot sizes."""
+    try:
+        from .brokers.upstox import get_upstox
+
+        ux = get_upstox()
+        if ux.authed:
+            await ux.load_instruments()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     stop = asyncio.Event()
@@ -31,6 +44,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(run_poller(stop)),
         asyncio.create_task(run_universe_scan(stop)),
         asyncio.create_task(run_broker_feed(stop)),
+        asyncio.create_task(_load_lot_sizes()),
     ]
     try:
         yield

@@ -214,6 +214,7 @@ class Upstox:
             return
         eq: dict[str, str] = {}
         opt: dict[tuple, str] = {}
+        lots: dict[str, int] = {}
         for it in rows:
             seg = it.get("segment")
             ik = it.get("instrument_key")
@@ -221,7 +222,15 @@ class Upstox:
                 continue
             if seg in ("NSE_EQ", "BSE_EQ") and it.get("instrument_type") == "EQ":
                 eq.setdefault(str(it.get("trading_symbol", "")).upper(), ik)
-            elif it.get("instrument_type") in ("CE", "PE") and seg in ("NSE_FO", "BSE_FO"):
+            elif it.get("instrument_type") in ("CE", "PE", "FUT") and seg in ("NSE_FO", "BSE_FO"):
+                name = str(it.get("asset_symbol") or it.get("underlying_symbol") or "").upper()
+                ls = it.get("lot_size")
+                if name and ls:
+                    try:
+                        lots[name] = int(ls)
+                    except (TypeError, ValueError):
+                        pass
+            if it.get("instrument_type") in ("CE", "PE") and seg in ("NSE_FO", "BSE_FO"):
                 name = str(it.get("asset_symbol") or it.get("underlying_symbol") or "").upper()
                 exp = it.get("expiry")  # epoch ms or ISO
                 strike = it.get("strike_price")
@@ -237,7 +246,16 @@ class Upstox:
                         continue
                     opt[(name, d, float(strike), ot)] = ik
         self._eq_keys, self._opt_keys, self._instr_date = eq, opt, _today()
-        log.info("upstox instruments: %d equities, %d option contracts", len(eq), len(opt))
+        if lots:
+            try:
+                from ..processing import set_lot_sizes
+                set_lot_sizes(lots)
+            except Exception:  # noqa: BLE001
+                pass
+        log.info(
+            "upstox instruments: %d equities, %d option contracts, %d lot sizes",
+            len(eq), len(opt), len(lots),
+        )
 
     def option_key(self, symbol: str, iso_expiry: str, strike: float, ot: str) -> str | None:
         return self._opt_keys.get((symbol.upper(), iso_expiry, float(strike), ot.upper()))

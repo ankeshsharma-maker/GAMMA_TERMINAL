@@ -15,20 +15,39 @@ _YEAR_SECONDS = 365.0 * 24 * 3600
 # instead of collapsing to intrinsic. Displayed `dte` still uses the true value.
 _MIN_T = (15.0 * 60) / _YEAR_SECONDS  # 15 minutes
 
-# Contract lot sizes. NSE revises these periodically -- verify against the
-# current F&O contract file before trading anything real.
+# Contract lot sizes. Indices are hand-kept here as an offline fallback; the
+# authoritative per-underlying map (`_DYNAMIC_LOTS`) is populated from the
+# Upstox instrument master on startup — that covers every F&O stock, which
+# this table never did (stocks used to silently fall back to 1).
 LOT_SIZES = {
     "NIFTY": 65,
     "BANKNIFTY": 35,
     "FINNIFTY": 65,
     "MIDCPNIFTY": 140,
     "NIFTYNXT50": 25,
+    "SENSEX": 20,
+    "BANKEX": 30,
 }
 DEFAULT_LOT_SIZE = 1
 
+# underlying -> lot size, filled from the exchange instrument master
+_DYNAMIC_LOTS: dict[str, int] = {}
+
+
+def set_lot_sizes(m: dict[str, int]) -> None:
+    """Merge an exchange-sourced {UNDERLYING: lot} map (Upstox instrument dump)."""
+    for k, v in (m or {}).items():
+        try:
+            iv = int(v)
+        except (TypeError, ValueError):
+            continue
+        if iv > 0:
+            _DYNAMIC_LOTS[str(k).upper()] = iv
+
 
 def lot_size(symbol: str) -> int:
-    return LOT_SIZES.get(symbol.upper(), DEFAULT_LOT_SIZE)
+    s = symbol.upper()
+    return _DYNAMIC_LOTS.get(s) or LOT_SIZES.get(s, DEFAULT_LOT_SIZE)
 
 
 def _num(v, default=0.0) -> float:
