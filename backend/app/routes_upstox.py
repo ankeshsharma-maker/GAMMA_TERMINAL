@@ -43,8 +43,26 @@ async def set_token(body: dict):
     tok = (body.get("token") or "").strip()
     if not tok:
         raise HTTPException(400, "token required")
-    get_upstox().set_token(tok)
+    # default long-lived: the Analytics Access Token is 1-year / read-only
+    get_upstox().set_token(tok, long_lived=body.get("longLived", True))
     return get_upstox().status()
+
+
+@router.get("/data-source")
+def get_data_source():
+    from .store import store
+
+    return {"source": store.data_source()}
+
+
+@router.post("/data-source")
+def set_data_source(body: dict):
+    from .store import store
+
+    src = body.get("source")
+    if src == "upstox" and not get_upstox().authed:
+        raise HTTPException(400, "Connect Upstox (paste the analytics token) before switching")
+    return {"source": store.set_data_source(src)}
 
 
 @router.delete("/token")

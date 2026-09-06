@@ -384,7 +384,13 @@ export const api = {
   upstoxSetToken: (token: string) =>
     j<{ configured: boolean; authed: boolean }>("/api/upstox/token", {
       method: "POST",
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ token, longLived: true }),
+    }),
+  dataSource: () => j<{ source: "nse" | "upstox" }>("/api/upstox/data-source"),
+  setDataSource: (source: "nse" | "upstox") =>
+    j<{ source: "nse" | "upstox" }>("/api/upstox/data-source", {
+      method: "POST",
+      body: JSON.stringify({ source }),
     }),
 
   brokerStatus: () => j<BrokerStatus>("/api/broker/status"),

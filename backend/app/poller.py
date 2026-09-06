@@ -10,7 +10,6 @@ from zoneinfo import ZoneInfo
 from . import scanner, screener, upstox_data
 from .brokers.upstox import get_upstox
 from .config import (
-    DATA_SOURCE,
     FO_UNIVERSE,
     OFFHOURS_POLL_INTERVAL,
     POLL_INTERVAL,
@@ -37,7 +36,7 @@ def _in_market_hours(now: datetime | None = None) -> bool:
 
 
 def _use_upstox() -> bool:
-    return DATA_SOURCE == "upstox" and get_upstox().authed
+    return store.data_source() == "upstox" and get_upstox().authed
 
 
 async def _ensure_expiries(symbol: str) -> None:

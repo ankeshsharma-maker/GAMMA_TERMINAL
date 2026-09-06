@@ -327,46 +327,61 @@ export function UpstoxPill() {
     static?: boolean;
     tokenDate: string | null;
   } | null>(null);
+  const [src, setSrc] = useState<"nse" | "upstox">("nse");
   const [mode, setMode] = useState<"" | "token">("");
   const [tok, setTok] = useState("");
-  const load = () => api.upstoxStatus().then(setSt, () => setSt(null));
+  const load = () => {
+    api.upstoxStatus().then(setSt, () => setSt(null));
+    api.dataSource().then((d) => setSrc(d.source), () => {});
+  };
   useEffect(() => {
     load();
     const t = setInterval(load, 30000);
     return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!st || !st.configured) return null; // hidden until UPSTOX_* is set on the server
+  if (!st) return null; // backend unreachable
 
-  if (st.authed)
+  if (st.authed) {
     return (
-      <span
-        className="flex items-center gap-1 rounded border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-2xs text-sky-300"
-        title={`Upstox data feed live${st.static ? " · 1-yr analytics token" : ` · token ${st.tokenDate}`}`}
-      >
-        <span className="h-1.5 w-1.5 rounded-full bg-sky-400" /> UX data
+      <span className="flex items-center gap-1 rounded border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-2xs text-sky-300">
+        <span className="h-1.5 w-1.5 rounded-full bg-sky-400" title="Upstox data feed connected" />
+        <span className="hidden sm:inline">Upstox</span>
+        {/* chain source toggle */}
+        <span className="flex overflow-hidden rounded border border-sky-500/40">
+          {(["nse", "upstox"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => api.setDataSource(s).then((d) => setSrc(d.source), () => {})}
+              className={`px-1 py-0.5 text-[10px] ${
+                src === s ? "bg-sky-500 text-white" : "text-sky-300/70 hover:text-sky-200"
+              }`}
+              title={`Option chain data from ${s === "nse" ? "NSE" : "Upstox (incl. BSE)"}`}
+            >
+              {s === "nse" ? "NSE" : "UX"}
+            </button>
+          ))}
+        </span>
       </span>
     );
+  }
 
   return (
     <span className="flex items-center gap-1">
-      <button
-        onClick={() => api.upstoxLoginUrl().then((d) => window.open(d.url, "_blank", "noopener"))}
-        className="rounded border border-sky-500/50 bg-sky-500/15 px-2 py-1 text-2xs text-sky-300 hover:bg-sky-500/25"
-      >
-        Connect Upstox data
-      </button>
       {mode === "token" ? (
         <>
           <input
             autoFocus
             value={tok}
             onChange={(e) => setTok(e.target.value)}
-            placeholder="paste access token"
-            className="w-40 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs outline-none focus:border-term-accent"
+            placeholder="paste Upstox analytics token"
+            className="w-44 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs outline-none focus:border-term-accent"
           />
           <button
-            onClick={() => tok.trim() && api.upstoxSetToken(tok).then(() => (setMode(""), setTok(""), load()))}
+            onClick={() =>
+              tok.trim() && api.upstoxSetToken(tok).then(() => (setMode(""), setTok(""), load()))
+            }
             className="rounded bg-term-accent px-1.5 py-0.5 text-2xs text-white"
           >
             set
@@ -378,10 +393,10 @@ export function UpstoxPill() {
       ) : (
         <button
           onClick={() => setMode("token")}
-          title="Paste an Upstox access token instead of the redirect flow"
-          className="rounded border border-term-border px-1 py-1 text-2xs text-term-dim hover:text-term-text"
+          title="Paste your Upstox 1-year Analytics Access Token to enable the Upstox data feed"
+          className="rounded border border-sky-500/50 bg-sky-500/10 px-2 py-1 text-2xs text-sky-300 hover:bg-sky-500/20"
         >
-          ⌗
+          + Upstox data
         </button>
       )}
     </span>

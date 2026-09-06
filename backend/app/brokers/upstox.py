@@ -94,17 +94,27 @@ class Upstox:
             d = json.loads(_SESSION_FILE.read_text())
         except Exception:  # noqa: BLE001
             return
-        if d.get("date") == _today() and d.get("access_token"):
+        if d.get("access_token") and (d.get("longLived") or d.get("date") == _today()):
             self._token = d["access_token"]
-            self._token_date = d["date"]
-            log.info("upstox session restored (%s)", self._token_date)
+            self._token_date = d.get("date", "")
+            self._static = bool(d.get("longLived"))
+            log.info(
+                "upstox session restored (%s)",
+                "1-yr analytics token" if self._static else self._token_date,
+            )
         else:
-            log.info("upstox session stale (%s) - re-login needed", d.get("date"))
+            log.info("upstox session stale (%s) - re-connect needed", d.get("date"))
 
     def _save_session(self) -> None:
         try:
             _SESSION_FILE.write_text(
-                json.dumps({"access_token": self._token, "date": self._token_date})
+                json.dumps(
+                    {
+                        "access_token": self._token,
+                        "date": self._token_date,
+                        "longLived": self._static,
+                    }
+                )
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("could not persist upstox session: %s", exc)
@@ -134,11 +144,15 @@ class Upstox:
             raise RuntimeError(f"no access_token in response: {r.text[:200]}")
         self.set_token(tok)
 
-    def set_token(self, token: str) -> None:
+    def set_token(self, token: str, long_lived: bool = True) -> None:
+        """Manual token paste. Defaults to long-lived because the Upstox
+        'Analytics Access Token' (1 year, read-only, market-data) is the
+        expected credential here."""
         self._token = token.strip()
-        self._token_date = _today()
+        self._static = bool(long_lived)
+        self._token_date = "" if long_lived else _today()
         self._save_session()
-        log.info("upstox token set (%s)", self._token_date)
+        log.info("upstox token set (%s)", "1-yr analytics token" if long_lived else self._token_date)
 
     def clear(self) -> None:
         if self._static:

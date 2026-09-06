@@ -418,6 +418,19 @@ class Store:
             _save(_SETTINGS_FILE, self.settings)
         return self.settings["orderMode"]
 
+    # ---- market-data source ----------------------------------------
+    def data_source(self) -> str:
+        # app-set value wins; falls back to the DATA_SOURCE env default
+        from .config import DATA_SOURCE
+
+        return self.settings.get("dataSource", DATA_SOURCE)
+
+    def set_data_source(self, src: str) -> str:
+        with _lock:
+            self.settings["dataSource"] = "upstox" if src == "upstox" else "nse"
+            _save(_SETTINGS_FILE, self.settings)
+        return self.settings["dataSource"]
+
     def log_live_order(self, rec: dict) -> None:
         with _lock:
             self.live_orders.appendleft({**rec, "ts": time.time()})
