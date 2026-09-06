@@ -31,7 +31,7 @@ export function OIProfile() {
   const symClassOk = useStore((s) => s.symClassOk);
 
   const [metric, setMetric] = useState<Metric>("combined");
-  const [layout, setLayout] = useState<"chart" | "pcr">("chart");
+  const [layout, setLayout] = useState<"chart" | "ladder" | "pcr">("chart");
   const [pcrPts, setPcrPts] = useState<{ t: number; pcr: number; spot: number }[]>([]);
   const [count, setCount] = useState(10);
   const [symChoices, setSymChoices] = useState<string[]>([]);
@@ -506,6 +506,93 @@ export function OIProfile() {
     </div>
   );
 
+  // ---- OI-Ladder-style horizontal rows (combined total OI bar + ΔOI cap) ----
+  const ladderEl = (
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="sticky top-0 z-10 grid grid-cols-[1fr_auto_1fr] items-center divide-x divide-term-border border-b border-term-border bg-term-panel2 text-[9px] uppercase text-term-dim">
+        <span className="px-3 py-1 text-right" style={{ color: CALL_OI }}>
+          Call OI · Δ
+        </span>
+        <span className="px-3 py-1 text-center">Strike</span>
+        <span className="px-3 py-1" style={{ color: PUT_OI }}>
+          Put OI · Δ
+        </span>
+      </div>
+      {rows.map((r) => {
+        const isATM = r.strike === chain?.atmStrike;
+        const isRes = r.strike === stats.resistance;
+        const isFloor = r.strike === stats.floor;
+        const near = Math.abs(r.strike - spot) < (chain?.strikeStep || 50) * 0.5;
+        const cChg = dCE(r);
+        const pChg = dPE(r);
+        const cBarW = (r.call.oi / stats.maxOI) * 100;
+        const pBarW = (r.put.oi / stats.maxOI) * 100;
+        const cCapW = Math.min(cBarW, (Math.abs(cChg) / stats.maxOI) * 100);
+        const pCapW = Math.min(pBarW, (Math.abs(pChg) / stats.maxOI) * 100);
+        return (
+          <div
+            key={r.strike}
+            className={`grid grid-cols-[1fr_auto_1fr] items-stretch divide-x divide-term-border/60 border-b border-term-border/60 ${
+              isATM ? "bg-term-accent/10" : near ? "bg-term-accent/[0.04]" : ""
+            }`}
+          >
+            <div className="relative flex h-7 items-center justify-end gap-1.5 pr-2 text-2xs">
+              <span className={`num text-[10px] ${cChg >= 0 ? "text-up" : "text-down"}`}>
+                {cChg >= 0 ? "▲" : "▼"}
+                {compact(Math.abs(cChg))}
+              </span>
+              <span className="num text-[10px] font-medium text-term-text">{compact(r.call.oi)}</span>
+              <span className="relative h-4 w-full max-w-[55%]">
+                <span
+                  className="absolute right-0 top-0 h-full rounded-l-sm"
+                  style={{ width: `${cBarW}%`, background: CALL_OI }}
+                />
+                <span
+                  className="absolute right-0 top-0 h-full"
+                  style={{ width: `${cCapW}%`, background: cChg >= 0 ? OI_ADD : OI_CUT }}
+                />
+              </span>
+            </div>
+
+            <div
+              className={`num flex h-7 items-center justify-center px-3 text-2xs leading-none ${
+                isRes
+                  ? "font-bold text-down"
+                  : isFloor
+                  ? "font-bold text-up"
+                  : isATM || near
+                  ? "font-bold text-term-accent"
+                  : "text-term-text"
+              }`}
+            >
+              {sk(r.strike)}
+              {isRes && <sup className="ml-0.5 text-[8px]">R</sup>}
+              {isFloor && <sup className="ml-0.5 text-[8px]">S</sup>}
+            </div>
+
+            <div className="relative flex h-7 items-center gap-1.5 pl-2 text-2xs">
+              <span className="relative h-4 w-full max-w-[55%]">
+                <span
+                  className="absolute left-0 top-0 h-full rounded-r-sm"
+                  style={{ width: `${pBarW}%`, background: PUT_OI }}
+                />
+                <span
+                  className="absolute left-0 top-0 h-full"
+                  style={{ width: `${pCapW}%`, background: pChg >= 0 ? OI_ADD : OI_CUT }}
+                />
+              </span>
+              <span className="num text-[10px] font-medium text-term-text">{compact(r.put.oi)}</span>
+              <span className={`num text-[10px] ${pChg >= 0 ? "text-up" : "text-down"}`}>
+                {pChg >= 0 ? "▲" : "▼"}
+                {compact(Math.abs(pChg))}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
   // ---- OI donuts (total OI split + change-in-OI split) ----
   const donutEl = (() => {
     const { ce, pe, pcr } = oiTotals;
@@ -799,9 +886,15 @@ export function OIProfile() {
 
         <span className="ml-1">Show</span>
         <div className="seg">
-          {(["chart", "pcr"] as const).map((v) => (
+          {(
+            [
+              ["chart", "chart"],
+              ["ladder", "ladder"],
+              ["pcr", "pcr"],
+            ] as const
+          ).map(([v, l]) => (
             <button key={v} onClick={() => setLayout(v)} className={layout === v ? "on" : ""}>
-              {v}
+              {l}
             </button>
           ))}
         </div>
@@ -917,6 +1010,7 @@ export function OIProfile() {
           {chartEl}
         </div>
       )}
+      {layout === "ladder" && ladderEl}
       {layout === "pcr" && pcrEl}
 
       <div className="flex flex-wrap items-center gap-x-3 border-t border-term-border px-3 py-1 text-[9px] text-term-dim">
