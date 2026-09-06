@@ -827,7 +827,7 @@ export function AutoBotView() {
             ₹{Math.round(bot?.dailyPnl ?? 0).toLocaleString("en-IN")}
           </span>
         </div>
-        <label className="flex items-center gap-1 text-[10px] text-term-dim">
+        <label className="ml-auto flex items-center gap-1 text-[10px] text-term-dim">
           daily loss cap ₹
           <input
             value={lossDraft}
@@ -837,25 +837,6 @@ export function AutoBotView() {
             className="num w-24 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs text-term-text"
           />
         </label>
-
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            className="btn"
-            onClick={() => setEditing(blankRule(storeSymbol))}
-            disabled={!!editing}
-          >
-            + New rule
-          </button>
-          <button
-            className="btn btn-sell font-semibold"
-            onClick={() => {
-              if (window.confirm("KILL: turn the engine off and square off every open auto position?"))
-                kill();
-            }}
-          >
-            KILL
-          </button>
-        </div>
       </div>
 
       {anyLive && bot?.master && (
@@ -888,9 +869,33 @@ export function AutoBotView() {
             ? "Replay a rule's indicator / OI conditions against Upstox daily history"
             : `${rules.length} rule${rules.length === 1 ? "" : "s"}`}
         </span>
+
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            className="rounded bg-up px-3 py-1 text-xs font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_1px_3px_rgba(0,0,0,0.45)] hover:brightness-110 disabled:opacity-40"
+            onClick={() => {
+              setTab("rules");
+              setEditing(blankRule(storeSymbol));
+            }}
+            disabled={!!editing}
+          >
+            + New rule
+          </button>
+          <button
+            className="rounded bg-down px-3 py-1 text-xs font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_1px_3px_rgba(0,0,0,0.45)] hover:brightness-110"
+            onClick={() => {
+              if (window.confirm("KILL: turn the engine off and square off every open auto position?"))
+                kill();
+            }}
+          >
+            KILL
+          </button>
+        </div>
       </div>
 
-      {tab === "backtest" && <AutoBacktestTab rules={rules} />}
+      {tab === "backtest" && (
+        <AutoBacktestTab rules={rules} onDone={() => setTab("rules")} />
+      )}
 
       {tab === "rules" && (
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3 md:flex-row md:overflow-hidden">
@@ -1063,7 +1068,13 @@ export function AutoBotView() {
 /* ------------------------------------------------------------------ */
 /* backtest tab                                                        */
 /* ------------------------------------------------------------------ */
-function AutoBacktestTab({ rules }: { rules: AutoRule[] }) {
+function AutoBacktestTab({
+  rules,
+  onDone,
+}: {
+  rules: AutoRule[];
+  onDone: () => void;
+}) {
   const [id, setId] = useState<string>(rules[0]?.id ?? "");
   const rule = rules.find((r) => r.id === id) ?? rules[0];
 
@@ -1093,8 +1104,14 @@ function AutoBacktestTab({ rules }: { rules: AutoRule[] }) {
           entry {(rule?.entry ?? []).length} · exit {(rule?.exit ?? []).length} · SL{" "}
           {rule?.slPct ?? "–"}% · tgt {rule?.targetPct ?? "–"}%
         </span>
+        <button
+          onClick={onDone}
+          className="ml-auto rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:border-term-accent hover:text-term-text"
+        >
+          ✕ Close · back to Rules
+        </button>
       </div>
-      {rule && <RuleBacktest key={rule.id} rule={rule} onClose={() => {}} />}
+      {rule && <RuleBacktest key={rule.id} rule={rule} onClose={onDone} />}
     </div>
   );
 }
