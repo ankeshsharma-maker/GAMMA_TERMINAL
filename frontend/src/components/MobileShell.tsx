@@ -21,17 +21,17 @@ import { Funds } from "./Funds";
 
 /** left icon rail — order is the tab order down the screen */
 const NAV: { v: View; icon: string; label: string }[] = [
-  { v: "chain", icon: "▦", label: "Chain" },
   { v: "watchlist", icon: "★", label: "Watch" },
-  { v: "oiprofile", icon: "▤", label: "OI" },
   { v: "chart", icon: "📈", label: "Chart" },
+  { v: "chain", icon: "▦", label: "Chain" },
   { v: "scrip", icon: "🔍", label: "Scrip" },
   { v: "scanner", icon: "📡", label: "Scan" },
+  { v: "oiprofile", icon: "▤", label: "OI" },
+  { v: "scalper", icon: "⚡", label: "Scalp" },
   { v: "builder", icon: "🧱", label: "Build" },
+  { v: "auto", icon: "🤖", label: "Auto" },
   { v: "positions", icon: "💼", label: "Pos" },
   { v: "orders", icon: "📜", label: "Orders" },
-  { v: "scalper", icon: "⚡", label: "Scalp" },
-  { v: "auto", icon: "🤖", label: "Auto" },
   { v: "funds", icon: "💰", label: "Funds" },
 ];
 
