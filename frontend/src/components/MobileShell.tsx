@@ -119,7 +119,17 @@ export function MobileShell() {
   const [brokerOpen, setBrokerOpen] = useState(false);
 
   return (
-    <div className="relative flex h-full flex-col bg-term-bg text-term-text">
+    <div
+      className="relative flex h-full flex-col bg-term-bg text-term-text"
+      style={{
+        // keep the top bar (broker / login button) clear of the phone's
+        // status bar — battery / signal icons were covering it
+        paddingTop: "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+        paddingLeft: "env(safe-area-inset-left)",
+        paddingRight: "env(safe-area-inset-right)",
+      }}
+    >
       {/* ── top bar ─────────────────────────────────────────── */}
       <div
         className={`flex items-center gap-2 border-b bg-term-panel px-2 py-1.5 ${
