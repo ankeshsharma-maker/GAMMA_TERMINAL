@@ -1,25 +1,33 @@
 import { useEffect, useRef, useState } from "react";
 import { createChart, ColorType, type IChartApi, type ISeriesApi } from "lightweight-charts";
 import { api } from "../lib/api";
-import type { Candle } from "../lib/indicators";
+import { ema, vwap, type Candle, type Pt } from "../lib/indicators";
 
-/** A second, no-frills candlestick pane — used by the Chart "split" view so
- *  the underlying and a derivative can be watched side by side. Shares the
- *  parent's symbol + timeframe; only the instrument differs. */
+export type MiniInd = { ema9: boolean; ema21: boolean; ema50: boolean; vwap: boolean };
+export const MINI_IND_DEFAULT: MiniInd = { ema9: true, ema21: true, ema50: false, vwap: false };
+
+/** A no-frills candlestick pane with a few overlay indicators. Used by the
+ *  Chart "split" view and the Scalper multi-chart. */
 export function MiniChart({
   symbol,
   instrument,
   intervalS,
   label,
+  ind,
+  src,
 }: {
   symbol: string;
   instrument: string;
   intervalS: number;
   label: string;
+  ind?: MiniInd;
+  src?: "auto" | "broker" | "upstox";
 }) {
+  const on = ind ?? MINI_IND_DEFAULT;
   const wrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const serRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const lineRef = useRef<Record<string, ISeriesApi<"Line">>>({});
   const [bars, setBars] = useState(0);
 
   useEffect(() => {
@@ -48,6 +56,14 @@ export function MiniChart({
       wickUpColor: "#16a34a",
       wickDownColor: "#dc2626",
     });
+    const line = (color: string, w = 1) =>
+      chart.addLineSeries({ color, lineWidth: w as any, priceLineVisible: false, lastValueVisible: false });
+    lineRef.current = {
+      ema9: line("#3b82f6"),
+      ema21: line("#f59e0b"),
+      ema50: line("#a855f7"),
+      vwap: line("#eab308", 2),
+    };
     const ro = new ResizeObserver(() => {
       const el = wrapRef.current;
       if (el) chart.resize(el.clientWidth, el.clientHeight);
@@ -58,6 +74,7 @@ export function MiniChart({
       chart.remove();
       chartRef.current = null;
       serRef.current = null;
+      lineRef.current = {};
     };
   }, []);
 
@@ -65,12 +82,22 @@ export function MiniChart({
     let alive = true;
     const load = () =>
       api
-        .chart(symbol, intervalS, instrument || undefined)
+        .chart(symbol, intervalS, instrument || undefined, src)
         .then((d) => {
           if (!alive || !serRef.current) return;
           const cs = (d.candles ?? []) as Candle[];
           serRef.current.setData(cs as any);
           setBars(cs.length);
+          const put = (k: keyof MiniInd, pts: Pt[], vis: boolean) => {
+            const s = lineRef.current[k];
+            if (!s) return;
+            s.applyOptions({ visible: vis });
+            s.setData((vis ? pts : []) as any);
+          };
+          put("ema9", ema(cs, 9), on.ema9);
+          put("ema21", ema(cs, 21), on.ema21);
+          put("ema50", ema(cs, 50), on.ema50);
+          put("vwap", vwap(cs), on.vwap && !!(d as any).hasVolume);
           chartRef.current?.timeScale().fitContent();
         })
         .catch(() => {});
@@ -80,7 +107,7 @@ export function MiniChart({
       alive = false;
       clearInterval(t);
     };
-  }, [symbol, instrument, intervalS]);
+  }, [symbol, instrument, intervalS, src, on.ema9, on.ema21, on.ema50, on.vwap]);
 
   return (
     <div className="relative h-full w-full">
