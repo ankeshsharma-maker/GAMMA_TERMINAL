@@ -8,6 +8,13 @@ body,
   height: 100%;
 }
 
+/* stop Android WebView / mobile Safari from inflating text on their own —
+   the terminal sets its own sizes and font-boosting just breaks the layout */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   background: #0a0e14;
