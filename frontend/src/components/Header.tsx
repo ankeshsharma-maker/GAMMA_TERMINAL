@@ -24,7 +24,7 @@ const readHidden = (): Record<string, boolean> => {
     return {};
   }
 };
-function useHidden(key: string): [boolean, () => void] {
+function useHidden(key: string, startHidden = false): [boolean, () => void] {
   const [map, setMap] = useState<Record<string, boolean>>(readHidden);
   useEffect(() => {
     const h = () => setMap(readHidden());
@@ -35,20 +35,23 @@ function useHidden(key: string): [boolean, () => void] {
       window.removeEventListener("storage", h);
     };
   }, []);
+  const hidden = key in map ? !!map[key] : startHidden;
   const toggle = () => {
     const cur = readHidden();
-    const next = { ...cur, [key]: !cur[key] };
+    const curVal = key in cur ? !!cur[key] : startHidden;
+    const next = { ...cur, [key]: !curVal };
     try {
       localStorage.setItem(HIDE_LS, JSON.stringify(next));
     } catch {}
     window.dispatchEvent(new Event("hdr-hide"));
   };
-  return [!!map[key], toggle];
+  return [hidden, toggle];
 }
 
-/** Money figure that hides itself (₹ ••••••) when tapped; state persists. */
+/** Money figure that hides itself (₹ ••••••) when tapped; state persists.
+ *  Margin figures start hidden (privacy) until the user taps to reveal. */
 function HideNum({ k, children }: { k: string; children: ReactNode }) {
-  const [hidden, toggle] = useHidden(k);
+  const [hidden, toggle] = useHidden(k, true);
   return (
     <button
       type="button"

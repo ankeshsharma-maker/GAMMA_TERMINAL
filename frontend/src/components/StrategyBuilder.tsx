@@ -525,9 +525,9 @@ export function StrategyBuilder() {
   }, [dte]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-term-border md:grid md:grid-cols-[330px_minmax(0,1fr)] md:overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-term-border lg:grid lg:grid-cols-[330px_minmax(0,1fr)] lg:overflow-hidden">
       {/* ---- leg editor ---- */}
-      <div className="flex flex-col border-r border-term-border bg-term-panel2 md:min-h-0 md:overflow-y-auto">
+      <div className="flex flex-col border-r border-term-border bg-term-panel2 lg:min-h-0 lg:overflow-y-auto">
         <div className="flex items-center gap-2 border-b border-term-border px-3 py-2 text-2xs font-semibold uppercase tracking-wide text-term-dim">
           <span>Builder</span>
           <select
@@ -948,7 +948,7 @@ export function StrategyBuilder() {
           </div>
         )}
 
-        <div className="flex flex-col gap-2 border-t border-term-border p-2 md:mt-auto">
+        <div className="flex flex-col gap-2 border-t border-term-border p-2 lg:mt-auto">
           {fromBroker && orderMode !== "live" && (
             <div className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-2xs text-amber-400">
               ⚠ These are your live positions, but order mode is PAPER — switch to LIVE
@@ -1135,7 +1135,7 @@ export function StrategyBuilder() {
       </div>
 
       {/* ---- payoff / backtest ---- */}
-      <div className="flex min-h-0 flex-col md:border-l md:border-term-border">
+      <div className="flex min-h-0 flex-col lg:border-l lg:border-term-border">
         <div className="flex flex-wrap items-center gap-1 border-b border-term-border bg-term-panel2 px-2 py-1.5 text-2xs">
           {(
             [
