@@ -8,7 +8,7 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 type Result = Awaited<ReturnType<typeof api.upstoxBacktest>>;
 
 /** Replay the current builder legs against Upstox daily history over a chosen
- *  date range. Index symbols + Upstox connected. */
+ *  date range. Index or F&O stock, Upstox connected. */
 export function BacktestPanel({
   symbol,
   expiry,

@@ -6,7 +6,7 @@ import type { AutoRule } from "../types";
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 type Res = Awaited<ReturnType<typeof api.autobotBacktest>>;
 
-/** Backtest one AutoBot rule against Upstox daily history. Index symbols only;
+/** Backtest one AutoBot rule against Upstox daily history. Index or F&O stock;
  *  range must sit inside the life of the expiry's contracts (a few weeks for
  *  weeklies), so it defaults to the last ~15 days. */
 export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () => void }) {

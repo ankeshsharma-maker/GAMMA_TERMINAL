@@ -26,7 +26,7 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 /** Historical daily chain metrics over a date range — spot, total Call/Put OI,
  *  PCR, max-pain and the day-over-day OI state. Data from Upstox
- *  (/api/upstox/history-chain); needs Upstox connected + an index symbol. */
+ *  (/api/upstox/history-chain); needs Upstox connected (index or F&O stock). */
 export function OIHistory() {
   const symbol = useStore((s) => s.symbol);
   const chain = useStore((s) => s.chain);
@@ -221,7 +221,7 @@ export function OIHistory() {
           <div className="flex h-full items-center justify-center text-xs text-term-dim">
             {busy
               ? "pulling historical OI from Upstox…"
-              : "Set a date range and hit Load. Needs Upstox connected and an index symbol."}
+              : "Set a date range and hit Load. Needs Upstox connected (index or F&O stock)."}
           </div>
         )}
       </div>
