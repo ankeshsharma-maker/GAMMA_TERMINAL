@@ -2,9 +2,10 @@ import { useState } from "react";
 import { Scanner } from "./Scanner";
 import { Screener } from "./Screener";
 import { Alerts } from "./Alerts";
+import { HistoricalScan } from "./HistoricalScan";
 
 export function ScannerView() {
-  const [tab, setTab] = useState<"blast" | "screener">("blast");
+  const [tab, setTab] = useState<"blast" | "screener" | "history">("blast");
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -13,6 +14,7 @@ export function ScannerView() {
           [
             ["blast", "Gamma Blast"],
             ["screener", "Screener"],
+            ["history", "History Scan"],
           ] as const
         ).map(([k, label]) => (
           <button
@@ -28,18 +30,20 @@ export function ScannerView() {
         <span className="ml-3 text-term-dim">
           {tab === "blast"
             ? "DTE-gated blend of ATM gamma, breakout, IV pop, straddle expansion, OI unwind & pin-break"
-            : "Session IV-rank, PCR, straddle, OI-buildup screen across the F&O universe"}
+            : tab === "screener"
+            ? "Session IV-rank, PCR, straddle, OI-buildup screen across the F&O universe"
+            : "OI state (long/short buildup, unwinding, covering) for your watchlist as of a past date"}
         </span>
       </div>
 
-      {tab === "blast" ? (
+      {tab === "blast" && (
         <>
           <Scanner />
           <Alerts compact />
         </>
-      ) : (
-        <Screener />
       )}
+      {tab === "screener" && <Screener />}
+      {tab === "history" && <HistoricalScan />}
     </div>
   );
 }
