@@ -226,7 +226,8 @@ export type View =
   | "auto"
   | "funds"
   | "watchlist"
-  | "orders";
+  | "orders"
+  | "trendingoi";
 
 export type AutoCondition = Record<string, unknown> & { kind: string };
 

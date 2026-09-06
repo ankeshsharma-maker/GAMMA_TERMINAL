@@ -8,6 +8,7 @@ import { OIProfile } from "./components/OIProfile";
 import { ScripView } from "./components/ScripView";
 import { Positions } from "./components/Positions";
 import { ScannerView } from "./components/ScannerView";
+import { TrendingOI } from "./components/TrendingOI";
 import { Chart } from "./components/Chart";
 import { StrategyBuilder } from "./components/StrategyBuilder";
 import { PositionsView } from "./components/PositionsView";
@@ -81,6 +82,7 @@ function DesktopShell() {
     view === "positions" ||
     view === "orders" ||
     view === "scrip" ||
+    view === "trendingoi" ||
     view === "auto" ||
     view === "funds";
   const [leftW, setLeftW] = useState(() => readNum(LS.left, 190));
@@ -162,6 +164,7 @@ function DesktopShell() {
           )}
           {view === "oiprofile" && <OIProfile />}
           {view === "scrip" && <ScripView />}
+          {view === "trendingoi" && <TrendingOI />}
           {view === "scanner" && <ScannerView />}
           {(view === "chart" || view === "scalper") && <Chart />}
           {view === "builder" && <StrategyBuilder />}

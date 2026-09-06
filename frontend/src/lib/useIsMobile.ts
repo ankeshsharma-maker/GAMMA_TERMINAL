@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 
-/** true when the viewport is phone-sized. Drives the mobile app-shell in
- *  App.tsx; the desktop three-pane layout is untouched above the breakpoint. */
-const QUERY = "(max-width: 820px)";
+/** true when the viewport is phone / folding-phone sized. Drives the mobile
+ *  app-shell in App.tsx; the desktop three-pane layout is used above this.
+ *  900px so a Galaxy Z Fold's unfolded inner screen (~820–840 CSS px) still
+ *  gets the single-pane shell rather than a cramped three-pane. */
+const QUERY = "(max-width: 900px)";
 
 export function useIsMobile(): boolean {
   const [mobile, setMobile] = useState<boolean>(() => {

@@ -20,8 +20,8 @@ function ViewToggle() {
       {(
         [
           ["chain", "chain"],
-          ["scrip", "scrip"],
-          ["oiprofile", "OI"],
+          ["scrip", "OI"],
+          ["trendingoi", "trend OI"],
           ["scanner", "scanner"],
           ["chart", "chart"],
           ["builder", "builder"],

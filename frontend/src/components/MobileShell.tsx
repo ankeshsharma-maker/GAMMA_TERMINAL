@@ -11,6 +11,7 @@ import { ExpiryTabs } from "./ExpiryTabs";
 import { OptionChain } from "./OptionChain";
 import { OIProfile } from "./OIProfile";
 import { ScripView } from "./ScripView";
+import { TrendingOI } from "./TrendingOI";
 import { ScannerView } from "./ScannerView";
 import { Chart } from "./Chart";
 import { StrategyBuilder } from "./StrategyBuilder";
@@ -24,9 +25,9 @@ const NAV: { v: View; icon: string; label: string }[] = [
   { v: "watchlist", icon: "★", label: "Watch" },
   { v: "chart", icon: "📈", label: "Chart" },
   { v: "chain", icon: "▦", label: "Chain" },
-  { v: "scrip", icon: "🔍", label: "Scrip" },
+  { v: "scrip", icon: "▤", label: "OI" },
   { v: "scanner", icon: "📡", label: "Scan" },
-  { v: "oiprofile", icon: "▤", label: "OI" },
+  { v: "trendingoi", icon: "🔥", label: "Trend OI" },
   { v: "scalper", icon: "⚡", label: "Scalp" },
   { v: "builder", icon: "🧱", label: "Build" },
   { v: "auto", icon: "🤖", label: "Auto" },
@@ -85,6 +86,8 @@ function MobileBody({ view }: { view: View }) {
       return <OIProfile />;
     case "scrip":
       return <ScripView />;
+    case "trendingoi":
+      return <TrendingOI />;
     case "scanner":
       return <ScannerView />;
     case "chart":
@@ -135,7 +138,7 @@ export function MobileShell() {
     >
       {/* ── top bar ─────────────────────────────────────────── */}
       <div
-        className={`flex items-center gap-2 border-b bg-term-panel px-2 py-1.5 ${
+        className={`flex items-center gap-1.5 border-b bg-term-panel px-1.5 py-1.5 ${
           orderMode === "live" ? "border-down" : "border-term-border"
         }`}
       >
@@ -167,7 +170,7 @@ export function MobileShell() {
 
       {/* ── rail + content ──────────────────────────────────── */}
       <div className="flex min-h-0 flex-1">
-        <nav className="flex w-[54px] shrink-0 flex-col overflow-y-auto border-r border-term-border bg-term-panel2">
+        <nav className="flex w-[52px] shrink-0 flex-col overflow-y-auto border-r border-term-border bg-term-panel2 min-[560px]:w-16">
           {NAV.map((n) => (
             <button
               key={n.v}

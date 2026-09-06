@@ -54,6 +54,8 @@ export const api = {
         atmIV: number | null;
         maxPain: number;
         netGex: number;
+        ceOIChg?: number | null;
+        peOIChg?: number | null;
       }[];
     }>(`/api/history/${symbol}`),
 
