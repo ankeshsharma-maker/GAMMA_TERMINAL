@@ -156,7 +156,7 @@ export const useStore = create<State>((set, get) => ({
   chartInstrument: "",
   paper: null,
   brokerFunds: null,
-  view: "chain",
+  view: "scrip",
   builderQueue: [],
   scan: [],
   alerts: [],
@@ -369,7 +369,7 @@ export const useStore = create<State>((set, get) => ({
       chain: null,
       chainError: null,
       chartInstrument: "",
-      ...(keepView ? {} : { view: "chain" }),
+      ...(keepView ? {} : { view: "scrip" }),
     });
     socket?.subscribe(s, null);
     api.chain(s).then(

@@ -621,3 +621,61 @@ async def fetch_underlying_candles(symbol: str, interval_s: int) -> list[dict]:
 
     out.sort(key=lambda c: c["time"])
     return out
+
+
+async def fetch_option_candles(
+    symbol: str, expiry: str, strike: float, ot: str, interval_s: int
+) -> list[dict]:
+    """OHLCV candles for one option contract from Upstox v2 historical-candle.
+    `expiry` is the app's 'DD-Mon-YYYY'. Same interval mapping as
+    fetch_underlying_candles. [] if the contract key can't be resolved."""
+    from datetime import date, timedelta
+
+    ux = get_upstox()
+    await ux.load_instruments()
+    iso = _nse_to_iso(expiry)
+    key = ux.option_key(symbol, iso, float(strike), ot.upper())
+    if not key:
+        return []
+
+    today = date.today()
+    if interval_s <= 60:
+        unit, frm = "1minute", today - timedelta(days=10)
+    elif interval_s <= 1800:
+        unit, frm = "30minute", today - timedelta(days=60)
+    else:
+        unit, frm = "day", today - timedelta(days=180)
+
+    out: list[dict] = []
+    seen: set[int] = set()
+
+    def _push(rows):
+        for c in rows or []:
+            ts = _candle_ts(c[0])
+            if not ts or ts in seen:
+                continue
+            seen.add(ts)
+            out.append({
+                "time": ts,
+                "open": _num(c[1]), "high": _num(c[2]),
+                "low": _num(c[3]), "close": _num(c[4]),
+                "volume": _num(c[5]) if len(c) > 5 else 0.0,
+            })
+
+    try:
+        h = await ux.get(
+            f"/historical-candle/{key}/{unit}/{today.isoformat()}/{frm.isoformat()}"
+        )
+        _push(h.get("data", {}).get("candles", []))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("upstox option candles %s %s %s%s failed: %s", symbol, expiry, strike, ot, exc)
+
+    if unit in ("1minute", "30minute"):
+        try:
+            h = await ux.get(f"/historical-candle/intraday/{key}/{unit}")
+            _push(h.get("data", {}).get("candles", []))
+        except Exception:  # noqa: BLE001
+            pass
+
+    out.sort(key=lambda c: c["time"])
+    return out

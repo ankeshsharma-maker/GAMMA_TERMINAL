@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
-import { nf } from "../lib/format";
+import { ago, nf } from "../lib/format";
 import type { ScreenerRow } from "../types";
 
 const BUILDUP_LABEL: Record<string, string> = {
@@ -23,17 +23,33 @@ export function Movers() {
   const [rows, setRows] = useState<ScreenerRow[]>([]);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [n, setN] = useState(15);
+  const [busy, setBusy] = useState(false);
+  const [updated, setUpdated] = useState<number | null>(null);
+
+  const load = () => {
+    setBusy(true);
+    return api.screener().then(
+      (d) => {
+        setRows(d.rows);
+        setProgress(d.progress as any);
+        setUpdated(Date.now() / 1000);
+        setBusy(false);
+      },
+      () => setBusy(false)
+    );
+  };
 
   useEffect(() => {
     let alive = true;
-    const load = () =>
+    const tick = () =>
       api.screener().then((d) => {
         if (!alive) return;
         setRows(d.rows);
         setProgress(d.progress as any);
+        setUpdated(Date.now() / 1000);
       }, () => {});
-    load();
-    const t = setInterval(load, 15000);
+    tick();
+    const t = setInterval(tick, 15000);
     return () => {
       alive = false;
       clearInterval(t);
@@ -137,6 +153,15 @@ export function Movers() {
             scanning {progress.done}/{progress.total}
           </span>
         )}
+        <button
+          onClick={load}
+          disabled={busy}
+          className="btn px-2 py-0.5 text-2xs disabled:opacity-40"
+          title="Refresh now"
+        >
+          {busy ? "…" : "⟳ Refresh"}
+        </button>
+        {updated && <span>updated {ago(updated)}</span>}
         <span className="ml-auto">ranked by session % move · F&amp;O universe</span>
       </div>
       <div className="flex min-h-0 flex-1 divide-x divide-term-border">

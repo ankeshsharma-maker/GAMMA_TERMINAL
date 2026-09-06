@@ -153,7 +153,7 @@ export const api = {
   watchQuotes: () =>
     j<{ watchlist: string[]; quotes: import("../types").WatchQuote[] }>("/api/watchlist"),
 
-  chart: (symbol: string, interval = 60, instrument?: string) =>
+  chart: (symbol: string, interval = 60, instrument?: string, src?: "auto" | "broker" | "upstox") =>
     j<{
       symbol: string;
       candles: {
@@ -171,7 +171,8 @@ export const api = {
       hasVolume?: boolean;
     }>(
       `/api/chart/${symbol}?interval=${interval}` +
-        (instrument ? `&instrument=${encodeURIComponent(instrument)}` : "")
+        (instrument ? `&instrument=${encodeURIComponent(instrument)}` : "") +
+        (src && src !== "auto" ? `&src=${src}` : "")
     ),
 
   scan: () => j<{ rows: ScanRow[]; alerts: Alert[] }>("/api/scan"),

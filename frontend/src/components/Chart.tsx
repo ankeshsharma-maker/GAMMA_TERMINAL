@@ -272,12 +272,14 @@ export function Chart() {
     };
   }, []);
 
-  // fetch on symbol / instrument / timeframe change + poll
+  const [dataSrc, setDataSrc] = useState<"auto" | "broker" | "upstox">("auto");
+
+  // fetch on symbol / instrument / timeframe / source change + poll
   useEffect(() => {
     let alive = true;
     const load = () =>
       api
-        .chart(symbol, intervalS, instrument || undefined)
+        .chart(symbol, intervalS, instrument || undefined, dataSrc)
         .then((d) => alive && setData(d as ChartData))
         .catch(() => {});
     setData(null);
@@ -287,7 +289,7 @@ export function Chart() {
       alive = false;
       clearInterval(t);
     };
-  }, [symbol, intervalS, instrument]);
+  }, [symbol, intervalS, instrument, dataSrc]);
 
   const candles = useMemo(() => data?.candles ?? [], [data]);
 
@@ -568,6 +570,17 @@ export function Chart() {
               {lbl}
             </option>
           ))}
+        </select>
+
+        <select
+          value={dataSrc}
+          onChange={(e) => setDataSrc(e.target.value as any)}
+          className="rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs outline-none focus:border-term-accent"
+          title="Candle data source"
+        >
+          <option value="auto">Src: Auto</option>
+          <option value="broker">Src: Flattrade</option>
+          <option value="upstox">Src: Upstox</option>
         </select>
 
         <select

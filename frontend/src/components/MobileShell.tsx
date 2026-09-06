@@ -32,7 +32,6 @@ import { Funds } from "./Funds";
 const NAV: { v: View; icon: string; label: string }[] = [
   { v: "watchlist", icon: "★", label: "Watch" },
   { v: "chart", icon: "📈", label: "Chart" },
-  { v: "chain", icon: "▦", label: "Chain" },
   { v: "scrip", icon: "▤", label: "OI" },
   { v: "scanner", icon: "📡", label: "Scan" },
   { v: "trendingoi", icon: "🔥", label: "Trend OI" },

@@ -20,7 +20,6 @@ function ViewToggle() {
     <div className="flex overflow-hidden rounded border border-term-border text-2xs">
       {(
         [
-          ["chain", "chain"],
           ["scrip", "OI"],
           ["trendingoi", "trend OI"],
           ["scanner", "scanner"],

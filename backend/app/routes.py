@@ -196,9 +196,13 @@ async def chart(
     symbol: str,
     interval: int = Query(60, ge=15, le=86400),
     instrument: str | None = Query(None),
+    src: str = Query("auto"),  # auto | broker | upstox
 ):
     symbol = symbol.upper()
+    src = (src or "auto").lower()
     from .brokers import get_broker
+    from .brokers.upstox import get_upstox
+    from . import upstox_data
 
     broker = get_broker()
     mins = max(1, interval // 60)
@@ -210,26 +214,47 @@ async def chart(
     if opt:
         sym, exp, strike, ot = opt
         candles = None
-        src = "sampled"
-        if broker.authed:
+        src_label = "sampled"
+
+        want_ux = src == "upstox" or (src == "auto" and not broker.authed)
+        if want_ux and get_upstox().authed:
+            try:
+                c = await upstox_data.fetch_option_candles(sym, exp, strike, ot, interval)
+                if c:
+                    candles, src_label = c, "upstox"
+            except Exception:  # noqa: BLE001
+                candles = None
+
+        if not candles and src != "upstox" and broker.authed:
             try:
                 info = await broker.resolve_nfo(sym, exp, strike, ot)
                 if info.get("token"):
                     candles = await broker.tpseries(
                         "NFO", info["token"], minutes_back=lookback, interval=str(fetch_min)
                     )
-                    src = "broker"
+                    if candles:
+                        src_label = "broker"
             except Exception:  # noqa: BLE001
                 candles = None
+
+        # last-ditch: Upstox even if not explicitly asked
+        if not candles and get_upstox().authed:
+            try:
+                c = await upstox_data.fetch_option_candles(sym, exp, strike, ot, interval)
+                if c:
+                    candles, src_label = c, "upstox"
+            except Exception:  # noqa: BLE001
+                candles = None
+
         if not candles:
             candles = [
                 {"time": int(p["t"]), "open": p["ltp"], "high": p["ltp"],
                  "low": p["ltp"], "close": p["ltp"], "volume": 0}
                 for p in store.get_opt_history(instrument)
             ]
-            src = "sampled"
+            src_label = "sampled"
         return build_chart(
-            instrument, [], [], interval_s=interval, base_candles=candles, source_label=src
+            instrument, [], [], interval_s=interval, base_candles=candles, source_label=src_label
         )
 
     # ---- synthetic ATM straddle ----

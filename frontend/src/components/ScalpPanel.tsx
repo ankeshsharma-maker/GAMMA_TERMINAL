@@ -1,14 +1,38 @@
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import { nf, signColor, sk } from "../lib/format";
 import { StopEditor } from "./StopEditor";
 
 export function ScalpPanel() {
-  const { symbol, chain, watch, paper, orderMode, scalpLots, setScalpLots, quickTrade, closePosition } =
-    useStore();
+  const {
+    symbol,
+    chain,
+    watch,
+    paper,
+    orderMode,
+    scalpLots,
+    setScalpLots,
+    quickTrade,
+    quickTradeAt,
+    closePosition,
+  } = useStore();
 
   const wq = watch.find((w) => w.symbol === symbol);
   const atm = chain?.atmStrike ?? wq?.atmStrike;
   const expiry = chain?.expiry ?? wq?.expiry;
+
+  // quick strike picker — default ATM, follows the chain as spot moves
+  const strikes = useMemo(() => chain?.rows.map((r) => r.strike) ?? [], [chain]);
+  const step = strikes.length > 1 ? Math.abs(strikes[1] - strikes[0]) : 0;
+  const [pick, setPick] = useState<number>(0);
+  useEffect(() => {
+    if (atm) setPick(atm);
+  }, [atm, symbol, expiry]);
+  const offset = atm && step ? Math.round((pick - atm) / step) : 0;
+  const fire = (ot: "CE" | "PE", side: "BUY" | "SELL") => {
+    if (expiry && pick) quickTradeAt(symbol, expiry, pick, ot, side, scalpLots);
+    else quickTrade(symbol, ot, side, scalpLots);
+  };
 
   const allPos = paper?.positions ?? [];
   const myPos = allPos.filter((p) => p.symbol === symbol);
@@ -27,12 +51,12 @@ export function ScalpPanel() {
     cls: string;
   }) => (
     <button
-      onClick={() => quickTrade(symbol, ot, side, scalpLots)}
+      onClick={() => fire(ot, side)}
       className={`flex flex-col items-center rounded-md py-1.5 font-bold leading-tight transition-colors ${cls}`}
     >
       <span className="text-xs">{label}</span>
       <span className="text-[9px] font-normal opacity-70">
-        {atm ? `${nf(atm, 0)} ${ot}` : ot} × {scalpLots}
+        {pick ? `${nf(pick, 0)} ${ot}` : ot} × {scalpLots}
       </span>
     </button>
   );
@@ -99,6 +123,56 @@ export function ScalpPanel() {
             {n}
           </button>
         ))}
+      </div>
+
+      {/* quick strike picker */}
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border px-3 py-2 text-2xs">
+        <span className="text-term-dim">Strike</span>
+        {strikes.length > 0 ? (
+          <>
+            <button
+              className="btn px-2 py-0.5"
+              onClick={() => step && setPick((k) => k - step)}
+              disabled={!step}
+            >
+              −
+            </button>
+            <select
+              value={pick || ""}
+              onChange={(e) => setPick(Number(e.target.value))}
+              className="num rounded border border-term-border bg-term-bg px-1.5 py-0.5 font-semibold text-term-text"
+            >
+              {strikes.map((k) => (
+                <option key={k} value={k}>
+                  {sk(k)}
+                  {k === atm ? "  (ATM)" : ""}
+                </option>
+              ))}
+            </select>
+            <button
+              className="btn px-2 py-0.5"
+              onClick={() => step && setPick((k) => k + step)}
+              disabled={!step}
+            >
+              +
+            </button>
+            {atm && (
+              <span className="rounded bg-term-bg px-1.5 py-0.5 text-[10px] text-term-dim">
+                {offset === 0 ? "ATM" : offset > 0 ? `ATM +${offset}` : `ATM ${offset}`}
+              </span>
+            )}
+            {atm && pick !== atm && (
+              <button
+                onClick={() => setPick(atm)}
+                className="text-[10px] text-term-accent hover:underline"
+              >
+                reset ATM
+              </button>
+            )}
+          </>
+        ) : (
+          <span className="text-term-dim">chain loading — trades use ATM</span>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-2 p-3">
