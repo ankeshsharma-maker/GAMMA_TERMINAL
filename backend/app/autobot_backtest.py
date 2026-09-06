@@ -71,7 +71,13 @@ async def backtest_rule(rule: dict, from_date: str, to_date: str) -> dict:
     # 1. underlying daily candles — full history for indicator warm-up
     candles = await upstox_data.fetch_underlying_candles(symbol, 86400)
     if len(candles) < 40:
-        raise RuntimeError(f"only {len(candles)} daily bars for {symbol} from Upstox")
+        await asyncio.sleep(2)  # Upstox rate-limit backoff, then one retry
+        candles = await upstox_data.fetch_underlying_candles(symbol, 86400)
+    if len(candles) < 40:
+        raise RuntimeError(
+            f"only {len(candles)} daily bars for {symbol} from Upstox — likely rate-limited, "
+            "wait ~30s and re-run"
+        )
     by_date: dict[str, float] = {}
     for c in candles:
         d = datetime.utcfromtimestamp(c["time"]).strftime("%Y-%m-%d")
