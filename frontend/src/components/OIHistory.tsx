@@ -42,6 +42,11 @@ export function OIHistory() {
   const [rows, setRows] = useState<Row[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const emptyMsg =
+    loaded && !busy && !err && rows.length === 0
+      ? `No option-contract history for ${expiry || "this expiry"} in ${from} → ${to}. Weekly contracts only trade a few weeks — try a recent range or a monthly expiry.`
+      : null;
 
   const load = () => {
     if (!expiry) {
@@ -53,11 +58,13 @@ export function OIHistory() {
     api.upstoxHistoryChain(symbol, expiry, from, to).then(
       (d) => {
         setRows((d.series as Row[]) ?? []);
+        setLoaded(true);
         setBusy(false);
       },
       (e) => {
         setErr(e?.message || "failed");
         setRows([]);
+        setLoaded(true);
         setBusy(false);
       }
     );
@@ -67,6 +74,7 @@ export function OIHistory() {
   useEffect(() => {
     setRows([]);
     setErr(null);
+    setLoaded(false);
     if (!expiry) return;
     setBusy(true);
     let alive = true;
@@ -74,11 +82,13 @@ export function OIHistory() {
       (d) => {
         if (!alive) return;
         setRows((d.series as Row[]) ?? []);
+        setLoaded(true);
         setBusy(false);
       },
       (e) => {
         if (!alive) return;
         setErr(e?.message || "failed");
+        setLoaded(true);
         setBusy(false);
       }
     );
@@ -214,6 +224,9 @@ export function OIHistory() {
       </div>
 
       {err && <div className="border-b border-term-border px-3 py-1.5 text-2xs text-down">{err}</div>}
+      {emptyMsg && (
+        <div className="border-b border-term-border px-3 py-1.5 text-2xs text-amber-400">{emptyMsg}</div>
+      )}
 
       {rows.length >= 2 && (
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-term-border bg-term-panel px-3 py-1.5 text-2xs">

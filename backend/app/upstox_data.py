@@ -567,6 +567,21 @@ def _candle_ts(iso_ts: str) -> int:
         return 0
 
 
+def _ux_hist_window(interval_s: int, today, day_back: int):
+    """(upstox candle unit, from-date) for a chart interval in seconds.
+
+    Upstox v2 only offers 1minute / 30minute / day. build_chart() re-buckets
+    to the requested interval, so we always pick the *finest* unit that still
+    has enough history — otherwise a 5-min chart would show 30-min candles."""
+    from datetime import timedelta
+
+    if interval_s <= 3600:            # 1m .. 1h  -> 1-min bars, bucket up
+        return "1minute", today - timedelta(days=25)
+    if interval_s <= 21600:           # 2h .. 6h  -> 30-min bars
+        return "30minute", today - timedelta(days=120)
+    return "day", today - timedelta(days=day_back)
+
+
 async def fetch_underlying_candles(symbol: str, interval_s: int) -> list[dict]:
     """OHLCV candles for an index / F&O-stock underlying from Upstox v2
     historical-candle, shaped for charting.build_chart(). `interval_s` picks
@@ -581,12 +596,7 @@ async def fetch_underlying_candles(symbol: str, interval_s: int) -> list[dict]:
         return []
 
     today = date.today()
-    if interval_s <= 60:
-        unit, frm = "1minute", today - timedelta(days=10)
-    elif interval_s <= 1800:
-        unit, frm = "30minute", today - timedelta(days=90)
-    else:
-        unit, frm = "day", today - timedelta(days=1825)
+    unit, frm = _ux_hist_window(interval_s, today, 1825)
 
     out: list[dict] = []
     seen: set[int] = set()
@@ -639,12 +649,7 @@ async def fetch_option_candles(
         return []
 
     today = date.today()
-    if interval_s <= 60:
-        unit, frm = "1minute", today - timedelta(days=10)
-    elif interval_s <= 1800:
-        unit, frm = "30minute", today - timedelta(days=60)
-    else:
-        unit, frm = "day", today - timedelta(days=180)
+    unit, frm = _ux_hist_window(interval_s, today, 400)
 
     out: list[dict] = []
     seen: set[int] = set()
