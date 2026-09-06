@@ -44,9 +44,13 @@ export function TrendingOI() {
     [symChoices, symbol, symClass]
   );
 
+  const expiry = chain?.expiry ?? "";
+  const daily = tf >= 1440;
+
   useEffect(() => {
     let alive = true;
-    const load = () =>
+
+    const loadSession = () =>
       api.history(symbol).then((d) => {
         if (!alive) return;
         const raw = d.points
@@ -58,17 +62,42 @@ export function TrendingOI() {
             ce: p.ceOIChg ?? 0,
             pe: p.peOIChg ?? 0,
           }));
-        // keep the current session only (last point back ~10h)
         const cut = raw.length ? raw[raw.length - 1].t - 10 * 3600 : 0;
         setPts(raw.filter((p) => p.t >= cut));
       }, () => {});
+
+    const loadDaily = () => {
+      if (!expiry) {
+        setPts([]);
+        return;
+      }
+      const to = new Date().toISOString().slice(0, 10);
+      const from = new Date(Date.now() - 45 * 864e5).toISOString().slice(0, 10);
+      api.upstoxHistoryChain(symbol, expiry, from, to).then((d) => {
+        if (!alive) return;
+        const s = (d.series as any[]) ?? [];
+        const ce0 = s.length ? Number(s[0].ceOI || 0) : 0;
+        const pe0 = s.length ? Number(s[0].peOI || 0) : 0;
+        setPts(
+          s.map((r) => ({
+            t: Math.floor(new Date(r.date + "T00:00:00Z").getTime() / 1000),
+            spot: Number(r.spot ?? 0),
+            pcr: r.pcr ?? null,
+            ce: Number(r.ceOI || 0) - ce0,
+            pe: Number(r.peOI || 0) - pe0,
+          }))
+        );
+      }, () => setPts([]));
+    };
+
+    const load = daily ? loadDaily : loadSession;
     load();
-    const id = window.setInterval(load, 15000);
+    const id = window.setInterval(load, daily ? 60000 : 15000);
     return () => {
       alive = false;
       window.clearInterval(id);
     };
-  }, [symbol]);
+  }, [symbol, daily, expiry]);
 
   const last = pts[pts.length - 1];
   const first = pts[0];
@@ -131,7 +160,9 @@ export function TrendingOI() {
       .join(" ");
     const y0 = y(0);
     const fmtT = (t: number) =>
-      new Date(t * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+      daily
+        ? new Date(t * 1000).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })
+        : new Date(t * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
     const vGrid = [hi, (hi + lo) / 2, 0, lo].filter((v, i, a) => a.indexOf(v) === i);
 
     return (
@@ -262,12 +293,17 @@ export function TrendingOI() {
         {chain?.expiry && <span className="num">{chain.expiry}</span>}
         <span className="ml-1">Interval</span>
         <div className="seg">
-          {([1, 3, 5, 15, 30, 60, 240] as const).map((m) => (
+          {([1, 3, 5, 15, 30, 60, 240, 1440] as const).map((m) => (
             <button key={m} onClick={() => setTf(m)} className={tf === m ? "on" : ""}>
-              {m < 60 ? `${m}m` : `${m / 60}h`}
+              {m < 60 ? `${m}m` : m < 1440 ? `${m / 60}h` : "1D"}
             </button>
           ))}
         </div>
+        {daily && (
+          <span className="text-amber-400">
+            {expiry ? "daily OI history · Upstox" : "pick an expiry for daily view"}
+          </span>
+        )}
         <span className="ml-auto">
           <span style={{ color: CE }}>■</span> Call OI Δ &nbsp;
           <span style={{ color: PE }}>■</span> Put OI Δ &nbsp;
@@ -316,7 +352,7 @@ export function TrendingOI() {
       <div className="min-h-0 flex-1 p-3">
         {chart ?? (
           <div className="flex h-full items-center justify-center text-xs text-term-dim">
-            collecting OI history for {symbol}… (needs a few snapshots)
+            {daily ? (expiry ? `loading daily OI history for ${symbol}…` : "pick an expiry to use the 1D view") : `collecting OI history for ${symbol}… (needs a few snapshots)`}
           </div>
         )}
       </div>
@@ -327,7 +363,7 @@ export function TrendingOI() {
           <table className="w-full border-separate border-spacing-0 text-2xs">
             <thead className="sticky top-0 bg-term-panel text-[10px] uppercase text-term-dim">
               <tr>
-                <th className="border-b border-term-border px-3 py-1 text-left font-medium">Time</th>
+                <th className="border-b border-term-border px-3 py-1 text-left font-medium">{daily ? "Date" : "Time"}</th>
                 <th className="border-b border-term-border px-3 py-1 text-right font-medium">Call OI Δ</th>
                 <th className="border-b border-term-border px-3 py-1 text-right font-medium">Put OI Δ</th>
                 <th className="border-b border-term-border px-3 py-1 text-right font-medium">Spot Δ</th>
@@ -341,10 +377,15 @@ export function TrendingOI() {
                 return (
                   <tr key={i}>
                     <td className="num border-b border-term-border/40 px-3 py-1 text-term-dim">
-                      {new Date(r.t * 1000).toLocaleTimeString("en-IN", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {daily
+                        ? new Date(r.t * 1000).toLocaleDateString("en-IN", {
+                            day: "2-digit",
+                            month: "short",
+                          })
+                        : new Date(r.t * 1000).toLocaleTimeString("en-IN", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
                     </td>
                     <td className="num border-b border-term-border/40 px-3 py-1 text-right" style={{ color: CE }}>
                       {r.dce >= 0 ? "+" : ""}
