@@ -116,6 +116,7 @@ export function StrategyBuilder() {
   const [tgtVal, setTgtVal] = useState("");
   const [slTgtBasis, setSlTgtBasis] = useState<"amount" | "points">("amount");
   const [panel, setPanel] = useState<"payoff" | "backtest">("payoff");
+  const [payoffTab, setPayoffTab] = useState<"chart" | "table">("chart");
   // "time to expiry" payoff: days from today (0 = now / T+0, dte = expiry)
   const [tDays, setTDays] = useState(0);
   // customise "+ Add leg": pick type / strike / side / lots for the next leg
@@ -361,6 +362,48 @@ export function StrategyBuilder() {
   }, [analysis, tDays, dte]);
   const tDate = new Date(Date.now() + tDays * 86400000);
   const tDateLbl = tDate.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+
+  // ---- payoff table: P&L at underlying up / down levels ----
+  const PCTS = [-0.08, -0.06, -0.04, -0.03, -0.02, -0.01, 0, 0.01, 0.02, 0.03, 0.04, 0.06, 0.08];
+  const levelRows = useMemo(() => {
+    if (!analysis) return [];
+    const spot = analysis.spot;
+    const Ss = PCTS.map((p) => spot * (1 + p));
+    const exp = strategyPnlCurve(analysis.legs, Ss, 0);
+    const remYears = Math.max((dte - tDays) / 365, 0);
+    const tv = tDays > 0 ? strategyPnlCurve(analysis.legs, Ss, remYears) : null;
+    return PCTS.map((p, i) => ({ pct: p, S: Ss[i], exp: exp[i], tv: tv ? tv[i] : null }));
+  }, [analysis, tDays, dte]);
+
+  // ---- day-by-day P&L at spot and ±3% (theta decay to expiry) ----
+  const dayRows = useMemo(() => {
+    if (!analysis) return [];
+    const spot = analysis.spot;
+    const dn = spot * 0.97;
+    const up = spot * 1.03;
+    const step = Math.max(1, Math.ceil((dte + 1) / 16));
+    const mk = (d: number) => {
+      const [a, b, c] = strategyPnlCurve(analysis.legs, [dn, spot, up], Math.max((dte - d) / 365, 0));
+      return {
+        d,
+        date: new Date(Date.now() + d * 86400000).toLocaleDateString("en-IN", {
+          day: "2-digit",
+          month: "short",
+        }),
+        left: dte - d,
+        dn: a,
+        sp: b,
+        up: c,
+      };
+    };
+    const rows = [];
+    for (let d = 0; d <= dte; d += step) rows.push(mk(d));
+    if (!rows.length || rows[rows.length - 1].d !== dte) rows.push(mk(dte));
+    return rows;
+  }, [analysis, dte]);
+
+  const pnlCls = (v: number) => (v >= 0 ? "text-up" : "text-down");
+  const pnlTxt = (v: number | null) => (v == null ? "–" : `${v >= 0 ? "+" : ""}${nf(v, 0)}`);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:grid md:grid-cols-[330px_minmax(0,1fr)] md:overflow-hidden">
@@ -906,6 +949,21 @@ export function StrategyBuilder() {
               ? "Payoff at expiry, T+0, and any day in between"
               : "Replay these legs against Upstox daily history"}
           </span>
+          {panel === "payoff" && (
+            <div className="ml-auto flex gap-1">
+              {(["chart", "table"] as const).map((k) => (
+                <button
+                  key={k}
+                  onClick={() => setPayoffTab(k)}
+                  className={`rounded px-2 py-0.5 font-semibold ${
+                    payoffTab === k ? "bg-term-border text-term-text" : "text-term-dim"
+                  }`}
+                >
+                  {k === "chart" ? "Chart" : "P&L table"}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {panel === "backtest" ? (
@@ -1028,30 +1086,171 @@ export function StrategyBuilder() {
           </div>
         )}
 
-        <div className="relative min-h-[280px] flex-1 p-3 md:min-h-0">
-          {analysis && (
-            <PayoffChart
-              x={analysis.x}
-              expiryPnl={analysis.expiryPnl}
-              nowPnl={analysis.nowPnl}
-              spot={analysis.spot}
-              breakevens={analysis.breakevens}
-              tPnl={tPnl}
-            />
-          )}
-          {analysis && (
-            <div className="pointer-events-none absolute bottom-4 right-5 flex gap-3 text-[10px] text-term-dim">
-              <span className="text-term-text">─ at expiry</span>
-              {tPnl && <span className="text-[#f59e0b]">─ T+{tDays}d ({tDateLbl})</span>}
-              <span className="text-[#a855f7]">╌ now (T+0)</span>
-              <span className="text-[#3b82f6]">┆ spot</span>
-              <span className="text-[#eab308]">● breakeven</span>
-            </div>
-          )}
-        </div>
+        {payoffTab === "chart" ? (
+          <div className="relative min-h-[280px] flex-1 p-3 md:min-h-0">
+            {analysis && (
+              <PayoffChart
+                x={analysis.x}
+                expiryPnl={analysis.expiryPnl}
+                nowPnl={analysis.nowPnl}
+                spot={analysis.spot}
+                breakevens={analysis.breakevens}
+                tPnl={tPnl}
+              />
+            )}
+            {analysis && (
+              <div className="pointer-events-none absolute bottom-4 right-5 flex gap-3 text-[10px] text-term-dim">
+                <span className="text-term-text">─ at expiry</span>
+                {tPnl && <span className="text-[#f59e0b]">─ T+{tDays}d ({tDateLbl})</span>}
+                <span className="text-[#a855f7]">╌ now (T+0)</span>
+                <span className="text-[#3b82f6]">┆ spot</span>
+                <span className="text-[#eab308]">● breakeven</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="min-h-0 flex-1 overflow-auto p-3">
+            {analysis && (
+              <div className="grid gap-5 lg:grid-cols-2">
+                {/* P&L by underlying level (upside / downside) */}
+                <div>
+                  <div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-term-dim">
+                    P&amp;L by underlying — spot {nf(analysis.spot, 0)}
+                  </div>
+                  <table className="w-full border-separate border-spacing-0 text-2xs">
+                    <thead className="text-[10px] uppercase text-term-dim">
+                      <tr>
+                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
+                          Underlying
+                        </th>
+                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
+                          Move
+                        </th>
+                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
+                          At expiry
+                        </th>
+                        {tDays > 0 && (
+                          <th className="border-b border-term-border px-2 py-1 text-right font-medium">
+                            T+{tDays}d
+                          </th>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {levelRows.map((r, i) => (
+                        <tr key={i} className={Math.abs(r.pct) < 1e-9 ? "bg-term-accent/10" : ""}>
+                          <td className="num border-b border-term-border/40 px-2 py-1 text-right text-term-text">
+                            {nf(r.S, 0)}
+                          </td>
+                          <td
+                            className={`num border-b border-term-border/40 px-2 py-1 text-right ${
+                              r.pct >= 0 ? "text-up" : "text-down"
+                            }`}
+                          >
+                            {r.pct >= 0 ? "+" : ""}
+                            {nf(r.pct * 100, 1)}%
+                          </td>
+                          <td
+                            className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
+                              r.exp
+                            )}`}
+                          >
+                            {pnlTxt(r.exp)}
+                          </td>
+                          {tDays > 0 && (
+                            <td
+                              className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
+                                r.tv ?? 0
+                              )}`}
+                            >
+                              {pnlTxt(r.tv)}
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Day-by-day P&L (theta decay) */}
+                <div>
+                  <div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-term-dim">
+                    Day-by-day P&amp;L — spot &amp; ±3%
+                  </div>
+                  <table className="w-full border-separate border-spacing-0 text-2xs">
+                    <thead className="text-[10px] uppercase text-term-dim">
+                      <tr>
+                        <th className="border-b border-term-border px-2 py-1 text-left font-medium">
+                          Day
+                        </th>
+                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
+                          Left
+                        </th>
+                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
+                          −3%
+                        </th>
+                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
+                          Spot
+                        </th>
+                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
+                          +3%
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dayRows.map((r, i) => (
+                        <tr
+                          key={i}
+                          className={
+                            r.d === tDays
+                              ? "bg-amber-500/10"
+                              : r.d === 0
+                              ? "bg-term-accent/10"
+                              : ""
+                          }
+                        >
+                          <td className="num border-b border-term-border/40 px-2 py-1 text-term-dim">
+                            {r.d === 0 ? "Today" : `T+${r.d}d`}{" "}
+                            <span className="opacity-60">{r.date}</span>
+                          </td>
+                          <td className="num border-b border-term-border/40 px-2 py-1 text-right text-term-dim">
+                            {r.left}d
+                          </td>
+                          <td
+                            className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
+                              r.dn
+                            )}`}
+                          >
+                            {pnlTxt(r.dn)}
+                          </td>
+                          <td
+                            className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
+                              r.sp
+                            )}`}
+                          >
+                            {pnlTxt(r.sp)}
+                          </td>
+                          <td
+                            className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
+                              r.up
+                            )}`}
+                          >
+                            {pnlTxt(r.up)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="border-t border-term-border px-4 py-1 text-[10px] text-term-dim">
-          {analysis?.margin.basis
+          {payoffTab === "table"
+            ? "P&L by underlying move and day-by-day (theta decay). T+n column follows the slider. Black-Scholes with per-leg IV — indicative."
+            : analysis?.margin.basis
             ? `Margin basis: ${analysis.margin.basis}. Payoff / T+n curve use per-leg IV & Black-Scholes — indicative, not broker-accurate.`
             : "White = at expiry · amber = the T+n day on the slider · purple dashed = now (T+0)."}
         </div>
