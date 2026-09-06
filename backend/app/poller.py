@@ -36,13 +36,15 @@ def _in_market_hours(now: datetime | None = None) -> bool:
 
 
 def _use_upstox(symbol: str) -> bool:
-    # per-symbol: Upstox only when it's enabled, authed AND we have a key for
-    # this underlying (indices + BSE). F&O stocks stay on NSE.
-    return (
-        store.data_source() == "upstox"
-        and get_upstox().authed
-        and get_upstox().instrument_key(symbol) is not None
-    )
+    # Upstox's Analytics Access Token serves *frozen* intraday data on the
+    # /v2/option/chain REST endpoint (OI / LTP don't tick during the session),
+    # so "Change in OI" never updates on it. Use Upstox for the live option
+    # chain ONLY for BSE indices (SENSEX / BANKEX) that NSE can't provide;
+    # every NSE underlying (indices + F&O stocks) uses NSE's live chain.
+    if store.data_source() != "upstox" or not get_upstox().authed:
+        return False
+    key = get_upstox().instrument_key(symbol)
+    return bool(key) and key.startswith("BSE_INDEX")
 
 
 async def _ensure_expiries(symbol: str) -> None:
