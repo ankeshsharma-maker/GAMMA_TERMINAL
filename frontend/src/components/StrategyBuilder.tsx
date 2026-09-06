@@ -1456,57 +1456,77 @@ export function StrategyBuilder() {
                         </th>
                         <th className="border-b border-term-border px-2 py-1 text-right font-medium text-down">
                           −{dayPct}%
+                          <span className="block font-normal opacity-70">
+                            {sk(analysis.spot * (1 - dayPct / 100))}
+                          </span>
                         </th>
                         <th className="border-b border-term-border px-2 py-1 text-right font-medium">
                           Spot
+                          <span className="block font-normal opacity-70">{sk(analysis.spot)}</span>
                         </th>
                         <th className="border-b border-term-border px-2 py-1 text-right font-medium text-up">
                           +{dayPct}%
+                          <span className="block font-normal opacity-70">
+                            {sk(analysis.spot * (1 + dayPct / 100))}
+                          </span>
+                        </th>
+                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
+                          Δ vs today
                         </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {dayRows.map((r, i) => (
-                        <tr
-                          key={i}
-                          className={
-                            r.d === tDays
-                              ? "bg-amber-500/10"
-                              : r.d === 0
-                              ? "bg-term-accent/10"
-                              : ""
-                          }
-                        >
-                          <td className="num border-b border-term-border/40 px-2 py-1 text-term-dim">
-                            {r.d === 0 ? "Today" : `T+${r.d}d`}{" "}
-                            <span className="opacity-60">{r.date}</span>
-                          </td>
-                          <td className="num border-b border-term-border/40 px-2 py-1 text-right text-term-dim">
-                            {r.left}d
-                          </td>
-                          <td
-                            className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
-                              r.dn
-                            )}`}
+                      {dayRows.map((r, i) => {
+                        const decay = r.sp - (dayRows[0]?.sp ?? r.sp);
+                        return (
+                          <tr
+                            key={i}
+                            className={
+                              r.d === tDays
+                                ? "bg-amber-500/10"
+                                : r.d === 0
+                                ? "bg-term-accent/10"
+                                : ""
+                            }
                           >
-                            {pnlTxt(r.dn)}
-                          </td>
-                          <td
-                            className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
-                              r.sp
-                            )}`}
-                          >
-                            {pnlTxt(r.sp)}
-                          </td>
-                          <td
-                            className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
-                              r.up
-                            )}`}
-                          >
-                            {pnlTxt(r.up)}
-                          </td>
-                        </tr>
-                      ))}
+                            <td className="num border-b border-term-border/40 px-2 py-1 text-term-dim">
+                              {r.d === 0 ? "Today" : `T+${r.d}d`}{" "}
+                              <span className="opacity-60">{r.date}</span>
+                            </td>
+                            <td className="num border-b border-term-border/40 px-2 py-1 text-right text-term-dim">
+                              {r.left}d
+                            </td>
+                            <td
+                              className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
+                                r.dn
+                              )}`}
+                            >
+                              {pnlTxt(r.dn)}
+                            </td>
+                            <td
+                              className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
+                                r.sp
+                              )}`}
+                            >
+                              {pnlTxt(r.sp)}
+                            </td>
+                            <td
+                              className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
+                                r.up
+                              )}`}
+                            >
+                              {pnlTxt(r.up)}
+                            </td>
+                            <td
+                              className={`num border-b border-term-border/40 px-2 py-1 text-right ${
+                                i === 0 ? "text-term-dim" : pnlCls(decay)
+                              }`}
+                            >
+                              {i === 0 ? "—" : `${decay >= 0 ? "+" : ""}${nf(decay, 0)}`}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
