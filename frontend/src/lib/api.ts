@@ -409,6 +409,29 @@ export const api = {
         expiry
       )}&from=${from}&to=${to}`
     ),
+  upstoxBacktest: (body: {
+    symbol: string;
+    expiry: string;
+    legs: { strike: number; optionType: string; side: string; lots: number }[];
+    from: string;
+    to: string;
+  }) =>
+    j<{
+      symbol: string;
+      expiry: string;
+      entryDate: string;
+      lot: number;
+      netEntry: number;
+      legs: { strike: number; optionType: string; side: string; lots: number; entryPx: number }[];
+      series: { date: string; pnl: number; spot: number | null }[];
+      summary: {
+        finalPnl: number;
+        maxProfit: number;
+        maxLoss: number;
+        maxDrawdown: number;
+        days: number;
+      };
+    }>("/api/upstox/backtest", { method: "POST", body: JSON.stringify(body) }),
   dataSource: () => j<{ source: "nse" | "upstox" }>("/api/upstox/data-source"),
   setDataSource: (source: "nse" | "upstox") =>
     j<{ source: "nse" | "upstox" }>("/api/upstox/data-source", {

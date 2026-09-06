@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
 import type { Analysis, OptionType, SavedStrategy, StrategyLeg } from "../types";
 import { PayoffChart } from "./PayoffChart";
+import { BacktestPanel } from "./BacktestPanel";
 
 const OT: OptionType[] = ["CE", "PE", "FUT"];
 
@@ -113,6 +114,7 @@ export function StrategyBuilder() {
   // "book at profit": paper only — execute, then attach an amount target to each
   // freshly-created position so check_stops() auto-squares it off at profit.
   const [bookProfit, setBookProfit] = useState("");
+  const [showBacktest, setShowBacktest] = useState(false);
   const doExecute = useCallback(async () => {
     const ls = scaled(legs);
     const tgt = parseFloat(bookProfit);
@@ -643,6 +645,22 @@ export function StrategyBuilder() {
               <span className="ml-1 text-2xs text-up">· book +₹{parseFloat(bookProfit)}</span>
             )}
           </button>
+          <button
+            onClick={() => setShowBacktest((v) => !v)}
+            disabled={legs.length === 0 || !expiry}
+            className="btn text-2xs disabled:opacity-40"
+            title="Replay these legs against Upstox daily history"
+          >
+            {showBacktest ? "Hide backtest" : "⏱ Backtest"}
+          </button>
+          {showBacktest && expiry && (
+            <BacktestPanel
+              symbol={symbol}
+              expiry={expiry}
+              legs={scaled(legs)}
+              onClose={() => setShowBacktest(false)}
+            />
+          )}
           <div className="flex gap-1">
             <input
               value={saveName}
