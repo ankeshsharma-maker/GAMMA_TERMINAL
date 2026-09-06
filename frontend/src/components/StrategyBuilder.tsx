@@ -1136,7 +1136,7 @@ export function StrategyBuilder() {
 
       {/* ---- payoff / backtest ---- */}
       <div className="flex min-h-0 flex-col md:border-l md:border-term-border">
-        <div className="flex items-center gap-1 border-b border-term-border bg-term-panel2 px-2 py-1.5 text-2xs">
+        <div className="flex flex-wrap items-center gap-1 border-b border-term-border bg-term-panel2 px-2 py-1.5 text-2xs">
           {(
             [
               ["payoff", "Payoff"],
@@ -1155,7 +1155,7 @@ export function StrategyBuilder() {
               {label}
             </button>
           ))}
-          <span className="ml-2 text-term-dim">
+          <span className="ml-2 hidden text-term-dim lg:inline">
             {panel === "payoff"
               ? "Payoff at expiry, T+0, and any day in between"
               : "Replay these legs against Upstox daily history"}
