@@ -13,6 +13,7 @@ import { Chart } from "./components/Chart";
 import { StrategyBuilder } from "./components/StrategyBuilder";
 import { PositionsView } from "./components/PositionsView";
 import { ScalpPanel } from "./components/ScalpPanel";
+import { ScalpCharts } from "./components/ScalpCharts";
 import { OILadder } from "./components/OILadder";
 import { AutoBotView } from "./components/AutoBot";
 import { Funds } from "./components/Funds";
@@ -179,7 +180,8 @@ function DesktopShell() {
           {view === "scrip" && <ScripView />}
           {view === "trendingoi" && <TrendingOI />}
           {view === "scanner" && <ScannerView />}
-          {(view === "chart" || view === "scalper") && <Chart />}
+          {view === "chart" && <Chart />}
+          {view === "scalper" && <ScalpCharts />}
           {view === "builder" && <StrategyBuilder />}
           {view === "positions" && <PositionsView />}
           {view === "orders" && <PositionsView initialTab="orders" />}

@@ -45,6 +45,7 @@ import { Chart } from "./Chart";
 import { StrategyBuilder } from "./StrategyBuilder";
 import { PositionsView } from "./PositionsView";
 import { ScalpPanel } from "./ScalpPanel";
+import { ScalpCharts } from "./ScalpCharts";
 import { AutoBotView } from "./AutoBot";
 import { Funds } from "./Funds";
 
@@ -123,7 +124,7 @@ function MobileBody({ view }: { view: View }) {
       return (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1">
-            <Chart />
+            <ScalpCharts />
           </div>
           <div className="max-h-[45%] overflow-auto border-t border-term-border">
             <ScalpPanel />
