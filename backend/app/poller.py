@@ -35,19 +35,25 @@ def _in_market_hours(now: datetime | None = None) -> bool:
     return _MKT_OPEN <= now.time() <= _MKT_CLOSE
 
 
-def _use_upstox() -> bool:
-    return store.data_source() == "upstox" and get_upstox().authed
+def _use_upstox(symbol: str) -> bool:
+    # per-symbol: Upstox only when it's enabled, authed AND we have a key for
+    # this underlying (indices + BSE). F&O stocks stay on NSE.
+    return (
+        store.data_source() == "upstox"
+        and get_upstox().authed
+        and get_upstox().instrument_key(symbol) is not None
+    )
 
 
 async def _ensure_expiries(symbol: str) -> None:
     if store.expiries.get(symbol) and time.time() - _exp_refreshed.get(symbol, 0) < _EXP_TTL:
         return
     try:
-        exps = (
-            await upstox_data.fetch_expiries(symbol)
-            if _use_upstox()
-            else await client.expiries(symbol)
-        )
+        exps: list[str] = []
+        if _use_upstox(symbol):
+            exps = await upstox_data.fetch_expiries(symbol)
+        if not exps:  # not an Upstox symbol, or Upstox gave nothing -> NSE
+            exps = await client.expiries(symbol)
         if exps:
             store.set_expiries(symbol, exps)
             _exp_refreshed[symbol] = time.time()
@@ -58,11 +64,10 @@ async def _ensure_expiries(symbol: str) -> None:
 
 async def _refresh(symbol: str, expiry: str) -> None:
     try:
-        if _use_upstox():
+        payload = None
+        if _use_upstox(symbol):
             payload = await upstox_data.fetch_chain_payload(symbol, expiry)
-            if not payload:  # fall back to NSE for this cycle
-                payload = await client.option_chain(symbol, expiry)
-        else:
+        if not payload:  # non-Upstox symbol, or a miss this cycle -> NSE
             payload = await client.option_chain(symbol, expiry)
         events = store.put_raw(symbol, expiry, payload)
         await hub.broadcast(symbol, expiry)
