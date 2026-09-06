@@ -3,6 +3,7 @@ apply plugin: 'com.android.application'
 android {
     namespace = "in.gammaterminal.app"
     compileSdk = rootProject.ext.compileSdkVersion
+    buildToolsVersion = "36.0.0"
     defaultConfig {
         applicationId "in.gammaterminal.app"
         minSdkVersion rootProject.ext.minSdkVersion

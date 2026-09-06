@@ -24,6 +24,16 @@ allprojects {
     }
 }
 
+// This machine has SDK Build-Tools 36.0.0 installed, but AGP 8.13's default
+// for these modules is 35.0.0. Pin every Android module to what's present.
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty("android")) {
+            project.android.buildToolsVersion = "36.0.0"
+        }
+    }
+}
+
 task clean(type: Delete) {
     delete rootProject.buildDir
 }
