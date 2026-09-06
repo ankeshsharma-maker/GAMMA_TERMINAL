@@ -109,9 +109,11 @@ export function StrategyBuilder() {
     [mult]
   );
 
-  // "book at profit": paper only — execute, then attach an amount target to each
-  // freshly-created position so check_stops() auto-squares it off at profit.
-  const [bookProfit, setBookProfit] = useState("");
+  // paper bracket: after executing, attach an auto SL / target to each fresh
+  // leg via check_stops() — either ₹ amount (split by qty) or premium points
+  const [slVal, setSlVal] = useState("");
+  const [tgtVal, setTgtVal] = useState("");
+  const [slTgtBasis, setSlTgtBasis] = useState<"amount" | "points">("amount");
   const [panel, setPanel] = useState<"payoff" | "backtest">("payoff");
   // customise "+ Add leg": pick type / strike / side / lots for the next leg
   const [newLegOT, setNewLegOT] = useState<OptionType>("CE");
@@ -121,9 +123,11 @@ export function StrategyBuilder() {
   const [addingLeg, setAddingLeg] = useState(false); // collapse the add-leg form
   const doExecute = useCallback(async () => {
     const ls = scaled(legs);
-    const tgt = parseFloat(bookProfit);
     const exp = expiry ?? chain?.expiry;
-    if (orderMode === "live" || !(tgt > 0) || !exp || ls.length === 0) {
+    const sl = parseFloat(slVal);
+    const tgt = parseFloat(tgtVal);
+    const hasBracket = sl > 0 || tgt > 0;
+    if (orderMode === "live" || !hasBracket || !exp || ls.length === 0) {
       requestStrategyExecute(ls);
       return;
     }
@@ -133,16 +137,30 @@ export function StrategyBuilder() {
     const fresh = (r.paper.positions ?? []).filter((p) => !before.has(p.id));
     const totalQty = fresh.reduce((s, p) => s + Math.abs(p.qty), 0) || 1;
     for (const p of fresh) {
+      // points basis: same premium-points move on every leg
+      // amount basis: split the ₹ target/SL across legs by qty
+      const w = Math.abs(p.qty) / totalQty;
       await api.setStop({
         position_id: p.id,
-        mode: "amount",
-        value: 0,
+        mode: slTgtBasis,
+        value: sl > 0 ? (slTgtBasis === "points" ? sl : sl * w) : 0,
         trailValue: 0,
-        targetValue: (tgt * Math.abs(p.qty)) / totalQty,
+        targetValue: tgt > 0 ? (slTgtBasis === "points" ? tgt : tgt * w) : 0,
       });
     }
     useStore.setState({ paper: await api.paper() });
-  }, [scaled, legs, bookProfit, expiry, chain?.expiry, orderMode, symbol, requestStrategyExecute]);
+  }, [
+    scaled,
+    legs,
+    slVal,
+    tgtVal,
+    slTgtBasis,
+    expiry,
+    chain?.expiry,
+    orderMode,
+    symbol,
+    requestStrategyExecute,
+  ]);
 
   const strikes = useMemo(
     () => (chain ? chain.rows.map((r) => r.strike) : []),
@@ -757,18 +775,47 @@ export function StrategyBuilder() {
               (header) before executing or this hedge won't touch your real position.
             </div>
           )}
-          <label
-            className="flex items-center gap-1.5 text-2xs text-term-dim"
-            title="Paper only: auto-square-off the basket once open P&L reaches this profit"
+          {/* paper bracket: auto-square each fresh leg on SL / target */}
+          <div
+            className="flex flex-wrap items-center gap-1.5 text-2xs text-term-dim"
+            title="Paper only: attach an auto SL / target to every leg created by this execute"
           >
-            <span className="uppercase tracking-wide">Book at profit ₹</span>
-            <input
-              value={bookProfit}
-              onChange={(e) => setBookProfit(e.target.value.replace(/[^\d.]/g, ""))}
-              placeholder="0 = off"
-              className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent"
-            />
-          </label>
+            <span className="uppercase tracking-wide">Bracket</span>
+            <div className="seg">
+              {(["amount", "points"] as const).map((b) => (
+                <button
+                  key={b}
+                  onClick={() => setSlTgtBasis(b)}
+                  className={slTgtBasis === b ? "on" : ""}
+                >
+                  {b === "amount" ? "₹" : "pts"}
+                </button>
+              ))}
+            </div>
+            <label className="flex items-center gap-1">
+              SL
+              <input
+                value={slVal}
+                onChange={(e) => setSlVal(e.target.value.replace(/[^\d.]/g, ""))}
+                placeholder="0"
+                className="num w-16 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-down"
+              />
+            </label>
+            <label className="flex items-center gap-1">
+              Target
+              <input
+                value={tgtVal}
+                onChange={(e) => setTgtVal(e.target.value.replace(/[^\d.]/g, ""))}
+                placeholder="0"
+                className="num w-16 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-up"
+              />
+            </label>
+            <span className="text-[9px] normal-case text-term-dim/70">
+              {slTgtBasis === "points"
+                ? "premium points per leg"
+                : "₹ split across legs by qty"}
+            </span>
+          </div>
           <button
             disabled={legs.length === 0}
             onClick={doExecute}
@@ -779,8 +826,18 @@ export function StrategyBuilder() {
             {orderMode === "live" ? "Execute LIVE" : "Execute (paper)"} · {legs.length} leg
             {legs.length === 1 ? "" : "s"}
             {mult > 1 && <span className="ml-1 text-2xs">(×{mult})</span>}
-            {orderMode !== "live" && parseFloat(bookProfit) > 0 && (
-              <span className="ml-1 text-2xs text-up">· book +₹{parseFloat(bookProfit)}</span>
+            {orderMode !== "live" && (parseFloat(slVal) > 0 || parseFloat(tgtVal) > 0) && (
+              <span className="ml-1 text-2xs">
+                {parseFloat(slVal) > 0 && (
+                  <span className="text-down">· SL {slVal}{slTgtBasis === "points" ? "p" : "₹"}</span>
+                )}
+                {parseFloat(tgtVal) > 0 && (
+                  <span className="ml-1 text-up">
+                    · TGT {tgtVal}
+                    {slTgtBasis === "points" ? "p" : "₹"}
+                  </span>
+                )}
+              </span>
             )}
           </button>
           <div className="flex gap-1">
