@@ -12,6 +12,7 @@ brings SENSEX / BANKEX into the terminal.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 
@@ -126,3 +127,125 @@ async def fetch_chain_payload(symbol: str, expiry: str) -> dict | None:
             "data": sorted(data, key=lambda x: x["strikePrice"]),
         }
     }
+
+
+# ------------------------------------------------------------------ history
+# in-process cache: (symbol, expiry, from, to) -> series  (past data is static)
+_HIST_CACHE: dict[tuple, list[dict]] = {}
+
+
+def _max_pain(strikes: dict[float, dict]) -> float | None:
+    """Strike that minimises total option-writer payout using the given day's
+    per-strike OI. `strikes` = {k: {"CE": oi, "PE": oi}}."""
+    ks = sorted(strikes)
+    if len(ks) < 3:
+        return None
+    best_k, best_pain = None, None
+    for e in ks:  # candidate expiry price
+        pain = 0.0
+        for k, oi in strikes.items():
+            if k < e:
+                pain += oi.get("CE", 0.0) * (e - k)   # ITM calls
+            elif k > e:
+                pain += oi.get("PE", 0.0) * (k - e)   # ITM puts
+        if best_pain is None or pain < best_pain:
+            best_pain, best_k = pain, e
+    return best_k
+
+
+def _state(d_price: float, d_oi: float) -> str:
+    up_p, up_oi = d_price >= 0, d_oi >= 0
+    if up_p and up_oi:
+        return "LONG BUILDUP"
+    if not up_p and up_oi:
+        return "SHORT BUILDUP"
+    if not up_p and not up_oi:
+        return "LONG UNWINDING"
+    return "SHORT COVERING"
+
+
+async def fetch_history_chain(
+    symbol: str, expiry: str, from_date: str, to_date: str
+) -> dict:
+    """Daily series of aggregate chain metrics (spot, CE/PE OI, PCR, max-pain,
+    OI state) across [from_date, to_date] ('YYYY-MM-DD'), built from Upstox
+    per-contract historical OI candles. Cached — past days don't change."""
+    ux = get_upstox()
+    key = ux.instrument_key(symbol)
+    if not key:
+        raise RuntimeError(f"no Upstox instrument_key for {symbol}")
+
+    ck = (symbol.upper(), expiry, from_date, to_date)
+    if ck in _HIST_CACHE:
+        return {"symbol": symbol.upper(), "expiry": expiry, "from": from_date,
+                "to": to_date, "series": _HIST_CACHE[ck], "cached": True}
+
+    # 1. current chain -> per-strike CE/PE instrument keys
+    chain = await ux.get(
+        "/option/chain", {"instrument_key": key, "expiry_date": _nse_to_iso(expiry)}
+    )
+    legs: list[tuple[float, str, str]] = []
+    for r in chain.get("data", []) or []:
+        strike = _num(r.get("strike_price"))
+        for side, obj in (("CE", r.get("call_options")), ("PE", r.get("put_options"))):
+            ik = (obj or {}).get("instrument_key")
+            if ik:
+                legs.append((strike, side, ik))
+
+    # 2. per-leg daily candles  [ts, o, h, l, c, volume, oi]
+    sem = asyncio.Semaphore(12)
+
+    async def _one(strike: float, side: str, ik: str):
+        async with sem:
+            try:
+                h = await ux.get(f"/historical-candle/{ik}/day/{to_date}/{from_date}")
+                return strike, side, h.get("data", {}).get("candles", []) or []
+            except Exception:  # noqa: BLE001
+                return strike, side, []
+
+    results = await asyncio.gather(*[_one(s, sd, ik) for s, sd, ik in legs])
+
+    # 3. underlying daily closes (spot)
+    spot_by_date: dict[str, float] = {}
+    try:
+        uh = await ux.get(f"/historical-candle/{key}/day/{to_date}/{from_date}")
+        for c in uh.get("data", {}).get("candles", []) or []:
+            spot_by_date[c[0][:10]] = _num(c[4])
+    except Exception:  # noqa: BLE001
+        pass
+
+    # 4. aggregate per calendar date
+    per_date: dict[str, dict] = {}
+    for strike, side, candles in results:
+        for c in candles:
+            d = c[0][:10]
+            oi = _num(c[6]) if len(c) > 6 else 0.0
+            pd = per_date.setdefault(d, {"ceOI": 0.0, "peOI": 0.0, "strikes": {}})
+            pd["strikes"].setdefault(strike, {})[side] = oi
+            pd["ceOI" if side == "CE" else "peOI"] += oi
+
+    series: list[dict] = []
+    for d in sorted(per_date):
+        pd = per_date[d]
+        ce, pe = pd["ceOI"], pd["peOI"]
+        series.append({
+            "date": d,
+            "spot": spot_by_date.get(d),
+            "ceOI": ce,
+            "peOI": pe,
+            "pcr": round(pe / ce, 3) if ce else None,
+            "maxPain": _max_pain(pd["strikes"]),
+        })
+
+    # 5. day-over-day movement + OI state
+    for i in range(1, len(series)):
+        p, c = series[i - 1], series[i]
+        dp = (c["spot"] or 0) - (p["spot"] or 0)
+        doi = (c["ceOI"] + c["peOI"]) - (p["ceOI"] + p["peOI"])
+        c["dSpot"] = round(dp, 2)
+        c["dOI"] = round(doi, 0)
+        c["state"] = _state(dp, doi)
+
+    _HIST_CACHE[ck] = series
+    return {"symbol": symbol.upper(), "expiry": expiry, "from": from_date,
+            "to": to_date, "series": series, "cached": False}

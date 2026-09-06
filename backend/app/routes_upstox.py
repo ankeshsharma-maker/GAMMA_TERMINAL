@@ -85,6 +85,22 @@ async def expiries(symbol: str = Query(...)):
         raise HTTPException(502, f"Upstox expiries failed: {exc}")
 
 
+@router.get("/history-chain")
+async def history_chain(
+    symbol: str = Query(...),
+    expiry: str = Query(...),
+    frm: str = Query(..., alias="from"),
+    to: str = Query(...),
+):
+    """Daily aggregate chain history over a date range ('YYYY-MM-DD'):
+    spot, CE/PE OI, PCR, max-pain, and the day-over-day OI state."""
+    _need_auth()
+    try:
+        return await upstox_data.fetch_history_chain(symbol.upper(), expiry, frm, to)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"Upstox history failed: {exc}")
+
+
 @router.get("/chain-preview")
 async def chain_preview(symbol: str = Query(...), expiry: str = Query(...)):
     """Run the Upstox -> NSE-shape -> build_chain() path and hand back the
