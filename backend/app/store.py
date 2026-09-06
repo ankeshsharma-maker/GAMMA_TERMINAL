@@ -242,6 +242,8 @@ class Store:
                 "gammaFlip": chain.get("gammaFlip"),
                 "maxPain": chain["maxPain"],
                 "dte": chain["dte"],
+                "ceOI": chain["totals"].get("ceOI"),
+                "peOI": chain["totals"].get("peOI"),
                 "ceOIChg": chain["totals"]["ceOIChg"],
                 "peOIChg": chain["totals"]["peOIChg"],
                 "ceVol": chain["totals"].get("ceVol"),

@@ -7,6 +7,10 @@ export const nf = (n: number | null | undefined, d = 2): string =>
 export const lakhs = (n: number | null | undefined): string =>
   n === null || n === undefined || Number.isNaN(n) ? "–" : `${(n / 1e5).toFixed(2)}L`;
 
+/** always-crores formatter, e.g. "1.04 Cr" */
+export const crores = (n: number | null | undefined): string =>
+  n === null || n === undefined || Number.isNaN(n) ? "–" : `${(n / 1e7).toFixed(2)} Cr`;
+
 export const compact = (n: number | null | undefined): string => {
   if (n === null || n === undefined || Number.isNaN(n)) return "–";
   const abs = Math.abs(n);

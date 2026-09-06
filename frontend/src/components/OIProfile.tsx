@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
-import { compact, lakhs, nf, sk } from "../lib/format";
+import { compact, crores, nf, sk } from "../lib/format";
 import type { ChainRow } from "../types";
 
 type Metric = "oi" | "chg" | "combined";
@@ -531,7 +531,7 @@ export function OIProfile() {
               <Sw c={CALL_OI} /> Call
             </span>
             <span className="num text-term-text">
-              {lakhs(ce)} · {nf((ce / tot) * 100, 0)}%
+              {crores(ce)} · {nf((ce / tot) * 100, 0)}%
             </span>
           </div>
           <div className="flex items-center justify-between">
@@ -539,7 +539,7 @@ export function OIProfile() {
               <Sw c={PUT_OI} /> Put
             </span>
             <span className="num text-term-text">
-              {lakhs(pe)} · {nf((pe / tot) * 100, 0)}%
+              {crores(pe)} · {nf((pe / tot) * 100, 0)}%
             </span>
           </div>
         </div>
@@ -783,7 +783,7 @@ export function OIProfile() {
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-term-border bg-term-panel px-3 py-1 text-[10px]">
         <span className="text-term-dim">
           <span className="font-semibold text-down">Call OI</span>{" "}
-          <span className="num">{lakhs(chain.totals.ceOI)}</span> ·{" "}
+          <span className="num">{crores(chain.totals.ceOI)}</span> ·{" "}
           <Sw c={addGrad(CALL_ADD)} /> added <span style={{ color: CALL_ADD }}>+{compact(flow.ceAdd)}</span> ·{" "}
           <Sw c={CALL_CUT} /> reduced <span style={{ color: CALL_CUT }}>{compact(flow.ceCut)}</span>
         </span>
@@ -792,7 +792,7 @@ export function OIProfile() {
         </span>
         <span className="text-term-dim">
           <span className="font-semibold text-up">Put OI</span>{" "}
-          <span className="num">{lakhs(chain.totals.peOI)}</span> ·{" "}
+          <span className="num">{crores(chain.totals.peOI)}</span> ·{" "}
           <Sw c={addGrad(PUT_ADD)} /> added <span style={{ color: PUT_ADD }}>+{compact(flow.peAdd)}</span> ·{" "}
           <Sw c={PUT_CUT} /> reduced <span style={{ color: PUT_CUT }}>{compact(flow.peCut)}</span>
         </span>

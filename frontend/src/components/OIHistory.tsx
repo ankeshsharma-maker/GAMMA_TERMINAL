@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { RangePresets } from "./RangePresets";
 import { useStore } from "../store";
 import { api } from "../lib/api";
-import { lakhs, nf } from "../lib/format";
+import { crores, lakhs, nf } from "../lib/format";
 
 type Row = {
   date: string;
@@ -240,7 +240,7 @@ export function OIHistory() {
           <span className="flex flex-col leading-tight">
             <span className="text-[9px] uppercase text-term-dim">Net OI added (range)</span>
             <span className={`num text-sm font-semibold ${dOISum >= 0 ? "text-term-text" : "text-amber-400"}`}>
-              {lakhs(dOISum)}
+              {crores(dOISum)}
             </span>
           </span>
           <span className="flex flex-col leading-tight">
@@ -293,10 +293,10 @@ export function OIHistory() {
                     {r.dSpot != null ? `${r.dSpot >= 0 ? "+" : ""}${nf(r.dSpot, 0)}` : "–"}
                   </td>
                   <td className="num border-b border-term-border/40 px-3 py-1" style={{ color: "#f87171" }}>
-                    {lakhs(r.ceOI)}
+                    {crores(r.ceOI)}
                   </td>
                   <td className="num border-b border-term-border/40 px-3 py-1" style={{ color: "#4ade80" }}>
-                    {lakhs(r.peOI)}
+                    {crores(r.peOI)}
                   </td>
                   <td className="num border-b border-term-border/40 px-3 py-1">
                     {r.pcr != null ? nf(r.pcr, 2) : "–"}

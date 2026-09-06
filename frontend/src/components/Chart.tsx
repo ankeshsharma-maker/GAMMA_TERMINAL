@@ -60,6 +60,8 @@ const TOGGLES = [
   ["vol", "Volume"],
   ["rsi", "RSI"],
   ["macd", "MACD"],
+  ["oi", "OI"],
+  ["oichg", "ΔOI"],
   ["straddle", "ATM Straddle"],
   ["score", "Blast Score"],
 ] as const;
@@ -152,6 +154,8 @@ export function Chart() {
     vol: true,
     rsi: false,
     macd: false,
+    oi: false,
+    oichg: false,
     pivot: false,
     straddle: true,
     score: false,
@@ -280,6 +284,27 @@ export function Chart() {
     });
     chart.priceScale("macd").applyOptions({ scaleMargins: { top: 0.86, bottom: 0.02 }, visible: false });
 
+    // OI overlay panes
+    c.callOI = chart.addLineSeries({
+      color: "#f87171",
+      lineWidth: 2,
+      priceScaleId: "oi",
+      priceLineVisible: false,
+      lastValueVisible: true,
+    });
+    c.putOI = chart.addLineSeries({
+      color: "#4ade80",
+      lineWidth: 2,
+      priceScaleId: "oi",
+      priceLineVisible: false,
+      lastValueVisible: true,
+    });
+    chart.priceScale("oi").applyOptions({ scaleMargins: { top: 0.72, bottom: 0.16 }, visible: false });
+
+    c.ceChg = chart.addHistogramSeries({ priceScaleId: "oichg", priceLineVisible: false, base: 0, color: "#f8717199" });
+    c.peChg = chart.addHistogramSeries({ priceScaleId: "oichg", priceLineVisible: false, base: 0, color: "#4ade8099" });
+    chart.priceScale("oichg").applyOptions({ scaleMargins: { top: 0.86, bottom: 0.02 }, visible: false });
+
     return () => {
       chart.remove();
       chartRef.current = null;
@@ -381,23 +406,41 @@ export function Chart() {
     setLine("straddle", dedupe(data.series.straddle), on.straddle);
     setLine("score", dedupe(data.series.score), on.score);
 
+    // OI overlay — total Call / Put OI lines + day ΔOI columns (from the
+    // per-poll chain-history snapshots; dense during a session, sparse otherwise)
+    setLine("callOI", dedupe(data.series.ceOI ?? []), on.oi);
+    setLine("putOI", dedupe(data.series.peOI ?? []), on.oi);
+    const chgBars = (key: "ceOIChg" | "peOIChg", col: string) =>
+      dedupe(data.series[key] ?? []).map((p) => ({
+        time: p.time as any,
+        value: p.value,
+        color: p.value >= 0 ? col : "#71717199",
+      }));
+    (c.ceChg as ISeriesApi<"Histogram">).applyOptions({ visible: on.oichg });
+    (c.peChg as ISeriesApi<"Histogram">).applyOptions({ visible: on.oichg });
+    (c.ceChg as ISeriesApi<"Histogram">).setData((on.oichg ? chgBars("ceOIChg", "#f8717199") : []) as any);
+    (c.peChg as ISeriesApi<"Histogram">).setData((on.oichg ? chgBars("peOIChg", "#4ade8099") : []) as any);
+
     // ---- stack the sub-panes so they never overlap each other or volume ----
     {
-      const sub: ("vol" | "rsi" | "macd")[] = [];
+      const sub: ("vol" | "oi" | "oichg" | "rsi" | "macd")[] = [];
       if (showVol) sub.push("vol");
+      if (on.oi) sub.push("oi");
+      if (on.oichg) sub.push("oichg");
       if (on.rsi) sub.push("rsi");
       if (on.macd) sub.push("macd");
       const n = sub.length;
-      const band = n === 0 ? 0 : n === 1 ? 0.22 : n === 2 ? 0.17 : 0.14;
-      const gap = 0.03;
+      const band = n === 0 ? 0 : n === 1 ? 0.22 : n === 2 ? 0.17 : n === 3 ? 0.14 : n === 4 ? 0.11 : 0.09;
+      const gap = n >= 4 ? 0.02 : 0.03;
       const reserve = n === 0 ? 0.08 : n * band + (n - 1) * gap + 0.05;
       chartRef.current.priceScale("right").applyOptions({
-        scaleMargins: { top: 0.06, bottom: Math.min(0.74, reserve) },
+        scaleMargins: { top: 0.06, bottom: Math.min(0.8, reserve) },
       });
       sub.forEach((p, i) => {
         const bottom = 0.02 + (n - 1 - i) * (band + gap); // i=0 sits highest
         chartRef.current!.priceScale(p).applyOptions({
           scaleMargins: { top: 1 - bottom - band, bottom },
+          visible: p !== "vol",
         });
       });
     }
