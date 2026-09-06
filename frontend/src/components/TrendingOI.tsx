@@ -9,6 +9,14 @@ const CE = "#f87171"; // call OI  — red
 const PE = "#4ade80"; // put OI   — green
 const PCRC = "#eab308"; // pcr     — amber
 
+const SENT_COL: Record<string, string> = {
+  "▲ Bullish": "#4ade80",
+  "▼ Bearish": "#f87171",
+  "Put writing ↓": "#eab308",
+  "Call unwind ↑": "#38bdf8",
+  Neutral: "#3b4657",
+};
+
 /**
  * Trending OI (NiftyTrader-style): how the day's total Call-OI vs Put-OI
  * build-up has trended through the session, with PCR overlaid. Rising Put OI
@@ -274,6 +282,124 @@ export function TrendingOI() {
     return out.reverse().slice(0, 20);
   }, [pts, tf]);
 
+  const tfLbl = tf < 60 ? `${tf}m` : tf < 1440 ? `${tf / 60}h` : "1D";
+
+  // ---- PCR value + mini trend (left half of the side-by-side row) ----
+  const pcrNow = last?.pcr ?? null;
+  const pcrStats = useMemo(() => {
+    const v = pts.map((p) => p.pcr).filter((x): x is number => x != null);
+    if (!v.length) return null;
+    return { open: v[0], lo: Math.min(...v), hi: Math.max(...v) };
+  }, [pts]);
+  const pcrSpark = useMemo(() => {
+    const v = pts.filter((p) => p.pcr != null);
+    if (v.length < 2) return null;
+    const W = 300;
+    const H = 92;
+    const pad = 6;
+    const t0 = v[0].t;
+    const t1 = v[v.length - 1].t || t0 + 1;
+    const ys = v.map((p) => p.pcr as number);
+    let lo = Math.min(...ys, 1);
+    let hi = Math.max(...ys, 1);
+    const pd = (hi - lo) * 0.15 || 0.1;
+    lo -= pd;
+    hi += pd;
+    const X = (t: number) => pad + ((t - t0) / (t1 - t0 || 1)) * (W - 2 * pad);
+    const Y = (val: number) => pad + (1 - (val - lo) / (hi - lo || 1)) * (H - 2 * pad);
+    const d = v
+      .map((p, i) => `${i ? "L" : "M"}${X(p.t).toFixed(1)},${Y(p.pcr as number).toFixed(1)}`)
+      .join(" ");
+    const lastV = ys[ys.length - 1];
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-full w-full">
+        {lo < 1 && hi > 1 && (
+          <line
+            x1={0}
+            x2={W}
+            y1={Y(1)}
+            y2={Y(1)}
+            stroke={PCRC}
+            strokeOpacity={0.5}
+            strokeDasharray="4 3"
+          />
+        )}
+        <path
+          d={`${d} L${X(t1)},${H} L${X(t0)},${H} Z`}
+          fill={lastV >= 1 ? PE : CE}
+          fillOpacity={0.1}
+        />
+        <path d={d} fill="none" stroke={PCRC} strokeWidth={1.75} />
+        <circle cx={X(t1)} cy={Y(lastV)} r={2.5} fill={PCRC} />
+      </svg>
+    );
+  }, [pts]);
+
+  // ---- sentiment column chart (right half of the side-by-side row) ----
+  const sentBars = useMemo(() => [...intervals].reverse(), [intervals]);
+  const sentTally = useMemo(() => {
+    let bull = 0;
+    let bear = 0;
+    for (const b of sentBars) {
+      if (b.sent.txt.startsWith("▲")) bull++;
+      else if (b.sent.txt.startsWith("▼")) bear++;
+    }
+    return { bull, bear };
+  }, [sentBars]);
+  const sentChart = useMemo(() => {
+    if (sentBars.length < 1) return null;
+    const W = 320;
+    const H = 92;
+    const n = sentBars.length;
+    const gap = 2;
+    const bw = Math.max(2, (W - gap * n) / n);
+    const mags = sentBars.map((b) => Math.abs(b.dpe - b.dce));
+    const mx = Math.max(...mags, 1);
+    const midY = H / 2;
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-full w-full">
+        <line
+          x1={0}
+          x2={W}
+          y1={midY}
+          y2={midY}
+          stroke="currentColor"
+          strokeOpacity={0.3}
+          className="text-term-dim"
+        />
+        {sentBars.map((b, i) => {
+          const h = (Math.abs(b.dpe - b.dce) / mx) * (H / 2 - 4);
+          const bull = b.dpe >= b.dce;
+          const x = i * (bw + gap);
+          const col = SENT_COL[b.sent.txt] ?? "#3b4657";
+          return (
+            <rect
+              key={i}
+              x={x}
+              width={bw}
+              y={bull ? midY - Math.max(1, h) : midY}
+              height={Math.max(1, h)}
+              fill={col}
+            >
+              <title>
+                {daily
+                  ? new Date(b.t * 1000).toLocaleDateString("en-IN", {
+                      day: "2-digit",
+                      month: "short",
+                    })
+                  : new Date(b.t * 1000).toLocaleTimeString("en-IN", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}{" "}
+                · {b.sent.txt}
+              </title>
+            </rect>
+          );
+        })}
+      </svg>
+    );
+  }, [sentBars, daily]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* toolbar */}
@@ -347,6 +473,62 @@ export function TrendingOI() {
           <span className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${bias.cls}`}>{bias.txt}</span>
         )}
       </div>
+
+      {/* PCR value + sentiment chart, side by side */}
+      {(pcrSpark || sentChart) && (
+        <div className="grid h-[116px] shrink-0 grid-cols-2 divide-x divide-term-border border-b border-term-border bg-term-panel">
+          {/* PCR */}
+          <div className="flex items-center gap-3 px-3 py-2">
+            <div className="flex shrink-0 flex-col leading-tight">
+              <span className="text-[9px] uppercase tracking-wide text-term-dim">PCR</span>
+              <span
+                className={`num text-2xl font-bold ${
+                  pcrNow != null ? (pcrNow >= 1 ? "text-up" : "text-down") : "text-term-dim"
+                }`}
+              >
+                {pcrNow != null ? nf(pcrNow, 2) : "–"}
+              </span>
+              <span className="text-[10px] text-term-dim">
+                {pcrNow != null
+                  ? pcrNow >= 1
+                    ? "put-heavy · supportive"
+                    : "call-heavy · heavy"
+                  : "collecting…"}
+              </span>
+              {pcrStats && (
+                <span className="num mt-0.5 text-[9px] text-term-dim">
+                  o {nf(pcrStats.open, 2)} · lo {nf(pcrStats.lo, 2)} · hi {nf(pcrStats.hi, 2)}
+                </span>
+              )}
+            </div>
+            <div className="min-h-0 min-w-0 flex-1 self-stretch">{pcrSpark}</div>
+          </div>
+
+          {/* Sentiment */}
+          <div className="flex flex-col px-3 py-2">
+            <div className="flex items-center justify-between text-[9px] uppercase tracking-wide text-term-dim">
+              <span>Sentiment · {tfLbl} buckets</span>
+              <span className="normal-case">
+                <span className="text-up">▲ {sentTally.bull}</span>{" "}
+                <span className="text-down">▼ {sentTally.bear}</span>
+              </span>
+            </div>
+            <div className="min-h-0 flex-1">
+              {sentChart ?? (
+                <div className="flex h-full items-center justify-center text-[10px] text-term-dim">
+                  need a few buckets
+                </div>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-x-2 text-[8px] text-term-dim">
+              <span><span style={{ color: SENT_COL["▲ Bullish"] }}>■</span> bull</span>
+              <span><span style={{ color: SENT_COL["▼ Bearish"] }}>■</span> bear</span>
+              <span><span style={{ color: SENT_COL["Put writing ↓"] }}>■</span> put-wr ↓</span>
+              <span><span style={{ color: SENT_COL["Call unwind ↑"] }}>■</span> call-unw ↑</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* chart */}
       <div className="min-h-0 flex-1 p-3">
