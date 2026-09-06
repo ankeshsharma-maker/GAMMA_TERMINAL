@@ -3,7 +3,14 @@ import { useStore } from "../store";
 import { nf, sk, compact } from "../lib/format";
 import type { View } from "../types";
 
-import { HeaderIndices, OrderModePill, AlertBell, BrokerPill, UpstoxPill } from "./Header";
+import {
+  HeaderIndices,
+  OrderModePill,
+  AlertBell,
+  BrokerPill,
+  UpstoxPill,
+  ClassFilter,
+} from "./Header";
 import { lockNow } from "../lib/auth";
 import { NotificationPanel } from "./NotificationPanel";
 import { OrderConfirm } from "./OrderConfirm";
@@ -158,6 +165,12 @@ export function MobileShell() {
           ⚿
         </button>
         <AlertBell />
+      </div>
+
+      {/* stocks / indices filter — applies to watchlist, chain, OI, scanner… */}
+      <div className="flex items-center gap-2 overflow-x-auto border-b border-term-border bg-term-panel2 px-2 py-1">
+        <span className="shrink-0 text-[9px] uppercase tracking-wide text-term-dim">Show</span>
+        <ClassFilter />
       </div>
 
       {brokerOpen && (

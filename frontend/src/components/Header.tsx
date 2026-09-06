@@ -157,7 +157,7 @@ export function HeaderIndices() {
   );
 }
 
-function ClassFilter() {
+export function ClassFilter() {
   const symClass = useStore((s) => s.symClass);
   const setSymClass = useStore((s) => s.setSymClass);
   return (

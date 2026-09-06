@@ -32,10 +32,19 @@ export function HistoricalScan() {
   const watch = useStore((s) => s.watch);
   const selectSymbol = useStore((s) => s.selectSymbol);
   const setView = useStore((s) => s.setView);
+  const symClass = useStore((s) => s.symClass);
+  const symClassOk = useStore((s) => s.symClassOk);
 
   const symbols = useMemo(
-    () => [...new Set(watch.filter((w) => w.kind !== "option").map((w) => w.symbol))].slice(0, 25),
-    [watch]
+    () =>
+      [
+        ...new Set(
+          watch
+            .filter((w) => w.kind !== "option" && symClassOk(w.symbol))
+            .map((w) => w.symbol)
+        ),
+      ].slice(0, 25),
+    [watch, symClass, symClassOk]
   );
 
   const [from, setFrom] = useState(() => {
