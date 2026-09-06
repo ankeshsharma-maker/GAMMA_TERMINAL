@@ -841,8 +841,8 @@ export function OIProfile() {
     const cmax = flow.maxChg || 1;
     const W = Math.max(rows.length * COL, 320);
     const yOf = (v: number) => zeroY - Math.max(-1, Math.min(1, v / cmax)) * half;
-    const CALL_C = "#ef5350";
-    const PUT_C = "#26a69a";
+    const CALL_C = "#ef4444"; // Call OI change — red
+    const PUT_C = "#22c55e"; // Put OI change — green
     const atmIdx = rows.findIndex((r) => r.strike === chain.atmStrike);
     const ticks = [1, 0.5, 0, -0.5, -1].map((f) => f * cmax);
     const tfLbl = tf === 0 ? "since open" : `last ${tf}m`;
