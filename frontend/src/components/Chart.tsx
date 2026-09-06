@@ -100,6 +100,7 @@ export function Chart() {
   );
   const [data, setData] = useState<ChartData | null>(null);
   const [intervalS, setIntervalS] = useState(300);
+  const [rangeD, setRangeD] = useState(90); // visible-history window in days; 0 = all
   const [split, setSplit] = useState(false);
   const [cmpInstrument, setCmpInstrument] = useState<string>("STRADDLE");
   const [ctype, setCtype] = useState<"candle" | "heikin" | "line" | "area" | "bar">("candle");
@@ -380,8 +381,49 @@ export function Chart() {
     setLine("straddle", dedupe(data.series.straddle), on.straddle);
     setLine("score", dedupe(data.series.score), on.score);
 
-    chartRef.current.timeScale().fitContent();
+    // ---- stack the sub-panes so they never overlap each other or volume ----
+    {
+      const sub: ("vol" | "rsi" | "macd")[] = [];
+      if (showVol) sub.push("vol");
+      if (on.rsi) sub.push("rsi");
+      if (on.macd) sub.push("macd");
+      const n = sub.length;
+      const band = n === 0 ? 0 : n === 1 ? 0.22 : n === 2 ? 0.17 : 0.14;
+      const gap = 0.03;
+      const reserve = n === 0 ? 0.08 : n * band + (n - 1) * gap + 0.05;
+      chartRef.current.priceScale("right").applyOptions({
+        scaleMargins: { top: 0.06, bottom: Math.min(0.74, reserve) },
+      });
+      sub.forEach((p, i) => {
+        const bottom = 0.02 + (n - 1 - i) * (band + gap); // i=0 sits highest
+        chartRef.current!.priceScale(p).applyOptions({
+          scaleMargins: { top: 1 - bottom - band, bottom },
+        });
+      });
+    }
+
+    applyRange();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [priceCandles, ctype, data, on]);
+
+  // clamp the visible window to the chosen lookback (1D / 3M / 6M / 1Y / All)
+  const applyRange = () => {
+    const ts = chartRef.current?.timeScale();
+    if (!ts || priceCandles.length === 0) return;
+    if (rangeD <= 0) {
+      ts.fitContent();
+      return;
+    }
+    const last = priceCandles[priceCandles.length - 1].time as number;
+    const first = priceCandles[0].time as number;
+    const from = Math.max(first, last - rangeD * 86400);
+    try {
+      ts.setVisibleRange({ from: from as any, to: last as any });
+    } catch {
+      ts.fitContent();
+    }
+  };
+  useEffect(applyRange, [rangeD]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // live last-price nudge
   const liveTick = liveSpots[symbol];
@@ -604,6 +646,33 @@ export function Chart() {
           ))}
         </div>
 
+        <div
+          className="flex overflow-hidden rounded border border-term-border"
+          title="Visible history window"
+        >
+          {(
+            [
+              ["1D", 1],
+              ["3M", 90],
+              ["6M", 180],
+              ["1Y", 365],
+              ["All", 0],
+            ] as const
+          ).map(([lbl, d]) => (
+            <button
+              key={lbl}
+              onClick={() => setRangeD(d)}
+              className={`px-1.5 py-0.5 text-2xs font-semibold ${
+                rangeD === d
+                  ? "bg-term-accent text-white"
+                  : "bg-term-bg text-term-dim hover:bg-term-border hover:text-term-text"
+              }`}
+            >
+              {lbl}
+            </button>
+          ))}
+        </div>
+
         <select
           value={dataSrc}
           onChange={(e) => setDataSrc(e.target.value as any)}
@@ -702,7 +771,7 @@ export function Chart() {
         {on.rsi && rsiVal != null && (
           <div
             className="pointer-events-none absolute left-2 z-10 rounded bg-term-panel/80 px-2 py-0.5 text-[10px] num"
-            style={{ top: "calc(74% - 16px)" }}
+            style={{ top: on.macd ? "58%" : "72%" }}
           >
             <span style={{ color: "#e879f9" }}>RSI(14)</span>{" "}
             <span
