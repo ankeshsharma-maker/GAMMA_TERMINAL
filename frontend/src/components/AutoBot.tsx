@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import type { AutoCondition, AutoRule } from "../types";
+import { RuleBacktest } from "./RuleBacktest";
 
 /* ------------------------------------------------------------------ */
 /* condition catalogue                                                 */
@@ -614,6 +615,7 @@ export function AutoBotView() {
     [allSymbols, symClass, symClassOk]
   );
   const [editing, setEditing] = useState<Partial<AutoRule> | null>(null);
+  const [btId, setBtId] = useState<string | null>(null);
   const [lossDraft, setLossDraft] = useState("");
 
   useEffect(() => {
@@ -774,6 +776,13 @@ export function AutoBotView() {
 
                   <div className="ml-auto flex items-center gap-1">
                     <button
+                      className={`btn px-1.5 py-0.5 text-2xs ${btId === r.id ? "btn-buy" : ""}`}
+                      onClick={() => setBtId(btId === r.id ? null : r.id)}
+                      title="Backtest this rule on Upstox daily history"
+                    >
+                      ⏱ backtest
+                    </button>
+                    <button
                       className="btn px-1.5 py-0.5 text-2xs"
                       onClick={() => setEditing(r)}
                       disabled={!!editing}
@@ -788,6 +797,8 @@ export function AutoBotView() {
                     </button>
                   </div>
                 </div>
+
+                {btId === r.id && <RuleBacktest rule={r} onClose={() => setBtId(null)} />}
 
                 <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
                   <div>

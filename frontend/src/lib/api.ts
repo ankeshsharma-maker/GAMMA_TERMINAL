@@ -432,6 +432,38 @@ export const api = {
         days: number;
       };
     }>("/api/upstox/backtest", { method: "POST", body: JSON.stringify(body) }),
+  autobotBacktest: (body: { rule?: unknown; ruleId?: string; from: string; to: string }) =>
+    j<{
+      symbol: string;
+      expiry: string;
+      instrument: string;
+      side: string;
+      lot: number;
+      days: number;
+      trades: {
+        entryDate: string;
+        exitDate: string;
+        strike: number;
+        ot: string;
+        entryPx: number;
+        exitPx: number;
+        pnlPct: number;
+        pnlRs: number;
+        reason: string;
+      }[];
+      equity: number[];
+      summary: {
+        total: number;
+        count: number;
+        wins: number;
+        losses: number;
+        winRate: number;
+        avgWin: number;
+        avgLoss: number;
+        profitFactor: number | null;
+        maxDrawdown: number;
+      };
+    }>("/api/autobot/backtest", { method: "POST", body: JSON.stringify(body) }),
   dataSource: () => j<{ source: "nse" | "upstox" }>("/api/upstox/data-source"),
   setDataSource: (source: "nse" | "upstox") =>
     j<{ source: "nse" | "upstox" }>("/api/upstox/data-source", {

@@ -57,7 +57,11 @@ async def backtest_rule(rule: dict, from_date: str, to_date: str) -> dict:
     hc = await upstox_data.fetch_history_chain(symbol, expiry, from_date, to_date)
     rows = hc.get("series", [])
     if len(rows) < 6:
-        raise RuntimeError("not enough historical days in that range")
+        raise RuntimeError(
+            f"only {len(rows)} day(s) of history for {symbol} {expiry} in that range — "
+            "an expiry's option contracts only trade for a few weeks, so keep the range "
+            "recent (or pick a monthly expiry for a longer window)"
+        )
 
     step = _STEP.get(symbol, 50)
     lot = _LOT.get(symbol, 1)
