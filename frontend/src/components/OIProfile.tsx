@@ -430,10 +430,18 @@ export function OIProfile() {
                 className="flex flex-col justify-end rounded-t-sm"
                 style={{ width: BARW, height: oiH, background: base }}
               >
-                <div
-                  className="rounded-t-sm"
-                  style={{ height: capH, background: added ? addGrad(cap) : cap }}
-                />
+                {capH > 0 && (
+                  <div
+                    className="rounded-t-sm"
+                    style={{
+                      height: Math.max(2, capH),
+                      background: added ? addGrad(cap) : cap,
+                      // clearly separate the ΔOI cap from the base OI bar
+                      borderTop: "1px solid rgba(255,255,255,0.85)",
+                      boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.25)",
+                    }}
+                  />
+                )}
               </div>
             );
             content = (
@@ -495,33 +503,46 @@ export function OIProfile() {
     </div>
   );
 
-  // ---- OI split donut (total Call vs Put OI over the visible strike window) ----
+  // ---- OI donuts (total OI split + change-in-OI split) ----
   const donutEl = (() => {
     const { ce, pe, pcr } = oiTotals;
     const tot = ce + pe;
     if (tot <= 0) return null;
-    const R = 42;
-    const SW = 16;
-    const C = 2 * Math.PI * R;
-    const ceLen = (ce / tot) * C;
-    const fAdd = flow.ceAdd + flow.peAdd;
-    return (
-      <div
-        className="flex shrink-0 flex-col items-center gap-2 overflow-y-auto p-3"
-        style={{ width: donutW }}
-      >
-        <div className="text-center text-[10px] font-semibold uppercase tracking-wide text-term-dim">
-          OI split · {count}±ATM
-        </div>
-        <svg viewBox="0 0 100 100" className="w-full max-w-[240px]">
+
+    const dCEnet = flow.ceAdd + flow.ceCut; // net Call OI change over the window
+    const dPEnet = flow.peAdd + flow.peCut; // net Put OI change
+    const dtot = Math.abs(dCEnet) + Math.abs(dPEnet);
+    const tfLbl = tf === 0 ? "since open" : `last ${tf}m`;
+
+    const MiniDonut = ({
+      aVal,
+      bVal,
+      aCol,
+      bCol,
+      center,
+      sub,
+    }: {
+      aVal: number;
+      bVal: number;
+      aCol: string;
+      bCol: string;
+      center: string;
+      sub: string;
+    }) => {
+      const R = 42;
+      const SW = 15;
+      const C = 2 * Math.PI * R;
+      const t = Math.abs(aVal) + Math.abs(bVal) || 1;
+      const aLen = (Math.abs(aVal) / t) * C;
+      return (
+        <svg viewBox="0 0 100 100" className="w-full max-w-[130px]">
           <circle cx="50" cy="50" r={R} fill="none" stroke="#1e2733" strokeWidth={SW} />
-          {/* put arc (full ring) then call arc on top */}
           <circle
             cx="50"
             cy="50"
             r={R}
             fill="none"
-            stroke={PUT_OI}
+            stroke={bCol}
             strokeWidth={SW}
             strokeDasharray={`${C} ${C}`}
             transform="rotate(-90 50 50)"
@@ -531,60 +552,87 @@ export function OIProfile() {
             cy="50"
             r={R}
             fill="none"
-            stroke={CALL_OI}
+            stroke={aCol}
             strokeWidth={SW}
-            strokeDasharray={`${ceLen.toFixed(1)} ${C}`}
+            strokeDasharray={`${aLen.toFixed(1)} ${C}`}
             transform="rotate(-90 50 50)"
           />
-          <text x="50" y="47" textAnchor="middle" className="fill-term-text" fontSize="15" fontWeight="700">
-            {pcr != null ? nf(pcr, 2) : "–"}
+          <text x="50" y="47" textAnchor="middle" className="fill-term-text" fontSize="14" fontWeight="700">
+            {center}
           </text>
-          <text x="50" y="60" textAnchor="middle" className="fill-term-dim" fontSize="8">
-            PCR
+          <text x="50" y="59" textAnchor="middle" className="fill-term-dim" fontSize="7.5">
+            {sub}
           </text>
         </svg>
-        <div className="w-full space-y-1 text-[10px]">
-          <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1">
-              <Sw c={CALL_OI} /> Call
-            </span>
-            <span className="num text-term-text">
-              {crores(ce)} · {nf((ce / tot) * 100, 0)}%
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1">
-              <Sw c={PUT_OI} /> Put
-            </span>
-            <span className="num text-term-text">
-              {crores(pe)} · {nf((pe / tot) * 100, 0)}%
-            </span>
-          </div>
+      );
+    };
+
+    const Row = ({ c, label, val }: { c: string; label: string; val: string }) => (
+      <div className="flex items-center justify-between text-[10px]">
+        <span className="flex items-center gap-1">
+          <Sw c={c} /> {label}
+        </span>
+        <span className="num text-term-text">{val}</span>
+      </div>
+    );
+
+    return (
+      <div
+        className="flex shrink-0 flex-col items-center gap-2 overflow-y-auto p-3"
+        style={{ width: donutW }}
+      >
+        <div className="text-center text-[10px] font-semibold uppercase tracking-wide text-term-dim">
+          Total OI · {count}±ATM
         </div>
-        {tf > 0 && Math.abs(fAdd) > 0 && (
-          <div className="w-full border-t border-term-border/50 pt-1.5">
-            <div className="mb-1 text-[9px] uppercase tracking-wide text-term-dim">
-              OI added · last {tf}m
-            </div>
-            <div className="flex h-2 w-full overflow-hidden rounded-sm bg-term-bg">
-              <div
-                style={{
-                  width: `${(Math.max(0, flow.ceAdd) / (fAdd || 1)) * 100}%`,
-                  background: CALL_ADD,
-                }}
+        <MiniDonut
+          aVal={ce}
+          bVal={pe}
+          aCol={CALL_OI}
+          bCol={PUT_OI}
+          center={pcr != null ? nf(pcr, 2) : "–"}
+          sub="PCR"
+        />
+        <div className="w-full space-y-0.5">
+          <Row c={CALL_OI} label="Call" val={`${crores(ce)} · ${nf((ce / tot) * 100, 0)}%`} />
+          <Row c={PUT_OI} label="Put" val={`${crores(pe)} · ${nf((pe / tot) * 100, 0)}%`} />
+        </div>
+
+        <div className="mt-1 w-full border-t border-term-border/50 pt-2 text-center text-[10px] font-semibold uppercase tracking-wide text-term-dim">
+          Change in OI · {tfLbl}
+        </div>
+        {dtot > 0 ? (
+          <>
+            <MiniDonut
+              aVal={dCEnet}
+              bVal={dPEnet}
+              aCol={dCEnet >= 0 ? CALL_ADD : CALL_CUT}
+              bCol={dPEnet >= 0 ? PUT_ADD : PUT_CUT}
+              center={
+                Math.abs(dPEnet) > Math.abs(dCEnet)
+                  ? dPEnet >= 0
+                    ? "PUT+"
+                    : "PUT−"
+                  : dCEnet >= 0
+                  ? "CALL+"
+                  : "CALL−"
+              }
+              sub="net ΔOI"
+            />
+            <div className="w-full space-y-0.5">
+              <Row
+                c={dCEnet >= 0 ? CALL_ADD : CALL_CUT}
+                label={`Call ${dCEnet >= 0 ? "written" : "unwound"}`}
+                val={`${dCEnet >= 0 ? "+" : ""}${compact(dCEnet)}`}
               />
-              <div
-                style={{
-                  width: `${(Math.max(0, flow.peAdd) / (fAdd || 1)) * 100}%`,
-                  background: PUT_ADD,
-                }}
+              <Row
+                c={dPEnet >= 0 ? PUT_ADD : PUT_CUT}
+                label={`Put ${dPEnet >= 0 ? "written" : "unwound"}`}
+                val={`${dPEnet >= 0 ? "+" : ""}${compact(dPEnet)}`}
               />
             </div>
-            <div className="mt-1 flex justify-between text-[9px] text-term-dim">
-              <span style={{ color: CALL_ADD }}>C +{compact(flow.ceAdd)}</span>
-              <span style={{ color: PUT_ADD }}>P +{compact(flow.peAdd)}</span>
-            </div>
-          </div>
+          </>
+        ) : (
+          <div className="text-[10px] text-term-dim">no OI change yet</div>
         )}
       </div>
     );
