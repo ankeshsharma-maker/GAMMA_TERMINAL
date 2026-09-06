@@ -109,8 +109,8 @@ export function TrendingOI() {
     if (!last) return null;
     const scale = Math.max(Math.abs(last.ce), Math.abs(last.pe), 1);
     const r = net / scale;
-    if (r > 0.08) return { txt: "PUT WRITING → supportive", cls: "bg-up text-white" };
-    if (r < -0.08) return { txt: "CALL WRITING → resistance", cls: "bg-down text-white" };
+    if (r > 0.08) return { txt: "▲ BULLISH · put writing", cls: "bg-up text-white" };
+    if (r < -0.08) return { txt: "▼ BEARISH · call writing", cls: "bg-down text-white" };
     return { txt: "BALANCED", cls: "bg-term-border text-term-dim" };
   }, [last, net]);
 
@@ -257,10 +257,10 @@ export function TrendingOI() {
       let txt = "Neutral";
       let cls = "bg-term-border text-term-dim";
       if (flow > 0 && dspot >= 0) {
-        txt = "Bullish";
+        txt = "▲ Bullish";
         cls = "bg-up/20 text-up";
       } else if (flow < 0 && dspot <= 0) {
-        txt = "Bearish";
+        txt = "▼ Bearish";
         cls = "bg-down/20 text-down";
       } else if (flow > 0 && dspot < 0) {
         txt = "Put writing ↓";
