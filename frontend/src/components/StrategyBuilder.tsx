@@ -113,10 +113,11 @@ export function StrategyBuilder() {
   // freshly-created position so check_stops() auto-squares it off at profit.
   const [bookProfit, setBookProfit] = useState("");
   const [showBacktest, setShowBacktest] = useState(false);
-  // customise "+ Add leg": pick type / side / lots for the next leg
+  // customise "+ Add leg": pick type / strike / side / lots for the next leg
   const [newLegOT, setNewLegOT] = useState<OptionType>("CE");
   const [newLegSide, setNewLegSide] = useState<"BUY" | "SELL">("BUY");
   const [newLegLots, setNewLegLots] = useState(1);
+  const [newLegStrike, setNewLegStrike] = useState(0); // 0 => ATM
   const doExecute = useCallback(async () => {
     const ls = scaled(legs);
     const tgt = parseFloat(bookProfit);
@@ -252,6 +253,7 @@ export function StrategyBuilder() {
 
   useEffect(() => {
     if (legs.length) runAnalyze(scaled(legs));
+    setNewLegStrike(0); // back to ATM for the new symbol/expiry
     // re-analyze when the terminal symbol/expiry changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, expiry]);
@@ -261,7 +263,10 @@ export function StrategyBuilder() {
       ...legs,
       {
         optionType: ot,
-        strike: atm || strikes[Math.floor(strikes.length / 2)] || 0,
+        strike:
+          ot === "FUT"
+            ? 0
+            : newLegStrike || atm || strikes[Math.floor(strikes.length / 2)] || 0,
         side,
         lots: newLegLots,
       },
@@ -522,6 +527,20 @@ export function StrategyBuilder() {
             >
               {newLegOT}
             </button>
+            {newLegOT !== "FUT" && strikes.length > 0 && (
+              <select
+                value={newLegStrike || atm}
+                onChange={(e) => setNewLegStrike(Number(e.target.value))}
+                className="num rounded border border-term-border bg-term-bg px-1 py-1"
+              >
+                {strikes.map((k) => (
+                  <option key={k} value={k}>
+                    {sk(k)}
+                    {k === atm ? "  (ATM)" : ""}
+                  </option>
+                ))}
+              </select>
+            )}
             <button
               onClick={() => setNewLegSide((s) => (s === "BUY" ? "SELL" : "BUY"))}
               className={`rounded px-2 py-1 font-bold ${
