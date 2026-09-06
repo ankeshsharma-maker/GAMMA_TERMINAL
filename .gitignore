@@ -21,3 +21,6 @@ Thumbs.db
 *.tsbuildinfo
 gammaterminal-deploy.tar.gz
 gammaterminal-deploy.zip
+
+# built APKs
+/GammaTerminal-v*.apk
