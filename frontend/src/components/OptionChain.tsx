@@ -246,8 +246,13 @@ const COLS: Record<TabKey, Col[]> = {
       key: "chgoi",
       label: "Chg OI",
       render: (l, side, ctx) => {
-        const build = side === "l" ? ctx.isMaxCallChg : ctx.isMaxPutChg;
-        const unwind = side === "l" ? ctx.isMinCallChg : ctx.isMinPutChg;
+        const build = side === "l" ? ctx.isMaxCallChg : ctx.isMaxPutChg; // biggest OI addition
+        const unwind = side === "l" ? ctx.isMinCallChg : ctx.isMinPutChg; // biggest OI reduction
+        const hl = build
+          ? "rounded bg-up/25 px-0.5 font-bold ring-1 ring-up/80"
+          : unwind
+          ? "rounded bg-down/25 px-0.5 font-bold ring-1 ring-down/80"
+          : "";
         return (
           <>
             <OIBar
@@ -257,16 +262,10 @@ const COLS: Record<TabKey, Col[]> = {
               tone={l.oiChg >= 0 ? "pos" : "neg"}
               strong={build || unwind}
             />
-            <span
-              className={`relative ${signColor(l.oiChg)} ${
-                build || unwind
-                  ? "rounded bg-amber-400/15 px-0.5 font-bold ring-1 ring-amber-400/70"
-                  : ""
-              }`}
-            >
+            <span className={`relative ${signColor(l.oiChg)} ${hl}`}>
               {compact(l.oiChg)}
-              {build && <sup className="ml-0.5 text-[8px] text-amber-400">▲</sup>}
-              {unwind && <sup className="ml-0.5 text-[8px] text-amber-400">▽</sup>}
+              {build && <sup className="ml-0.5 text-[8px] text-up">▲ add</sup>}
+              {unwind && <sup className="ml-0.5 text-[8px] text-down">▼ cut</sup>}
             </span>
           </>
         );
@@ -282,17 +281,22 @@ const COLS: Record<TabKey, Col[]> = {
   greeks: [deltaCol, gammaCol, thetaCol, vegaCol, ivCol],
 };
 
-/** classify one option leg's activity from its price change + OI change
- *  price↑ OI↑ = fresh longs (buying) · price↓ OI↑ = fresh shorts (writing)
- *  price↑ OI↓ = short covering · price↓ OI↓ = long unwinding */
+/** classify one option leg's activity from its price change + OI change,
+ *  coloured by *market sentiment*:
+ *    Call buying / Put writing → bullish (green)
+ *    Call writing / Put buying → bearish (red)
+ *    Short covering (sky) · Long unwinding (amber) */
 function classifyLeg(leg: Leg, ot: "CE" | "PE") {
   const pUp = (leg.chg ?? 0) >= 0;
   const oUp = (leg.oiChg ?? 0) >= 0;
   const side = ot === "CE" ? "Call" : "Put";
-  if (Math.abs(leg.oiChg ?? 0) < 1)
-    return { label: "—", cls: "text-term-dim/50" };
-  if (pUp && oUp) return { label: `${side} Buying`, cls: "bg-up/20 text-up" };
-  if (!pUp && oUp) return { label: `${side} Writing`, cls: "bg-down/20 text-down" };
+  const bull = "bg-up/20 text-up";
+  const bear = "bg-down/20 text-down";
+  if (Math.abs(leg.oiChg ?? 0) < 1) return { label: "—", cls: "text-term-dim/50" };
+  if (pUp && oUp)
+    return { label: `${side} Buying`, cls: ot === "CE" ? bull : bear };
+  if (!pUp && oUp)
+    return { label: `${side} Writing`, cls: ot === "PE" ? bull : bear };
   if (pUp && !oUp) return { label: "Short Covering", cls: "bg-sky-500/20 text-sky-400" };
   return { label: "Long Unwinding", cls: "bg-amber-500/20 text-amber-400" };
 }
