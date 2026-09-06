@@ -13,6 +13,7 @@ import { Chart } from "./components/Chart";
 import { StrategyBuilder } from "./components/StrategyBuilder";
 import { PositionsView } from "./components/PositionsView";
 import { ScalpPanel } from "./components/ScalpPanel";
+import { OILadder } from "./components/OILadder";
 import { AutoBotView } from "./components/AutoBot";
 import { Funds } from "./components/Funds";
 import { OrderConfirm } from "./components/OrderConfirm";
@@ -189,7 +190,7 @@ function DesktopShell() {
         {showRight && <VSplit onDrag={bumpRight} />}
         {showRight && (
           <aside className="min-h-0 overflow-hidden border-l border-term-border">
-            {view === "scalper" ? <ScalpPanel /> : <Positions />}
+            {view === "scalper" ? <ScalpPanel /> : view === "chart" ? <OILadder /> : <Positions />}
           </aside>
         )}
       </div>
