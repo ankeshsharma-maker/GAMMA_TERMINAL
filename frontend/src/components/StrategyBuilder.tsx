@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
+import { strategyPnlCurve } from "../lib/bs";
 import type { Analysis, OptionType, SavedStrategy, StrategyLeg } from "../types";
 import { PayoffChart } from "./PayoffChart";
 import { BacktestPanel } from "./BacktestPanel";
@@ -115,6 +116,8 @@ export function StrategyBuilder() {
   const [tgtVal, setTgtVal] = useState("");
   const [slTgtBasis, setSlTgtBasis] = useState<"amount" | "points">("amount");
   const [panel, setPanel] = useState<"payoff" | "backtest">("payoff");
+  // "time to expiry" payoff: days from today (0 = now / T+0, dte = expiry)
+  const [tDays, setTDays] = useState(0);
   // customise "+ Add leg": pick type / strike / side / lots for the next leg
   const [newLegOT, setNewLegOT] = useState<OptionType>("CE");
   const [newLegSide, setNewLegSide] = useState<"BUY" | "SELL">("BUY");
@@ -343,6 +346,21 @@ export function StrategyBuilder() {
   const loadSaved = (s: SavedStrategy) => update(s.legs.map((l) => ({ ...l })));
   const delSaved = (id: string) =>
     api.deleteStrategy(id).then((d) => setSaved(d.strategies));
+
+  // clamp the "time to expiry" slider whenever the position / expiry changes
+  const dte = Math.max(1, Math.round(analysis?.dte ?? 0));
+  useEffect(() => {
+    setTDays((d) => Math.min(d, dte));
+  }, [dte, analysis?.symbol, analysis?.expiry, legs.length]);
+
+  // intermediate payoff curve at (dte - tDays) days left, computed client-side
+  const tPnl = useMemo(() => {
+    if (!analysis || tDays <= 0) return null;
+    const remYears = Math.max((dte - tDays) / 365, 0);
+    return strategyPnlCurve(analysis.legs, analysis.x, remYears);
+  }, [analysis, tDays, dte]);
+  const tDate = new Date(Date.now() + tDays * 86400000);
+  const tDateLbl = tDate.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:grid md:grid-cols-[330px_minmax(0,1fr)] md:overflow-hidden">
@@ -885,7 +903,7 @@ export function StrategyBuilder() {
           ))}
           <span className="ml-2 text-term-dim">
             {panel === "payoff"
-              ? "Payoff at expiry vs now (T+0)"
+              ? "Payoff at expiry, T+0, and any day in between"
               : "Replay these legs against Upstox daily history"}
           </span>
         </div>
@@ -967,6 +985,49 @@ export function StrategyBuilder() {
           )}
         </div>
 
+        {analysis && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel px-3 py-1.5 text-[10px]">
+            <span className="font-semibold uppercase tracking-wide text-term-dim">
+              Time to expiry
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={dte}
+              step={1}
+              value={Math.min(tDays, dte)}
+              onChange={(e) => setTDays(Number(e.target.value))}
+              className="h-1 flex-1 min-w-[140px] cursor-pointer accent-amber-500"
+            />
+            <span className="num w-[188px] shrink-0 text-right text-term-text">
+              {tDays === 0 ? (
+                <>now · T+0 · {dte}d left</>
+              ) : tDays >= dte ? (
+                <>expiry day · 0d left</>
+              ) : (
+                <>
+                  T+{tDays}d · {tDateLbl} · {dte - tDays}d left
+                </>
+              )}
+            </span>
+            <div className="flex gap-1">
+              {([["Now", 0], ["½", Math.round(dte / 2)], ["Expiry", dte]] as const).map(
+                ([lbl, d]) => (
+                  <button
+                    key={lbl}
+                    onClick={() => setTDays(d)}
+                    className={`rounded px-1.5 py-0.5 ${
+                      tDays === d ? "bg-amber-500 text-black" : "bg-term-border text-term-dim"
+                    }`}
+                  >
+                    {lbl}
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="relative min-h-[280px] flex-1 p-3 md:min-h-0">
           {analysis && (
             <PayoffChart
@@ -975,11 +1036,13 @@ export function StrategyBuilder() {
               nowPnl={analysis.nowPnl}
               spot={analysis.spot}
               breakevens={analysis.breakevens}
+              tPnl={tPnl}
             />
           )}
           {analysis && (
             <div className="pointer-events-none absolute bottom-4 right-5 flex gap-3 text-[10px] text-term-dim">
               <span className="text-term-text">─ at expiry</span>
+              {tPnl && <span className="text-[#f59e0b]">─ T+{tDays}d ({tDateLbl})</span>}
               <span className="text-[#a855f7]">╌ now (T+0)</span>
               <span className="text-[#3b82f6]">┆ spot</span>
               <span className="text-[#eab308]">● breakeven</span>
@@ -989,8 +1052,8 @@ export function StrategyBuilder() {
 
         <div className="border-t border-term-border px-4 py-1 text-[10px] text-term-dim">
           {analysis?.margin.basis
-            ? `Margin basis: ${analysis.margin.basis}. Payoff/POP use ATM IV and the current chain — indicative, not broker-accurate.`
-            : "Payoff at expiry (solid) vs current theoretical value (dashed)."}
+            ? `Margin basis: ${analysis.margin.basis}. Payoff / T+n curve use per-leg IV & Black-Scholes — indicative, not broker-accurate.`
+            : "White = at expiry · amber = the T+n day on the slider · purple dashed = now (T+0)."}
         </div>
           </>
         )}

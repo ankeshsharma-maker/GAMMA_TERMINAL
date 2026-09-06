@@ -7,18 +7,21 @@ interface Props {
   nowPnl: number[];
   spot: number;
   breakevens: number[];
+  /** optional intermediate "time to expiry" curve (T+n) */
+  tPnl?: number[] | null;
 }
 
 const W = 900;
 const H = 380;
 const PAD = { l: 8, r: 8, t: 16, b: 22 };
 
-export function PayoffChart({ x, expiryPnl, nowPnl, spot, breakevens }: Props) {
+export function PayoffChart({ x, expiryPnl, nowPnl, spot, breakevens, tPnl }: Props) {
   const g = useMemo(() => {
     if (x.length < 2) return null;
     const xMin = x[0];
     const xMax = x[x.length - 1];
-    const yVals = [...expiryPnl, ...nowPnl, 0];
+    const hasT = !!tPnl && tPnl.length === x.length;
+    const yVals = [...expiryPnl, ...nowPnl, ...(hasT ? tPnl! : []), 0];
     let yMin = Math.min(...yVals);
     let yMax = Math.max(...yVals);
     const padY = (yMax - yMin) * 0.08 || 1;
@@ -43,7 +46,7 @@ export function PayoffChart({ x, expiryPnl, nowPnl, spot, breakevens }: Props) {
     const yTicks = Array.from({ length: 5 }, (_, i) => yMin + ((yMax - yMin) * i) / 4);
 
     return { px, py, line, area, xTicks, yTicks, zeroY: py(0) };
-  }, [x, expiryPnl, nowPnl]);
+  }, [x, expiryPnl, nowPnl, tPnl]);
 
   if (!g) return <div className="p-6 text-sm text-term-dim">Add legs to see the payoff.</div>;
 
@@ -98,6 +101,9 @@ export function PayoffChart({ x, expiryPnl, nowPnl, spot, breakevens }: Props) {
 
       {/* curves */}
       <polyline points={g.line(nowPnl)} fill="none" stroke="#a855f7" strokeWidth={1.4} strokeDasharray="5 4" />
+      {tPnl && tPnl.length === x.length && (
+        <polyline points={g.line(tPnl)} fill="none" stroke="#f59e0b" strokeWidth={1.8} />
+      )}
       <polyline points={g.line(expiryPnl)} fill="none" stroke="#e2e8f0" strokeWidth={2} />
     </svg>
   );
