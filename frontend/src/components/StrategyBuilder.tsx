@@ -112,7 +112,7 @@ export function StrategyBuilder() {
   // "book at profit": paper only — execute, then attach an amount target to each
   // freshly-created position so check_stops() auto-squares it off at profit.
   const [bookProfit, setBookProfit] = useState("");
-  const [showBacktest, setShowBacktest] = useState(false);
+  const [panel, setPanel] = useState<"payoff" | "backtest">("payoff");
   // customise "+ Add leg": pick type / strike / side / lots for the next leg
   const [newLegOT, setNewLegOT] = useState<OptionType>("CE");
   const [newLegSide, setNewLegSide] = useState<"BUY" | "SELL">("BUY");
@@ -783,22 +783,6 @@ export function StrategyBuilder() {
               <span className="ml-1 text-2xs text-up">· book +₹{parseFloat(bookProfit)}</span>
             )}
           </button>
-          <button
-            onClick={() => setShowBacktest((v) => !v)}
-            disabled={legs.length === 0 || !expiry}
-            className="btn text-2xs disabled:opacity-40"
-            title="Replay these legs against Upstox daily history"
-          >
-            {showBacktest ? "Hide backtest" : "⏱ Backtest"}
-          </button>
-          {showBacktest && expiry && (
-            <BacktestPanel
-              symbol={symbol}
-              expiry={expiry}
-              legs={scaled(legs)}
-              onClose={() => setShowBacktest(false)}
-            />
-          )}
           <div className="flex gap-1">
             <input
               value={saveName}
@@ -823,8 +807,49 @@ export function StrategyBuilder() {
         </div>
       </div>
 
-      {/* ---- payoff + metrics ---- */}
+      {/* ---- payoff / backtest ---- */}
       <div className="flex min-h-0 flex-col">
+        <div className="flex items-center gap-1 border-b border-term-border bg-term-panel2 px-2 py-1.5 text-2xs">
+          {(
+            [
+              ["payoff", "Payoff"],
+              ["backtest", "⏱ Backtest"],
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => setPanel(k)}
+              className={`rounded px-2.5 py-1 font-semibold ${
+                panel === k ? "bg-term-accent text-white" : "text-term-dim hover:bg-term-border"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+          <span className="ml-2 text-term-dim">
+            {panel === "payoff"
+              ? "Payoff at expiry vs now (T+0)"
+              : "Replay these legs against Upstox daily history"}
+          </span>
+        </div>
+
+        {panel === "backtest" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            {legs.length === 0 ? (
+              <div className="text-xs text-term-dim">Add legs (or load a template) to backtest.</div>
+            ) : !expiry ? (
+              <div className="text-xs text-term-dim">Pick an expiry to backtest.</div>
+            ) : (
+              <BacktestPanel
+                symbol={symbol}
+                expiry={expiry}
+                legs={scaled(legs)}
+                onClose={() => setPanel("payoff")}
+              />
+            )}
+          </div>
+        ) : (
+          <>
         <div className="border-b border-term-border bg-term-panel">
           {analysis ? (
             <div className="overflow-x-auto">
@@ -910,6 +935,8 @@ export function StrategyBuilder() {
             ? `Margin basis: ${analysis.margin.basis}. Payoff/POP use ATM IV and the current chain — indicative, not broker-accurate.`
             : "Payoff at expiry (solid) vs current theoretical value (dashed)."}
         </div>
+          </>
+        )}
       </div>
     </div>
   );
