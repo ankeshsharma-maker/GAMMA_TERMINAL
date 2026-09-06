@@ -7,16 +7,22 @@ import type { AutoRule } from "../types";
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 type Res = Awaited<ReturnType<typeof api.autobotBacktest>>;
 
-/** Backtest one AutoBot rule against Upstox daily history. Index or F&O stock;
- *  range must sit inside the life of the expiry's contracts (a few weeks for
- *  weeklies), so it defaults to the last ~15 days. */
+/** Backtest one AutoBot rule against Upstox daily history.
+ *
+ *  Indicator conditions (RSI, EMA cross, price vs EMA, MACD, spot move) run
+ *  off the underlying's daily closes, so they work over any range. OI / PCR /
+ *  max-pain conditions need a live option expiry and only resolve for recent
+ *  ranges. Option premiums use real historical option candles when available,
+ *  otherwise a Black-Scholes model (set DTE / IV below). */
 export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () => void }) {
   const [from, setFrom] = useState(() => {
     const d = new Date();
-    d.setDate(d.getDate() - 15);
+    d.setDate(d.getDate() - 90);
     return iso(d);
   });
   const [to, setTo] = useState(() => iso(new Date()));
+  const [dte, setDte] = useState("30");
+  const [ivPct, setIvPct] = useState("15");
   const [res, setRes] = useState<Res | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -24,7 +30,12 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
   const run = () => {
     setBusy(true);
     setErr(null);
-    api.autobotBacktest({ rule, from, to }).then(
+    const merged = {
+      ...rule,
+      _btDTE: Number(dte) || 30,
+      _btIV: (Number(ivPct) || 15) / 100,
+    };
+    api.autobotBacktest({ rule: merged, from, to }).then(
       (d) => {
         setRes(d);
         setBusy(false);
@@ -65,7 +76,7 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
 
   return (
     <div className="mt-2 rounded border border-term-accent/50 bg-term-bg/50 p-2 text-[10px]">
-      <div className="mb-1.5 flex items-center gap-2">
+      <div className="mb-1.5 flex flex-wrap items-center gap-2">
         <span className="font-semibold uppercase tracking-wide text-term-dim">Backtest</span>
         <label className="flex items-center gap-1 text-term-dim">
           from
@@ -101,6 +112,27 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
         </button>
       </div>
 
+      <div className="mb-1.5 flex flex-wrap items-center gap-2 text-term-dim">
+        <span className="uppercase tracking-wide">B-S model</span>
+        <label className="flex items-center gap-1" title="Days-to-expiry the synthetic option starts with (used when historical option prices aren't available)">
+          DTE
+          <input
+            value={dte}
+            onChange={(e) => setDte(e.target.value.replace(/[^\d]/g, ""))}
+            className="num w-10 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text"
+          />
+        </label>
+        <label className="flex items-center gap-1" title="Implied volatility for the synthetic option, in %">
+          IV %
+          <input
+            value={ivPct}
+            onChange={(e) => setIvPct(e.target.value.replace(/[^\d.]/g, ""))}
+            className="num w-12 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text"
+          />
+        </label>
+        <span className="text-[9px]">only used to price legs when real option history is missing</span>
+      </div>
+
       {err && <div className="text-down">{err}</div>}
 
       {res && s && (
@@ -113,9 +145,34 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
             <K l="Avg loss" v={`₹${nf(s.avgLoss, 0)}`} up={false} />
             <K l="Max DD" v={`₹${nf(s.maxDrawdown, 0)}`} up={false} />
           </div>
-          <div className="mt-1 text-term-dim">
-            {res.symbol} {res.expiry} · {res.instrument} {res.side} · {res.days} days ·{" "}
-            {s.profitFactor != null ? `PF ${s.profitFactor}` : "PF –"}
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-term-dim">
+            <span>
+              {res.symbol} {res.expiry ?? "—"} · {res.instrument} {res.side} · {res.days} days ·{" "}
+              {s.profitFactor != null ? `PF ${s.profitFactor}` : "PF –"}
+            </span>
+            <span
+              className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${
+                res.pricing === "historical"
+                  ? "bg-up/20 text-up"
+                  : res.pricing === "mixed"
+                  ? "bg-amber-500/20 text-amber-400"
+                  : "bg-term-border text-term-dim"
+              }`}
+              title={
+                res.pricing === "historical"
+                  ? "every leg priced from real historical option candles"
+                  : res.pricing === "mixed"
+                  ? "some legs from real option history, some Black-Scholes"
+                  : `all legs Black-Scholes (IV ${(res.synIV * 100).toFixed(0)}%, ${res.synDTE} DTE)`
+              }
+            >
+              {res.pricing} pricing
+            </span>
+            {!res.hasChain && (
+              <span className="rounded bg-term-border px-1.5 py-0.5 text-[9px] text-term-dim" title="no daily OI/PCR/max-pain history for this range — OI-based conditions were inert">
+                indicators only
+              </span>
+            )}
           </div>
           <div className="mt-1.5">{curve}</div>
           {res.trades.length > 0 && (

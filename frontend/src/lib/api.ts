@@ -435,11 +435,15 @@ export const api = {
   autobotBacktest: (body: { rule?: unknown; ruleId?: string; from: string; to: string }) =>
     j<{
       symbol: string;
-      expiry: string;
+      expiry: string | null;
       instrument: string;
       side: string;
       lot: number;
       days: number;
+      pricing: "historical" | "synthetic" | "mixed";
+      hasChain: boolean;
+      synIV: number;
+      synDTE: number;
       trades: {
         entryDate: string;
         exitDate: string;
