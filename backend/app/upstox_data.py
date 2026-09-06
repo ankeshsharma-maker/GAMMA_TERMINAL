@@ -249,3 +249,118 @@ async def fetch_history_chain(
     _HIST_CACHE[ck] = series
     return {"symbol": symbol.upper(), "expiry": expiry, "from": from_date,
             "to": to_date, "series": series, "cached": False}
+
+
+# ------------------------------------------------------------------ backtest
+async def run_backtest(
+    symbol: str, expiry: str, legs: list[dict], from_date: str, to_date: str
+) -> dict:
+    """Replay a strategy (legs: strike / optionType CE|PE / side BUY|SELL /
+    lots) day-by-day over [from_date, to_date] using Upstox daily closes.
+    Entry = each leg's close on the first available day. Returns a daily P&L
+    series + summary. 'YYYY-MM-DD' dates."""
+    ux = get_upstox()
+    key = ux.instrument_key(symbol)
+    if not key:
+        raise RuntimeError(f"no Upstox instrument_key for {symbol}")
+
+    chain = await ux.get(
+        "/option/chain", {"instrument_key": key, "expiry_date": _nse_to_iso(expiry)}
+    )
+    # strike -> {CE: ik, PE: ik}, and lot size
+    ikmap: dict[float, dict[str, str]] = {}
+    for r in chain.get("data", []) or []:
+        k = _num(r.get("strike_price"))
+        for side, obj in (("CE", r.get("call_options")), ("PE", r.get("put_options"))):
+            ik = (obj or {}).get("instrument_key")
+            if ik:
+                ikmap.setdefault(k, {})[side] = ik
+    lot = int(_LOT_GUESS.get(symbol.upper(), 1))
+
+    resolved = []  # (leg, instrument_key)
+    for leg in legs:
+        k = _num(leg.get("strike"))
+        ot = (leg.get("optionType") or "").upper()
+        ik = ikmap.get(k, {}).get(ot)
+        if not ik:
+            raise RuntimeError(f"no contract for {symbol} {k}{ot} @ {expiry}")
+        resolved.append((leg, ik))
+
+    # daily closes per leg -> {date: close}
+    async def _c(ik: str):
+        h = await ux.get(f"/historical-candle/{ik}/day/{to_date}/{from_date}")
+        return {c[0][:10]: _num(c[4]) for c in h.get("data", {}).get("candles", []) or []}
+
+    closes = await asyncio.gather(*[_c(ik) for _, ik in resolved])
+    # underlying spot per day
+    try:
+        uh = await ux.get(f"/historical-candle/{key}/day/{to_date}/{from_date}")
+        spot_by_date = {c[0][:10]: _num(c[4]) for c in uh.get("data", {}).get("candles", []) or []}
+    except Exception:  # noqa: BLE001
+        spot_by_date = {}
+
+    all_dates = sorted(set().union(*[set(c) for c in closes]) if closes else set())
+    if not all_dates:
+        raise RuntimeError("no historical data in that range")
+
+    entry_date = all_dates[0]
+    entry_px = []
+    for i, (leg, _ik) in enumerate(resolved):
+        px = closes[i].get(entry_date)
+        if px is None:
+            raise RuntimeError(f"no entry price for leg {i} on {entry_date}")
+        entry_px.append(px)
+
+    def _sign(side: str) -> int:
+        return 1 if (side or "BUY").upper() == "BUY" else -1
+
+    net_entry = sum(_sign(l.get("side")) * -entry_px[i] * int(l.get("lots", 1)) * lot
+                    for i, (l, _) in enumerate(resolved))  # debit(-) / credit(+)
+
+    series = []
+    for d in all_dates:
+        pnl = 0.0
+        priced = True
+        for i, (leg, _ik) in enumerate(resolved):
+            px = closes[i].get(d)
+            if px is None:
+                priced = False
+                break
+            pnl += _sign(leg.get("side")) * (px - entry_px[i]) * int(leg.get("lots", 1)) * lot
+        if priced:
+            series.append({"date": d, "pnl": round(pnl, 0), "spot": spot_by_date.get(d)})
+
+    pnls = [p["pnl"] for p in series]
+    peak = -1e18
+    max_dd = 0.0
+    for v in pnls:
+        peak = max(peak, v)
+        max_dd = min(max_dd, v - peak)
+
+    return {
+        "symbol": symbol.upper(),
+        "expiry": expiry,
+        "from": from_date,
+        "to": to_date,
+        "entryDate": entry_date,
+        "lot": lot,
+        "netEntry": round(net_entry, 0),
+        "legs": [
+            {**l, "entryPx": round(entry_px[i], 2)} for i, (l, _) in enumerate(resolved)
+        ],
+        "series": series,
+        "summary": {
+            "finalPnl": pnls[-1] if pnls else 0,
+            "maxProfit": max(pnls) if pnls else 0,
+            "maxLoss": min(pnls) if pnls else 0,
+            "maxDrawdown": round(max_dd, 0),
+            "days": len(series),
+        },
+    }
+
+
+# rough lot sizes for the index underlyings we support
+_LOT_GUESS = {
+    "NIFTY": 75, "BANKNIFTY": 30, "FINNIFTY": 65, "MIDCPNIFTY": 120,
+    "NIFTYNXT50": 25, "SENSEX": 20, "BANKEX": 30,
+}

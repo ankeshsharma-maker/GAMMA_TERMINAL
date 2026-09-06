@@ -85,6 +85,23 @@ async def expiries(symbol: str = Query(...)):
         raise HTTPException(502, f"Upstox expiries failed: {exc}")
 
 
+@router.post("/backtest")
+async def backtest(body: dict):
+    """Replay a strategy against Upstox daily history.
+    body: {symbol, expiry, legs:[{strike,optionType,side,lots}], from, to}"""
+    _need_auth()
+    try:
+        return await upstox_data.run_backtest(
+            (body.get("symbol") or "").upper(),
+            body.get("expiry") or "",
+            body.get("legs") or [],
+            body.get("from") or "",
+            body.get("to") or "",
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"backtest failed: {exc}")
+
+
 @router.get("/history-chain")
 async def history_chain(
     symbol: str = Query(...),
