@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
+import { RefreshChainBtn } from "./RefreshChainBtn";
 import { compact, lakhs, nf, signColor, sk } from "../lib/format";
 import type { ChainRow, Leg, UnusualKind } from "../types";
 import { OrderTicket } from "./OrderTicket";
@@ -653,6 +654,7 @@ export function OptionChain() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
+        <RefreshChainBtn />
         <div className="seg">
           {TABS.map((t) => (
             <button

@@ -84,6 +84,7 @@ interface State {
   cancelPending: () => void;
   selectSymbol: (s: string, keepView?: boolean) => void;
   selectExpiry: (e: string) => void;
+  refreshChain: () => Promise<void>;
   setView: (v: View) => void;
   markAlertsSeen: () => void;
   openNotif: (tab?: "alerts" | "unusual") => void;
@@ -383,6 +384,15 @@ export const useStore = create<State>((set, get) => ({
     set({ expiry: e });
     socket?.subscribe(symbol, e);
     api.chain(symbol, e).then(
+      (c) => set({ chain: c, chainError: null }),
+      (err) => set({ chainError: String(err.message || err) })
+    );
+  },
+
+  refreshChain: () => {
+    const { symbol, expiry } = get();
+    if (!symbol) return Promise.resolve();
+    return api.chain(symbol, expiry ?? undefined).then(
       (c) => set({ chain: c, chainError: null }),
       (err) => set({ chainError: String(err.message || err) })
     );

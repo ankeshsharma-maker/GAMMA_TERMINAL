@@ -47,7 +47,10 @@ def set_lot_sizes(m: dict[str, int]) -> None:
 
 def lot_size(symbol: str) -> int:
     s = symbol.upper()
-    return _DYNAMIC_LOTS.get(s) or LOT_SIZES.get(s, DEFAULT_LOT_SIZE)
+    # indices: trust the hand-kept table; stocks: trust the exchange dump
+    if s in LOT_SIZES:
+        return LOT_SIZES[s]
+    return _DYNAMIC_LOTS.get(s) or DEFAULT_LOT_SIZE
 
 
 def _num(v, default=0.0) -> float:
