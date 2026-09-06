@@ -386,6 +386,29 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ token, longLived: true }),
     }),
+  upstoxHistoryChain: (symbol: string, expiry: string, from: string, to: string) =>
+    j<{
+      symbol: string;
+      expiry: string;
+      from: string;
+      to: string;
+      cached: boolean;
+      series: {
+        date: string;
+        spot: number | null;
+        ceOI: number;
+        peOI: number;
+        pcr: number | null;
+        maxPain: number | null;
+        dSpot?: number;
+        dOI?: number;
+        state?: string;
+      }[];
+    }>(
+      `/api/upstox/history-chain?symbol=${encodeURIComponent(symbol)}&expiry=${encodeURIComponent(
+        expiry
+      )}&from=${from}&to=${to}`
+    ),
   dataSource: () => j<{ source: "nse" | "upstox" }>("/api/upstox/data-source"),
   setDataSource: (source: "nse" | "upstox") =>
     j<{ source: "nse" | "upstox" }>("/api/upstox/data-source", {
