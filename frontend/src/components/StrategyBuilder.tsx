@@ -117,6 +117,7 @@ export function StrategyBuilder() {
   const [slTgtBasis, setSlTgtBasis] = useState<"amount" | "points">("amount");
   const [panel, setPanel] = useState<"payoff" | "backtest">("payoff");
   const [payoffTab, setPayoffTab] = useState<"chart" | "table">("chart");
+  const [strikeSpan, setStrikeSpan] = useState(10); // ATM ± N strikes in the P&L table
   // "time to expiry" payoff: days from today (0 = now / T+0, dte = expiry)
   const [tDays, setTDays] = useState(0);
   // customise "+ Add leg": pick type / strike / side / lots for the next leg
@@ -363,17 +364,56 @@ export function StrategyBuilder() {
   const tDate = new Date(Date.now() + tDays * 86400000);
   const tDateLbl = tDate.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 
-  // ---- payoff table: P&L at underlying up / down levels ----
-  const PCTS = [-0.08, -0.06, -0.04, -0.03, -0.02, -0.01, 0, 0.01, 0.02, 0.03, 0.04, 0.06, 0.08];
+  // ---- payoff table: strikewise P&L (ATM ± strikeSpan strikes) ----
   const levelRows = useMemo(() => {
     if (!analysis) return [];
     const spot = analysis.spot;
-    const Ss = PCTS.map((p) => spot * (1 + p));
-    const exp = strategyPnlCurve(analysis.legs, Ss, 0);
+    const step = chain?.strikeStep || 50;
+
+    let strikes: number[];
+    if (chain && chain.rows.length) {
+      const ks = chain.rows.map((r) => r.strike).sort((a, b) => a - b);
+      let ai = ks.indexOf(chain.atmStrike);
+      if (ai < 0)
+        ai = ks.reduce(
+          (best, k, i) => (Math.abs(k - spot) < Math.abs(ks[best] - spot) ? i : best),
+          0
+        );
+      strikes = ks.slice(Math.max(0, ai - strikeSpan), ai + strikeSpan + 1);
+    } else {
+      const base = Math.round(spot / step) * step;
+      strikes = [];
+      for (let i = -strikeSpan; i <= strikeSpan; i++) strikes.push(base + i * step);
+    }
+
+    // biggest Call / Put OI within the visible slice = wall / floor
+    let wall = { v: -1, k: 0 };
+    let floor = { v: -1, k: 0 };
+    if (chain) {
+      for (const k of strikes) {
+        const r = chain.rows.find((x) => x.strike === k);
+        if (!r) continue;
+        if ((r.call.oi ?? 0) > wall.v) wall = { v: r.call.oi ?? 0, k };
+        if ((r.put.oi ?? 0) > floor.v) floor = { v: r.put.oi ?? 0, k };
+      }
+    }
+
+    const exp = strategyPnlCurve(analysis.legs, strikes, 0);
     const remYears = Math.max((dte - tDays) / 365, 0);
-    const tv = tDays > 0 ? strategyPnlCurve(analysis.legs, Ss, remYears) : null;
-    return PCTS.map((p, i) => ({ pct: p, S: Ss[i], exp: exp[i], tv: tv ? tv[i] : null }));
-  }, [analysis, tDays, dte]);
+    const tv = tDays > 0 ? strategyPnlCurve(analysis.legs, strikes, remYears) : null;
+
+    return strikes
+      .map((k, i) => ({
+        K: k,
+        pct: (k - spot) / spot,
+        exp: exp[i],
+        tv: tv ? tv[i] : null,
+        isATM: chain ? k === chain.atmStrike : Math.abs(k - spot) <= step / 2,
+        isWall: k === wall.k && wall.v > 0,
+        isFloor: k === floor.k && floor.v > 0,
+      }))
+      .reverse(); // high strike on top, like the chain ladder
+  }, [analysis, tDays, dte, strikeSpan, chain]);
 
   // ---- day-by-day P&L at spot and ±3% (theta decay to expiry) ----
   const dayRows = useMemo(() => {
@@ -1112,16 +1152,29 @@ export function StrategyBuilder() {
           <div className="min-h-0 flex-1 overflow-auto p-3">
             {analysis && (
               <div className="grid gap-5 lg:grid-cols-2">
-                {/* P&L by underlying level (upside / downside) */}
+                {/* P&L by strike (ATM ± N from the chain ladder) */}
                 <div>
-                  <div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-term-dim">
-                    P&amp;L by underlying — spot {nf(analysis.spot, 0)}
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="text-2xs font-semibold uppercase tracking-wide text-term-dim">
+                      P&amp;L by strike — spot {nf(analysis.spot, 0)}
+                    </span>
+                    <div className="seg text-[10px]">
+                      {[10, 20, 30].map((n) => (
+                        <button
+                          key={n}
+                          onClick={() => setStrikeSpan(n)}
+                          className={strikeSpan === n ? "on" : ""}
+                        >
+                          ±{n}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <table className="w-full border-separate border-spacing-0 text-2xs">
                     <thead className="text-[10px] uppercase text-term-dim">
                       <tr>
                         <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                          Underlying
+                          Strike
                         </th>
                         <th className="border-b border-term-border px-2 py-1 text-right font-medium">
                           Move
@@ -1138,9 +1191,27 @@ export function StrategyBuilder() {
                     </thead>
                     <tbody>
                       {levelRows.map((r, i) => (
-                        <tr key={i} className={Math.abs(r.pct) < 1e-9 ? "bg-term-accent/10" : ""}>
-                          <td className="num border-b border-term-border/40 px-2 py-1 text-right text-term-text">
-                            {nf(r.S, 0)}
+                        <tr key={i} className={r.isATM ? "bg-term-accent/10" : ""}>
+                          <td
+                            className="num border-b border-term-border/40 px-2 py-1 text-right font-medium text-term-text"
+                            style={{
+                              boxShadow: r.isWall
+                                ? "inset 2px 0 0 #ef4444"
+                                : r.isFloor
+                                ? "inset 2px 0 0 #22c55e"
+                                : undefined,
+                            }}
+                            title={
+                              r.isWall
+                                ? "biggest Call OI (resistance)"
+                                : r.isFloor
+                                ? "biggest Put OI (support)"
+                                : undefined
+                            }
+                          >
+                            {sk(r.K)}
+                            {r.isWall && <sup className="ml-0.5 text-down">R</sup>}
+                            {r.isFloor && <sup className="ml-0.5 text-up">S</sup>}
                           </td>
                           <td
                             className={`num border-b border-term-border/40 px-2 py-1 text-right ${
