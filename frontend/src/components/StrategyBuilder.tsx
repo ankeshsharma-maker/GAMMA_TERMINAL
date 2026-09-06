@@ -445,6 +445,18 @@ export function StrategyBuilder() {
   const pnlCls = (v: number) => (v >= 0 ? "text-up" : "text-down");
   const pnlTxt = (v: number | null) => (v == null ? "–" : `${v >= 0 ? "+" : ""}${nf(v, 0)}`);
 
+  // discrete "T+n" day chips from today to expiry (capped ~12)
+  const dayChips = useMemo(() => {
+    if (dte <= 1) return Array.from(new Set([0, dte]));
+    const MAX = 12;
+    if (dte <= MAX) return Array.from({ length: dte + 1 }, (_, i) => i);
+    const step = Math.ceil(dte / (MAX - 1));
+    const out: number[] = [];
+    for (let d = 0; d < dte; d += step) out.push(d);
+    out.push(dte);
+    return out;
+  }, [dte]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:grid md:grid-cols-[330px_minmax(0,1fr)] md:overflow-hidden">
       {/* ---- leg editor ---- */}
@@ -509,7 +521,7 @@ export function StrategyBuilder() {
           </div>
           {broker?.authed && (
             <button
-              className="btn text-2xs text-up hover:text-up"
+              className="w-full rounded border border-up/60 bg-up/10 px-2 py-1.5 text-xs font-semibold text-up hover:bg-up/20"
               onClick={loadFromBroker}
               title="Load your live Flattrade option positions into the builder so you can hedge / cap the running loss"
             >
@@ -1084,44 +1096,55 @@ export function StrategyBuilder() {
         </div>
 
         {analysis && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel px-3 py-1.5 text-[10px]">
-            <span className="font-semibold uppercase tracking-wide text-term-dim">
-              Time to expiry
-            </span>
-            <input
-              type="range"
-              min={0}
-              max={dte}
-              step={1}
-              value={Math.min(tDays, dte)}
-              onChange={(e) => setTDays(Number(e.target.value))}
-              className="h-1 flex-1 min-w-[140px] cursor-pointer accent-amber-500"
-            />
-            <span className="num w-[188px] shrink-0 text-right text-term-text">
-              {tDays === 0 ? (
-                <>now · T+0 · {dte}d left</>
-              ) : tDays >= dte ? (
-                <>expiry day · 0d left</>
-              ) : (
-                <>
-                  T+{tDays}d · {tDateLbl} · {dte - tDays}d left
-                </>
-              )}
-            </span>
-            <div className="flex gap-1">
-              {([["Now", 0], ["½", Math.round(dte / 2)], ["Expiry", dte]] as const).map(
-                ([lbl, d]) => (
-                  <button
-                    key={lbl}
-                    onClick={() => setTDays(d)}
-                    className={`rounded px-1.5 py-0.5 ${
-                      tDays === d ? "bg-amber-500 text-black" : "bg-term-border text-term-dim"
-                    }`}
-                  >
-                    {lbl}
-                  </button>
-                )
-              )}
+          <div className="border-b border-term-border bg-term-panel px-3 py-1.5 text-[10px]">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="font-semibold uppercase tracking-wide text-term-dim">
+                Time to expiry
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={dte}
+                step={1}
+                value={Math.min(tDays, dte)}
+                onChange={(e) => setTDays(Number(e.target.value))}
+                className="h-1 flex-1 min-w-[140px] cursor-pointer accent-amber-500"
+              />
+              <span className="num w-[188px] shrink-0 text-right text-term-text">
+                {tDays === 0 ? (
+                  <>now · T+0 · {dte}d left</>
+                ) : tDays >= dte ? (
+                  <>expiry day · 0d left</>
+                ) : (
+                  <>
+                    T+{tDays}d · {tDateLbl} · {dte - tDays}d left
+                  </>
+                )}
+              </span>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              <span className="text-term-dim">Day</span>
+              {dayChips.map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setTDays(d)}
+                  title={
+                    d === 0
+                      ? "today (T+0)"
+                      : `${new Date(Date.now() + d * 86400000).toLocaleDateString("en-IN", {
+                          day: "2-digit",
+                          month: "short",
+                        })} · ${dte - d}d left`
+                  }
+                  className={`num rounded px-1.5 py-0.5 ${
+                    tDays === d
+                      ? "bg-amber-500 text-black"
+                      : "bg-term-border text-term-dim hover:text-term-text"
+                  }`}
+                >
+                  {d === 0 ? "Now" : d === dte ? "Exp" : `+${d}`}
+                </button>
+              ))}
             </div>
           </div>
         )}
