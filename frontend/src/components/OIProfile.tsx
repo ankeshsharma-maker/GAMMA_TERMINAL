@@ -803,7 +803,7 @@ export function OIProfile() {
 
         <span className="ml-1">ΔOI over</span>
         <div className="seg">
-          {([[0, "Day"], [1, "1m"], [5, "5m"], [15, "15m"], [30, "30m"], [60, "1h"], [240, "4h"]] as const).map(
+          {([[0, "Day"], [1, "1m"], [2, "2m"], [3, "3m"], [5, "5m"], [15, "15m"], [30, "30m"], [60, "1h"], [240, "4h"]] as const).map(
             ([m, l]) => (
               <button key={m} onClick={() => setTf(m)} className={tf === m ? "on" : ""}>
                 {l}

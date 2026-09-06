@@ -28,18 +28,23 @@ export function OILadder() {
     return chain.rows.slice(Math.max(0, atm - count), atm + count + 1);
   }, [chain, count]);
 
-  const { max, wall, floor } = useMemo(() => {
+  const { max, wall, floor, ceTot, peTot, ceChgTot, peChgTot } = useMemo(() => {
     let m = 1;
     let w = { v: -1, k: 0 };
     let f = { v: -1, k: 0 };
+    let ceT = 0, peT = 0, ceC = 0, peC = 0;
     for (const r of rows) {
       const cv = metric === "oi" ? r.call.oi : Math.abs(r.call.oiChg);
       const pv = metric === "oi" ? r.put.oi : Math.abs(r.put.oiChg);
       m = Math.max(m, cv, pv);
       if (r.call.oi > w.v) w = { v: r.call.oi, k: r.strike };
       if (r.put.oi > f.v) f = { v: r.put.oi, k: r.strike };
+      ceT += r.call.oi || 0;
+      peT += r.put.oi || 0;
+      ceC += r.call.oiChg || 0;
+      peC += r.put.oiChg || 0;
     }
-    return { max: m, wall: w.k, floor: f.k };
+    return { max: m, wall: w.k, floor: f.k, ceTot: ceT, peTot: peT, ceChgTot: ceC, peChgTot: peC };
   }, [rows, metric]);
 
   // keep the ATM row centred when the symbol / expiry changes
@@ -91,6 +96,28 @@ export function OILadder() {
               {n}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* totals + total-OI change with direction arrows */}
+      <div className="grid grid-cols-2 gap-px border-b border-term-border bg-term-border text-[10px]">
+        <div className="bg-term-panel2 px-2 py-1">
+          <div className="text-[8px] uppercase text-term-dim" style={{ color: CALL }}>
+            Total Call OI
+          </div>
+          <div className="num font-semibold text-term-text">{compact(ceTot)}</div>
+          <div className={`num text-[9px] ${ceChgTot >= 0 ? "text-up" : "text-down"}`}>
+            {ceChgTot >= 0 ? "▲" : "▼"} {compact(Math.abs(ceChgTot))}
+          </div>
+        </div>
+        <div className="bg-term-panel2 px-2 py-1 text-right">
+          <div className="text-[8px] uppercase text-term-dim" style={{ color: PUT }}>
+            Total Put OI
+          </div>
+          <div className="num font-semibold text-term-text">{compact(peTot)}</div>
+          <div className={`num text-[9px] ${peChgTot >= 0 ? "text-up" : "text-down"}`}>
+            {peChgTot >= 0 ? "▲" : "▼"} {compact(Math.abs(peChgTot))}
+          </div>
         </div>
       </div>
 

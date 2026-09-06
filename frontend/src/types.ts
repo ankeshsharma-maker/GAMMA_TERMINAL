@@ -248,6 +248,17 @@ export interface AutoRule {
   exit: AutoCondition[];
   entryLogic?: "all" | "any";
   exitLogic?: "all" | "any";
+  entryFilter?: {
+    premOp?: "" | "gt" | "lt" | "near";
+    premVal?: number;
+    premTol?: number;
+    premPctMin?: number;
+    premPctMax?: number;
+    premPtsMin?: number;
+    premPtsMax?: number;
+    deltaMin?: number;
+    deltaMax?: number;
+  };
   slPct?: number;
   targetPct?: number;
   trailPct?: number;

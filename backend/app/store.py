@@ -224,9 +224,14 @@ class Store:
             (r for r in chain.get("rows", []) if r["strike"] == chain.get("atmStrike")), None
         )
         atm_ce_iv = atm_pe_iv = None
+        atm_ce_dl = atm_pe_dl = atm_ce_ga = atm_pe_ga = None
         if atm_row:
             atm_ce_iv = atm_row["call"].get("ivCalc") or atm_row["call"].get("iv")
             atm_pe_iv = atm_row["put"].get("ivCalc") or atm_row["put"].get("iv")
+            atm_ce_dl = atm_row["call"].get("delta")
+            atm_pe_dl = atm_row["put"].get("delta")
+            atm_ce_ga = atm_row["call"].get("gamma")
+            atm_pe_ga = atm_row["put"].get("gamma")
         dq.append(
             {
                 "t": now,
@@ -235,6 +240,10 @@ class Store:
                 "atmIV": chain["atmIV"],
                 "atmCEIV": atm_ce_iv,
                 "atmPEIV": atm_pe_iv,
+                "atmCEDelta": atm_ce_dl,
+                "atmPEDelta": atm_pe_dl,
+                "atmCEGamma": atm_ce_ga,
+                "atmPEGamma": atm_pe_ga,
                 "atmStraddle": chain.get("atmStraddle"),
                 "atmGammaOI": chain.get("atmGammaOI"),
                 "pcr": chain["pcr"],

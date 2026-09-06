@@ -11,7 +11,7 @@ type Field =
   | { key: string; label: string; type: "num"; def: number }
   | { key: string; label: string; type: "sel"; def: string; opts: string[] };
 
-type CondGroup = "indicator" | "oi" | "smart";
+type CondGroup = "indicator" | "oi" | "smart" | "trend" | "greeks";
 
 const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field[] }> = {
   rsi: {
@@ -204,12 +204,79 @@ const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field
       },
     ],
   },
+
+  oi_state: {
+    label: "OI state (buildup / unwinding)",
+    group: "oi",
+    fields: [
+      {
+        key: "state",
+        label: "state",
+        type: "sel",
+        def: "LONG_BUILDUP",
+        opts: ["LONG_BUILDUP", "SHORT_BUILDUP", "LONG_UNWINDING", "SHORT_COVERING"],
+      },
+      { key: "bars", label: "bars", type: "num", def: 5 },
+    ],
+  },
+  supertrend: {
+    label: "Supertrend (spot)",
+    group: "trend",
+    fields: [
+      { key: "period", label: "period", type: "num", def: 10 },
+      { key: "mult", label: "mult", type: "num", def: 3 },
+      { key: "dir", label: "dir", type: "sel", def: "up", opts: ["up", "down"] },
+      { key: "op", label: "when", type: "sel", def: "is", opts: ["is", "flip"] },
+    ],
+  },
+  pivot: {
+    label: "Pivot point (prev-day)",
+    group: "trend",
+    fields: [
+      {
+        key: "level",
+        label: "level",
+        type: "sel",
+        def: "P",
+        opts: ["P", "R1", "S1", "R2", "S2", "R3", "S3"],
+      },
+      {
+        key: "op",
+        label: "op",
+        type: "sel",
+        def: "above",
+        opts: ["above", "below", "cross_up", "cross_down"],
+      },
+    ],
+  },
+  delta_change: {
+    label: "Δ delta (ATM leg)",
+    group: "greeks",
+    fields: [
+      { key: "leg", label: "leg", type: "sel", def: "call", opts: ["call", "put"] },
+      { key: "bars", label: "bars", type: "num", def: 5 },
+      { key: "op", label: "op", type: "sel", def: ">", opts: [">", "<", "abs"] },
+      { key: "value", label: "value", type: "num", def: 0.05 },
+    ],
+  },
+  gamma_change: {
+    label: "Δ gamma (ATM leg)",
+    group: "greeks",
+    fields: [
+      { key: "leg", label: "leg", type: "sel", def: "call", opts: ["call", "put"] },
+      { key: "bars", label: "bars", type: "num", def: 5 },
+      { key: "op", label: "op", type: "sel", def: ">", opts: [">", "<", "abs"] },
+      { key: "value", label: "value", type: "num", def: 0.0005 },
+    ],
+  },
 };
 
 const GROUP_LABEL: Record<CondGroup, string> = {
   indicator: "Indicator",
   oi: "OI / chain",
   smart: "Smart money / structure",
+  trend: "Trend (Supertrend / Pivots)",
+  greeks: "Greeks (Δ delta / gamma)",
 };
 
 const INSTRUMENTS = [
@@ -280,7 +347,7 @@ function CondRow({
         onChange={(e) => onChange(mkCond(e.target.value))}
         className="rounded border border-term-border bg-term-panel px-1 py-0.5 text-2xs"
       >
-        {(["indicator", "oi", "smart"] as CondGroup[]).map((g) => (
+        {(["indicator", "oi", "smart", "trend", "greeks"] as CondGroup[]).map((g) => (
           <optgroup key={g} label={GROUP_LABEL[g]}>
             {Object.entries(COND_DEFS)
               .filter(([, v]) => v.group === g)
@@ -385,6 +452,66 @@ function CondList({
   );
 }
 
+type EF = NonNullable<AutoRule["entryFilter"]>;
+
+function EntryFilterEditor({
+  ef,
+  onChange,
+}: {
+  ef: EF;
+  onChange: (ef: EF) => void;
+}) {
+  const set = (patch: Partial<EF>) => onChange({ ...ef, ...patch });
+  const numOr = (v: string) => (v === "" ? undefined : parseFloat(v));
+  const Num = ({ k, label }: { k: keyof EF; label: string }) => (
+    <label className="flex flex-col text-[9px] text-term-dim">
+      {label}
+      <input
+        type="number"
+        step="any"
+        value={(ef[k] as number | undefined) ?? ""}
+        onChange={(e) => set({ [k]: numOr(e.target.value) } as Partial<EF>)}
+        className="num w-16 rounded border border-term-border bg-term-panel px-1 py-0.5 text-2xs text-term-text"
+      />
+    </label>
+  );
+  return (
+    <div className="space-y-1.5 rounded border border-term-border/60 bg-term-panel/40 p-2">
+      <div className="text-2xs font-semibold uppercase tracking-wide text-term-dim">
+        Entry premium / delta filter{" "}
+        <span className="normal-case text-[10px] text-term-dim/70">
+          · gates the resolved option before entry (optional)
+        </span>
+      </div>
+      <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+        <label className="flex flex-col text-[9px] text-term-dim">
+          premium
+          <select
+            value={ef.premOp ?? ""}
+            onChange={(e) => set({ premOp: e.target.value as EF["premOp"] })}
+            className="rounded border border-term-border bg-term-panel px-1 py-0.5 text-2xs text-term-text"
+          >
+            <option value="">off</option>
+            <option value="gt">greater than</option>
+            <option value="lt">less than</option>
+            <option value="near">near</option>
+          </select>
+        </label>
+        {ef.premOp && <Num k="premVal" label="₹ value" />}
+        {ef.premOp === "near" && <Num k="premTol" label="± tol" />}
+        <span className="mx-1 h-6 w-px bg-term-border" />
+        <Num k="premPctMin" label="prem% ≥" />
+        <Num k="premPctMax" label="prem% ≤" />
+        <Num k="premPtsMin" label="premΔ ≥" />
+        <Num k="premPtsMax" label="premΔ ≤" />
+        <span className="mx-1 h-6 w-px bg-term-border" />
+        <Num k="deltaMin" label="|Δ| ≥" />
+        <Num k="deltaMax" label="|Δ| ≤" />
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* rule editor                                                         */
 /* ------------------------------------------------------------------ */
@@ -431,6 +558,12 @@ function RuleEditor({
           onChange={(l) => set({ exit: l })}
           logic={r.exitLogic ?? "any"}
           onLogic={(l) => set({ exitLogic: l })}
+        />
+
+        {/* premium / delta entry filter — gates the resolved option */}
+        <EntryFilterEditor
+          ef={r.entryFilter ?? {}}
+          onChange={(ef) => set({ entryFilter: ef })}
         />
       </div>
 
@@ -1005,6 +1138,16 @@ function describe(c: AutoCondition): string {
       return `IV skew ${g("op")}${Number(g("value")) ? ` ${g("value")}` : ""}`;
     case "gamma_flip":
       return `spot ${g("op")} gamma-flip`;
+    case "oi_state":
+      return `${String(g("state")).replace(/_/g, " ").toLowerCase()} (${g("bars")} bars)`;
+    case "supertrend":
+      return `Supertrend(${g("period")},${g("mult")}) ${g("op") === "flip" ? "flips" : "is"} ${g("dir")}`;
+    case "pivot":
+      return `spot ${g("op")} pivot ${g("level")}`;
+    case "delta_change":
+      return `Δdelta ${g("leg")} ${g("op")} ${g("value")} over ${g("bars")} bars`;
+    case "gamma_change":
+      return `Δgamma ${g("leg")} ${g("op")} ${g("value")} over ${g("bars")} bars`;
     default:
       return c.kind;
   }

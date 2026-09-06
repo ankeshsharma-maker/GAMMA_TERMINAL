@@ -29,7 +29,7 @@ import asyncio
 from datetime import datetime
 
 from . import upstox_data
-from .autobot import _Ctx, _resolve_instrument
+from .autobot import _Ctx, _entry_filter_ok, _resolve_instrument
 from .brokers.upstox import get_upstox
 from .greeks import bs_price
 
@@ -234,6 +234,9 @@ async def backtest_rule(rule: dict, from_date: str, to_date: str) -> dict:
         strike, ot = _resolve_instrument(rule.get("instrument", "ATM_CE"), base, step)
         px = _premium(strike, ot, d, by_date[d], 0)
         if px <= 0:
+            continue
+        ef_ok, _ = _entry_filter_ok(rule.get("entryFilter") or {}, px, 0.5, 0.0, 0.0)
+        if not ef_ok:
             continue
         open_pos = {"k": strike, "ot": ot, "entry": px, "date": d, "peak": 0.0, "i": i}
 

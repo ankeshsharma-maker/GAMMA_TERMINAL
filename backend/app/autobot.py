@@ -140,6 +140,10 @@ class _Ctx:
         self.pe_vol = [float(h.get("peVol") or 0) for h in hist]
         self.ce_iv = [float(h["atmCEIV"]) for h in hist if h.get("atmCEIV")]
         self.pe_iv = [float(h["atmPEIV"]) for h in hist if h.get("atmPEIV")]
+        self.ce_delta = [float(h["atmCEDelta"]) for h in hist if h.get("atmCEDelta") is not None]
+        self.pe_delta = [float(h["atmPEDelta"]) for h in hist if h.get("atmPEDelta") is not None]
+        self.ce_gamma = [float(h["atmCEGamma"]) for h in hist if h.get("atmCEGamma") is not None]
+        self.pe_gamma = [float(h["atmPEGamma"]) for h in hist if h.get("atmPEGamma") is not None]
 
     # -- indicator conditions ------------------------------------------------ #
     def _rsi(self, c) -> bool:
@@ -366,6 +370,122 @@ class _Ctx:
             return not cur_above and prev_above
         return False
 
+    # -- extra structure / greek / trend conditions -------------------- #
+    def _oi_state(self, c) -> bool:
+        """Long/Short buildup / unwinding / covering over the last `bars`,
+        from spot direction + net (call+put) OI-change direction."""
+        bars = int(c.get("bars", 5))
+        if len(self.spot) < bars + 1 or len(self.ce_oi_chg) < 1:
+            return False
+        d_price = self.spot[-1] - self.spot[-1 - bars]
+        d_oi = self.ce_oi_chg[-1] + self.pe_oi_chg[-1]  # net OI added today
+        up_p, up_oi = d_price >= 0, d_oi >= 0
+        state = (
+            "LONG_BUILDUP" if up_p and up_oi
+            else "SHORT_BUILDUP" if not up_p and up_oi
+            else "LONG_UNWINDING" if not up_p and not up_oi
+            else "SHORT_COVERING"
+        )
+        return state == str(c.get("state", "LONG_BUILDUP")).upper()
+
+    def _supertrend(self, c) -> bool:
+        """Spot-only Supertrend proxy: trailing band = rolling stdev of spot
+        moves x `mult`. dir 'up' -> spot just crossed above the band."""
+        period = int(c.get("period", 10))
+        mult = float(c.get("mult", 3.0))
+        s = self.spot
+        if len(s) < period + 3:
+            return False
+        import statistics
+        # per-step absolute moves as a volatility proxy (ATR stand-in)
+        moves = [abs(s[i] - s[i - 1]) for i in range(1, len(s))]
+        band = None
+        up = True
+        flips: list[bool] = []
+        for i in range(period, len(s)):
+            vol = statistics.fmean(moves[i - period:i]) or 1.0
+            basis = statistics.fmean(s[i - period:i])
+            lower, upper = basis - mult * vol, basis + mult * vol
+            if band is None:
+                band, up = lower, True
+            if up:
+                band = max(band, lower)
+                if s[i] < band:
+                    up = False
+                    band = upper
+            else:
+                band = min(band, upper)
+                if s[i] > band:
+                    up = True
+                    band = lower
+            flips.append(up)
+        if len(flips) < 2:
+            return False
+        want_up = c.get("dir", "up") == "up"
+        if c.get("op", "is") == "flip":
+            return flips[-1] != flips[-2] and flips[-1] == want_up
+        return flips[-1] == want_up
+
+    def _day_ohlc(self, back: int = 1):
+        """(high, low, close) of the session `back` days ago from spot snaps."""
+        if not self.hist:
+            return None
+        by_day: dict = {}
+        for h in self.hist:
+            t, sp = h.get("t"), h.get("spot")
+            if not t or sp is None:
+                continue
+            d = datetime.fromtimestamp(t, IST).date()
+            by_day.setdefault(d, []).append(float(sp))
+        days = sorted(by_day)
+        if len(days) < back + 1:
+            return None
+        vals = by_day[days[-1 - back]]
+        return max(vals), min(vals), vals[-1]
+
+    def _pivot(self, c) -> bool:
+        o = self._day_ohlc(1)
+        if not o or len(self.spot) < 2:
+            return False
+        hi, lo, cl = o
+        p = (hi + lo + cl) / 3
+        levels = {
+            "P": p,
+            "R1": 2 * p - lo, "S1": 2 * p - hi,
+            "R2": p + (hi - lo), "S2": p - (hi - lo),
+            "R3": hi + 2 * (p - lo), "S3": lo - 2 * (hi - p),
+        }
+        lvl = levels.get(str(c.get("level", "P")).upper())
+        if lvl is None:
+            return False
+        cur, prev, op = self.spot[-1], self.spot[-2], c.get("op", "above")
+        if op == "above":
+            return cur > lvl
+        if op == "below":
+            return cur < lvl
+        if op == "cross_up":
+            return prev <= lvl < cur
+        if op == "cross_down":
+            return prev >= lvl > cur
+        return False
+
+    def _greek_change(self, c, series: list[float]) -> bool:
+        bars = int(c.get("bars", 5))
+        if len(series) < bars + 1:
+            return False
+        d = series[-1] - series[-1 - bars]
+        v = float(c.get("value", 0))
+        op = c.get("op", ">")
+        return d > v if op == ">" else d < -abs(v) if op == "<" else abs(d) >= abs(v)
+
+    def _delta_change(self, c) -> bool:
+        s = self.ce_delta if c.get("leg", "call") == "call" else self.pe_delta
+        return self._greek_change(c, s)
+
+    def _gamma_change(self, c) -> bool:
+        s = self.ce_gamma if c.get("leg", "call") == "call" else self.pe_gamma
+        return self._greek_change(c, s)
+
     _DISPATCH = {
         "rsi": _rsi, "ema_cross": _ema_cross, "price_vs_ema": _price_vs_ema,
         "macd": _macd, "spot_move_pct": _spot_move_pct, "pcr": _pcr,
@@ -374,6 +494,8 @@ class _Ctx:
         "vol_surge": _vol_surge, "oi_divergence": _oi_divergence,
         "maxpain_shift": _maxpain_shift, "pcr_roc": _pcr_roc, "iv_skew": _iv_skew,
         "gamma_flip": _gamma_flip,
+        "oi_state": _oi_state, "supertrend": _supertrend, "pivot": _pivot,
+        "delta_change": _delta_change, "gamma_change": _gamma_change,
     }
 
     def eval_one(self, cond: dict) -> bool:
@@ -401,6 +523,51 @@ class _Ctx:
 # --------------------------------------------------------------------------- #
 # instrument resolution                                                        #
 # --------------------------------------------------------------------------- #
+def _entry_filter_ok(
+    ef: dict, premium: float, delta: float, prem_chg: float, prem_chg_pct: float
+) -> tuple[bool, str]:
+    """Flexible premium/delta gate applied to the *resolved* option before entry.
+
+    ef keys (all optional):
+      premOp   : 'gt' | 'lt' | 'near'      + premVal (+ premTol for 'near')
+      premPctMin / premPctMax   : today's premium % change band
+      premPtsMin / premPtsMax   : today's premium points change band
+      deltaMin / deltaMax       : |delta| band
+    """
+    if not ef:
+        return True, ""
+
+    def _f(k):
+        v = ef.get(k)
+        try:
+            return float(v) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    op = (ef.get("premOp") or "").lower()
+    pv = _f("premVal")
+    if op and pv is not None:
+        tol = _f("premTol") or max(2.0, pv * 0.05)
+        if op == "gt" and not premium > pv:
+            return False, f"premium {premium:.1f} !> {pv}"
+        if op == "lt" and not premium < pv:
+            return False, f"premium {premium:.1f} !< {pv}"
+        if op == "near" and abs(premium - pv) > tol:
+            return False, f"premium {premium:.1f} not ~{pv}±{tol:.0f}"
+
+    for lo_key, hi_key, val, name in (
+        ("premPctMin", "premPctMax", prem_chg_pct, "prem%"),
+        ("premPtsMin", "premPtsMax", prem_chg, "premΔ"),
+        ("deltaMin", "deltaMax", delta, "|delta|"),
+    ):
+        lo, hi = _f(lo_key), _f(hi_key)
+        if lo is not None and val < lo:
+            return False, f"{name} {val:.2f} < {lo}"
+        if hi is not None and val > hi:
+            return False, f"{name} {val:.2f} > {hi}"
+    return True, ""
+
+
 def _resolve_instrument(inst: str, atm: float, step: float) -> tuple[float, str]:
     """'OTM2_CE' -> (strike, 'CE').  Offsets are in strike steps from ATM."""
     inst = (inst or "ATM_CE").upper()
@@ -680,6 +847,19 @@ class AutoBot:
             if not entry_px:
                 self._emit(rule, "warn", f"no LTP for {strike}{ot}")
                 continue
+
+            # ---- premium / delta entry filter --------------------------- #
+            crow = next((r for r in chain.get("rows", []) if r["strike"] == strike), None)
+            leg = (crow or {}).get("call" if ot == "CE" else "put", {}) if crow else {}
+            ef_ok, ef_why = _entry_filter_ok(
+                rule.get("entryFilter") or {}, float(entry_px),
+                abs(float(leg.get("delta") or 0)),
+                float(leg.get("chg") or 0),
+                float(leg.get("chgPct") or 0),
+            )
+            if not ef_ok:
+                continue
+
             side = rule.get("side", "BUY")
             lots = int(rule.get("lots", 1))
             try:
