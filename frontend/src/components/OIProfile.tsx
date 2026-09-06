@@ -31,7 +31,7 @@ export function OIProfile() {
   const symClassOk = useStore((s) => s.symClassOk);
 
   const [metric, setMetric] = useState<Metric>("combined");
-  const [layout, setLayout] = useState<"chart" | "ladder" | "pcr">("chart");
+  const [layout, setLayout] = useState<"chart" | "ladder" | "sensibull" | "pcr">("chart");
   const [pcrPts, setPcrPts] = useState<{ t: number; pcr: number; spot: number }[]>([]);
   const [count, setCount] = useState(10);
   const [symChoices, setSymChoices] = useState<string[]>([]);
@@ -826,6 +826,227 @@ export function OIProfile() {
     );
   })();
 
+  // ---- Sensibull-style strike-wise "Change in OI" bar chart ----
+  // Call bar = red, Put bar = green (leg shown by colour); above the zero line
+  // = OI added, below = OI reduced (reduced bars dimmed so direction reads even
+  // without checking the axis). Spot + Max Pain marked, ATM band shaded.
+  const sensiEl = (() => {
+    const COL = 34; // px per strike
+    const H = 340;
+    const padT = 26;
+    const padB = 52;
+    const plot = H - padT - padB;
+    const zeroY = padT + plot / 2;
+    const half = plot / 2;
+    const cmax = flow.maxChg || 1;
+    const W = Math.max(rows.length * COL, 320);
+    const yOf = (v: number) => zeroY - Math.max(-1, Math.min(1, v / cmax)) * half;
+    const CALL_C = "#ef5350";
+    const PUT_C = "#26a69a";
+    const atmIdx = rows.findIndex((r) => r.strike === chain.atmStrike);
+    const ticks = [1, 0.5, 0, -0.5, -1].map((f) => f * cmax);
+    const tfLbl = tf === 0 ? "since open" : `last ${tf}m`;
+
+    // fractional column index of a given strike (for spot / max-pain lines)
+    const idxOfStrike = (px: number) => {
+      if (rows.length < 2 || px <= rows[0].strike) return px <= rows[0].strike ? 0 : -1;
+      if (px >= rows[rows.length - 1].strike) return rows.length - 1;
+      for (let i = 0; i < rows.length - 1; i++) {
+        const a = rows[i].strike;
+        const b = rows[i + 1].strike;
+        if (px >= a && px <= b) return i + (px - a) / (b - a || 1);
+      }
+      return -1;
+    };
+    const mpIdx = chain.maxPain ? idxOfStrike(chain.maxPain) : -1;
+
+    const chip = (label: string, val: string) => (
+      <span className="num rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
+        <span className="text-term-dim">{label} </span>
+        <span className="text-term-text">{val}</span>
+      </span>
+    );
+
+    const bar = (x: number, bw: number, v: number, col: string, leg: string, strike: number) => {
+      const y1 = yOf(Math.max(0, v));
+      const y2 = yOf(Math.min(0, v));
+      return (
+        <rect
+          x={x}
+          y={y1}
+          width={bw}
+          height={Math.max(1, y2 - y1)}
+          rx={1}
+          fill={col}
+          fillOpacity={v >= 0 ? 0.95 : 0.45}
+        >
+          <title>
+            {leg} {v >= 0 ? "+" : ""}
+            {compact(v)} @ {sk(strike)} · {v >= 0 ? "OI added" : "OI reduced"}
+          </title>
+        </rect>
+      );
+    };
+
+    return (
+      <div className="min-h-0 flex-1 overflow-auto p-3">
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px]">
+          {chip(symbol, nf(spot, 1))}
+          {chip("ATM", sk(chain.atmStrike))}
+          {chip("PCR", nf(chain.pcr, 2))}
+          {chip("Max Pain", nf(chain.maxPain, 0))}
+          {chip("ΔOI", tfLbl)}
+        </div>
+
+        <div className="flex">
+          {/* fixed Y axis */}
+          <svg width={42} height={H} className="shrink-0 overflow-visible">
+            {ticks.map((v, i) => (
+              <text
+                key={i}
+                x={38}
+                y={yOf(v) + 3}
+                fontSize={9}
+                textAnchor="end"
+                className="fill-term-dim"
+              >
+                {v > 0 ? "+" : ""}
+                {compact(v)}
+              </text>
+            ))}
+            <text x={38} y={padT - 12} fontSize={8} textAnchor="end" className="fill-term-dim">
+              ΔOI
+            </text>
+          </svg>
+
+          <div className="min-w-0 flex-1 overflow-x-auto">
+            <svg width={W} height={H} className="block">
+              {ticks.map((v, i) => (
+                <line
+                  key={i}
+                  x1={0}
+                  x2={W}
+                  y1={yOf(v)}
+                  y2={yOf(v)}
+                  stroke="currentColor"
+                  strokeOpacity={v === 0 ? 0.5 : 0.12}
+                  className="text-term-dim"
+                />
+              ))}
+
+              {atmIdx >= 0 && (
+                <rect
+                  x={atmIdx * COL}
+                  y={padT}
+                  width={COL}
+                  height={plot}
+                  className="fill-term-accent"
+                  fillOpacity={0.12}
+                />
+              )}
+
+              {mpIdx >= 0 && (
+                <g>
+                  <line
+                    x1={mpIdx * COL + COL / 2}
+                    x2={mpIdx * COL + COL / 2}
+                    y1={padT}
+                    y2={H - padB}
+                    stroke="#eab308"
+                    strokeWidth={1.5}
+                    strokeDasharray="2 3"
+                  />
+                  <text
+                    x={mpIdx * COL + COL / 2}
+                    y={H - padB + 24}
+                    fontSize={8}
+                    textAnchor="middle"
+                    className="fill-amber-400"
+                  >
+                    max pain
+                  </text>
+                </g>
+              )}
+
+              {spotMark && (
+                <g>
+                  <line
+                    x1={spotMark.index * COL + COL / 2}
+                    x2={spotMark.index * COL + COL / 2}
+                    y1={padT - 8}
+                    y2={H - padB}
+                    stroke="#38bdf8"
+                    strokeWidth={1.5}
+                    strokeDasharray="4 3"
+                  />
+                  <text
+                    x={spotMark.index * COL + COL / 2}
+                    y={padT - 12}
+                    fontSize={9}
+                    textAnchor="middle"
+                    className="fill-sky-400"
+                  >
+                    spot {nf(spotMark.spot, 0)}
+                  </text>
+                </g>
+              )}
+
+              {rows.map((r, i) => {
+                const c = dCE(r);
+                const p = dPE(r);
+                const x0 = i * COL;
+                const bw = 11;
+                const gap = 2;
+                const isATM = r.strike === chain.atmStrike;
+                const lx = x0 + COL / 2;
+                return (
+                  <g key={r.strike}>
+                    {bar(lx - bw - gap / 2, bw, c, CALL_C, "Call ΔOI", r.strike)}
+                    {bar(lx + gap / 2, bw, p, PUT_C, "Put ΔOI", r.strike)}
+                    <text
+                      x={lx}
+                      y={H - padB + 14}
+                      fontSize={8.5}
+                      textAnchor="end"
+                      className={isATM ? "fill-term-accent font-bold" : "fill-term-dim"}
+                      transform={`rotate(-45 ${lx} ${H - padB + 14})`}
+                    >
+                      {sk(r.strike)}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+        </div>
+
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-term-dim">
+          <span>
+            <Sw c={CALL_C} /> Call OI change
+          </span>
+          <span>
+            <Sw c={PUT_C} /> Put OI change
+          </span>
+          <span>above 0 = OI added · below 0 = OI reduced (dimmed)</span>
+          <span>
+            <span
+              className="mr-1 inline-block border-l-2 border-dashed align-middle"
+              style={{ borderColor: "#38bdf8", height: 10 }}
+            />
+            spot
+          </span>
+          <span>
+            <span
+              className="mr-1 inline-block border-l-2 border-dashed align-middle"
+              style={{ borderColor: "#eab308", height: 10 }}
+            />
+            max pain
+          </span>
+        </div>
+      </div>
+    );
+  })();
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* toolbar */}
@@ -890,6 +1111,7 @@ export function OIProfile() {
             [
               ["chart", "chart"],
               ["ladder", "ladder"],
+              ["sensibull", "sensibull"],
               ["pcr", "pcr"],
             ] as const
           ).map(([v, l]) => (
@@ -1011,6 +1233,7 @@ export function OIProfile() {
         </div>
       )}
       {layout === "ladder" && ladderEl}
+      {layout === "sensibull" && sensiEl}
       {layout === "pcr" && pcrEl}
 
       <div className="flex flex-wrap items-center gap-x-3 border-t border-term-border px-3 py-1 text-[9px] text-term-dim">

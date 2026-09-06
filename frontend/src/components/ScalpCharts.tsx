@@ -18,6 +18,10 @@ const IND_KEYS: [keyof MiniInd, string][] = [
   ["ema21", "EMA21"],
   ["ema50", "EMA50"],
   ["vwap", "VWAP"],
+  ["boll", "BB"],
+  ["supertrend", "Supertrend"],
+  ["pivots", "Pivots"],
+  ["rsi", "RSI"],
 ];
 
 type Pane = { sym: string; tf: number; instr: string; ind: MiniInd };
