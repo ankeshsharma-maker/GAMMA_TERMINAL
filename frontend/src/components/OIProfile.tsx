@@ -37,8 +37,23 @@ export function OIProfile() {
   const [tf, setTf] = useState(5); // minutes; 0 = change since day open
   const [win, setWin] = useState<Record<string, { ceOiChg: number; peOiChg: number }>>({});
   const [winCov, setWinCov] = useState(0);
+  const [donutW, setDonutW] = useState(240); // resizable OI-split panel width (px)
   const scrollRef = useRef<HTMLDivElement>(null);
   const didCenter = useRef(false);
+
+  const startDonutDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const x0 = e.clientX;
+    const w0 = donutW;
+    const move = (ev: MouseEvent) =>
+      setDonutW(Math.max(150, Math.min(600, w0 + (ev.clientX - x0))));
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
 
   const AREA = Math.round(240 * zoom);
   const COLW = Math.round(40 * zoom);
@@ -491,11 +506,14 @@ export function OIProfile() {
     const ceLen = (ce / tot) * C;
     const fAdd = flow.ceAdd + flow.peAdd;
     return (
-      <div className="flex w-40 shrink-0 flex-col items-center gap-2 border-r border-term-border/60 p-3">
+      <div
+        className="flex shrink-0 flex-col items-center gap-2 overflow-y-auto p-3"
+        style={{ width: donutW }}
+      >
         <div className="text-center text-[10px] font-semibold uppercase tracking-wide text-term-dim">
           OI split · {count}±ATM
         </div>
-        <svg viewBox="0 0 100 100" className="w-28">
+        <svg viewBox="0 0 100 100" className="w-full max-w-[240px]">
           <circle cx="50" cy="50" r={R} fill="none" stroke="#1e2733" strokeWidth={SW} />
           {/* put arc (full ring) then call arc on top */}
           <circle
@@ -832,7 +850,16 @@ export function OIProfile() {
 
       {layout === "chart" && (
         <div className="flex min-h-0 flex-1">
-          {donutEl}
+          {donutEl && (
+            <>
+              {donutEl}
+              <div
+                onMouseDown={startDonutDrag}
+                title="Drag to resize the OI-split panel"
+                className="w-1.5 shrink-0 cursor-col-resize bg-term-border/50 transition-colors hover:bg-term-accent/70"
+              />
+            </>
+          )}
           {chartEl}
         </div>
       )}
