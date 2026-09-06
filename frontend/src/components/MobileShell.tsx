@@ -4,6 +4,7 @@ import { nf, sk, compact } from "../lib/format";
 import type { View } from "../types";
 
 import { HeaderIndices, OrderModePill, AlertBell, BrokerPill } from "./Header";
+import { lockNow } from "../lib/auth";
 import { NotificationPanel } from "./NotificationPanel";
 import { OrderConfirm } from "./OrderConfirm";
 import { Watchlist } from "./Watchlist";
@@ -162,6 +163,13 @@ export function MobileShell() {
       {brokerOpen && (
         <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-2 py-1.5">
           <BrokerPill />
+          <button
+            onClick={lockNow}
+            className="ml-auto rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:text-term-text"
+            title="Lock the app — require the password / PIN again"
+          >
+            🔒 Lock
+          </button>
         </div>
       )}
 

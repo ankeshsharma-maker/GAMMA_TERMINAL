@@ -1,6 +1,7 @@
 import { useStore } from "../store";
 import { compact, nf, ago, sk } from "../lib/format";
 import { api } from "../lib/api";
+import { lockNow } from "../lib/auth";
 import { ConnBadge } from "./ConnBadge";
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -444,6 +445,13 @@ export function Header() {
         )}
         <BrokerPill />
         <AlertBell />
+        <button
+          onClick={lockNow}
+          className="rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:text-term-text"
+          title="Lock the app — require the password / PIN again"
+        >
+          🔒
+        </button>
         <ConnBadge />
       </div>
     </div>

@@ -18,6 +18,8 @@ import { Funds } from "./components/Funds";
 import { OrderConfirm } from "./components/OrderConfirm";
 import { NotificationPanel } from "./components/NotificationPanel";
 import { MobileShell } from "./components/MobileShell";
+import { LoginGate } from "./components/LoginGate";
+import { PinLock } from "./components/PinLock";
 import { useIsMobile } from "./lib/useIsMobile";
 
 const LS = {
@@ -66,6 +68,16 @@ function VSplit({ onDrag }: { onDrag: (dx: number) => void }) {
 }
 
 export default function App() {
+  return (
+    <PinLock>
+      <LoginGate>
+        <Shell />
+      </LoginGate>
+    </PinLock>
+  );
+}
+
+function Shell() {
   const init = useStore((s) => s.init);
   const isMobile = useIsMobile();
   useEffect(() => {

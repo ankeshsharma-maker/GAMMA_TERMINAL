@@ -6,9 +6,11 @@ import contextlib
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from .auth import auth_middleware, auth_required, expected_token, token_ok, app_password
 from .broker_feed import run_broker_feed
 from .brokers import get_broker
 from .hub import hub
@@ -44,6 +46,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="GammaTerminal API", version="0.1.0", lifespan=lifespan)
+# inner: single-password gate (no-op unless APP_PASSWORD is set)
+app.add_middleware(BaseHTTPMiddleware, dispatch=auth_middleware)
+# outer: CORS wraps everything so even a 401 carries the headers the APK needs
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -68,8 +73,29 @@ def health():
     }
 
 
+@app.get("/api/auth/status")
+def auth_status(request: Request):
+    h = request.headers.get("authorization") or ""
+    tok = h[7:].strip() if h.lower().startswith("bearer ") else request.headers.get("x-app-token")
+    return {"required": auth_required(), "ok": token_ok(tok)}
+
+
+@app.post("/api/auth/login")
+async def auth_login(body: dict):
+    if not auth_required():
+        return {"token": "", "required": False}
+    if (body.get("password") or "").strip() != app_password():
+        raise HTTPException(status_code=401, detail="Wrong password")
+    return {"token": expected_token(), "required": True}
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
+    if auth_required():
+        tok = ws.query_params.get("token") or ws.headers.get("x-app-token")
+        if not token_ok(tok):
+            await ws.close(code=1008)
+            return
     await hub.connect(ws)
     try:
         while True:

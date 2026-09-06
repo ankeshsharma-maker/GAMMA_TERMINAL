@@ -1,3 +1,5 @@
+import { getToken } from "./auth";
+
 type Handler = (msg: any) => void;
 
 export class TerminalSocket {
@@ -31,7 +33,8 @@ export class TerminalSocket {
   connect() {
     this.closed = false;
     this.onStatus("connecting");
-    this.ws = new WebSocket(this.url);
+    const tok = getToken();
+    this.ws = new WebSocket(tok ? `${this.url}?token=${encodeURIComponent(tok)}` : this.url);
 
     this.ws.onopen = () => {
       this.onStatus("open");

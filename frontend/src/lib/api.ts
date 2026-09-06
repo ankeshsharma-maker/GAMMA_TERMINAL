@@ -10,6 +10,7 @@ import type {
   ScreenerRow,
   StrategyLeg,
 } from "../types";
+import { getToken, handleUnauthorized } from "./auth";
 
 // When the app is served from the same origin as the API (browser / server
 // deploy) this stays "" and every call is a relative /api/... path. In the
@@ -18,16 +19,34 @@ import type {
 export const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/+$/, "");
 
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
+  const tok = getToken();
   const res = await fetch(/^https?:\/\//.test(url) ? url : API_BASE + url, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...(tok ? { Authorization: `Bearer ${tok}` } : {}),
+      ...(init?.headers || {}),
+    },
   });
+  if (res.status === 401) {
+    handleUnauthorized();
+    throw new Error("Login required");
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `${res.status} ${res.statusText}`);
   }
   return res.json() as Promise<T>;
 }
+
+export const auth = {
+  status: () => j<{ required: boolean; ok: boolean }>("/api/auth/status"),
+  login: (password: string) =>
+    j<{ token: string; required: boolean }>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+};
 
 export const api = {
   symbols: () =>
