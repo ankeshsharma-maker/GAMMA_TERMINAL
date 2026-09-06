@@ -143,6 +143,7 @@ export function StrategyBuilder() {
   const [panel, setPanel] = useState<"payoff" | "backtest">("payoff");
   const [payoffTab, setPayoffTab] = useState<"chart" | "table">("chart");
   const [strikeSpan, setStrikeSpan] = useState(10); // ATM ± N strikes in the P&L table
+  const [dayPct, setDayPct] = useState(3); // ± move for the day-by-day P&L columns
   const [ivSeries, setIvSeries] = useState<number[]>([]);
   // "time to expiry" payoff: days from today (0 = now / T+0, dte = expiry)
   const [tDays, setTDays] = useState(0);
@@ -464,12 +465,12 @@ export function StrategyBuilder() {
       .reverse(); // high strike on top, like the chain ladder
   }, [analysis, tDays, dte, strikeSpan, chain]);
 
-  // ---- day-by-day P&L at spot and ±3% (theta decay to expiry) ----
+  // ---- day-by-day P&L at spot and ±dayPct% (theta decay to expiry) ----
   const dayRows = useMemo(() => {
     if (!analysis) return [];
     const spot = analysis.spot;
-    const dn = spot * 0.97;
-    const up = spot * 1.03;
+    const dn = spot * (1 - dayPct / 100);
+    const up = spot * (1 + dayPct / 100);
     const step = Math.max(1, Math.ceil((dte + 1) / 16));
     const mk = (d: number) => {
       const [a, b, c] = strategyPnlCurve(analysis.legs, [dn, spot, up], Math.max((dte - d) / 365, 0));
@@ -489,7 +490,7 @@ export function StrategyBuilder() {
     for (let d = 0; d <= dte; d += step) rows.push(mk(d));
     if (!rows.length || rows[rows.length - 1].d !== dte) rows.push(mk(dte));
     return rows;
-  }, [analysis, dte]);
+  }, [analysis, dte, dayPct]);
 
   const pnlCls = (v: number) => (v >= 0 ? "text-up" : "text-down");
   const pnlTxt = (v: number | null) => (v == null ? "–" : `${v >= 0 ? "+" : ""}${nf(v, 0)}`);
@@ -1428,8 +1429,21 @@ export function StrategyBuilder() {
 
                 {/* Day-by-day P&L (theta decay) */}
                 <div className="rounded border border-term-border p-2">
-                  <div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-term-dim">
-                    Day-by-day P&amp;L — spot &amp; ±3%
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
+                    <span className="text-2xs font-semibold uppercase tracking-wide text-term-dim">
+                      Day-by-day P&amp;L — spot &amp; ±{dayPct}%
+                    </span>
+                    <div className="seg text-[10px]">
+                      {[0.5, 1, 1.5, 2, 2.5, 3].map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => setDayPct(p)}
+                          className={dayPct === p ? "on" : ""}
+                        >
+                          {p}%
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <table className="w-full border-separate border-spacing-0 text-2xs">
                     <thead className="text-[10px] uppercase text-term-dim">
@@ -1440,14 +1454,14 @@ export function StrategyBuilder() {
                         <th className="border-b border-term-border px-2 py-1 text-right font-medium">
                           Left
                         </th>
-                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                          −3%
+                        <th className="border-b border-term-border px-2 py-1 text-right font-medium text-down">
+                          −{dayPct}%
                         </th>
                         <th className="border-b border-term-border px-2 py-1 text-right font-medium">
                           Spot
                         </th>
-                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                          +3%
+                        <th className="border-b border-term-border px-2 py-1 text-right font-medium text-up">
+                          +{dayPct}%
                         </th>
                       </tr>
                     </thead>
