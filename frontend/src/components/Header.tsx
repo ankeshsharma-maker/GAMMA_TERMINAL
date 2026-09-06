@@ -7,7 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 function Stat({ label, value, cls = "" }: { label: string; value: ReactNode; cls?: string }) {
   return (
-    <div className="flex flex-col leading-tight">
+    <div className="flex flex-col justify-center rounded border border-term-border bg-term-bg/40 px-2 py-0.5 leading-tight">
       <span className="text-[10px] uppercase tracking-wide text-term-dim">{label}</span>
       <span className={`num text-sm ${cls}`}>{value}</span>
     </div>
@@ -250,7 +250,7 @@ function MarginStats() {
   if (avail == null && used == null) return null;
 
   return (
-    <div className="flex items-center gap-3" title={`Margin (${src})`}>
+    <div className="flex items-center gap-1.5" title={`Margin (${src})`}>
       <Stat
         label={`Margin avail · ${src}`}
         value={avail != null ? `₹${compact(avail)}` : "–"}
@@ -273,7 +273,7 @@ function PnlStrip() {
   const src = orderMode === "live" ? "LIVE" : "paper";
   return (
     <div
-      className="flex items-center gap-3 border-l border-term-border pl-3"
+      className="flex items-center gap-1.5"
       title={`Book P&L (${src})`}
     >
       <Stat
@@ -562,7 +562,7 @@ export function Header() {
 
   return (
     <div
-      className={`flex flex-wrap items-center gap-x-5 gap-y-2 border-b bg-term-panel px-4 py-2 ${
+      className={`flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b bg-term-panel px-4 py-2 ${
         orderMode === "live" ? "border-down" : "border-term-border"
       }`}
     >

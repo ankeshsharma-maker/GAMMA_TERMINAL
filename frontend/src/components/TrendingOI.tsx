@@ -24,6 +24,7 @@ export function TrendingOI() {
 
   const [symChoices, setSymChoices] = useState<string[]>([]);
   const [pts, setPts] = useState<Pt[]>([]);
+  const [tf, setTf] = useState(5); // interval-table bucket, minutes
 
   useEffect(() => {
     api.symbols().then(
@@ -190,14 +191,57 @@ export function TrendingOI() {
     );
   }, [pts, last]);
 
-  // ---- recent intervals ----
+  // ---- recent intervals, bucketed to the chosen timeframe ----
   const intervals = useMemo(() => {
-    const out: { t: number; dce: number; dpe: number }[] = [];
-    for (let i = Math.max(1, pts.length - 10); i < pts.length; i++) {
-      out.push({ t: pts[i].t, dce: pts[i].ce - pts[i - 1].ce, dpe: pts[i].pe - pts[i - 1].pe });
+    if (pts.length < 2) return [];
+    const w = tf * 60;
+    // last snapshot in each tf-wide bucket
+    const buckets: Pt[] = [];
+    let curKey = -1;
+    for (const p of pts) {
+      const k = Math.floor(p.t / w);
+      if (k !== curKey) {
+        buckets.push(p);
+        curKey = k;
+      } else {
+        buckets[buckets.length - 1] = p;
+      }
     }
-    return out.reverse();
-  }, [pts]);
+    const out: {
+      t: number;
+      dce: number;
+      dpe: number;
+      dspot: number;
+      sent: { txt: string; cls: string };
+    }[] = [];
+    for (let i = 1; i < buckets.length; i++) {
+      const a = buckets[i - 1];
+      const b = buckets[i];
+      const dce = b.ce - a.ce;
+      const dpe = b.pe - a.pe;
+      const dspot = b.spot - a.spot;
+      // sentiment: net OI flow (put writing bullish, call writing bearish)
+      // confirmed / contradicted by the price move over the bucket
+      const flow = dpe - dce;
+      let txt = "Neutral";
+      let cls = "bg-term-border text-term-dim";
+      if (flow > 0 && dspot >= 0) {
+        txt = "Bullish";
+        cls = "bg-up/20 text-up";
+      } else if (flow < 0 && dspot <= 0) {
+        txt = "Bearish";
+        cls = "bg-down/20 text-down";
+      } else if (flow > 0 && dspot < 0) {
+        txt = "Put writing ↓";
+        cls = "bg-amber-500/20 text-amber-400";
+      } else if (flow < 0 && dspot > 0) {
+        txt = "Call unwind ↑";
+        cls = "bg-sky-500/20 text-sky-400";
+      }
+      out.push({ t: b.t, dce, dpe, dspot, sent: { txt, cls } });
+    }
+    return out.reverse().slice(0, 20);
+  }, [pts, tf]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -216,6 +260,14 @@ export function TrendingOI() {
           ))}
         </select>
         {chain?.expiry && <span className="num">{chain.expiry}</span>}
+        <span className="ml-1">Interval</span>
+        <div className="seg">
+          {([1, 3, 5, 15, 30, 60, 240] as const).map((m) => (
+            <button key={m} onClick={() => setTf(m)} className={tf === m ? "on" : ""}>
+              {m < 60 ? `${m}m` : `${m / 60}h`}
+            </button>
+          ))}
+        </div>
         <span className="ml-auto">
           <span style={{ color: CE }}>■</span> Call OI Δ &nbsp;
           <span style={{ color: PE }}>■</span> Put OI Δ &nbsp;
@@ -278,7 +330,9 @@ export function TrendingOI() {
                 <th className="border-b border-term-border px-3 py-1 text-left font-medium">Time</th>
                 <th className="border-b border-term-border px-3 py-1 text-right font-medium">Call OI Δ</th>
                 <th className="border-b border-term-border px-3 py-1 text-right font-medium">Put OI Δ</th>
+                <th className="border-b border-term-border px-3 py-1 text-right font-medium">Spot Δ</th>
                 <th className="border-b border-term-border px-3 py-1 text-left font-medium">Leader</th>
+                <th className="border-b border-term-border px-3 py-1 text-left font-medium">Sentiment</th>
               </tr>
             </thead>
             <tbody>
@@ -301,11 +355,24 @@ export function TrendingOI() {
                       {lakhs(r.dpe)}
                     </td>
                     <td
+                      className={`num border-b border-term-border/40 px-3 py-1 text-right ${
+                        r.dspot >= 0 ? "text-up" : "text-down"
+                      }`}
+                    >
+                      {r.dspot >= 0 ? "+" : ""}
+                      {nf(r.dspot, 1)}
+                    </td>
+                    <td
                       className={`border-b border-term-border/40 px-3 py-1 font-semibold ${
                         putLed ? "text-up" : "text-down"
                       }`}
                     >
                       {putLed ? "PUT" : "CALL"}
+                    </td>
+                    <td className="border-b border-term-border/40 px-3 py-1">
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${r.sent.cls}`}>
+                        {r.sent.txt}
+                      </span>
                     </td>
                   </tr>
                 );
