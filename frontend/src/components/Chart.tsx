@@ -120,9 +120,23 @@ export function Chart() {
   const isOption = instrument.includes("|");
   const strikes = chain?.rows.map((r) => r.strike) ?? [];
   const [pickStrike, setPickStrike] = useState<number>(0);
+  const [strikeCount, setStrikeCount] = useState(10); // 0 = all
   useEffect(() => {
     if (chain?.atmStrike) setPickStrike(chain.atmStrike);
   }, [chain?.atmStrike, chain?.symbol]);
+  const shownStrikes = useMemo(() => {
+    const atmS = chain?.atmStrike;
+    let list = strikes;
+    if (strikeCount > 0 && strikeCount < strikes.length && atmS) {
+      list = [...strikes]
+        .sort((a, b) => Math.abs(a - atmS) - Math.abs(b - atmS))
+        .slice(0, strikeCount)
+        .sort((a, b) => a - b);
+    }
+    return list.includes(pickStrike) || !pickStrike
+      ? list
+      : [...list, pickStrike].sort((a, b) => a - b);
+  }, [strikes, strikeCount, chain?.atmStrike, pickStrike]);
   const chartLeg = (ot: "CE" | "PE") => {
     if (chain && pickStrike) setInstrument(`${symbol}|${chain.expiry}|${pickStrike}|${ot}`);
   };
@@ -525,15 +539,29 @@ export function Chart() {
         {/* pick any strike's CE / PE */}
         {strikes.length > 0 && (
           <div className="flex items-center gap-0.5 rounded border border-term-border px-1">
+            {([5, 10, 20, 0] as const).map((c) => (
+              <button
+                key={c}
+                onClick={() => setStrikeCount(c)}
+                className={`rounded px-1 text-[9px] font-semibold ${
+                  strikeCount === c ? "bg-term-accent/25 text-term-text" : "text-term-dim hover:text-term-text"
+                }`}
+                title={c === 0 ? "All strikes" : `${c} strikes around ATM`}
+              >
+                {c === 0 ? "All" : c}
+              </button>
+            ))}
+            <span className="mx-0.5 h-3 w-px bg-term-border" />
             <select
               value={pickStrike}
               onChange={(e) => setPickStrike(Number(e.target.value))}
               className="bg-transparent py-0.5 text-2xs num outline-none"
               title="Strike to chart"
             >
-              {strikes.map((k) => (
+              {shownStrikes.map((k) => (
                 <option key={k} value={k} className="bg-term-panel">
                   {k}
+                  {k === chain?.atmStrike ? " (ATM)" : ""}
                 </option>
               ))}
             </select>
@@ -560,17 +588,21 @@ export function Chart() {
           </div>
         )}
 
-        <select
-          value={intervalS}
-          onChange={(e) => setIntervalS(Number(e.target.value))}
-          className="rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs outline-none focus:border-term-accent"
-        >
+        <div className="flex overflow-hidden rounded border border-term-border">
           {TIMEFRAMES.map(([lbl, v]) => (
-            <option key={v} value={v}>
+            <button
+              key={v}
+              onClick={() => setIntervalS(v)}
+              className={`px-1.5 py-0.5 text-2xs font-semibold ${
+                intervalS === v
+                  ? "bg-term-accent text-white"
+                  : "bg-term-bg text-term-dim hover:bg-term-border hover:text-term-text"
+              }`}
+            >
               {lbl}
-            </option>
+            </button>
           ))}
-        </select>
+        </div>
 
         <select
           value={dataSrc}
