@@ -14,6 +14,52 @@ function Stat({ label, value, cls = "" }: { label: string; value: ReactNode; cls
   );
 }
 
+/* ---- tap-to-hide money values (per-key, persisted in localStorage) ---- */
+const HIDE_LS = "hdr.hideVals";
+const readHidden = (): Record<string, boolean> => {
+  try {
+    return JSON.parse(localStorage.getItem(HIDE_LS) || "{}");
+  } catch {
+    return {};
+  }
+};
+function useHidden(key: string): [boolean, () => void] {
+  const [map, setMap] = useState<Record<string, boolean>>(readHidden);
+  useEffect(() => {
+    const h = () => setMap(readHidden());
+    window.addEventListener("hdr-hide", h);
+    window.addEventListener("storage", h);
+    return () => {
+      window.removeEventListener("hdr-hide", h);
+      window.removeEventListener("storage", h);
+    };
+  }, []);
+  const toggle = () => {
+    const cur = readHidden();
+    const next = { ...cur, [key]: !cur[key] };
+    try {
+      localStorage.setItem(HIDE_LS, JSON.stringify(next));
+    } catch {}
+    window.dispatchEvent(new Event("hdr-hide"));
+  };
+  return [!!map[key], toggle];
+}
+
+/** Money figure that hides itself (₹ ••••••) when tapped; state persists. */
+function HideNum({ k, children }: { k: string; children: ReactNode }) {
+  const [hidden, toggle] = useHidden(k);
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      title={hidden ? "tap to reveal" : "tap to hide"}
+      className="cursor-pointer border-b border-dashed border-term-dim/50 leading-none hover:border-term-accent"
+    >
+      {hidden ? "₹ ••••••" : children}
+    </button>
+  );
+}
+
 function ViewToggle() {
   const { view, setView } = useStore();
   return (
@@ -253,12 +299,14 @@ function MarginStats() {
     <div className="flex items-center gap-1.5" title={`Margin (${src})`}>
       <Stat
         label={`Margin avail · ${src}`}
-        value={avail != null ? `₹${compact(avail)}` : "–"}
+        value={
+          <HideNum k="marginAvail">{avail != null ? `₹${compact(avail)}` : "–"}</HideNum>
+        }
         cls={avail != null && avail < 0 ? "text-down" : "text-up"}
       />
       <Stat
         label="Margin used"
-        value={used != null ? `₹${compact(used)}` : "–"}
+        value={<HideNum k="marginUsed">{used != null ? `₹${compact(used)}` : "–"}</HideNum>}
         cls={used ? "text-amber-400" : ""}
       />
     </div>
