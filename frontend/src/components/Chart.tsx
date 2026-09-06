@@ -78,6 +78,7 @@ export function Chart() {
   const instrument = useStore((s) => s.chartInstrument);
   const setInstrument = useStore((s) => s.setChartInstrument);
   const selectSymbol = useStore((s) => s.selectSymbol);
+  const setView = useStore((s) => s.setView);
   const symClass = useStore((s) => s.symClass);
   const symClassOk = useStore((s) => s.symClassOk);
   const [symChoices, setSymChoices] = useState<string[]>([]);
@@ -435,6 +436,24 @@ export function Chart() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs">
+        <div className="flex overflow-hidden rounded border border-term-border">
+          {(
+            [
+              ["chain", "Chain"],
+              ["scrip", "OI"],
+              ["trendingoi", "Trend OI"],
+            ] as const
+          ).map(([v, label]) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              title={`Open ${label} for ${symbol}`}
+              className="border-r border-term-border px-2 py-0.5 text-term-dim last:border-r-0 hover:bg-term-border hover:text-term-text"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <select
           value={symbol}
           onChange={(e) => selectSymbol(e.target.value, true)}

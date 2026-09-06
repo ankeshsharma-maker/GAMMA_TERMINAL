@@ -70,17 +70,31 @@ export function TrendingOI() {
   }, [symbol]);
 
   const last = pts[pts.length - 1];
+  const first = pts[0];
   const net = last ? last.pe - last.ce : 0; // >0 => puts adding faster
+  const netOi = last ? last.ce + last.pe : 0; // total OI added(+) / reduced(-) today
+  const priceChg = last && first ? last.spot - first.spot : 0;
+
   const bias = useMemo(() => {
     if (!last) return null;
     const scale = Math.max(Math.abs(last.ce), Math.abs(last.pe), 1);
     const r = net / scale;
-    if (r > 0.08)
-      return { txt: "PUT WRITING → supportive", cls: "bg-up text-white" };
-    if (r < -0.08)
-      return { txt: "CALL WRITING → resistance", cls: "bg-down text-white" };
+    if (r > 0.08) return { txt: "PUT WRITING → supportive", cls: "bg-up text-white" };
+    if (r < -0.08) return { txt: "CALL WRITING → resistance", cls: "bg-down text-white" };
     return { txt: "BALANCED", cls: "bg-term-border text-term-dim" };
   }, [last, net]);
+
+  // price ↕ vs total-OI ↕ → the four classic OI states
+  const buildup = useMemo(() => {
+    if (!last || !first || pts.length < 3) return null;
+    const pUp = priceChg >= 0;
+    const oUp = netOi >= 0;
+    if (pUp && oUp) return { txt: "LONG BUILDUP", cls: "bg-up text-white", note: "price ↑ · OI ↑" };
+    if (!pUp && oUp) return { txt: "SHORT BUILDUP", cls: "bg-down text-white", note: "price ↓ · OI ↑" };
+    if (!pUp && !oUp)
+      return { txt: "LONG UNWINDING", cls: "bg-amber-500 text-white", note: "price ↓ · OI ↓" };
+    return { txt: "SHORT COVERING", cls: "bg-sky-500 text-white", note: "price ↑ · OI ↓" };
+  }, [last, first, priceChg, netOi, pts.length]);
 
   // ---- svg chart ----
   const chart = useMemo(() => {
@@ -214,7 +228,12 @@ export function TrendingOI() {
         <Tile label="Call OI Δ" value={last ? lakhs(last.ce) : "–"} cls={last && last.ce >= 0 ? "text-down" : "text-up"} />
         <Tile label="Put OI Δ" value={last ? lakhs(last.pe) : "–"} cls={last && last.pe >= 0 ? "text-up" : "text-down"} />
         <Tile
-          label="Net (PE − CE)"
+          label={netOi >= 0 ? "Net OI added" : "Net OI reduced"}
+          value={last ? lakhs(netOi) : "–"}
+          cls={netOi >= 0 ? "text-term-text" : "text-amber-400"}
+        />
+        <Tile
+          label="Bias (PE − CE)"
           value={last ? lakhs(net) : "–"}
           cls={net >= 0 ? "text-up" : "text-down"}
         />
@@ -223,6 +242,19 @@ export function TrendingOI() {
           value={last?.pcr != null ? nf(last.pcr, 2) : "–"}
           cls={last?.pcr != null ? (last.pcr >= 1 ? "text-up" : "text-down") : ""}
         />
+        <Tile
+          label="Spot Δ (session)"
+          value={last ? `${priceChg >= 0 ? "+" : ""}${nf(priceChg, 1)}` : "–"}
+          cls={priceChg >= 0 ? "text-up" : "text-down"}
+        />
+        {buildup && (
+          <span
+            className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${buildup.cls}`}
+            title={buildup.note}
+          >
+            {buildup.txt}
+          </span>
+        )}
         {bias && (
           <span className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${bias.cls}`}>{bias.txt}</span>
         )}

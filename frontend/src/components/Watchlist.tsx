@@ -46,86 +46,66 @@ function DelBtn({ onClick, title }: { onClick: (e: React.MouseEvent) => void; ti
   );
 }
 
-/** a name/label that navigates — styled as a button so it's obviously clickable */
-function NavBtn({
-  onClick,
-  title,
-  active,
-  children,
-}: {
-  onClick: () => void;
-  title: string;
-  active?: boolean;
-  children: React.ReactNode;
-}) {
+const BSE_SYMS = new Set(["SENSEX", "BANKEX", "SENSEX50", "SNSX50"]);
+const wExch = (w: WatchQuote) =>
+  w.kind === "index" ? "INDEX" : BSE_SYMS.has(w.symbol.toUpperCase()) ? "BSE" : "NSE";
+const wAbsChg = (w: WatchQuote) => {
+  if (w.variation != null) return w.variation;
+  const p = wPx(w);
+  const c = wPct(w);
+  return p != null && c != null ? (p * c) / 100 : null;
+};
+
+/** broker-style quote row: name + exchange on the left, LTP + change on the
+ *  right, divider between rows. Tapping the row opens the chart for that symbol. */
+function QuoteRow({ w }: { w: WatchQuote }) {
+  const { symbol, selectSymbol, setView, removeWatch } = useStore();
+  const on = w.symbol === symbol && w.kind !== "option";
+  const px = wPx(w);
+  const pct = wPct(w);
+  const chg = wAbsChg(w);
+  const up = (pct ?? 0) >= 0;
+  const col = pct == null ? "text-term-text" : up ? "text-up" : "text-down";
   return (
-    <button
-      onClick={onClick}
-      title={title}
-      className={`flex min-w-0 flex-1 items-center gap-1 rounded border px-1.5 py-1 text-left transition ${
-        active
-          ? "border-term-accent/60 bg-term-accent/10"
-          : "border-term-border/50 bg-term-bg/40 hover:border-term-accent/60 hover:bg-term-border/40"
+    <div
+      className={`group relative flex items-center gap-2 border-b border-term-border/60 px-3 py-2 transition-colors ${
+        on ? "bg-term-accent/[0.07]" : "hover:bg-term-panel/60"
       }`}
     >
-      <span className="min-w-0 flex-1">{children}</span>
-      <span className="shrink-0 text-[10px] text-term-dim transition group-hover:text-term-accent">›</span>
-    </button>
-  );
-}
-
-/** price + % change, inline */
-function Px({ px, pct }: { px: number | null | undefined; pct: number | null | undefined }) {
-  return (
-    <span className="flex shrink-0 items-baseline gap-1 leading-tight">
-      <span className="num font-medium tabular-nums">{px != null ? nf(px) : "–"}</span>
-      {pct != null && (
-        <span className={`num text-[9px] tabular-nums ${signColor(pct)}`}>
-          {pct >= 0 ? "▲" : "▼"}
-          {nf(Math.abs(pct), 2)}%
+      {on && <span className="absolute inset-y-0 left-0 w-[3px] bg-term-accent" />}
+      <button
+        onClick={() => {
+          selectSymbol(w.symbol, true);
+          setView("chart");
+        }}
+        title={`Chart ${w.symbol}`}
+        className="min-w-0 flex-1 text-left"
+      >
+        <div className="truncate text-sm font-semibold text-term-text">{wName(w)}</div>
+        <div className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-500">
+          {wExch(w)}
+        </div>
+      </button>
+      <div className="flex shrink-0 flex-col items-end leading-tight">
+        <span className={`num text-sm font-semibold tabular-nums ${col}`}>
+          {px != null ? nf(px) : "–"}
         </span>
-      )}
-    </span>
-  );
-}
-
-// compact one-line row: [accent] [name/label button] [price ▲%] [✕]
-const ROW =
-  "group relative flex items-center gap-1.5 rounded-md border bg-term-panel/50 px-2 py-1 transition-colors hover:border-term-border hover:bg-term-panel";
-
-function IndexRow({ w }: { w: WatchQuote }) {
-  const removeWatch = useStore((s) => s.removeWatch);
-  return (
-    <div className={`${ROW} border-term-border/50`}>
-      <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-xs font-semibold">
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-term-dim" />
-        <span className="truncate">{w.symbol}</span>
-        <span className="shrink-0 rounded bg-term-border px-1 text-[8px] font-medium text-term-dim">IDX</span>
-      </span>
-      <Px px={w.spot} pct={w.liveChgPct} />
-      <DelBtn onClick={() => removeWatch(w.key)} title="Remove" />
-    </div>
-  );
-}
-
-function SymbolRow({ w }: { w: WatchQuote }) {
-  const { symbol, selectSymbol, removeWatch } = useStore();
-  const on = w.symbol === symbol;
-  const px = w.liveSpot ?? w.spot;
-  return (
-    <div className={`${ROW} ${on ? "border-term-accent/70 bg-term-accent/[0.08]" : "border-term-border/50"}`}>
-      <span className={`absolute inset-y-1 left-0 w-[3px] rounded-full ${on ? "bg-term-accent" : "bg-transparent"}`} />
-      <NavBtn onClick={() => selectSymbol(w.symbol)} title={`Open ${w.symbol} option chain`} active={on}>
-        <span className={`truncate text-xs font-semibold ${on ? "text-term-accent" : ""}`}>{w.symbol}</span>
-      </NavBtn>
-      <Px px={px} pct={w.liveChgPct} />
-      <DelBtn
+        {pct != null && (
+          <span className={`num text-[10px] tabular-nums ${col}`}>
+            {up ? "▲" : "▼"} {chg != null ? nf(Math.abs(chg)) : "–"} ({nf(Math.abs(pct), 2)}%)
+          </span>
+        )}
+      </div>
+      <button
         onClick={(e) => {
           e.stopPropagation();
           removeWatch(w.key);
         }}
         title="Remove from watchlist"
-      />
+        className="shrink-0 rounded px-1 text-[11px] leading-none text-term-dim opacity-40 transition hover:text-down group-hover:opacity-100"
+      >
+        ✕
+      </button>
     </div>
   );
 }
@@ -149,7 +129,7 @@ function Leg({
   side: "CE" | "PE";
   align: "left" | "right";
 }) {
-  const { selectSymbol, selectExpiry, setChartInstrument, chartInstrument } = useStore();
+  const { selectSymbol, selectExpiry, setChartInstrument, chartInstrument, setView } = useStore();
   const on = !!w && chartInstrument === w.key;
   const ce = side === "CE";
   const tint = ce ? "text-up" : "text-down";
@@ -206,7 +186,7 @@ function StrikeRow({ p }: { p: StrikePair }) {
     if (p.pe) await removeWatch(p.pe.key);
   };
   return (
-    <div className={`${ROW} border-term-border/50 gap-1`}>
+    <div className="group relative flex items-center gap-1 rounded-md border border-term-border/50 bg-term-panel/50 px-2 py-1 transition-colors hover:bg-term-panel">
       <Leg w={p.ce} side="CE" align="right" />
       <span className="num shrink-0 rounded bg-term-bg px-1.5 py-0.5 text-xs font-bold tabular-nums text-term-text">
         {sk(p.strike)}
@@ -348,8 +328,7 @@ export function Watchlist() {
     else strikeBlocks.push({ head, items: [pr] });
   }
 
-  const rowFor = (w: WatchQuote) =>
-    w.kind === "index" ? <IndexRow key={w.key} w={w} /> : <SymbolRow key={w.key} w={w} />;
+  const rowFor = (w: WatchQuote) => <QuoteRow key={w.key} w={w} />;
 
   const optionSection = (
     <div className="flex flex-col gap-2">
@@ -577,25 +556,25 @@ export function Watchlist() {
             No matching rows — the header All / Indices / Stocks filter is hiding this list.
           </div>
         ) : (
-          <div className="flex flex-col gap-2 p-2">
+          <div className="flex flex-col">
             {nonOpts.length > 0 &&
               (view === "grid" ? (
                 <div
-                  className="grid gap-1"
+                  className="grid gap-1 p-2"
                   style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}
                 >
                   {nonOpts.map(rowFor)}
                 </div>
               ) : (
-                <div className="flex flex-col gap-1">{nonOpts.map(rowFor)}</div>
+                <div className="flex flex-col">{nonOpts.map(rowFor)}</div>
               ))}
-            {strikeBlocks.length > 0 && optionSection}
+            {strikeBlocks.length > 0 && <div className="p-2">{optionSection}</div>}
           </div>
         )}
       </div>
 
       <div className="border-t border-term-border bg-term-panel/30 px-3 py-1.5 text-[9px] leading-tight text-term-dim">
-        1-click = {scalpLots} lot · tap a symbol to open its chain · tap an option to chart it
+        1-click = {scalpLots} lot · tap a symbol or option to chart it
       </div>
     </div>
   );
