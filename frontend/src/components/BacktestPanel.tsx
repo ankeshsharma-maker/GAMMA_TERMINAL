@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { RangePresets } from "./RangePresets";
 import { api } from "../lib/api";
 import { nf } from "../lib/format";
 import type { StrategyLeg } from "../types";
@@ -127,6 +128,7 @@ export function BacktestPanel({
             className="rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text"
           />
         </label>
+        <RangePresets set={(f, t) => (setFrom(f), setTo(t))} active={from} />
         <button
           onClick={run}
           disabled={busy || legs.length === 0}

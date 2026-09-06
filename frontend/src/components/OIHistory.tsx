@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { RangePresets } from "./RangePresets";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { lakhs, nf } from "../lib/format";
@@ -176,6 +177,7 @@ export function OIHistory() {
             className="rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text"
           />
         </label>
+        <RangePresets set={(f, t) => (setFrom(f), setTo(t))} active={from} />
         <button
           onClick={load}
           disabled={busy}
