@@ -167,7 +167,7 @@ export const api = {
       series: Record<string, { time: number; value: number }[]>;
       lastSpot: number | null;
       points: number;
-      candleSource?: "broker" | "sampled";
+      candleSource?: "broker" | "sampled" | "upstox";
       hasVolume?: boolean;
     }>(
       `/api/chart/${symbol}?interval=${interval}` +

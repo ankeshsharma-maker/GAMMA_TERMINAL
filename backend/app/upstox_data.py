@@ -557,3 +557,67 @@ async def indicator_scan(symbols: list[str], as_of: str, lookback: int = 90) -> 
 
     out = await asyncio.gather(*[_g(s) for s in symbols[:60]])
     return [o for o in out if o]
+
+
+# ------------------------------------------------------- underlying OHLC candles
+def _candle_ts(iso_ts: str) -> int:
+    try:
+        return int(datetime.fromisoformat(iso_ts).timestamp())
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+async def fetch_underlying_candles(symbol: str, interval_s: int) -> list[dict]:
+    """OHLCV candles for an index / F&O-stock underlying from Upstox v2
+    historical-candle, shaped for charting.build_chart(). `interval_s` picks
+    the Upstox unit: <=60 -> 1minute (~10d), <=1800 -> 30minute (~90d),
+    else -> day (~5y). Past history + today's intraday are merged."""
+    from datetime import date, timedelta
+
+    ux = get_upstox()
+    await ux.load_instruments()
+    key = ux.underlying_key(symbol)
+    if not key:
+        return []
+
+    today = date.today()
+    if interval_s <= 60:
+        unit, frm = "1minute", today - timedelta(days=10)
+    elif interval_s <= 1800:
+        unit, frm = "30minute", today - timedelta(days=90)
+    else:
+        unit, frm = "day", today - timedelta(days=1825)
+
+    out: list[dict] = []
+    seen: set[int] = set()
+
+    def _push(rows):
+        for c in rows or []:
+            ts = _candle_ts(c[0])
+            if not ts or ts in seen:
+                continue
+            seen.add(ts)
+            out.append({
+                "time": ts,
+                "open": _num(c[1]), "high": _num(c[2]),
+                "low": _num(c[3]), "close": _num(c[4]),
+                "volume": _num(c[5]) if len(c) > 5 else 0.0,
+            })
+
+    try:
+        h = await ux.get(
+            f"/historical-candle/{key}/{unit}/{today.isoformat()}/{frm.isoformat()}"
+        )
+        _push(h.get("data", {}).get("candles", []))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("upstox hist candles %s failed: %s", symbol, exc)
+
+    if unit in ("1minute", "30minute"):
+        try:
+            h = await ux.get(f"/historical-candle/intraday/{key}/{unit}")
+            _push(h.get("data", {}).get("candles", []))
+        except Exception as exc:  # noqa: BLE001
+            log.debug("upstox intraday candles %s failed: %s", symbol, exc)
+
+    out.sort(key=lambda c: c["time"])
+    return out

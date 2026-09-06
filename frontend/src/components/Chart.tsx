@@ -31,7 +31,7 @@ interface ChartData {
   series: Record<string, Pt[]>;
   lastSpot: number | null;
   points: number;
-  candleSource?: "broker" | "sampled";
+  candleSource?: "broker" | "sampled" | "upstox";
   hasVolume?: boolean;
 }
 
@@ -640,7 +640,9 @@ export function Chart() {
           {data
             ? data.candleSource === "broker"
               ? `${data.candles.length} bars · Flattrade${data.hasVolume ? " + vol" : ""}`
-              : `${data.points} samples · sampled (connect Flattrade for real bars + volume)`
+              : data.candleSource === "upstox"
+              ? `${data.candles.length} bars · Upstox${data.hasVolume ? " + vol" : ""}`
+              : `${data.points} samples · sampled (connect Flattrade / Upstox for real bars)`
             : "loading…"}
         </span>
       </div>

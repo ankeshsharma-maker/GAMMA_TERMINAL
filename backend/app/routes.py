@@ -243,22 +243,49 @@ async def chart(
         )
 
     # ---- underlying (default) ----
+    from .brokers.upstox import get_upstox
+    from . import upstox_data
+
     base_candles = None
-    if broker.authed:
+    src_label = "broker"
+    prefer_ux = store.data_source() == "upstox" and get_upstox().authed
+
+    async def _ux_candles():
+        try:
+            return await upstox_data.fetch_underlying_candles(symbol, interval)
+        except Exception:  # noqa: BLE001
+            return None
+
+    if prefer_ux:
+        base_candles = await _ux_candles()
+        if base_candles:
+            src_label = "upstox"
+
+    if not base_candles and broker.authed:
         try:
             tok = await broker.feed_token(symbol)
             if tok:
                 base_candles = await broker.tpseries(
                     tok[0], tok[1], minutes_back=lookback, interval=str(fetch_min)
                 )
+                if base_candles:
+                    src_label = "broker"
         except Exception:  # noqa: BLE001
             base_candles = None
+
+    # Upstox fallback — real history for BSE indices & long daily ranges
+    if not base_candles and get_upstox().authed:
+        base_candles = await _ux_candles()
+        if base_candles:
+            src_label = "upstox"
+
     return build_chart(
         symbol,
         store.get_history(symbol),
         store.get_scan_history(symbol),
         interval_s=interval,
         base_candles=base_candles,
+        source_label=src_label,
     )
 
 
