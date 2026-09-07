@@ -19,6 +19,17 @@ import {
   type Pt,
 } from "../lib/indicators";
 
+const IST = "Asia/Kolkata";
+const istT = (t: number) =>
+  new Date(t * 1000).toLocaleTimeString("en-GB", {
+    timeZone: IST,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+const istD = (t: number) =>
+  new Date(t * 1000).toLocaleDateString("en-GB", { timeZone: IST, day: "2-digit", month: "short" });
+
 export type MiniInd = {
   ema9: boolean;
   ema21: boolean;
@@ -51,6 +62,7 @@ export function MiniChart({
   label,
   ind,
   src,
+  hideTime = false,
 }: {
   symbol: string;
   instrument: string;
@@ -58,6 +70,7 @@ export function MiniChart({
   label: string;
   ind?: MiniInd;
   src?: "auto" | "broker" | "upstox";
+  hideTime?: boolean;
 }) {
   const on = ind ?? MINI_IND_DEFAULT;
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -81,7 +94,12 @@ export function MiniChart({
         horzLines: { color: "rgba(255,255,255,0.04)" },
       },
       rightPriceScale: { borderColor: "rgba(255,255,255,0.08)" },
-      timeScale: { borderColor: "rgba(255,255,255,0.08)", timeVisible: true },
+      localization: { timeFormatter: (t: number) => `${istD(t)} ${istT(t)}` },
+      timeScale: {
+        borderColor: "rgba(255,255,255,0.08)",
+        timeVisible: true,
+        tickMarkFormatter: (t: number, tickType: number) => (tickType <= 2 ? istD(t) : istT(t)),
+      },
       crosshair: { mode: 0 },
       handleScale: true,
       handleScroll: true,
@@ -223,6 +241,10 @@ export function MiniChart({
     on.pivots,
     on.rsi,
   ]);
+
+  useEffect(() => {
+    chartRef.current?.timeScale().applyOptions({ visible: !hideTime });
+  }, [hideTime]);
 
   return (
     <div className="relative h-full w-full">

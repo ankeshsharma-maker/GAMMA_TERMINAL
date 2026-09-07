@@ -73,6 +73,68 @@ const dedupe = (pts: Pt[] = []) => {
   return [...m.entries()].sort((a, b) => a[0] - b[0]).map(([time, value]) => ({ time, value }));
 };
 
+/* ---- IST time rendering (lightweight-charts draws UTC by default, so the
+ *      NSE session 09:15-15:30 was showing ~5.5h off) ---- */
+const IST = "Asia/Kolkata";
+const istTime = (t: number) =>
+  new Date(t * 1000).toLocaleTimeString("en-GB", {
+    timeZone: IST,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+const istDate = (t: number) =>
+  new Date(t * 1000).toLocaleDateString("en-GB", { timeZone: IST, day: "2-digit", month: "short" });
+const IST_LOCALIZATION = {
+  timeFormatter: (t: number) => `${istDate(t)} ${istTime(t)}`,
+};
+const istTickFormatter = (t: number, tickType: number) =>
+  tickType <= 2 ? istDate(t) : istTime(t);
+
+/** OHLC resample to a coarser bucket, for multi-timeframe indicator overlays. */
+function resampleCandles(cs: Candle[], sec: number): Candle[] {
+  if (!cs.length || sec <= 0) return cs;
+  const out: Candle[] = [];
+  let cur: Candle | null = null;
+  let key = -1;
+  for (const c of cs) {
+    const k = Math.floor((c.time as number) / sec);
+    if (k !== key) {
+      if (cur) out.push(cur);
+      cur = { ...c };
+      key = k;
+    } else if (cur) {
+      cur.high = Math.max(cur.high, c.high);
+      cur.low = Math.min(cur.low, c.low);
+      cur.close = c.close;
+      (cur as any).volume = ((cur as any).volume ?? 0) + ((c as any).volume ?? 0);
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+/** forward-fill a coarse indicator series onto the base candle timeline (step). */
+function stepOnto(base: Candle[], pts: Pt[]): Pt[] {
+  if (!pts.length || !base.length) return [];
+  const out: Pt[] = [];
+  let j = 0;
+  for (const b of base) {
+    const bt = b.time as number;
+    while (j + 1 < pts.length && pts[j + 1].time <= bt) j++;
+    if (pts[j].time <= bt) out.push({ time: bt, value: pts[j].value });
+  }
+  return out;
+}
+
+const MTF_INDS: [string, string][] = [
+  ["ema", "EMA"],
+  ["sma", "SMA"],
+  ["vwap", "VWAP"],
+  ["boll", "Bollinger mid"],
+  ["supertrend", "Supertrend"],
+];
+
 export function Chart() {
   const symbol = useStore((s) => s.symbol);
   const chain = useStore((s) => s.chain);
@@ -162,9 +224,28 @@ export function Chart() {
     oi: false,
     oichg: false,
     pivot: false,
-    straddle: true,
+    straddle: false, // ATM CE+PE price (a volatility proxy) — opt-in, it was crowding every chart
     score: false,
   });
+  // hide the time (x) axis labels for a cleaner chart
+  const [showTime, setShowTime] = useState(() => {
+    try {
+      return localStorage.getItem("chart.showTime") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const toggleTime = () =>
+    setShowTime((v) => {
+      try {
+        localStorage.setItem("chart.showTime", v ? "0" : "1");
+      } catch {
+        /* ignore */
+      }
+      return !v;
+    });
+  // multi-timeframe indicator overlay: pick an indicator + length + timeframe
+  const [mtf, setMtf] = useState<{ ind: string; len: number; tf: number } | null>(null);
   // "hide indicators" — blank every overlay/sub-pane at once while keeping the
   // user's real selection so it comes straight back on toggle.
   const [indHidden, setIndHidden] = useState(() => {
@@ -221,8 +302,14 @@ export function Chart() {
       layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#7a8699" },
       grid: { vertLines: { color: "#141c27" }, horzLines: { color: "#141c27" } },
       crosshair: { mode: CrosshairMode.Normal },
+      localization: IST_LOCALIZATION,
       rightPriceScale: { borderColor: "#1e2733", scaleMargins: { top: 0.06, bottom: 0.28 } },
-      timeScale: { borderColor: "#1e2733", timeVisible: true, secondsVisible: false },
+      timeScale: {
+        borderColor: "#1e2733",
+        timeVisible: true,
+        secondsVisible: false,
+        tickMarkFormatter: istTickFormatter,
+      },
       autoSize: true,
     });
     chartRef.current = chart;
@@ -286,6 +373,13 @@ export function Chart() {
     c.bu = line("#475569");
     c.bl = line("#475569");
     c.st = line("#22c55e", 2);
+    c.mtf = chart.addLineSeries({
+      color: "#22d3ee",
+      lineWidth: 2,
+      lineStyle: LineStyle.Dashed,
+      priceLineVisible: false,
+      lastValueVisible: true,
+    });
 
     c.straddle = chart.addLineSeries({
       color: "#a855f7",
@@ -467,6 +561,27 @@ export function Chart() {
     setLine("bl", ind.bl, eff.boll);
     setLine("st", ind.st, eff.supertrend);
 
+    // multi-timeframe indicator overlay (dashed cyan) — indicator computed on
+    // candles resampled to `mtf.tf`, then stepped back onto the chart timeline
+    {
+      const mser = c.mtf as ISeriesApi<"Line">;
+      if (mtf && cd.length && !indHidden) {
+        const rc = mtf.tf > (intervalS || 0) ? resampleCandles(cd, mtf.tf) : cd;
+        let raw: Pt[] = [];
+        if (mtf.ind === "ema") raw = ema(rc, mtf.len || 21);
+        else if (mtf.ind === "sma") raw = sma(rc, mtf.len || 20);
+        else if (mtf.ind === "vwap") raw = vwap(rc);
+        else if (mtf.ind === "boll") raw = bollinger(rc, mtf.len || 20, 2).mid;
+        else if (mtf.ind === "supertrend") raw = supertrend(rc, mtf.len || 10, 3);
+        const pts = stepOnto(cd, raw);
+        mser.applyOptions({ visible: pts.length > 0 });
+        mser.setData(pts as any);
+      } else {
+        mser.applyOptions({ visible: false });
+        mser.setData([]);
+      }
+    }
+
     // volume
     const vser = c.vol as ISeriesApi<"Histogram">;
     const showVol = eff.vol && !!data.hasVolume;
@@ -519,33 +634,38 @@ export function Chart() {
     (c.ceChg as ISeriesApi<"Histogram">).setData((eff.oichg ? chgBars("ceOIChg", "#f8717199") : []) as any);
     (c.peChg as ISeriesApi<"Histogram">).setData((eff.oichg ? chgBars("peOIChg", "#4ade8099") : []) as any);
 
-    // ---- stack the sub-panes so they never overlap each other or volume ----
+    // ---- stack every lower pane so they never overlap each other, volume,
+    //      or the straddle / blast-score overlays (which used to be pinned to
+    //      the same bottom slot as RSI/MACD) ----
     {
-      const sub: ("vol" | "oi" | "oichg" | "rsi" | "macd")[] = [];
+      type SubKey = "vol" | "oi" | "oichg" | "straddle" | "score" | "rsi" | "macd";
+      const sub: SubKey[] = [];
       if (showVol) sub.push("vol");
       if (eff.oi) sub.push("oi");
       if (eff.oichg) sub.push("oichg");
+      if (eff.straddle) sub.push("straddle");
+      if (eff.score) sub.push("score");
       if (eff.rsi) sub.push("rsi");
       if (eff.macd) sub.push("macd");
       const n = sub.length;
-      const band = n === 0 ? 0 : n === 1 ? 0.22 : n === 2 ? 0.17 : n === 3 ? 0.14 : n === 4 ? 0.11 : 0.09;
+      const band = n === 0 ? 0 : n === 1 ? 0.2 : n === 2 ? 0.16 : n === 3 ? 0.13 : n === 4 ? 0.1 : n === 5 ? 0.085 : 0.07;
       const gap = n >= 4 ? 0.02 : 0.03;
-      const reserve = n === 0 ? 0.08 : n * band + (n - 1) * gap + 0.05;
+      const reserve = n === 0 ? 0.06 : Math.min(0.74, n * band + (n - 1) * gap + 0.05);
       chartRef.current.priceScale("right").applyOptions({
-        scaleMargins: { top: 0.06, bottom: Math.min(0.8, reserve) },
+        scaleMargins: { top: 0.06, bottom: reserve },
       });
       sub.forEach((p, i) => {
         const bottom = 0.02 + (n - 1 - i) * (band + gap); // i=0 sits highest
         chartRef.current!.priceScale(p).applyOptions({
           scaleMargins: { top: 1 - bottom - band, bottom },
-          visible: p !== "vol",
+          visible: false, // overlays read off the price grid; no extra axis clutter
         });
       });
     }
 
     applyRange();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [priceCandles, ctype, data, eff]);
+  }, [priceCandles, ctype, data, eff, mtf, indHidden, intervalS]);
 
   // clamp the visible window to the chosen lookback (1D / 3M / 6M / 1Y / All)
   const applyRange = () => {
@@ -565,6 +685,10 @@ export function Chart() {
     }
   };
   useEffect(applyRange, [rangeD]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    chartRef.current?.timeScale().applyOptions({ visible: showTime });
+  }, [showTime]);
 
   // live last-price nudge — move the last candle toward the latest price for
   // whatever instrument is charted: the underlying tick, the charted option
@@ -930,6 +1054,66 @@ export function Chart() {
         >
           ⤢
         </button>
+        <button
+          onClick={toggleTime}
+          className={`rounded border px-2 py-0.5 font-semibold ${
+            showTime
+              ? "border-term-border text-term-dim hover:text-term-text"
+              : "border-amber-500/60 bg-amber-500/15 text-amber-400"
+          }`}
+          title="Show / hide the time axis labels"
+        >
+          {showTime ? "🕒 time" : "🕒 time off"}
+        </button>
+
+        {/* multi-timeframe indicator overlay */}
+        <span className="flex items-center gap-1 rounded border border-cyan-500/40 bg-cyan-500/10 px-1 py-0.5">
+          <span className="text-[10px] font-semibold text-cyan-300">MTF</span>
+          <select
+            value={mtf?.ind ?? ""}
+            onChange={(e) =>
+              setMtf(
+                e.target.value
+                  ? { ind: e.target.value, len: mtf?.len ?? 21, tf: mtf?.tf ?? 900 }
+                  : null
+              )
+            }
+            className="rounded border border-term-border bg-term-bg px-1 py-0.5 text-[10px] text-term-text outline-none"
+          >
+            <option value="">off</option>
+            {MTF_INDS.map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
+          </select>
+          {mtf && mtf.ind !== "vwap" && (
+            <input
+              type="number"
+              min={2}
+              max={400}
+              value={mtf.len}
+              onChange={(e) => setMtf({ ...mtf, len: Math.max(2, Number(e.target.value) || 21) })}
+              className="w-11 rounded border border-term-border bg-term-bg px-1 py-0.5 text-[10px] text-term-text outline-none"
+              title="Indicator length / period"
+            />
+          )}
+          {mtf && (
+            <select
+              value={mtf.tf}
+              onChange={(e) => setMtf({ ...mtf, tf: Number(e.target.value) })}
+              className="rounded border border-term-border bg-term-bg px-1 py-0.5 text-[10px] text-term-text outline-none"
+              title="Timeframe the indicator is computed on"
+            >
+              {TIMEFRAMES.map(([l, v]) => (
+                <option key={v} value={v}>
+                  @ {l}
+                </option>
+              ))}
+            </select>
+          )}
+        </span>
+
         <button
           onClick={() => setInd(!indHidden)}
           className={`rounded border px-2 py-0.5 font-semibold ${

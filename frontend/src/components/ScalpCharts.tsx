@@ -61,6 +61,22 @@ export function ScalpCharts() {
       }
       return !v;
     });
+  const [paneTime, setPaneTime] = useState(() => {
+    try {
+      return localStorage.getItem("scalp.paneTime") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const togglePaneTime = () =>
+    setPaneTime((v) => {
+      try {
+        localStorage.setItem("scalp.paneTime", v ? "0" : "1");
+      } catch {
+        /* ignore */
+      }
+      return !v;
+    });
 
   const [choices, setChoices] = useState<string[]>([]);
   useEffect(() => {
@@ -134,6 +150,19 @@ export function ScalpCharts() {
             title="Hide / show every pane's symbol · TF · indicator row"
           >
             {paneBars ? "⌃ hide pane controls" : "⚙ pane controls"}
+          </button>
+        )}
+        {layout > 1 && (
+          <button
+            onClick={togglePaneTime}
+            className={`rounded border px-2 py-0.5 font-semibold ${
+              paneTime
+                ? "border-term-border text-term-dim hover:text-term-text"
+                : "border-amber-500/60 bg-amber-500/15 text-amber-400"
+            }`}
+            title="Show / hide the time axis on every pane"
+          >
+            {paneTime ? "🕒 time" : "🕒 time off"}
           </button>
         )}
         <span className="ml-auto">
@@ -211,6 +240,7 @@ export function ScalpCharts() {
                   instrument={p.instr}
                   intervalS={p.tf}
                   ind={p.ind}
+                  hideTime={!paneTime}
                   label={`${p.sym}${p.instr && p.instr !== "STRADDLE" ? " " + p.instr.split("|").slice(2).join(" ") : p.instr === "STRADDLE" ? " straddle" : ""} · ${TF.find(([, v]) => v === p.tf)?.[0]}`}
                 />
               </div>
