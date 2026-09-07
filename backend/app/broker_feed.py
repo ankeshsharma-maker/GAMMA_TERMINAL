@@ -69,7 +69,36 @@ async def run_broker_feed(stop: asyncio.Event) -> None:
     log.info("broker feed starting for %s", broker.status().get("clientId"))
     await broker.start_ws(_on_tick)
 
+    down_since: float | None = None
+    warned = False
     while not stop.is_set():
+        # surface a prolonged live-feed outage once (charts fall back to REST
+        # polling meanwhile, which lags and isn't tick-by-tick)
+        st = broker.status()
+        if broker.authed and not st.get("wsConnected"):
+            down_since = down_since or time.time()
+            if not warned and time.time() - down_since > 30:
+                store.add_alert(
+                    {
+                        "ts": time.time(),
+                        "kind": "BROKER_FEED",
+                        "symbol": "—",
+                        "severity": "warning",
+                        "message": "Live broker feed: "
+                        + (st.get("wsError") or "disconnected")
+                        + ". Charts are on delayed REST data until it reconnects.",
+                        "score": 0,
+                    }
+                )
+                try:
+                    await hub.broadcast_all({"type": "alerts", "data": store.get_alerts(50)})
+                except Exception:  # noqa: BLE001
+                    pass
+                warned = True
+        else:
+            down_since = None
+            warned = False
+
         if broker.authed:
             want = await _desired_symbols()
             keys: set[str] = set()

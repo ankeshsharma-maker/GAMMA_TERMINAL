@@ -125,6 +125,7 @@ class FlattradeBroker:
         self._subs: set[str] = set()
         self._on_tick: TickHandler | None = None
         self._ws_connected = False
+        self._ws_error: str | None = None
         self._load_session()
 
     # ---- config / session -------------------------------------------
@@ -262,6 +263,7 @@ class FlattradeBroker:
             "authed": self.authed,
             "clientId": self.client_id if self.authed else None,
             "wsConnected": self._ws_connected,
+            "wsError": getattr(self, "_ws_error", None),
         }
 
     def last_exchange(self, endpoint: str | None = None) -> dict:
@@ -589,6 +591,7 @@ class FlattradeBroker:
             await self._ws.send(json.dumps({"t": "t", "k": "#".join(sorted(new))}))
 
     async def _ws_loop(self) -> None:
+        backoff = 5
         while self._token:
             try:
                 async with websockets.connect(_WS, ping_interval=20, close_timeout=5) as ws:
@@ -612,10 +615,13 @@ class FlattradeBroker:
                         mt = msg.get("t")
                         if mt == "ck":
                             self._ws_connected = msg.get("s") == "OK"
-                            if self._ws_connected and self._subs:
-                                await ws.send(
-                                    json.dumps({"t": "t", "k": "#".join(sorted(self._subs))})
-                                )
+                            if self._ws_connected:
+                                self._ws_error = None
+                                backoff = 5  # healthy: reset the retry timer
+                                if self._subs:
+                                    await ws.send(
+                                        json.dumps({"t": "t", "k": "#".join(sorted(self._subs))})
+                                    )
                         elif mt in ("tf", "tk", "df", "dk") and self._on_tick:
                             tok = msg.get("tk") or msg.get("token")
                             if tok:
@@ -625,10 +631,29 @@ class FlattradeBroker:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
-                log.warning("Flattrade WS dropped: %s; retrying in 5s", exc)
+                code = getattr(exc, "code", None)
+                reason = getattr(exc, "reason", None) or str(exc)
+                if code == 1008:
+                    # Flattrade allows one live socket per login — another
+                    # session (mobile app / Pi web) is holding the slot, or
+                    # we reconnected too fast.
+                    self._ws_error = (
+                        "feed refused (1008 policy violation) — close any other "
+                        "Flattrade session and hit ↻ refresh"
+                    )
+                else:
+                    self._ws_error = f"feed dropped: {reason}"
+                log.warning(
+                    "Flattrade WS dropped: code=%s reason=%s; retrying in %ss",
+                    code, reason, backoff,
+                )
             self._ws_connected = False
             self._ws = None
-            await asyncio.sleep(5)
+            try:
+                await asyncio.sleep(backoff)
+            except asyncio.CancelledError:
+                raise
+            backoff = min(backoff * 2, 60)
 
     async def aclose(self) -> None:
         await self.stop_ws()
