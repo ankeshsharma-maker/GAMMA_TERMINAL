@@ -1320,6 +1320,8 @@ export function StrategyBuilder() {
                 spot={analysis.spot}
                 breakevens={analysis.breakevens}
                 tPnl={tPnl}
+                symbol={analysis.symbol}
+                tLabel={tPnl ? `T+${tDays}d` : undefined}
               />
             )}
             {analysis && (
@@ -1354,7 +1356,7 @@ export function StrategyBuilder() {
                       ))}
                     </div>
                   </div>
-                  <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 text-2xs">
+                  <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/50 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
                     <thead className="text-[10px] uppercase text-term-dim">
                       <tr>
                         <th className="border-b border-term-border px-2 py-1 text-right font-medium">
@@ -1445,7 +1447,7 @@ export function StrategyBuilder() {
                       ))}
                     </div>
                   </div>
-                  <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 text-2xs">
+                  <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/50 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
                     <thead className="text-[10px] uppercase text-term-dim">
                       <tr>
                         <th className="border-b border-term-border px-2 py-1 text-left font-medium">
