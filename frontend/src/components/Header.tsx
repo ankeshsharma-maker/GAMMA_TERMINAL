@@ -4,7 +4,7 @@ import { ivRegime } from "../lib/iv";
 import { api } from "../lib/api";
 import { lockNow } from "../lib/auth";
 import { ConnBadge } from "./ConnBadge";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 function Stat({ label, value, cls = "" }: { label: string; value: ReactNode; cls?: string }) {
   return (
@@ -112,12 +112,37 @@ function loadHdrSymbols(): string[] {
 }
 
 export function HeaderIndices() {
-  const [symbols, setSymbols] = useState<string[]>(loadHdrSymbols);
+  const [pinned, setPinned] = useState<string[]>(loadHdrSymbols);
+  const watch = useStore((s) => s.watch);
   const [rows, setRows] = useState<
     { symbol: string; spot: number | null; chgPct: number | null; chgPts?: number | null }[]
   >([]);
   const [options, setOptions] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
+
+  // the ticker = pinned indices + every non-option instrument on the watchlist
+  const wlSyms = useMemo(
+    () => [...new Set(watch.filter((w) => w.kind !== "option").map((w) => w.symbol.toUpperCase()))],
+    [watch]
+  );
+  const symbols = useMemo(
+    () => [...new Set([...pinned, ...wlSyms])].slice(0, 16),
+    [pinned, wlSyms]
+  );
+  // per-symbol change straight off the watchlist store, as a fallback for
+  // anything the header endpoint can't price a change for (stocks when the
+  // broker feed is quiet)
+  const wlChg = useMemo(() => {
+    const m: Record<string, { pts: number | null; pct: number | null }> = {};
+    for (const w of watch) {
+      if (w.kind === "option") continue;
+      m[w.symbol.toUpperCase()] = {
+        pts: w.variation ?? null,
+        pct: w.liveChgPct ?? w.chgPct ?? null,
+      };
+    }
+    return m;
+  }, [watch]);
 
   useEffect(() => {
     api.indicesHeaderOptions().then((d) => setOptions(d.options), () => {});
@@ -133,10 +158,10 @@ export function HeaderIndices() {
       alive = false;
       clearInterval(t);
     };
-  }, [symbols]);
+  }, [symbols.join(",")]);
 
   const setAndPersist = (next: string[]) => {
-    setSymbols(next);
+    setPinned(next);
     try {
       localStorage.setItem(HDR_LS_KEY, JSON.stringify(next));
     } catch {
@@ -144,50 +169,61 @@ export function HeaderIndices() {
     }
   };
   const toggle = (sym: string) => {
-    const has = symbols.includes(sym);
-    if (has) setAndPersist(symbols.filter((s) => s !== sym));
-    else if (symbols.length < HDR_MAX) setAndPersist([...symbols, sym]);
+    const has = pinned.includes(sym);
+    if (has) setAndPersist(pinned.filter((s) => s !== sym));
+    else if (pinned.length < HDR_MAX) setAndPersist([...pinned, sym]);
   };
 
   const [addTxt, setAddTxt] = useState("");
   const addCustom = () => {
     const s = addTxt.trim().toUpperCase();
     if (!s) return;
-    if (!symbols.includes(s) && symbols.length < HDR_MAX) setAndPersist([...symbols, s]);
+    if (!pinned.includes(s) && pinned.length < HDR_MAX) setAndPersist([...pinned, s]);
     setAddTxt("");
   };
 
+  const byBackend = useMemo(() => {
+    const m: Record<string, (typeof rows)[number]> = {};
+    for (const r of rows) m[r.symbol.toUpperCase()] = r;
+    return m;
+  }, [rows]);
+
   return (
     <div className="relative flex items-center gap-1.5">
-      {rows.map((r) => (
-        <div
-          key={r.symbol}
-          className="flex items-baseline gap-1 rounded border border-term-border bg-term-bg/60 px-1.5 py-0.5"
-          title={r.symbol}
-        >
-          <span className="text-[9px] font-semibold uppercase text-term-dim">
-            {HDR_LABEL[r.symbol] ?? r.symbol}
-          </span>
-          <span className="num text-xs font-medium">{r.spot != null ? px(r.spot) : "–"}</span>
-          {(() => {
-            const pts =
-              r.chgPts != null
-                ? r.chgPts
-                : r.chgPct != null && r.spot != null
-                ? r.spot - r.spot / (1 + r.chgPct / 100)
-                : null;
-            if (pts == null && r.chgPct == null) return null;
-            const up = (r.chgPct ?? pts ?? 0) >= 0;
-            return (
-              <span className={`num text-[10px] ${up ? "text-up" : "text-down"}`}>
-                {up ? "▲" : "▼"}
+      {symbols.map((sym) => {
+        const r = byBackend[sym];
+        const w = wlChg[sym];
+        const spot = r?.spot ?? null;
+        let pct = r?.chgPct ?? w?.pct ?? null;
+        let pts = r?.chgPts ?? w?.pts ?? null;
+        if (pts == null && pct != null && spot != null)
+          pts = spot - spot / (1 + pct / 100);
+        if (pct == null && pts != null && spot != null && spot !== pts)
+          pct = (pts / (spot - pts)) * 100;
+        return (
+          <div
+            key={sym}
+            className="flex shrink-0 items-baseline gap-1 rounded border border-term-border bg-term-bg/60 px-1.5 py-0.5"
+            title={sym}
+          >
+            <span className="text-[9px] font-semibold uppercase text-term-dim">
+              {HDR_LABEL[sym] ?? sym}
+            </span>
+            <span className="num text-xs font-medium">{spot != null ? px(spot) : "–"}</span>
+            {(pts != null || pct != null) && (
+              <span
+                className={`num text-[10px] ${
+                  (pct ?? pts ?? 0) >= 0 ? "text-up" : "text-down"
+                }`}
+              >
+                {(pct ?? pts ?? 0) >= 0 ? "▲" : "▼"}
                 {pts != null ? px(Math.abs(pts), 2) : "–"}
-                {r.chgPct != null && ` (${px(Math.abs(r.chgPct), 2)}%)`}
+                {pct != null && ` (${px(Math.abs(pct), 2)}%)`}
               </span>
-            );
-          })()}
-        </div>
-      ))}
+            )}
+          </div>
+        );
+      })}
 
       <button
         onClick={() => setOpen((o) => !o)}
@@ -202,20 +238,24 @@ export function HeaderIndices() {
       {open && (
         <div className="absolute left-0 top-full z-30 mt-1 w-52 rounded-md border border-term-border bg-term-panel p-2 shadow-xl">
           <div className="mb-1.5 text-[10px] uppercase tracking-wide text-term-dim">
-            Header indices ({symbols.length}/{HDR_MAX})
+            Pinned indices ({pinned.length}/{HDR_MAX})
+          </div>
+          <div className="mb-1.5 text-[10px] leading-snug text-term-dim/80">
+            Everything on your watchlist already shows in the ticker — pin extra
+            indices here.
           </div>
 
           {/* currently shown — removable */}
-          {symbols.length > 0 && (
+          {pinned.length > 0 && (
             <div className="mb-1.5 flex flex-wrap gap-1">
-              {symbols.map((s) => (
+              {pinned.map((s) => (
                 <span
                   key={s}
                   className="flex items-center gap-1 rounded bg-term-bg px-1.5 py-0.5 text-2xs text-term-text"
                 >
                   {HDR_LABEL[s] ?? s}
                   <button
-                    onClick={() => setAndPersist(symbols.filter((x) => x !== s))}
+                    onClick={() => setAndPersist(pinned.filter((x) => x !== s))}
                     className="text-term-dim hover:text-down"
                   >
                     ×
@@ -232,12 +272,12 @@ export function HeaderIndices() {
               onChange={(e) => setAddTxt(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addCustom()}
               placeholder="Add symbol (e.g. SENSEX)"
-              disabled={symbols.length >= HDR_MAX}
+              disabled={pinned.length >= HDR_MAX}
               className="min-w-0 flex-1 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs text-term-text outline-none focus:border-term-accent disabled:opacity-40"
             />
             <button
               onClick={addCustom}
-              disabled={symbols.length >= HDR_MAX}
+              disabled={pinned.length >= HDR_MAX}
               className="btn px-2 py-0.5 text-2xs disabled:opacity-40"
             >
               Add
@@ -254,9 +294,9 @@ export function HeaderIndices() {
                 >
                   <input
                     type="checkbox"
-                    checked={symbols.includes(o)}
+                    checked={pinned.includes(o)}
                     onChange={() => toggle(o)}
-                    disabled={!symbols.includes(o) && symbols.length >= HDR_MAX}
+                    disabled={!pinned.includes(o) && pinned.length >= HDR_MAX}
                   />
                   {HDR_LABEL[o] ?? o}
                 </label>
