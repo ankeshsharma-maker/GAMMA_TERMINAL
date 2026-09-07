@@ -255,6 +255,26 @@ async def run_poller(stop: asyncio.Event) -> None:
         except Exception as exc:  # noqa: BLE001
             log.warning("schedule tick failed: %s", exc)
 
+        try:
+            from . import broker_bracket
+
+            bev = await broker_bracket.tick()
+            for e in bev:
+                store.add_alert(
+                    {
+                        "ts": time.time(), "symbol": "", "kind": e["kind"],
+                        "severity": "warning", "message": e["message"], "score": 0,
+                    }
+                )
+                log.info("BROKER-BRACKET %s", e["message"])
+            if bev:
+                await hub.broadcast_all({"type": "alerts", "data": store.get_alerts(50)})
+                await hub.broadcast_all(
+                    {"type": "brokerBracket", "data": broker_bracket.get()}
+                )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("broker-bracket tick failed: %s", exc)
+
         interval = POLL_INTERVAL if _in_market_hours() else OFFHOURS_POLL_INTERVAL
         try:
             await asyncio.wait_for(stop.wait(), timeout=interval)

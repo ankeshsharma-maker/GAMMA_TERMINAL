@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
-import { api } from "../lib/api";
+import { api, type BrokerBracket } from "../lib/api";
 import { nf, signColor, hhmm, sk } from "../lib/format";
 import { StopEditor } from "./StopEditor";
 
@@ -45,14 +45,22 @@ function BrokerTab() {
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const loadRef = useRef<() => void>(() => {});
 
+  // portfolio-level auto square-off bracket
+  const [bracket, setBracket] = useState<BrokerBracket | null>(null);
+  const [slAmt, setSlAmt] = useState("");
+  const [tgtAmt, setTgtAmt] = useState("");
+  const [bBasis, setBBasis] = useState<"today" | "mtm">("today");
+
   useEffect(() => {
     if (!broker?.authed) return;
     let alive = true;
-    const load = () =>
+    const load = () => {
       api.brokerPositions().then(
         (d) => alive && (setRows(d.positions || []), setErr(null)),
         (e) => alive && setErr(String(e.message || e))
       );
+      api.brokerBracket().then((b) => alive && setBracket(b), () => {});
+    };
     loadRef.current = load;
     load();
     const t = setInterval(load, 5000);
@@ -148,6 +156,41 @@ function BrokerTab() {
     setSelected(new Set());
   };
 
+  const armBracket = async () => {
+    const sl = parseFloat(slAmt) || 0;
+    const tgt = parseFloat(tgtAmt) || 0;
+    if (sl <= 0 && tgt <= 0) return;
+    const lbl = bBasis === "today" ? "today's P&L" : "open MTM";
+    const cond = `${sl > 0 ? `≤ −₹${nf(sl, 0)}` : ""}${sl > 0 && tgt > 0 ? " or " : ""}${
+      tgt > 0 ? `≥ +₹${nf(tgt, 0)}` : ""
+    }`;
+    if (
+      !window.confirm(
+        `Auto square-off: flatten ALL broker positions with MARKET orders when ${lbl} is ${cond}.\nRuns on the server. Arm it now?`
+      )
+    )
+      return;
+    try {
+      setBracket(
+        await api.brokerBracketSet({
+          enabled: true,
+          slAmount: sl,
+          targetAmount: tgt,
+          basis: bBasis,
+        })
+      );
+    } catch (e: any) {
+      alert(String(e?.message || e));
+    }
+  };
+  const disarmBracket = async () => {
+    try {
+      setBracket(await api.brokerBracketClear());
+    } catch (e: any) {
+      alert(String(e?.message || e));
+    }
+  };
+
   const trade = (r: any, side: "BUY" | "SELL") => {
     if (
       !window.confirm(`${side} ${lots} lot(s) of ${r.tsym} — real LIVE MARKET order. Continue?`)
@@ -160,6 +203,76 @@ function BrokerTab() {
 
   return (
     <div className="min-h-0 flex-1 overflow-auto p-3">
+      {/* summary header */}
+      <div className="mb-2 grid grid-cols-3 gap-2">
+        {([
+          ["Realised P&L", totalRealized],
+          ["MTM (open)", totalMtm],
+          ["Today's P&L", totalToday],
+        ] as const).map(([label, val]) => (
+          <div key={label} className="rounded border border-term-border bg-term-bg/40 px-3 py-1.5">
+            <div className="text-[9px] uppercase tracking-wide text-term-dim">{label}</div>
+            <div className={`num text-base font-bold ${signColor(val)}`}>₹{nf(val, 0)}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* portfolio auto square-off */}
+      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded border border-term-border bg-term-bg/40 px-2 py-1.5 text-2xs">
+        <span className="font-semibold uppercase tracking-wide text-term-dim">⛨ Auto square-off</span>
+        <div className="seg">
+          {(["today", "mtm"] as const).map((b) => (
+            <button key={b} onClick={() => setBBasis(b)} className={bBasis === b ? "on" : ""}>
+              {b === "today" ? "Today P&L" : "MTM"}
+            </button>
+          ))}
+        </div>
+        <label className="flex items-center gap-1 text-term-dim">
+          SL ₹
+          <input
+            value={slAmt}
+            onChange={(e) => setSlAmt(e.target.value.replace(/[^\d.]/g, ""))}
+            placeholder="0"
+            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-down"
+          />
+        </label>
+        <label className="flex items-center gap-1 text-term-dim">
+          Target ₹
+          <input
+            value={tgtAmt}
+            onChange={(e) => setTgtAmt(e.target.value.replace(/[^\d.]/g, ""))}
+            placeholder="0"
+            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-up"
+          />
+        </label>
+        {bracket?.enabled ? (
+          <button onClick={disarmBracket} className="btn ml-auto font-semibold text-amber-400">
+            Disarm
+          </button>
+        ) : (
+          <button
+            onClick={armBracket}
+            disabled={!parseFloat(slAmt) && !parseFloat(tgtAmt)}
+            className="btn btn-sell ml-auto font-semibold disabled:opacity-40"
+          >
+            Arm
+          </button>
+        )}
+        <span className="w-full text-[10px] text-term-dim">
+          {bracket?.enabled
+            ? `ARMED — flattens ALL when ${
+                bracket.basis === "today" ? "today's P&L" : "MTM"
+              } ${bracket.slAmount > 0 ? `≤ −₹${nf(bracket.slAmount, 0)}` : ""}${
+                bracket.slAmount > 0 && bracket.targetAmount > 0 ? " or " : ""
+              }${bracket.targetAmount > 0 ? `≥ +₹${nf(bracket.targetAmount, 0)}` : ""}${
+                bracket.lastPnl != null ? ` · now ₹${nf(bracket.lastPnl, 0)}` : ""
+              }`
+            : bracket?.triggeredAt
+            ? `⚠ ${bracket.lastReason}`
+            : "server-side: MARKET-flattens every position when the P&L threshold is crossed (works with the app closed)."}
+        </span>
+      </div>
+
       <div className="mb-2 flex items-center gap-2 text-2xs">
         <span className="text-term-dim">Lots</span>
         <button className="btn px-1.5 py-0.5" onClick={() => setLots((l) => Math.max(1, l - 1))}>

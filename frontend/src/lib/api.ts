@@ -570,4 +570,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+
+  brokerBracket: () => j<BrokerBracket>("/api/broker/bracket"),
+  brokerBracketSet: (body: Partial<Pick<BrokerBracket, "enabled" | "slAmount" | "targetAmount" | "basis">>) =>
+    j<BrokerBracket>("/api/broker/bracket", { method: "POST", body: JSON.stringify(body) }),
+  brokerBracketClear: () => j<BrokerBracket>("/api/broker/bracket/clear", { method: "POST" }),
 };
+
+export interface BrokerBracket {
+  enabled: boolean;
+  slAmount: number;
+  targetAmount: number;
+  basis: "today" | "mtm";
+  armedAt: number | null;
+  triggeredAt: number | null;
+  lastReason: string;
+  lastPnl: number | null;
+}

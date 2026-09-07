@@ -294,6 +294,27 @@ async def square_off(body: dict):
     return res
 
 
+@router.get("/bracket")
+def bracket_get():
+    from . import broker_bracket
+
+    return broker_bracket.get()
+
+
+@router.post("/bracket")
+def bracket_set(body: dict):
+    from . import broker_bracket
+
+    return broker_bracket.set_cfg(body or {})
+
+
+@router.post("/bracket/clear")
+def bracket_clear():
+    from . import broker_bracket
+
+    return broker_bracket.clear()
+
+
 @router.post("/order-tsym")
 async def order_tsym(body: dict):
     """Place a live order directly against a known Noren tsym (the Broker
