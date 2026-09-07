@@ -289,7 +289,7 @@ export function ScalpPanel() {
         </span>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-auto p-2">
         {!broker?.authed && (
           <div className="p-4 text-center text-2xs text-term-dim">
             Connect Flattrade (header) to see the live broker P&amp;L feed.
@@ -298,50 +298,85 @@ export function ScalpPanel() {
         {broker?.authed && feedErr && (
           <div className="p-4 text-center text-2xs text-down">{feedErr}</div>
         )}
-        {broker?.authed && !feedErr && myOpen.length === 0 && (
+        {broker?.authed && !feedErr && myRows.length === 0 && (
           <div className="p-4 text-center text-2xs text-term-dim">
-            No open {symbol} positions at the broker.
+            No {symbol} positions at the broker today.
           </div>
         )}
-        {myOpen.map((r) => {
-          const qty = n(r.netqty) ?? 0;
-          const lot = n(r.ls) ?? n(r.lotsize) ?? 0;
-          const lots = lot ? Math.abs(qty / lot) : Math.abs(qty);
-          const mtm = mtmOf(r);
-          const rp = rpnlOf(r);
-          const key = String(r.tsym ?? r.symname ?? Math.random());
-          return (
-            <div key={key} className="border-b border-term-border/50 px-3 py-1.5 text-2xs">
-              <div className="flex items-center justify-between">
-                <div className="flex flex-col leading-tight">
-                  <span className="num font-medium">
-                    {r.dname ?? r.tsym} {qty > 0 ? "L" : qty < 0 ? "S" : "—"}
-                    {lots || ""}
-                  </span>
-                  <span className="num text-term-dim">
-                    @ {nf(n(r.netavgprc) ?? n(r.daybuyavgprc) ?? n(r.daysellavgprc))} →{" "}
-                    {nf(n(r.lp))}
-                    {rp !== 0 && (
-                      <span className="ml-1">
-                        · rlz <span className={signColor(rp)}>₹{nf(rp, 0)}</span>
-                      </span>
-                    )}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`num ${signColor(mtm)}`}>₹{nf(mtm, 0)}</span>
-                  <button
-                    onClick={() => squareOff(r)}
-                    disabled={!qty || busy.has(key)}
-                    className="rounded bg-term-border px-2 py-0.5 text-[10px] hover:bg-term-panel disabled:opacity-30"
-                  >
-                    {busy.has(key) ? "…" : "Exit"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+        {broker?.authed && !feedErr && myRows.length > 0 && (
+          <table className="w-full border-separate border-spacing-0 border border-term-border text-2xs [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/50 [&_td]:px-1.5 [&_td]:py-1 [&_td:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border [&_th]:px-1.5 [&_th]:py-1 [&_th:last-child]:border-r-0">
+            <thead className="sticky top-0 bg-term-panel text-[10px] uppercase text-term-dim">
+              <tr>
+                <th className="text-left font-medium">Instrument</th>
+                <th className="text-right font-medium">Qty</th>
+                <th className="text-right font-medium">Avg</th>
+                <th className="text-right font-medium">LTP</th>
+                <th className="text-right font-medium">MTM</th>
+                <th className="text-right font-medium">Realised</th>
+                <th className="font-medium" />
+              </tr>
+            </thead>
+            <tbody>
+              {myRows.map((r) => {
+                const qty = n(r.netqty) ?? 0;
+                const lot = n(r.ls) ?? n(r.lotsize) ?? 0;
+                const lots = lot ? Math.abs(qty / lot) : Math.abs(qty);
+                const mtm = mtmOf(r);
+                const rp = rpnlOf(r);
+                const key = String(r.tsym ?? r.symname ?? Math.random());
+                return (
+                  <tr key={key} className={qty === 0 ? "text-term-dim" : ""}>
+                    <td className="num whitespace-nowrap">{r.dname ?? r.tsym}</td>
+                    <td className="num text-right">
+                      {qty === 0 ? (
+                        "—"
+                      ) : (
+                        <span className={qty > 0 ? "text-up" : "text-down"}>
+                          {qty > 0 ? "L" : "S"}
+                          {lots || Math.abs(qty)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="num text-right">
+                      {qty === 0
+                        ? "—"
+                        : nf(n(r.netavgprc) ?? n(r.daybuyavgprc) ?? n(r.daysellavgprc))}
+                    </td>
+                    <td className="num text-right">{nf(n(r.lp))}</td>
+                    <td className={`num text-right ${signColor(mtm)}`}>₹{nf(mtm, 0)}</td>
+                    <td
+                      className={`num text-right ${rp !== 0 ? signColor(rp) : "text-term-dim"}`}
+                    >
+                      {rp >= 0 ? "+" : ""}₹{nf(rp, 0)}
+                    </td>
+                    <td className="text-center">
+                      <button
+                        onClick={() => squareOff(r)}
+                        disabled={!qty || busy.has(key)}
+                        className="rounded bg-term-border px-2 py-0.5 text-[10px] hover:bg-term-panel disabled:opacity-25"
+                      >
+                        {busy.has(key) ? "…" : "Exit"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot className="bg-term-panel font-semibold">
+              <tr>
+                <td className="num">Total</td>
+                <td />
+                <td />
+                <td />
+                <td className={`num text-right ${signColor(symMtm)}`}>₹{nf(symMtm, 0)}</td>
+                <td className={`num text-right ${signColor(symRpnl)}`}>
+                  {symRpnl >= 0 ? "+" : ""}₹{nf(symRpnl, 0)}
+                </td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        )}
       </div>
 
       {myOpen.length > 0 && (
