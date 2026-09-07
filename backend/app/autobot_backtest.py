@@ -95,10 +95,14 @@ async def backtest_rule(
     if not ux.underlying_key(symbol):
         raise RuntimeError(f"Upstox has no key for {symbol}")
 
-    # 1. underlying daily candles — full history for indicator warm-up
+    # 1. underlying daily candles — full history for indicator warm-up.
+    # retry with backoff — Upstox rate-limits the historical endpoint and
+    # returns an empty list when throttled.
     candles = await upstox_data.fetch_underlying_candles(symbol, 86400)
-    if len(candles) < 40:
-        await asyncio.sleep(2)  # Upstox rate-limit backoff, then one retry
+    for wait in (3, 6, 10):
+        if len(candles) >= 40:
+            break
+        await asyncio.sleep(wait)
         candles = await upstox_data.fetch_underlying_candles(symbol, 86400)
     if len(candles) < 40:
         raise RuntimeError(
@@ -334,8 +338,10 @@ async def _backtest_intraday(
         raise RuntimeError(f"Upstox has no key for {symbol}")
 
     raw = await upstox_data.fetch_underlying_candles(symbol, interval)
-    if len(raw) < 30:
-        await asyncio.sleep(2)
+    for wait in (3, 6, 10):
+        if len(raw) >= 30:
+            break
+        await asyncio.sleep(wait)
         raw = await upstox_data.fetch_underlying_candles(symbol, interval)
     cands = _resample(raw, interval)
     if len(cands) < 30:

@@ -14,9 +14,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time as _time
 from datetime import datetime
 
 from .brokers.upstox import get_upstox
+
+# short-TTL cache for underlying candle fetches — the poller and every
+# backtest hit the same Upstox historical endpoint; without this a rapid
+# re-run trips Upstox rate-limiting and comes back empty.
+_UC_CACHE: dict[tuple, tuple[float, list]] = {}
+_UC_TTL = 90.0
 
 log = logging.getLogger("upstox_data")
 
@@ -595,6 +602,11 @@ async def fetch_underlying_candles(symbol: str, interval_s: int) -> list[dict]:
     if not key:
         return []
 
+    ck = (symbol.upper(), int(interval_s))
+    hit = _UC_CACHE.get(ck)
+    if hit and _time.time() - hit[0] < _UC_TTL and len(hit[1]) >= 40:
+        return hit[1]
+
     today = date.today()
     unit, frm = _ux_hist_window(interval_s, today, 1825)
 
@@ -630,6 +642,10 @@ async def fetch_underlying_candles(symbol: str, interval_s: int) -> list[dict]:
             log.debug("upstox intraday candles %s failed: %s", symbol, exc)
 
     out.sort(key=lambda c: c["time"])
+    if len(out) >= 40:
+        _UC_CACHE[ck] = (_time.time(), out)
+    elif hit and len(hit[1]) >= 40:
+        return hit[1]  # rate-limited now — serve the last good result
     return out
 
 
