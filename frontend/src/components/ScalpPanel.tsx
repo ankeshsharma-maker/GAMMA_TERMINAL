@@ -13,7 +13,6 @@ export function ScalpPanel() {
     symbol,
     chain,
     watch,
-    orderMode,
     scalpLots,
     setScalpLots,
     quickTrade,
@@ -146,22 +145,6 @@ export function ScalpPanel() {
 
   return (
     <div className="flex h-full flex-col bg-term-panel2">
-      <div className="border-b border-term-border px-3 py-2">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold">{symbol}</span>
-          <span
-            className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
-              orderMode === "live" ? "bg-down text-white" : "bg-term-accent/20 text-term-accent"
-            }`}
-          >
-            {orderMode === "live" ? "LIVE" : "PAPER"}
-          </span>
-        </div>
-        <div className="num mt-0.5 text-2xs text-term-dim">
-          ATM {atm ? nf(atm, 0) : "–"} · {expiry ?? "–"} · spot {nf(chain?.liveSpot?.ltp ?? chain?.spot)}
-        </div>
-      </div>
-
       {/* live P&L straight from the broker position book */}
       <div className="flex items-center justify-between gap-2 border-b border-term-border bg-term-panel px-3 py-1.5">
         <div className="flex flex-col leading-tight">
