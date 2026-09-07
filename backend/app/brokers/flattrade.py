@@ -477,6 +477,60 @@ class FlattradeBroker:
             "ret": validity,
         }
 
+    async def _resolve_token(self, exch: str, tsym: str) -> str | None:
+        try:
+            rows = await self.search_scrip(exch, tsym)
+        except Exception:  # noqa: BLE001
+            return None
+        for r in rows:
+            if r.get("tsym", "").upper() == tsym.upper() and r.get("token"):
+                return str(r["token"])
+        return str(rows[0]["token"]) if rows and rows[0].get("token") else None
+
+    async def _marketable_limit(
+        self, *, exch: str, tsym: str, side: str
+    ) -> tuple[float, float]:
+        """A limit price aggressive enough to fill like a market order, plus the
+        tick size. BUY -> a few % above LTP (capped at the upper circuit),
+        SELL -> a few % below (floored at the lower circuit). Flattrade's API
+        rejects plain MKT for algo/API orders ("ALGO_CHK"), so every MKT order
+        is sent as this marketable LMT instead."""
+        token = await self._resolve_token(exch, tsym)
+        if not token:
+            raise RuntimeError(f"MKT->LMT: could not resolve token for {tsym}")
+        q = await self.quotes(exch, token)
+        try:
+            ltp = float(q.get("lp") or 0)
+        except (TypeError, ValueError):
+            ltp = 0.0
+        if ltp <= 0:
+            raise RuntimeError(f"MKT->LMT: no LTP for {tsym} (quote={q!r})")
+        try:
+            tick = float(q.get("ti") or 0) or 0.05
+        except (TypeError, ValueError):
+            tick = 0.05
+        try:
+            uc = float(q.get("uc") or 0) or None
+        except (TypeError, ValueError):
+            uc = None
+        try:
+            lc = float(q.get("lc") or 0) or None
+        except (TypeError, ValueError):
+            lc = None
+        buf = max(ltp * 0.05, tick * 10)  # 5% slippage cap, min 10 ticks
+        if side.upper() == "BUY":
+            px = ltp + buf
+            if uc:
+                px = min(px, uc)
+        else:
+            px = ltp - buf
+            if lc:
+                px = max(px, lc)
+            px = max(px, tick)
+        # snap to the instrument tick grid
+        px = round(round(px / tick) * tick, 2)
+        return px, tick
+
     async def place_order(
         self,
         *,
@@ -489,6 +543,11 @@ class FlattradeBroker:
         product: str = "M",
         validity: str = "DAY",
     ) -> dict:
+        ot = order_type.upper()
+        if ot in ("MKT", "MARKET"):
+            px, _tick = await self._marketable_limit(exch=exch, tsym=tsym, side=side)
+            log.info("MKT->LMT %s %s x%s @ %.2f (marketable)", side, tsym, qty, px)
+            order_type, price = "LMT", px
         payload = self.build_order_payload(
             exch=exch, tsym=tsym, qty=qty, side=side, order_type=order_type,
             price=price, product=product, validity=validity,
