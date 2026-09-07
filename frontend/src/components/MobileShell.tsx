@@ -5,10 +5,20 @@ import { nf, sk, compact, signColor } from "../lib/format";
 import { ivRegime } from "../lib/iv";
 import type { View } from "../types";
 
-/** compact P&L chips for the mobile top strip */
+import {
+  HeaderIndices,
+  OrderModePill,
+  AlertBell,
+  BrokerPill,
+  UpstoxPill,
+  ClassFilter,
+  useBookPnl,
+} from "./Header";
+
+/** compact P&L chips for the mobile top strip — broker book when linked */
 function MobilePnl() {
-  const paper = useStore((s) => s.paper);
-  if (!paper) return null;
+  const p = useBookPnl();
+  if (!p) return null;
   const cell = (l: string, v: number) => (
     <span className="flex shrink-0 flex-col items-end leading-none">
       <span className="text-[8px] uppercase text-term-dim">{l}</span>
@@ -17,22 +27,12 @@ function MobilePnl() {
   );
   return (
     <div className="ml-auto flex shrink-0 items-center gap-2.5 border-l border-term-border pl-2">
-      {cell("MTM", paper.unrealized)}
-      {cell("Total", paper.total)}
-      {cell("Real", paper.realized)}
-      {cell("Unreal", paper.unrealized)}
+      {cell(p.source === "broker" ? "MTM" : "P.MTM", p.mtm)}
+      {cell("Today", p.today)}
+      {cell("Real", p.realized)}
     </div>
   );
 }
-
-import {
-  HeaderIndices,
-  OrderModePill,
-  AlertBell,
-  BrokerPill,
-  UpstoxPill,
-  ClassFilter,
-} from "./Header";
 import { lockNow } from "../lib/auth";
 import { NotificationPanel } from "./NotificationPanel";
 import { OrderConfirm } from "./OrderConfirm";

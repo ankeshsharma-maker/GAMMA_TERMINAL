@@ -45,6 +45,22 @@ export function ScalpCharts() {
   const symClass = useStore((s) => s.symClass);
 
   const [layout, setLayout] = useState<1 | 2 | 3>(1);
+  const [paneBars, setPaneBars] = useState(() => {
+    try {
+      return localStorage.getItem("scalp.paneBars") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const togglePaneBars = () =>
+    setPaneBars((v) => {
+      try {
+        localStorage.setItem("scalp.paneBars", v ? "0" : "1");
+      } catch {
+        /* ignore */
+      }
+      return !v;
+    });
 
   const [choices, setChoices] = useState<string[]>([]);
   useEffect(() => {
@@ -107,6 +123,19 @@ export function ScalpCharts() {
             all → {storeSym}
           </button>
         )}
+        {layout > 1 && (
+          <button
+            onClick={togglePaneBars}
+            className={`rounded border px-2 py-0.5 font-semibold ${
+              paneBars
+                ? "border-term-accent/50 bg-term-accent/15 text-term-text"
+                : "border-amber-500/60 bg-amber-500/15 text-amber-400"
+            }`}
+            title="Hide / show every pane's symbol · TF · indicator row"
+          >
+            {paneBars ? "⌃ hide pane controls" : "⚙ pane controls"}
+          </button>
+        )}
         <span className="ml-auto">
           {layout === 1 ? "full chart with indicators & split" : "each pane: symbol · TF · derivative · EMA/VWAP"}
         </span>
@@ -118,7 +147,10 @@ export function ScalpCharts() {
         <div className="flex min-h-0 flex-1 flex-col divide-y divide-term-border">
           {panes.slice(0, layout).map((p, i) => (
             <div key={i} className="relative flex min-h-0 flex-1 flex-col">
-              <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border/60 px-2 py-1 text-[10px]">
+              <div
+                className="flex flex-wrap items-center gap-1.5 border-b border-term-border/60 px-2 py-1 text-[10px]"
+                style={paneBars ? undefined : { display: "none" }}
+              >
                 <select
                   value={p.sym}
                   onChange={(e) => {

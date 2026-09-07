@@ -165,10 +165,34 @@ export function Chart() {
     straddle: true,
     score: false,
   });
-  const onRef = useRef(on);
+  // "hide indicators" — blank every overlay/sub-pane at once while keeping the
+  // user's real selection so it comes straight back on toggle.
+  const [indHidden, setIndHidden] = useState(() => {
+    try {
+      return localStorage.getItem("chart.indHidden") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const setInd = (v: boolean) => {
+    setIndHidden(v);
+    try {
+      localStorage.setItem("chart.indHidden", v ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  };
+  const eff = useMemo(() => {
+    if (!indHidden) return on;
+    const z = { ...on };
+    (Object.keys(z) as ToggleKey[]).forEach((k) => (z[k] = false));
+    return z;
+  }, [on, indHidden]);
+
+  const onRef = useRef(eff);
   useEffect(() => {
-    onRef.current = on;
-  }, [on]);
+    onRef.current = eff;
+  }, [eff]);
 
   // collapse the whole settings toolbar for a full-height chart
   const [barOpen, setBarOpen] = useState(() => {
@@ -434,18 +458,18 @@ export function Chart() {
       ser.setData((visible ? pts : []) as any);
     };
     const cd = priceCandles;
-    setLine("ema9", ind.ema9, on.ema9);
-    setLine("ema21", ind.ema21, on.ema21);
-    setLine("ema50", ind.ema50, on.ema50);
-    setLine("sma20", ind.sma20, on.sma20);
-    setLine("vwap", ind.vwap, on.vwap && !!data.hasVolume);
-    setLine("bu", ind.bu, on.boll);
-    setLine("bl", ind.bl, on.boll);
-    setLine("st", ind.st, on.supertrend);
+    setLine("ema9", ind.ema9, eff.ema9);
+    setLine("ema21", ind.ema21, eff.ema21);
+    setLine("ema50", ind.ema50, eff.ema50);
+    setLine("sma20", ind.sma20, eff.sma20);
+    setLine("vwap", ind.vwap, eff.vwap && !!data.hasVolume);
+    setLine("bu", ind.bu, eff.boll);
+    setLine("bl", ind.bl, eff.boll);
+    setLine("st", ind.st, eff.supertrend);
 
     // volume
     const vser = c.vol as ISeriesApi<"Histogram">;
-    const showVol = on.vol && !!data.hasVolume;
+    const showVol = eff.vol && !!data.hasVolume;
     chartRef.current.priceScale("vol").applyOptions({ visible: showVol });
     vser.applyOptions({ visible: showVol });
     vser.setData(
@@ -459,50 +483,50 @@ export function Chart() {
     );
 
     // rsi
-    chartRef.current.priceScale("rsi").applyOptions({ visible: on.rsi });
+    chartRef.current.priceScale("rsi").applyOptions({ visible: eff.rsi });
     const rsiPts = ind.rsi;
-    setLine("rsi", rsiPts, on.rsi);
-    lastRsiRef.current = on.rsi && rsiPts.length ? rsiPts[rsiPts.length - 1].value : null;
+    setLine("rsi", rsiPts, eff.rsi);
+    lastRsiRef.current = eff.rsi && rsiPts.length ? rsiPts[rsiPts.length - 1].value : null;
     setRsiVal(lastRsiRef.current);
 
     // macd
-    const m = on.macd ? ind.macd : { macd: [], signal: [], hist: [] };
-    chartRef.current.priceScale("macd").applyOptions({ visible: on.macd });
-    (c.macdLine as ISeriesApi<"Line">).applyOptions({ visible: on.macd });
-    (c.macdSig as ISeriesApi<"Line">).applyOptions({ visible: on.macd });
-    (c.macdHist as ISeriesApi<"Histogram">).applyOptions({ visible: on.macd });
+    const m = eff.macd ? ind.macd : { macd: [], signal: [], hist: [] };
+    chartRef.current.priceScale("macd").applyOptions({ visible: eff.macd });
+    (c.macdLine as ISeriesApi<"Line">).applyOptions({ visible: eff.macd });
+    (c.macdSig as ISeriesApi<"Line">).applyOptions({ visible: eff.macd });
+    (c.macdHist as ISeriesApi<"Histogram">).applyOptions({ visible: eff.macd });
     (c.macdLine as ISeriesApi<"Line">).setData(m.macd as any);
     (c.macdSig as ISeriesApi<"Line">).setData(m.signal as any);
     (c.macdHist as ISeriesApi<"Histogram">).setData(
       m.hist.map((h) => ({ time: h.time as any, value: h.value, color: h.value >= 0 ? "#16a34a66" : "#dc262666" })) as any
     );
 
-    setLine("straddle", dedupe(data.series.straddle), on.straddle);
-    setLine("score", dedupe(data.series.score), on.score);
+    setLine("straddle", dedupe(data.series.straddle), eff.straddle);
+    setLine("score", dedupe(data.series.score), eff.score);
 
     // OI overlay — total Call / Put OI lines + day ΔOI columns (from the
     // per-poll chain-history snapshots; dense during a session, sparse otherwise)
-    setLine("callOI", dedupe(data.series.ceOI ?? []), on.oi);
-    setLine("putOI", dedupe(data.series.peOI ?? []), on.oi);
+    setLine("callOI", dedupe(data.series.ceOI ?? []), eff.oi);
+    setLine("putOI", dedupe(data.series.peOI ?? []), eff.oi);
     const chgBars = (key: "ceOIChg" | "peOIChg", col: string) =>
       dedupe(data.series[key] ?? []).map((p) => ({
         time: p.time as any,
         value: p.value,
         color: p.value >= 0 ? col : "#71717199",
       }));
-    (c.ceChg as ISeriesApi<"Histogram">).applyOptions({ visible: on.oichg });
-    (c.peChg as ISeriesApi<"Histogram">).applyOptions({ visible: on.oichg });
-    (c.ceChg as ISeriesApi<"Histogram">).setData((on.oichg ? chgBars("ceOIChg", "#f8717199") : []) as any);
-    (c.peChg as ISeriesApi<"Histogram">).setData((on.oichg ? chgBars("peOIChg", "#4ade8099") : []) as any);
+    (c.ceChg as ISeriesApi<"Histogram">).applyOptions({ visible: eff.oichg });
+    (c.peChg as ISeriesApi<"Histogram">).applyOptions({ visible: eff.oichg });
+    (c.ceChg as ISeriesApi<"Histogram">).setData((eff.oichg ? chgBars("ceOIChg", "#f8717199") : []) as any);
+    (c.peChg as ISeriesApi<"Histogram">).setData((eff.oichg ? chgBars("peOIChg", "#4ade8099") : []) as any);
 
     // ---- stack the sub-panes so they never overlap each other or volume ----
     {
       const sub: ("vol" | "oi" | "oichg" | "rsi" | "macd")[] = [];
       if (showVol) sub.push("vol");
-      if (on.oi) sub.push("oi");
-      if (on.oichg) sub.push("oichg");
-      if (on.rsi) sub.push("rsi");
-      if (on.macd) sub.push("macd");
+      if (eff.oi) sub.push("oi");
+      if (eff.oichg) sub.push("oichg");
+      if (eff.rsi) sub.push("rsi");
+      if (eff.macd) sub.push("macd");
       const n = sub.length;
       const band = n === 0 ? 0 : n === 1 ? 0.22 : n === 2 ? 0.17 : n === 3 ? 0.14 : n === 4 ? 0.11 : 0.09;
       const gap = n >= 4 ? 0.02 : 0.03;
@@ -521,7 +545,7 @@ export function Chart() {
 
     applyRange();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [priceCandles, ctype, data, on]);
+  }, [priceCandles, ctype, data, eff]);
 
   // clamp the visible window to the chosen lookback (1D / 3M / 6M / 1Y / All)
   const applyRange = () => {
@@ -622,7 +646,7 @@ export function Chart() {
     if (!cs) return;
     pvtRefs.current.forEach((pl) => cs.removePriceLine(pl));
     pvtRefs.current = [];
-    if (!on.pivot) return;
+    if (!eff.pivot) return;
     const p = pivots(priceCandles);
     if (!p) return;
     const rows: [string, number, string, LineStyle][] = [
@@ -644,18 +668,31 @@ export function Chart() {
         title,
       })
     );
-  }, [on.pivot, priceCandles, data]);
+  }, [eff.pivot, priceCandles, data]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {!barOpen && (
-        <button
-          onClick={() => setBar(true)}
-          title="Show chart settings"
-          className="flex items-center gap-1 self-start rounded-br border-b border-r border-term-border bg-term-panel2 px-2 py-0.5 text-2xs text-term-dim hover:text-term-text"
-        >
-          ⚙ settings
-        </button>
+        <div className="flex items-center gap-1 self-start rounded-br border-b border-r border-term-border bg-term-panel2 px-1.5 py-0.5 text-2xs">
+          <button
+            onClick={() => setBar(true)}
+            title="Show the chart settings bar"
+            className="rounded border border-term-accent/50 bg-term-accent/15 px-2 py-0.5 font-semibold text-term-text hover:bg-term-accent/25"
+          >
+            ⚙ settings
+          </button>
+          <button
+            onClick={() => setInd(!indHidden)}
+            title={indHidden ? "Show indicators" : "Hide all indicators"}
+            className={`rounded border px-2 py-0.5 font-semibold ${
+              indHidden
+                ? "border-amber-500/60 bg-amber-500/15 text-amber-400"
+                : "border-term-border text-term-dim hover:text-term-text"
+            }`}
+          >
+            {indHidden ? "▨ ind off" : "▨ hide ind"}
+          </button>
+        </div>
       )}
       <div
         className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs"
@@ -894,15 +931,30 @@ export function Chart() {
           ⤢
         </button>
         <button
-          onClick={() => setBar(false)}
-          className="rounded border border-term-border px-1.5 py-0.5 text-term-dim hover:text-term-text"
-          title="Hide the settings bar for a bigger chart"
+          onClick={() => setInd(!indHidden)}
+          className={`rounded border px-2 py-0.5 font-semibold ${
+            indHidden
+              ? "border-amber-500/60 bg-amber-500/15 text-amber-400"
+              : "border-term-border text-term-dim hover:text-term-text"
+          }`}
+          title={
+            indHidden
+              ? "Indicators hidden — click to bring your overlays back"
+              : "Hide every indicator / overlay (price only)"
+          }
         >
-          ⌃ hide
+          {indHidden ? "▨ indicators off" : "▨ hide indicators"}
+        </button>
+        <button
+          onClick={() => setBar(false)}
+          className="rounded border border-term-accent/50 bg-term-accent/15 px-2 py-0.5 font-semibold text-term-text hover:bg-term-accent/25"
+          title="Hide the whole settings bar for a bigger chart"
+        >
+          ⌃ hide bar
         </button>
 
         {TOGGLES.map(([k, lbl]) => {
-          const dim = isOption && (k === "straddle" || k === "score");
+          const dim = (isOption && (k === "straddle" || k === "score")) || indHidden;
           return (
             <button
               key={k}
@@ -946,10 +998,10 @@ export function Chart() {
             {symbol} · {legend}
           </div>
         )}
-        {on.rsi && rsiVal != null && (
+        {eff.rsi && rsiVal != null && (
           <div
             className="pointer-events-none absolute left-2 z-10 rounded bg-term-panel/80 px-2 py-0.5 text-[10px] num"
-            style={{ top: on.macd ? "58%" : "72%" }}
+            style={{ top: eff.macd ? "58%" : "72%" }}
           >
             <span style={{ color: "#e879f9" }}>RSI(14)</span>{" "}
             <span

@@ -167,10 +167,11 @@ export function HeaderIndices() {
             {HDR_LABEL[r.symbol] ?? r.symbol}
           </span>
           <span className="num text-xs font-medium">{r.spot != null ? nf(r.spot) : "–"}</span>
-          {r.chgPct != null && (
+          {r.chgPct != null && r.spot != null && (
             <span className={`num text-[10px] ${r.chgPct >= 0 ? "text-up" : "text-down"}`}>
               {r.chgPct >= 0 ? "▲" : "▼"}
-              {nf(Math.abs(r.chgPct), 2)}%
+              {nf(Math.abs(r.spot - r.spot / (1 + r.chgPct / 100)), 2)}{" "}
+              ({nf(Math.abs(r.chgPct), 2)}%)
             </span>
           )}
         </div>
@@ -317,37 +318,68 @@ function MarginStats() {
   );
 }
 
+const _num = (v: unknown) => {
+  const x = Number(v);
+  return Number.isFinite(x) ? x : 0;
+};
+
+/** Book P&L for the dashboard — the real Flattrade position book when the
+ *  broker is linked, otherwise the paper book. Shared by the desktop header
+ *  and the mobile top strip. */
+export function useBookPnl():
+  | { source: "broker" | "paper"; mtm: number; realized: number; today: number }
+  | null {
+  const paper = useStore((s) => s.paper);
+  const broker = useStore((s) => s.broker);
+  const [bpos, setBpos] = useState<any[] | null>(null);
+
+  useEffect(() => {
+    if (!broker?.authed) {
+      setBpos(null);
+      return;
+    }
+    let alive = true;
+    const load = () =>
+      api.brokerPositions().then((d) => alive && setBpos(d.positions || []), () => {});
+    load();
+    const t = setInterval(load, 5000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [broker?.authed]);
+
+  if (broker?.authed && bpos) {
+    const mtm = bpos.reduce((s, r) => s + (_num(r.urmtom) || _num(r.mtm)), 0);
+    const realized = bpos.reduce((s, r) => s + _num(r.rpnl), 0);
+    return { source: "broker", mtm, realized, today: mtm + realized };
+  }
+  if (!paper) return null;
+  return {
+    source: "paper",
+    mtm: paper.unrealized,
+    realized: paper.realized,
+    today: paper.total,
+  };
+}
+
 /** live P&L / MTM summary on the dashboard header */
 function PnlStrip() {
-  const paper = useStore((s) => s.paper);
-  const orderMode = useStore((s) => s.orderMode);
-  if (!paper) return null;
-  const src = orderMode === "live" ? "LIVE" : "paper";
+  const p = useBookPnl();
+  if (!p) return null;
+  const broker = p.source === "broker";
   return (
     <div
       className="flex items-center gap-1.5"
-      title={`Book P&L (${src})`}
+      title={broker ? "Broker book P&L (Flattrade)" : "Paper book P&L (broker not linked)"}
     >
       <Stat
-        label="Live P&L (MTM)"
-        value={`₹${nf(paper.unrealized, 0)}`}
-        cls={signColor(paper.unrealized)}
+        label={broker ? "Broker MTM" : "Paper P&L (MTM)"}
+        value={`₹${nf(p.mtm, 0)}`}
+        cls={signColor(p.mtm)}
       />
-      <Stat
-        label="Total MTM"
-        value={`₹${nf(paper.total, 0)}`}
-        cls={signColor(paper.total)}
-      />
-      <Stat
-        label="Realized"
-        value={`₹${nf(paper.realized, 0)}`}
-        cls={signColor(paper.realized)}
-      />
-      <Stat
-        label="Unrealized"
-        value={`₹${nf(paper.unrealized, 0)}`}
-        cls={signColor(paper.unrealized)}
-      />
+      <Stat label={broker ? "Today's P&L" : "Total"} value={`₹${nf(p.today, 0)}`} cls={signColor(p.today)} />
+      <Stat label="Realized" value={`₹${nf(p.realized, 0)}`} cls={signColor(p.realized)} />
     </div>
   );
 }
