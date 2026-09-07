@@ -113,7 +113,9 @@ function loadHdrSymbols(): string[] {
 
 export function HeaderIndices() {
   const [symbols, setSymbols] = useState<string[]>(loadHdrSymbols);
-  const [rows, setRows] = useState<{ symbol: string; spot: number | null; chgPct: number | null }[]>([]);
+  const [rows, setRows] = useState<
+    { symbol: string; spot: number | null; chgPct: number | null; chgPts?: number | null }[]
+  >([]);
   const [options, setOptions] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
 
@@ -167,13 +169,23 @@ export function HeaderIndices() {
             {HDR_LABEL[r.symbol] ?? r.symbol}
           </span>
           <span className="num text-xs font-medium">{r.spot != null ? nf(r.spot) : "–"}</span>
-          {r.chgPct != null && r.spot != null && (
-            <span className={`num text-[10px] ${r.chgPct >= 0 ? "text-up" : "text-down"}`}>
-              {r.chgPct >= 0 ? "▲" : "▼"}
-              {nf(Math.abs(r.spot - r.spot / (1 + r.chgPct / 100)), 2)}{" "}
-              ({nf(Math.abs(r.chgPct), 2)}%)
-            </span>
-          )}
+          {(() => {
+            const pts =
+              r.chgPts != null
+                ? r.chgPts
+                : r.chgPct != null && r.spot != null
+                ? r.spot - r.spot / (1 + r.chgPct / 100)
+                : null;
+            if (pts == null && r.chgPct == null) return null;
+            const up = (r.chgPct ?? pts ?? 0) >= 0;
+            return (
+              <span className={`num text-[10px] ${up ? "text-up" : "text-down"}`}>
+                {up ? "▲" : "▼"}
+                {pts != null ? nf(Math.abs(pts), 2) : "–"}
+                {r.chgPct != null && ` (${nf(Math.abs(r.chgPct), 2)}%)`}
+              </span>
+            );
+          })()}
         </div>
       ))}
 

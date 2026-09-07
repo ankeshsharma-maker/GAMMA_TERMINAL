@@ -53,9 +53,14 @@ export const api = {
     j<{ indices: string[]; defaults: string[]; fo?: string[]; watchlist: string[] }>("/api/symbols"),
 
   indicesHeader: (symbols?: string[]) =>
-    j<{ indices: { symbol: string; spot: number | null; chgPct: number | null }[] }>(
-      `/api/indices/header?symbols=${encodeURIComponent((symbols ?? []).join(","))}`
-    ),
+    j<{
+      indices: {
+        symbol: string;
+        spot: number | null;
+        chgPct: number | null;
+        chgPts?: number | null;
+      }[];
+    }>(`/api/indices/header?symbols=${encodeURIComponent((symbols ?? []).join(","))}`),
   indicesHeaderOptions: () => j<{ options: string[] }>("/api/indices/header/options"),
 
   chain: (symbol: string, expiry?: string) =>

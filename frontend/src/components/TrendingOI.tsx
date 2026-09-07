@@ -343,10 +343,12 @@ function TrendingOILive() {
     valueCls?: string;
     sub?: React.ReactNode;
   }) => (
-    <div className="min-w-[150px] flex-1 rounded-lg border border-term-border bg-term-bg/40 px-3 py-2">
-      <div className="text-[9px] font-semibold uppercase tracking-wide text-term-dim">{label}</div>
-      <div className={`num text-base font-bold ${valueCls}`}>{value}</div>
-      {sub != null && <div className="mt-0.5 text-[10px] text-term-dim">{sub}</div>}
+    <div className="min-w-0 rounded-lg border border-term-border bg-term-bg/40 px-2 py-1.5 sm:min-w-[150px] sm:flex-1 sm:px-3 sm:py-2">
+      <div className="truncate text-[9px] font-semibold uppercase tracking-wide text-term-dim">
+        {label}
+      </div>
+      <div className={`num truncate text-sm font-bold sm:text-base ${valueCls}`}>{value}</div>
+      {sub != null && <div className="mt-0.5 truncate text-[10px] text-term-dim">{sub}</div>}
     </div>
   );
 
@@ -439,7 +441,7 @@ function TrendingOILive() {
           )}
         </div>
         {L ? (
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
             <Card
               label="Current bias"
               value={L.sentiment}
@@ -518,9 +520,10 @@ function TrendingOILive() {
         </div>
       )}
 
-      {/* data table */}
-      <div className="min-h-0 flex-1 overflow-auto p-2">
-        <table className="w-full border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
+      {/* data table — scrolls horizontally on a phone so the 12 columns keep
+          their width instead of crushing into each other */}
+      <div className="overflow-x-auto p-2 lg:min-h-0 lg:flex-1 lg:overflow-auto">
+        <table className="w-full min-w-[760px] border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
           <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
             <tr>
               {[

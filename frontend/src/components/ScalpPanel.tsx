@@ -277,7 +277,7 @@ export function ScalpPanel() {
 
       <div className="flex items-center justify-between border-y border-term-border px-3 py-1.5 text-2xs">
         <span className="font-semibold uppercase text-term-dim">
-          {symbol} broker positions ({myOpen.length})
+          Position ({myOpen.length})
         </span>
         <span className="num font-semibold">
           <span className={signColor(symMtm)}>₹{nf(symMtm, 0)}</span>

@@ -85,20 +85,36 @@ def _resolve_header_index(sym: str) -> dict:
     live = store.live_spot.get(su)
     spot = (live.get("ltp") if live else None) or (chain.get("spot") if chain else None)
     chg = live.get("chgPct") if live else None
+    chg_pts = None
 
-    # 2. NSE index catalog (exact, then fuzzy) for anything not live-polled
-    if spot is None and su in _HDR_NSE_NAME:
+    # 2. NSE index catalog — always consulted for the day change (points + %),
+    #    even when spot already came from the chain/live cache, since those
+    #    don't always carry a change figure (e.g. broker feed down).
+    idx = None
+    if su in _HDR_NSE_NAME:
         idx = store.index_quotes.get(_HDR_NSE_NAME[su])
-        if idx:
-            spot, chg = idx.get("last"), chg or idx.get("pChange")
-    if spot is None:
+    if idx is None:
         needle = su.replace(" ", "")
         for name, q in store.index_quotes.items():
             if needle and needle in name.upper().replace(" ", ""):
-                spot, chg = q.get("last"), q.get("pChange")
+                idx = q
                 break
+    if idx:
+        if spot is None:
+            spot = idx.get("last")
+        if chg is None:
+            chg = idx.get("pChange")
+        chg_pts = idx.get("variation")
 
-    return {"symbol": su, "spot": spot, "chgPct": chg}
+    # 3. last-resort: derive points from spot + % (prevClose = spot / (1 + %/100))
+    if chg_pts is None and spot is not None and chg is not None:
+        try:
+            prev = float(spot) / (1 + float(chg) / 100)
+            chg_pts = float(spot) - prev
+        except (TypeError, ValueError, ZeroDivisionError):
+            chg_pts = None
+
+    return {"symbol": su, "spot": spot, "chgPct": chg, "chgPts": chg_pts}
 
 
 @router.get("/indices/header")

@@ -593,6 +593,7 @@ class FlattradeBroker:
     async def _ws_loop(self) -> None:
         backoff = 5
         while self._token:
+            code = None
             try:
                 async with websockets.connect(_WS, ping_interval=20, close_timeout=5) as ws:
                     self._ws = ws
@@ -649,8 +650,12 @@ class FlattradeBroker:
                 )
             self._ws_connected = False
             self._ws = None
+            # 1008 is a policy rejection (another live socket holds the single
+            # per-login slot), not a transient drop — retrying every few seconds
+            # just keeps the slot contested. Wait it out longer.
+            wait = 90 if code == 1008 else backoff
             try:
-                await asyncio.sleep(backoff)
+                await asyncio.sleep(wait)
             except asyncio.CancelledError:
                 raise
             backoff = min(backoff * 2, 60)
