@@ -101,8 +101,8 @@ export function Chart() {
     [symbol, symChoices, symClass]
   );
   const [data, setData] = useState<ChartData | null>(null);
-  const [intervalS, setIntervalS] = useState(300);
-  const [rangeD, setRangeD] = useState(90); // visible-history window in days; 0 = all
+  const [intervalS, setIntervalS] = useState(300); // 5-minute candles
+  const [rangeD, setRangeD] = useState(1); // visible-history window in days (1 = intraday / 1D); 0 = all
   const [split, setSplit] = useState(false);
   const [cmpInstrument, setCmpInstrument] = useState<string>("STRADDLE");
   const [ctype, setCtype] = useState<"candle" | "heikin" | "line" | "area" | "bar">("candle");

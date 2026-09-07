@@ -66,9 +66,9 @@ export function ScalpCharts() {
   );
 
   const [panes, setPanes] = useState<Pane[]>([
-    mkPane(storeSym, 60),
     mkPane(storeSym, 300),
-    mkPane(storeSym, 900),
+    mkPane(storeSym, 300),
+    mkPane(storeSym, 300),
   ]);
 
   const prevSym = useRef(storeSym);
