@@ -72,7 +72,6 @@ function BrokerTab() {
 
   if (!broker?.authed) return <Empty>Connect Flattrade (header) to see live broker positions.</Empty>;
   if (err) return <Empty>{err}</Empty>;
-  if (rows.length === 0) return <Empty>No open broker positions.</Empty>;
 
   let totalMtm = 0;
   let totalRealized = 0;
@@ -317,6 +316,14 @@ function BrokerTab() {
           </tr>
         </thead>
         <tbody>
+          {withPnl.length === 0 && (
+            <tr>
+              <TD cls="text-center text-term-dim">
+                <span className="block py-3">No open broker positions.</span>
+              </TD>
+              <td colSpan={10} />
+            </tr>
+          )}
           {withPnl.map(({ r, mtm, rpnl, today, key }, i) => {
             const qty = n(r.netqty) ?? 0;
             const isBusy = busy.has(r.tsym);
