@@ -16,6 +16,7 @@ export function ScalpPanel() {
     quickTradeAt,
     closePosition,
   } = useStore();
+  const liveSpots = useStore((s) => s.liveSpots);
 
   const wq = watch.find((w) => w.symbol === symbol);
   const atm = chain?.atmStrike ?? wq?.atmStrike;
@@ -35,9 +36,42 @@ export function ScalpPanel() {
   };
 
   const allPos = paper?.positions ?? [];
+
+  // Realtime mark-to-market: the server re-marks paper positions only when the
+  // option chain re-polls (~20-30s). Between polls, extrapolate each open
+  // leg's price from the last real mark using its delta/gamma and how far the
+  // *live* underlying has moved since — so P&L tracks every spot tick.
+  const liveUnd =
+    chain?.liveSpot?.ltp ?? liveSpots[symbol]?.ltp ?? chain?.spot ?? null;
+  const chainRows = chain?.rows ?? [];
+
+  const livePx = (p: { strike: number; optionType: string; ltp: number }): number => {
+    const row = chainRows.find((r) => r.strike === p.strike);
+    const leg = row ? (p.optionType === "CE" ? row.call : row.put) : null;
+    if (!leg || liveUnd == null || chain?.spot == null) return p.ltp;
+    const dS = liveUnd - chain.spot;
+    if (!dS) return p.ltp;
+    const est = leg.ltp + leg.delta * dS + 0.5 * leg.gamma * dS * dS;
+    return Math.max(0, est);
+  };
+  const rtPnl = (p: {
+    strike: number;
+    optionType: string;
+    ltp: number;
+    avgPrice: number;
+    qty: number;
+    pnl: number;
+  }): number => {
+    const px = livePx(p);
+    return px === p.ltp ? p.pnl : (px - p.avgPrice) * p.qty;
+  };
+
   const myPos = allPos.filter((p) => p.symbol === symbol);
-  const pnl = myPos.reduce((s, p) => s + p.pnl, 0);
-  const livePnl = allPos.reduce((s, p) => s + p.pnl, 0);
+  const pnl = myPos.reduce((s, p) => s + rtPnl(p), 0);
+  // other-symbol legs stay at the server value; current symbol is realtime
+  const livePnl =
+    allPos.reduce((s, p) => s + p.pnl, 0) +
+    (myPos.reduce((s, p) => s + rtPnl(p), 0) - myPos.reduce((s, p) => s + p.pnl, 0));
 
   const BigBtn = ({
     label,
@@ -214,11 +248,11 @@ export function ScalpPanel() {
                   {Math.abs(p.qty / p.lotSize)}
                 </span>
                 <span className="num text-term-dim">
-                  @ {nf(p.avgPrice)} → {nf(p.ltp)}
+                  @ {nf(p.avgPrice)} → {nf(livePx(p))}
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className={`num ${signColor(p.pnl)}`}>₹{nf(p.pnl, 0)}</span>
+                <span className={`num ${signColor(rtPnl(p))}`}>₹{nf(rtPnl(p), 0)}</span>
                 <button
                   onClick={() => closePosition(p.id)}
                   className="rounded bg-term-border px-2 py-0.5 text-[10px] hover:bg-term-panel"
