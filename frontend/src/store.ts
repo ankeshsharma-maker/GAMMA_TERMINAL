@@ -55,6 +55,7 @@ interface State {
   unusual: UnusualEvent[];
   unusualSeen: number;
   notifOpen: boolean;
+  notifDock: boolean;
   notifTab: "alerts" | "unusual";
   screener: ScreenerRow[];
   screenerProgress: ScreenerProgress | null;
@@ -89,6 +90,7 @@ interface State {
   markAlertsSeen: () => void;
   openNotif: (tab?: "alerts" | "unusual") => void;
   closeNotif: () => void;
+  setNotifDock: (v: boolean) => void;
   setNotifTab: (t: "alerts" | "unusual") => void;
   addWatch: (s: string) => Promise<void>;
   removeWatch: (s: string) => Promise<void>;
@@ -165,6 +167,13 @@ export const useStore = create<State>((set, get) => ({
   unusual: [],
   unusualSeen: 0,
   notifOpen: false,
+  notifDock: (() => {
+    try {
+      return localStorage.getItem("notif.dock") === "1";
+    } catch {
+      return false;
+    }
+  })(),
   notifTab: "unusual",
   screener: [],
   screenerProgress: null,
@@ -418,8 +427,10 @@ export const useStore = create<State>((set, get) => ({
 
   openNotif: (tab) => {
     const t = tab ?? get().notifTab;
+    // when the alerts panel is docked it's already on screen — just switch
+    // tab / clear the badge, don't stack a pop-over on top of it
     set({
-      notifOpen: true,
+      notifOpen: get().notifDock ? false : true,
       notifTab: t,
       ...(t === "alerts"
         ? { alertsSeen: get().alerts.length }
@@ -427,6 +438,17 @@ export const useStore = create<State>((set, get) => ({
     });
   },
   closeNotif: () => set({ notifOpen: false }),
+  setNotifDock: (v) => {
+    try {
+      localStorage.setItem("notif.dock", v ? "1" : "0");
+    } catch {}
+    set({
+      notifDock: v,
+      notifOpen: v ? false : get().notifOpen,
+      // opening the dock clears the badge
+      ...(v ? { alertsSeen: get().alerts.length, unusualSeen: get().unusual.length } : {}),
+    });
+  },
   setNotifTab: (t) =>
     set({
       notifTab: t,

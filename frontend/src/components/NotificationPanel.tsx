@@ -20,11 +20,13 @@ const kindLabel: Record<UnusualKind, string> = {
   GAMMA_COLLAPSE: "Γ COLLAPSE",
 };
 
-export function NotificationPanel() {
+export function NotificationPanel({ docked = false }: { docked?: boolean } = {}) {
   const {
     notifOpen,
+    notifDock,
     notifTab,
     setNotifTab,
+    setNotifDock,
     closeNotif,
     alerts,
     unusual,
@@ -34,8 +36,9 @@ export function NotificationPanel() {
   } = useStore();
   const ref = useRef<HTMLDivElement>(null);
 
+  // popover mode: close on outside click / Esc. docked mode: never auto-close.
   useEffect(() => {
-    if (!notifOpen) return;
+    if (docked || !notifOpen) return;
     const onDoc = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) closeNotif();
     };
@@ -46,9 +49,14 @@ export function NotificationPanel() {
       document.removeEventListener("mousedown", onDoc);
       document.removeEventListener("keydown", onEsc);
     };
-  }, [notifOpen, closeNotif]);
+  }, [docked, notifOpen, closeNotif]);
 
-  if (!notifOpen) return null;
+  // keep the bell badge clear while the dock is visible (mark the active tab seen)
+  useEffect(() => {
+    if (docked) setNotifTab(notifTab);
+  }, [docked, notifTab, alerts.length, unusual.length, setNotifTab]);
+
+  if (docked ? !notifDock : !notifOpen) return null;
 
   const aNew = Math.max(0, alerts.length - alertsSeen);
   const uNew = Math.max(0, unusual.length - unusualSeen);
@@ -56,7 +64,11 @@ export function NotificationPanel() {
   return (
     <div
       ref={ref}
-      className="absolute right-3 top-12 z-[70] flex max-h-[75vh] w-[400px] flex-col rounded-lg border border-term-border bg-term-panel shadow-2xl"
+      className={
+        docked
+          ? "flex h-full w-full flex-col bg-term-panel"
+          : "absolute right-3 top-12 z-[70] flex max-h-[75vh] w-[400px] flex-col rounded-lg border border-term-border bg-term-panel shadow-2xl"
+      }
     >
       <div className="flex items-center border-b border-term-border text-2xs">
         {(
@@ -82,9 +94,28 @@ export function NotificationPanel() {
             )}
           </button>
         ))}
-        <button onClick={closeNotif} className="ml-auto px-3 py-2 text-term-dim hover:text-term-text">
-          ✕
-        </button>
+        {docked ? (
+          <button
+            onClick={() => setNotifDock(false)}
+            title="Undock — back to the pop-over"
+            className="ml-auto px-3 py-2 text-term-dim hover:text-term-text"
+          >
+            ⇤ undock
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={() => setNotifDock(true)}
+              title="Dock as a fixed side panel"
+              className="ml-auto px-2 py-2 text-term-dim hover:text-term-text"
+            >
+              ⇥ dock
+            </button>
+            <button onClick={closeNotif} className="px-3 py-2 text-term-dim hover:text-term-text">
+              ✕
+            </button>
+          </>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">

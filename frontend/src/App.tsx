@@ -30,6 +30,7 @@ const LS = {
   zoom: "layout.zoom",
   hideLeft: "layout.hideLeft",
   hideRight: "layout.hideRight",
+  notifW: "layout.notifW",
 };
 const readNum = (k: string, d: number) => {
   try {
@@ -104,7 +105,11 @@ function DesktopShell() {
     view === "funds";
   const [leftW, setLeftW] = useState(() => readNum(LS.left, 190));
   const [rightW, setRightW] = useState(() => readNum(LS.right, view === "scalper" ? 360 : 300));
+  const [notifW, setNotifW] = useState(() => readNum(LS.notifW, 320));
   const [zoom, setZoom] = useState(() => readNum(LS.zoom, 100));
+
+  const notifDock = useStore((s) => s.notifDock);
+  const setNotifDock = useStore((s) => s.setNotifDock);
 
   useEffect(() => {
     try {
@@ -122,8 +127,15 @@ function DesktopShell() {
     } catch {}
   }, [zoom]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS.notifW, String(notifW));
+    } catch {}
+  }, [notifW]);
+
   const bumpLeft = useCallback((dx: number) => setLeftW((w) => clamp(w + dx, 140, 460)), []);
   const bumpRight = useCallback((dx: number) => setRightW((w) => clamp(w - dx, 220, 560)), []);
+  const bumpNotif = useCallback((dx: number) => setNotifW((w) => clamp(w - dx, 250, 520)), []);
   const resetLayout = () => {
     setLeftW(190);
     setRightW(view === "scalper" ? 360 : 300);
@@ -145,9 +157,11 @@ function DesktopShell() {
 
   const showRight = !wide && !hideRight;
   const leftCols = hideLeft ? "0px" : `${leftW}px 4px`;
-  const cols = showRight
-    ? `${leftCols} minmax(0,1fr) 4px ${rightW}px`
-    : `${leftCols} minmax(0,1fr)`;
+  const notifCols = notifDock ? ` 4px ${notifW}px` : "";
+  const cols =
+    (showRight
+      ? `${leftCols} minmax(0,1fr) 4px ${rightW}px`
+      : `${leftCols} minmax(0,1fr)`) + notifCols;
 
   return (
     <div className="relative flex h-full flex-col bg-term-bg text-term-text">
@@ -185,6 +199,13 @@ function DesktopShell() {
             {hideRight ? "◂ Right" : "▸ Right"}
           </button>
         )}
+        <button
+          className={`btn px-2 py-0 ${notifDock ? "text-term-accent" : "text-term-dim"}`}
+          onClick={() => setNotifDock(!notifDock)}
+          title="Dock the alerts / unusual-activity feed as a fixed right column"
+        >
+          {notifDock ? "▸ Alerts dock" : "◂ Alerts dock"}
+        </button>
         <span className="ml-auto hidden sm:inline">drag the dividers to stretch panels</span>
       </div>
 
@@ -227,6 +248,13 @@ function DesktopShell() {
         {showRight && (
           <aside className="min-h-0 overflow-hidden border-l border-term-border">
             {view === "scalper" ? <ScalpPanel /> : view === "chart" ? <OILadder /> : <Positions />}
+          </aside>
+        )}
+
+        {notifDock && <VSplit onDrag={bumpNotif} />}
+        {notifDock && (
+          <aside className="min-h-0 overflow-hidden border-l border-term-border">
+            <NotificationPanel docked />
           </aside>
         )}
       </div>
