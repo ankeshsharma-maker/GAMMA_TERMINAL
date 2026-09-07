@@ -99,6 +99,7 @@ function DesktopShell() {
     view === "orders" ||
     view === "scrip" ||
     view === "trendingoi" ||
+    view === "scanner" ||
     view === "auto" ||
     view === "funds";
   const [leftW, setLeftW] = useState(() => readNum(LS.left, 190));
