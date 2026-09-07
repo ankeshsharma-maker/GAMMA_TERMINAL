@@ -1311,7 +1311,7 @@ export function StrategyBuilder() {
         )}
 
         {payoffTab === "chart" ? (
-          <div className="relative m-2 min-h-[280px] flex-1 rounded border border-term-border bg-term-bg/20 p-3 md:min-h-0">
+          <div className="relative m-2 min-h-[320px] rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-0 lg:flex-1">
             {analysis && (
               <PayoffChart
                 x={analysis.x}
@@ -1333,7 +1333,7 @@ export function StrategyBuilder() {
             )}
           </div>
         ) : (
-          <div className="m-2 min-h-0 flex-1 overflow-auto rounded border border-term-border bg-term-bg/20 p-3">
+          <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-0 lg:flex-1 lg:overflow-auto">
             {analysis && (
               <div className="grid gap-5 lg:grid-cols-2">
                 {/* P&L by strike (ATM ± N from the chain ladder) */}
@@ -1354,7 +1354,7 @@ export function StrategyBuilder() {
                       ))}
                     </div>
                   </div>
-                  <table className="w-full border-separate border-spacing-0 text-2xs">
+                  <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 text-2xs">
                     <thead className="text-[10px] uppercase text-term-dim">
                       <tr>
                         <th className="border-b border-term-border px-2 py-1 text-right font-medium">
@@ -1445,7 +1445,7 @@ export function StrategyBuilder() {
                       ))}
                     </div>
                   </div>
-                  <table className="w-full border-separate border-spacing-0 text-2xs">
+                  <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 text-2xs">
                     <thead className="text-[10px] uppercase text-term-dim">
                       <tr>
                         <th className="border-b border-term-border px-2 py-1 text-left font-medium">
