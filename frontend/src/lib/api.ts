@@ -75,6 +75,10 @@ export const api = {
         netGex: number;
         ceOIChg?: number | null;
         peOIChg?: number | null;
+        ceOI?: number | null;
+        peOI?: number | null;
+        ceVol?: number | null;
+        peVol?: number | null;
       }[];
     }>(`/api/history/${symbol}`),
 
