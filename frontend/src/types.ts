@@ -261,6 +261,10 @@ export interface AutoRule {
   };
   /** unit for slPct / targetPct / trailPct / trailArmPct / beArmPct:
    *  "pct" = % of entry premium, "pts" = premium points, "rs" = rupee P&L */
+  /** timeframe (seconds) the entry/exit indicators evaluate on. 0 = raw ticks */
+  entryTf?: number;
+  /** how many candles of history to keep for indicator warm-up */
+  entryBars?: number;
   slBasis?: "pct" | "pts" | "rs";
   slPct?: number;
   targetPct?: number;

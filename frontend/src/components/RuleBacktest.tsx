@@ -36,6 +36,9 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
       ...rule,
       _btDTE: Number(dte) || 30,
       _btIV: (Number(ivPct) || 15) / 100,
+      // intraday run with no explicit entry timeframe -> evaluate the
+      // indicators on the backtest's own candles
+      entryTf: rule.entryTf || (tf < 86400 ? tf : 0),
     };
     api
       .autobotBacktest(

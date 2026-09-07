@@ -124,12 +124,45 @@ def _crossed(a_prev: float, a_cur: float, b_prev: float, b_cur: float, direction
 class _Ctx:
     """Series snapshot for one symbol, derived from ``store.history``."""
 
-    def __init__(self, symbol: str, hist: list | None = None):
+    def __init__(self, symbol: str, hist: list | None = None, tf: int = 0):
         hist = list(store.history.get(symbol, [])) if hist is None else list(hist)
         self.n = len(hist)
         self.hist = hist
+        self.tf = int(tf or 0)
         self.ts = [float(h.get("t") or 0) for h in hist]
-        self.spot = [float(h["spot"]) for h in hist if h.get("spot") is not None]
+        raw_spot = [float(h["spot"]) for h in hist if h.get("spot") is not None]
+
+        # OHLC candle series. tf>0 -> resample the spot snapshots into
+        # tf-second candles; otherwise use the row's own OHLC when present
+        # (intraday backtest), else a flat 1-point candle per snapshot.
+        rows = [
+            (
+                float(h["t"]), float(h["spot"]),
+                float(h.get("o", h["spot"])), float(h.get("h", h["spot"])),
+                float(h.get("l", h["spot"])), float(h.get("c", h["spot"])),
+            )
+            for h in hist
+            if h.get("spot") is not None and h.get("t")
+        ]
+        if self.tf > 0 and rows:
+            b: dict[int, dict] = {}
+            for t, sp, o, hi, lo, cl in rows:
+                k = int(t // self.tf) * self.tf
+                cur = b.get(k)
+                if cur is None:
+                    b[k] = {"t": k, "o": o, "h": hi, "l": lo, "c": cl}
+                else:
+                    cur["h"] = max(cur["h"], hi)
+                    cur["l"] = min(cur["l"], lo)
+                    cur["c"] = cl
+            self.candles = [b[k] for k in sorted(b)]
+            self.spot = [cd["c"] for cd in self.candles]
+        else:
+            self.candles = [
+                {"t": t, "o": o, "h": hi, "l": lo, "c": cl}
+                for (t, _sp, o, hi, lo, cl) in rows
+            ] or [{"t": 0.0, "o": s, "h": s, "l": s, "c": s} for s in raw_spot]
+            self.spot = raw_spot
         self.pcr = [float(h["pcr"]) for h in hist if h.get("pcr") is not None]
         self.gex = [float(h["netGex"]) for h in hist if h.get("netGex") is not None]
         self.maxpain = [float(h["maxPain"]) for h in hist if h.get("maxPain")]
@@ -388,36 +421,66 @@ class _Ctx:
         )
         return state == str(c.get("state", "LONG_BUILDUP")).upper()
 
+    def _atr_series(self, period: int) -> list[float]:
+        """Wilder ATR over the candle OHLC series."""
+        cs = self.candles
+        if len(cs) < period + 1:
+            return []
+        trs = []
+        for i in range(1, len(cs)):
+            h, l, pc = cs[i]["h"], cs[i]["l"], cs[i - 1]["c"]
+            trs.append(max(h - l, abs(h - pc), abs(l - pc)))
+        if len(trs) < period:
+            return []
+        atr = sum(trs[:period]) / period
+        out = [atr]
+        for tr in trs[period:]:
+            atr = (atr * (period - 1) + tr) / period
+            out.append(atr)
+        return out
+
+    def _atr(self, c) -> bool:
+        period = int(c.get("period", 14))
+        s = self._atr_series(period)
+        if len(s) < 2:
+            return False
+        cur, prev = s[-1], s[-2]
+        op = c.get("op", ">")
+        v = float(c.get("value", 0) or 0)
+        if str(c.get("unit", "pts")).lower() == "pct" and self.spot:
+            v = self.spot[-1] * v / 100.0
+        if op == "rising":
+            return cur > prev
+        if op == "falling":
+            return cur < prev
+        if op == "<":
+            return cur < v
+        return cur > v  # ">"
+
     def _supertrend(self, c) -> bool:
-        """Spot-only Supertrend proxy: trailing band = rolling stdev of spot
-        moves x `mult`. dir 'up' -> spot just crossed above the band."""
+        """True ATR-based Supertrend on the candle series.
+        dir 'up' -> price is above the Supertrend line (uptrend);
+        op 'flip' -> the trend just flipped to `dir` on the last candle."""
         period = int(c.get("period", 10))
         mult = float(c.get("mult", 3.0))
-        s = self.spot
-        if len(s) < period + 3:
+        cs = self.candles
+        atr = self._atr_series(period)
+        if len(atr) < 2 or len(cs) < period + 2:
             return False
-        import statistics
-        # per-step absolute moves as a volatility proxy (ATR stand-in)
-        moves = [abs(s[i] - s[i - 1]) for i in range(1, len(s))]
-        band = None
-        up = True
+        # align ATR to candles (atr[0] corresponds to cs[period])
         flips: list[bool] = []
-        for i in range(period, len(s)):
-            vol = statistics.fmean(moves[i - period:i]) or 1.0
-            basis = statistics.fmean(s[i - period:i])
-            lower, upper = basis - mult * vol, basis + mult * vol
-            if band is None:
-                band, up = lower, True
-            if up:
-                band = max(band, lower)
-                if s[i] < band:
-                    up = False
-                    band = upper
-            else:
-                band = min(band, upper)
-                if s[i] > band:
-                    up = True
-                    band = lower
+        up = True
+        fub = flb = None
+        for j, a in enumerate(atr):
+            i = period + j
+            mid = (cs[i]["h"] + cs[i]["l"]) / 2
+            bub, blb = mid + mult * a, mid - mult * a
+            fub = bub if fub is None or bub < fub or cs[i - 1]["c"] > fub else fub
+            flb = blb if flb is None or blb > flb or cs[i - 1]["c"] < flb else flb
+            if cs[i]["c"] > (fub if not up else flb) and not up:
+                up = True
+            elif cs[i]["c"] < (flb if up else fub) and up:
+                up = False
             flips.append(up)
         if len(flips) < 2:
             return False
@@ -425,6 +488,39 @@ class _Ctx:
         if c.get("op", "is") == "flip":
             return flips[-1] != flips[-2] and flips[-1] == want_up
         return flips[-1] == want_up
+
+    def _candle(self, c) -> bool:
+        """Single / two-candle candlestick pattern on the current timeframe."""
+        cs = self.candles
+        if len(cs) < 2:
+            return False
+        a, b = cs[-2], cs[-1]
+        pat = str(c.get("pattern", "bull_engulf")).lower()
+        rng = (b["h"] - b["l"]) or 1e-9
+        body = abs(b["c"] - b["o"])
+        upper = b["h"] - max(b["c"], b["o"])
+        lower = min(b["c"], b["o"]) - b["l"]
+        bull = b["c"] > b["o"]
+        pbull = a["c"] > a["o"]
+        if pat == "bull_engulf":
+            return bull and not pbull and b["c"] >= a["o"] and b["o"] <= a["c"]
+        if pat == "bear_engulf":
+            return (not bull) and pbull and b["o"] >= a["c"] and b["c"] <= a["o"]
+        if pat == "hammer":
+            return lower >= 2 * body and upper <= body and body / rng < 0.4
+        if pat == "shooting_star":
+            return upper >= 2 * body and lower <= body and body / rng < 0.4
+        if pat == "doji":
+            return body / rng <= 0.1
+        if pat == "inside":
+            return b["h"] <= a["h"] and b["l"] >= a["l"]
+        if pat == "outside":
+            return b["h"] >= a["h"] and b["l"] <= a["l"]
+        if pat == "marubozu_bull":
+            return bull and upper / rng < 0.06 and lower / rng < 0.06
+        if pat == "marubozu_bear":
+            return (not bull) and upper / rng < 0.06 and lower / rng < 0.06
+        return False
 
     def _day_ohlc(self, back: int = 1):
         """(high, low, close) of the session `back` days ago from spot snaps."""
@@ -496,6 +592,7 @@ class _Ctx:
         "gamma_flip": _gamma_flip,
         "oi_state": _oi_state, "supertrend": _supertrend, "pivot": _pivot,
         "delta_change": _delta_change, "gamma_change": _gamma_change,
+        "candle": _candle, "atr": _atr,
     }
 
     def eval_one(self, cond: dict) -> bool:
@@ -724,7 +821,7 @@ class AutoBot:
         open_mkt = _in_market_hours(now)
         loss_lock = self.max_loss_per_day > 0 and self.daily_pnl <= -self.max_loss_per_day
         changed = False
-        ctx_cache: dict[str, _Ctx] = {}
+        ctx_cache: dict[tuple, _Ctx] = {}
 
         for rule in self.rules:
             if not rule.get("enabled"):
@@ -828,7 +925,8 @@ class AutoBot:
                 elif not open_mkt or (sq and now.time() >= sq):
                     reason = "square-off"
                 else:
-                    cx = ctx_cache.setdefault(sym, _Ctx(sym))
+                    _tf = int(rule.get("entryTf") or 0)
+                    cx = ctx_cache.get((sym, _tf)) or ctx_cache.setdefault((sym, _tf), _Ctx(sym, tf=_tf))
                     if cx.eval_conds(rule.get("exit", []), rule.get("exitLogic", "any")):
                         reason = "exit signal"
                 if reason:
@@ -865,7 +963,10 @@ class AutoBot:
             if neb and now.time() < neb:
                 continue
 
-            cx = ctx_cache.setdefault(sym, _Ctx(sym))
+            _tf = int(rule.get("entryTf") or 0)
+            cx = ctx_cache.get((sym, _tf)) or ctx_cache.setdefault(
+                (sym, _tf), _Ctx(sym, tf=_tf)
+            )
             if cx.n < 5 or not cx.eval_conds(rule.get("entry", []), rule.get("entryLogic", "all")):
                 continue
 

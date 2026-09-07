@@ -228,7 +228,7 @@ async def backtest_rule(
     for i, d in enumerate(dates):
         if d < first_tradable and not open_pos:
             continue
-        ctx = _Ctx(symbol, hist[: i + 1])
+        ctx = _Ctx(symbol, hist[: i + 1])  # daily bars — entryTf resample n/a
 
         if open_pos:
             k, ot, ep, edate, ei = (
@@ -361,7 +361,7 @@ async def _backtest_intraday(
 
     step = _STEP.get(symbol, 50)
     lot = _LOT.get(symbol, 1)
-    hist = [{"t": c["time"], "spot": c["close"]} for c in series]
+    hist = [{"t": c["time"], "spot": c["close"], "o": c["open"], "h": c["high"], "l": c["low"], "c": c["close"]} for c in series]
 
     side = (rule.get("side") or "BUY").upper()
     sign = 1 if side == "BUY" else -1
@@ -390,7 +390,7 @@ async def _backtest_intraday(
         dkey = _dstr(ts)
         clk = datetime.fromtimestamp(ts, IST).time()
         tradable = ts >= first_ts
-        ctx = _Ctx(symbol, hist[: i + 1])
+        ctx = _Ctx(symbol, hist[: i + 1], tf=int(rule.get("entryTf") or 0))
 
         if open_pos:
             k, ot, ep, ei = open_pos["k"], open_pos["ot"], open_pos["entry"], open_pos["i"]

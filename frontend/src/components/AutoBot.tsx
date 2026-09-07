@@ -220,13 +220,52 @@ const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field
     ],
   },
   supertrend: {
-    label: "Supertrend (spot)",
+    label: "Supertrend (ATR)",
     group: "trend",
     fields: [
       { key: "period", label: "period", type: "num", def: 10 },
       { key: "mult", label: "mult", type: "num", def: 3 },
       { key: "dir", label: "dir", type: "sel", def: "up", opts: ["up", "down"] },
       { key: "op", label: "when", type: "sel", def: "is", opts: ["is", "flip"] },
+    ],
+  },
+  candle: {
+    label: "Candlestick pattern",
+    group: "trend",
+    fields: [
+      {
+        key: "pattern",
+        label: "pattern",
+        type: "sel",
+        def: "bull_engulf",
+        opts: [
+          "bull_engulf",
+          "bear_engulf",
+          "hammer",
+          "shooting_star",
+          "doji",
+          "inside",
+          "outside",
+          "marubozu_bull",
+          "marubozu_bear",
+        ],
+      },
+    ],
+  },
+  atr: {
+    label: "ATR (volatility)",
+    group: "trend",
+    fields: [
+      { key: "period", label: "period", type: "num", def: 14 },
+      {
+        key: "op",
+        label: "op",
+        type: "sel",
+        def: ">",
+        opts: [">", "<", "rising", "falling"],
+      },
+      { key: "value", label: "value", type: "num", def: 20 },
+      { key: "unit", label: "unit", type: "sel", def: "pts", opts: ["pts", "pct"] },
     ],
   },
   pivot: {
@@ -275,7 +314,7 @@ const GROUP_LABEL: Record<CondGroup, string> = {
   indicator: "Indicator",
   oi: "OI / chain",
   smart: "Smart money / structure",
-  trend: "Trend (Supertrend / Pivots)",
+  trend: "Trend / price action (Supertrend, Pivots, Candles, ATR)",
   greeks: "Greeks (Δ delta / gamma)",
 };
 
@@ -311,6 +350,8 @@ function blankRule(symbol: string): Partial<AutoRule> {
     mode: "paper",
     entry: [mkCond("rsi")],
     exit: [],
+    entryTf: 300,
+    entryBars: 60,
     entryLogic: "all",
     exitLogic: "any",
     slBasis: "pct",
@@ -545,6 +586,45 @@ function RuleEditor({
 
       {/* entry / exit conditions — kept above the instrument config */}
       <div className="space-y-3 rounded border border-term-border/60 bg-term-bg/40 p-2">
+        {/* candle timeframe the indicator / pattern / ATR conditions run on */}
+        <div className="flex flex-wrap items-center gap-2 text-[10px] text-term-dim">
+          <span className="font-semibold uppercase tracking-wide">Entry candles</span>
+          <div className="seg">
+            {(
+              [
+                ["tick", 0],
+                ["1m", 60],
+                ["3m", 180],
+                ["5m", 300],
+                ["15m", 900],
+                ["30m", 1800],
+                ["1h", 3600],
+              ] as const
+            ).map(([lbl, v]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => set({ entryTf: v })}
+                className={(r.entryTf ?? 0) === v ? "on" : ""}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
+          <label className="flex items-center gap-1" title="How many candles of history to keep for indicator warm-up">
+            bars
+            <input
+              type="number"
+              min={10}
+              value={r.entryBars ?? 60}
+              onChange={(e) => set({ entryBars: Math.max(10, parseInt(e.target.value) || 60) })}
+              className="num w-14 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
+            />
+          </label>
+          <span className="text-[9px] normal-case text-term-dim/70">
+            RSI / EMA / MACD / Supertrend / Candles / ATR evaluate on this timeframe
+          </span>
+        </div>
         <CondList
           title="Entry"
           hint="to open"
@@ -1000,7 +1080,15 @@ export function AutoBotView() {
 
                 <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
                   <div>
-                    <span className="uppercase tracking-wide text-term-dim">entry (all)</span>
+                    <span className="uppercase tracking-wide text-term-dim">
+                      entry ({r.entryLogic === "any" ? "any" : "all"}) ·{" "}
+                      {r.entryTf
+                        ? r.entryTf < 3600
+                          ? `${r.entryTf / 60}m`
+                          : `${r.entryTf / 3600}h`
+                        : "tick"}{" "}
+                      candles
+                    </span>
                     <ul className="mt-0.5 space-y-0.5">
                       {(r.entry ?? []).map((c, i) => (
                         <li key={i} className="text-term-text">
