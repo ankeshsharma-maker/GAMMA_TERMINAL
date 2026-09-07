@@ -76,6 +76,7 @@ export function ScalpPanel() {
   const totToday = totMtm + totRpnl;
   const symMtm = myRows.reduce((s, r) => s + mtmOf(r), 0);
   const symRpnl = myRows.reduce((s, r) => s + rpnlOf(r), 0);
+  const myOpen = myRows.filter((r) => (n(r.netqty) ?? 0) !== 0);
 
   const withBusy = async (key: string, fn: () => Promise<unknown>) => {
     setBusy((b) => new Set(b).add(key));
@@ -102,7 +103,7 @@ export function ScalpPanel() {
     );
   };
   const squareOffSym = () => {
-    const targets = myRows.filter((r) => (n(r.netqty) ?? 0) !== 0);
+    const targets = myOpen;
     if (!targets.length) return;
     if (
       !window.confirm(
@@ -178,7 +179,7 @@ export function ScalpPanel() {
         )}
         <button
           onClick={squareOffSym}
-          disabled={myRows.every((r) => (n(r.netqty) ?? 0) === 0)}
+          disabled={myOpen.length === 0}
           className="shrink-0 rounded bg-down px-2 py-1 text-[10px] font-bold text-white disabled:opacity-30"
         >
           Flatten {symbol}
@@ -194,15 +195,15 @@ export function ScalpPanel() {
         <button className="btn px-2 py-0.5" onClick={() => setScalpLots(scalpLots + 1)}>
           +
         </button>
-        {[1, 2, 5, 10].map((n) => (
+        {[1, 2, 5, 10].map((lotN) => (
           <button
-            key={n}
-            onClick={() => setScalpLots(n)}
+            key={lotN}
+            onClick={() => setScalpLots(lotN)}
             className={`rounded border px-1.5 py-0.5 ${
-              scalpLots === n ? "border-term-accent bg-term-accent/20 text-term-text" : "border-term-border text-term-dim"
+              scalpLots === lotN ? "border-term-accent bg-term-accent/20 text-term-text" : "border-term-border text-term-dim"
             }`}
           >
-            {n}
+            {lotN}
           </button>
         ))}
       </div>
@@ -276,7 +277,7 @@ export function ScalpPanel() {
 
       <div className="flex items-center justify-between border-y border-term-border px-3 py-1.5 text-2xs">
         <span className="font-semibold uppercase text-term-dim">
-          {symbol} broker positions ({myRows.length})
+          {symbol} broker positions ({myOpen.length})
         </span>
         <span className="num font-semibold">
           <span className={signColor(symMtm)}>₹{nf(symMtm, 0)}</span>
@@ -297,12 +298,12 @@ export function ScalpPanel() {
         {broker?.authed && feedErr && (
           <div className="p-4 text-center text-2xs text-down">{feedErr}</div>
         )}
-        {broker?.authed && !feedErr && myRows.length === 0 && (
+        {broker?.authed && !feedErr && myOpen.length === 0 && (
           <div className="p-4 text-center text-2xs text-term-dim">
             No open {symbol} positions at the broker.
           </div>
         )}
-        {myRows.map((r) => {
+        {myOpen.map((r) => {
           const qty = n(r.netqty) ?? 0;
           const lot = n(r.ls) ?? n(r.lotsize) ?? 0;
           const lots = lot ? Math.abs(qty / lot) : Math.abs(qty);
@@ -343,7 +344,7 @@ export function ScalpPanel() {
         })}
       </div>
 
-      {myRows.some((r) => (n(r.netqty) ?? 0) !== 0) && (
+      {myOpen.length > 0 && (
         <button
           onClick={squareOffSym}
           disabled={busy.has(`all-${symbol}`)}
