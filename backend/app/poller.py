@@ -126,6 +126,7 @@ async def _scan_universe_symbol(symbol: str) -> None:
 
 async def run_universe_scan(stop: asyncio.Event) -> None:
     log.info("universe scan started (%d symbols)", len(FO_UNIVERSE))
+    last_bcast = 0.0
     while not stop.is_set():
         store.set_universe_progress(
             total=len(FO_UNIVERSE), scanned=0, cycleStart=time.time()
@@ -136,9 +137,15 @@ async def run_universe_scan(stop: asyncio.Event) -> None:
             store.set_universe_progress(current=sym)
             await _scan_universe_symbol(sym)
             store.set_universe_progress(scanned=i + 1)
-            await hub.broadcast_all(
-                {"type": "screener", "data": store.get_universe(), "progress": store.universe_progress}
-            )
+            # coalesce screener pushes — the old per-symbol broadcast sent the
+            # whole ~130-row array to every client every ~2.5s all session,
+            # forcing a full table re-render each time. One push per 12s is
+            # plenty for a background sweep that takes minutes to cycle.
+            if time.time() - last_bcast > 12 or i == len(FO_UNIVERSE) - 1:
+                last_bcast = time.time()
+                await hub.broadcast_all(
+                    {"type": "screener", "data": store.get_universe(), "progress": store.universe_progress}
+                )
             stagger = SCREENER_STAGGER if _in_market_hours() else SCREENER_STAGGER * 4
             try:
                 await asyncio.wait_for(stop.wait(), timeout=stagger)

@@ -1,5 +1,10 @@
 """Background task: when a broker session exists, stream real-time underlying
 ticks over the broker WebSocket and fan them out as `tick` messages.
+
+If the broker WebSocket is down (token expired overnight, or Flattrade's
+one-socket-per-login limit) the loop falls back to polling GetQuotes over REST
+so charts keep moving, and periodically calls ``broker.refresh()`` to try to
+heal the session without the user hitting the header refresh button.
 """
 from __future__ import annotations
 
@@ -17,6 +22,10 @@ log = logging.getLogger("broker_feed")
 _tok2sym: dict[str, str] = {}
 _token_cache: dict[str, tuple[str, str]] = {}
 _last_emit: dict[str, float] = {}
+
+# min seconds between fan-outs per symbol. The frontend coalesces incoming ticks
+# at ~5 Hz and charts only need ~1/s, so there is no point broadcasting faster.
+_EMIT_MIN_GAP = 1.0
 
 
 def _num(v):
@@ -37,7 +46,7 @@ async def _on_tick(token: str, msg: dict) -> None:
     store.set_live_spot(sym, ltp, chg)
 
     now = time.time()
-    if now - _last_emit.get(sym, 0) < 0.5:  # throttle to ~2/s per symbol
+    if now - _last_emit.get(sym, 0) < _EMIT_MIN_GAP:
         return
     _last_emit[sym] = now
     await hub.broadcast_all(
@@ -51,14 +60,37 @@ async def _desired_symbols() -> set[str]:
     return {s.upper() for s in (set(DEFAULT_SYMBOLS) | wl | subs)}
 
 
+async def _rest_poll(broker) -> None:
+    """One round of GetQuotes for every cached feed token, pushed through the
+    same `_on_tick` path the WS uses. Only runs while the WS feed is down."""
+    for sym, (exch, token) in list(_token_cache.items()):
+        try:
+            q = await broker.quotes(exch, token)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("rest quote failed for %s: %s", sym, exc)
+            continue
+        if q:
+            _tok2sym[token] = sym
+            await _on_tick(token, {"lp": q.get("lp"), "pc": q.get("pc")})
+
+
 async def run_broker_feed(stop: asyncio.Event) -> None:
     broker = get_broker()
     if not broker.configured:
         log.info("broker not configured; live feed disabled")
         return
 
-    # wait for a session (user completes the login flow)
+    # wait for a session (user completes the login flow). While waiting, retry
+    # refresh() once a minute so a token saved earlier today, or one that was
+    # transiently rejected, recovers on its own.
+    last_refresh = 0.0
     while not stop.is_set() and not broker.authed:
+        if time.time() - last_refresh > 60:
+            last_refresh = time.time()
+            try:
+                await broker.refresh()
+            except Exception as exc:  # noqa: BLE001
+                log.debug("startup refresh failed: %s", exc)
         try:
             await asyncio.wait_for(stop.wait(), timeout=5)
         except asyncio.TimeoutError:
@@ -71,13 +103,17 @@ async def run_broker_feed(stop: asyncio.Event) -> None:
 
     down_since: float | None = None
     warned = False
+    last_reauth = 0.0
     while not stop.is_set():
-        # surface a prolonged live-feed outage once (charts fall back to REST
-        # polling meanwhile, which lags and isn't tick-by-tick)
         st = broker.status()
-        if broker.authed and not st.get("wsConnected"):
+        ws_down = broker.authed and not st.get("wsConnected")
+
+        if ws_down:
             down_since = down_since or time.time()
-            if not warned and time.time() - down_since > 30:
+            outage = time.time() - down_since
+            # surface a prolonged live-feed outage once (charts fall back to the
+            # REST poll below meanwhile, which lags and isn't tick-by-tick)
+            if not warned and outage > 30:
                 store.add_alert(
                     {
                         "ts": time.time(),
@@ -95,6 +131,14 @@ async def run_broker_feed(stop: asyncio.Event) -> None:
                 except Exception:  # noqa: BLE001
                     pass
                 warned = True
+            # try to heal a stuck socket: re-validate the token + bounce the WS
+            if outage > 45 and time.time() - last_reauth > 120:
+                last_reauth = time.time()
+                try:
+                    log.info("live feed down %.0fs — attempting broker.refresh()", outage)
+                    await broker.refresh()
+                except Exception as exc:  # noqa: BLE001
+                    log.debug("auto-refresh failed: %s", exc)
         else:
             down_since = None
             warned = False
@@ -120,8 +164,15 @@ async def run_broker_feed(stop: asyncio.Event) -> None:
                     await broker.subscribe(keys)
                 except Exception as exc:  # noqa: BLE001
                     log.debug("subscribe failed: %s", exc)
+
+        if ws_down and broker.authed:
+            # keep charts moving on ~3s REST quotes until the socket is back
+            await _rest_poll(broker)
+            timeout = 3
+        else:
+            timeout = 20
         try:
-            await asyncio.wait_for(stop.wait(), timeout=20)
+            await asyncio.wait_for(stop.wait(), timeout=timeout)
         except asyncio.TimeoutError:
             pass
 

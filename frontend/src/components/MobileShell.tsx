@@ -68,7 +68,8 @@ const NAV: { v: View; icon: string; label: string }[] = [
 
 function ChainStrip() {
   const chain = useStore((s) => s.chain);
-  const liveSpots = useStore((s) => s.liveSpots);
+  // narrow subscription — only this symbol's tick, not the whole map
+  const live = useStore((s) => (s.chain ? s.liveSpots[s.chain.symbol] : undefined));
   const [ivSeries, setIvSeries] = useState<number[]>([]);
   const sym = chain?.symbol;
   useEffect(() => {
@@ -90,7 +91,6 @@ function ChainStrip() {
   }, [sym]);
   if (!chain) return null;
   const reg = ivRegime(ivSeries, chain.atmIV);
-  const live = liveSpots[chain.symbol];
   const fresh = live && Date.now() / 1000 - live.ts < 12;
   const spot = fresh ? live!.ltp : chain.spot;
   const cell = (label: string, value: React.ReactNode, cls = "") => (
@@ -150,10 +150,10 @@ function MobileBody({ view }: { view: View }) {
     case "scalper":
       return (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1">
+          <div className="flex min-h-0 flex-1 flex-col">
             <ScalpCharts />
           </div>
-          <div className="max-h-[45%] overflow-auto border-t border-term-border">
+          <div className="max-h-[45%] shrink-0 overflow-auto border-t border-term-border">
             <ScalpPanel />
           </div>
         </div>

@@ -17,7 +17,7 @@ html {
 
 body {
   margin: 0;
-  background: #0a0e14;
+  background: #080b11;
   color: #c8d3e0;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -66,32 +66,37 @@ select:focus-visible {
 
 @layer components {
   .cell {
-    @apply px-1.5 py-[3px] text-right num text-2xs whitespace-nowrap border-r border-term-border;
+    @apply px-1.5 py-[3px] text-right num text-2xs whitespace-nowrap border-r border-term-border/50;
   }
-  /* dense bordered option-chain grid */
+  /* dense option-chain grid — hairline separators, no heavy outer frame */
   .oc-grid {
-    @apply w-full border-separate border-spacing-0 border border-term-border;
+    @apply w-full border-separate border-spacing-0 border border-term-border/70;
   }
   .oc-grid thead th {
-    @apply border-b border-r border-term-border px-1 py-1 text-[10px] uppercase font-medium;
+    @apply border-b border-r border-term-border/60 px-1 py-1 text-[10px] uppercase font-medium;
   }
   .oc-grid tbody td {
-    @apply border-b border-r border-term-border;
+    @apply border-b border-r border-term-border/40;
   }
   .seg {
-    @apply flex overflow-hidden rounded border border-term-border text-2xs;
+    @apply flex overflow-hidden rounded border border-term-border/60 text-2xs;
   }
   .seg > button {
-    @apply px-2.5 py-1 border-r border-term-border last:border-r-0 transition-colors;
+    @apply px-2.5 py-1 border-r border-term-border/60 last:border-r-0 text-term-dim transition-colors;
   }
   .seg > button.on {
     @apply bg-term-accent text-white;
   }
   .seg > button:not(.on) {
-    @apply text-term-dim hover:bg-term-border;
+    @apply hover:bg-term-border hover:text-term-text;
   }
+  /* one button look: no resting border, fills on hover, outlined when active */
   .btn {
-    @apply px-2 py-1 rounded border border-term-border bg-term-panel hover:bg-term-border hover:border-term-accent/60 text-xs transition-colors disabled:opacity-40 disabled:hover:bg-term-panel disabled:hover:border-term-border;
+    @apply px-2 py-1 rounded border border-transparent bg-term-panel text-xs text-term-dim transition-colors hover:bg-term-border hover:text-term-text disabled:opacity-40 disabled:hover:bg-term-panel;
+  }
+  .btn.on,
+  .btn[aria-pressed="true"] {
+    @apply border-term-accent/50 bg-term-accent/15 text-term-text;
   }
   .btn-buy {
     @apply bg-up/20 border-up/40 hover:bg-up/30 text-up;
@@ -101,7 +106,7 @@ select:focus-visible {
   }
   /* a small pill that marks plain text / icons as clickable */
   .chipbtn {
-    @apply inline-flex items-center gap-1 rounded border border-term-border bg-term-bg/60 px-1.5 py-0.5 text-2xs text-term-dim transition-colors hover:border-term-accent/60 hover:text-term-text;
+    @apply inline-flex items-center gap-1 rounded border border-transparent bg-term-panel px-1.5 py-0.5 text-2xs text-term-dim transition-colors hover:bg-term-border hover:text-term-text;
   }
   /* a table row that navigates when clicked */
   .click-row {

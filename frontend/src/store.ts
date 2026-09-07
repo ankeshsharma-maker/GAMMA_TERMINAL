@@ -18,6 +18,15 @@ import type {
   Watchlists,
 } from "./types";
 
+// --- live-tick coalescing -------------------------------------------------
+// The broker feed can push a tick per symbol every ~0.5s; during market hours
+// that is a steady stream across the watchlist + subscribed symbols. Applying
+// each one with a full `set()` re-rendered every component selecting
+// `liveSpots`. Instead we buffer incoming ticks and flush them in one `set`
+// at ~5 Hz, which is faster than any eye can follow and keeps React quiet.
+const _tickBuf: Record<string, import("./types").LiveSpot> = {};
+let _tickFlushTimer: number | null = null;
+
 export type PendingOrder =
   | {
       kind: "single";
@@ -295,7 +304,15 @@ export const useStore = create<State>((set, get) => ({
           set({ autobot: msg.data });
         } else if (msg.type === "tick") {
           const d = msg.data;
-          set({ liveSpots: { ...get().liveSpots, [d.symbol]: { ltp: d.ltp, chgPct: d.chgPct, ts: d.ts } } });
+          _tickBuf[d.symbol] = { ltp: d.ltp, chgPct: d.chgPct, ts: d.ts };
+          if (_tickFlushTimer == null) {
+            _tickFlushTimer = window.setTimeout(() => {
+              _tickFlushTimer = null;
+              const batch = { ..._tickBuf };
+              for (const k in _tickBuf) delete _tickBuf[k];
+              set({ liveSpots: { ...get().liveSpots, ...batch } });
+            }, 200);
+          }
         } else if (msg.type === "error" && msg.symbol === get().symbol) {
           set({ chainError: msg.message });
         }
@@ -321,6 +338,7 @@ export const useStore = create<State>((set, get) => ({
       () => {}
     );
     const pollBroker = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
       api.brokerStatus().then((b) => set({ broker: b }), () => {});
       api.brokerFunds().then((f) => set({ brokerFunds: f }), () => {});
     };
@@ -330,10 +348,16 @@ export const useStore = create<State>((set, get) => ({
       (d) => set({ orderMode: d.mode }),
       () => {}
     );
+    // paper / autobot polls skip while the tab is hidden and only `set()` when
+    // something actually changed, so idle re-renders stop between real updates.
     get().refreshPaper();
-    setInterval(() => get().refreshPaper(), 5000);
+    setInterval(() => {
+      if (!(typeof document !== "undefined" && document.hidden)) get().refreshPaper();
+    }, 8000);
     get().loadAutobot();
-    setInterval(() => get().loadAutobot(), 15000);
+    setInterval(() => {
+      if (!(typeof document !== "undefined" && document.hidden)) get().loadAutobot();
+    }, 15000);
     api.symbols().then(
       (d) =>
         d.indices?.length &&
@@ -364,7 +388,8 @@ export const useStore = create<State>((set, get) => ({
 
   loadAutobot: async () => {
     try {
-      set({ autobot: await api.autobot() });
+      const a = await api.autobot();
+      if (JSON.stringify(get().autobot) !== JSON.stringify(a)) set({ autobot: a });
     } catch {
       /* ignore */
     }
@@ -576,7 +601,8 @@ export const useStore = create<State>((set, get) => ({
 
   refreshPaper: async () => {
     try {
-      set({ paper: await api.paper() });
+      const p = await api.paper();
+      if (JSON.stringify(get().paper) !== JSON.stringify(p)) set({ paper: p });
     } catch {
       /* ignore */
     }

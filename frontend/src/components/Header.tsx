@@ -8,7 +8,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 function Stat({ label, value, cls = "" }: { label: string; value: ReactNode; cls?: string }) {
   return (
-    <div className="flex flex-col justify-center rounded border border-term-border bg-term-bg/40 px-2 py-0.5 leading-tight">
+    <div className="flex flex-col justify-center border-l border-term-border/60 px-2 leading-tight first:border-l-0">
       <span className="text-[10px] uppercase tracking-wide text-term-dim">{label}</span>
       <span className={`num text-sm ${cls}`}>{value}</span>
     </div>
@@ -84,10 +84,10 @@ function ViewToggle() {
         <button
           key={v}
           onClick={() => setView(v)}
-          className={`rounded-md border px-2.5 py-1 font-bold uppercase tracking-wide transition-all ${
+          className={`rounded border px-2.5 py-1 font-semibold uppercase tracking-wide transition-colors ${
             view === v
-              ? "border-term-accent bg-term-accent text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_1px_3px_rgba(0,0,0,0.45)]"
-              : "border-term-border bg-gradient-to-b from-term-panel2 to-term-bg text-term-text shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_1px_2px_rgba(0,0,0,0.35)] hover:border-term-accent/60 hover:text-white active:translate-y-px"
+              ? "border-term-accent bg-term-accent text-white"
+              : "border-transparent text-term-dim hover:bg-term-border hover:text-term-text"
           }`}
         >
           {label}
@@ -638,7 +638,9 @@ function IvBadge() {
 
 export function Header() {
   const chain = useStore((s) => s.chain);
-  const liveSpots = useStore((s) => s.liveSpots);
+  // subscribe only to the charted symbol's tick, not the whole liveSpots map,
+  // so a tick for some other watchlist symbol doesn't re-render the header
+  const live = useStore((s) => (s.chain ? s.liveSpots[s.chain.symbol] : undefined));
   const [, force] = useState(0);
   useEffect(() => {
     const t = setInterval(() => force((n) => n + 1), 1000);
@@ -647,16 +649,15 @@ export function Header() {
 
   const gexPos = (chain?.netGex ?? 0) >= 0;
   const orderMode = useStore((s) => s.orderMode);
-  const live = chain ? liveSpots[chain.symbol] : undefined;
   const liveFresh = live && Date.now() / 1000 - live.ts < 12;
 
   return (
     <div
-      className={`flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b bg-term-panel px-4 py-2 ${
+      className={`flex flex-wrap items-center gap-x-2 gap-y-1 border-b bg-term-panel px-4 py-1.5 ${
         orderMode === "live" ? "border-down" : "border-term-border"
       }`}
     >
-      <span className="text-base font-semibold tracking-tight">GammaTerminal</span>
+      <span className="text-sm font-semibold tracking-tight">GammaTerminal</span>
       <HeaderIndices />
       <ViewToggle />
       <ClassFilter />

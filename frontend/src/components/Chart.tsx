@@ -76,7 +76,12 @@ const dedupe = (pts: Pt[] = []) => {
 export function Chart() {
   const symbol = useStore((s) => s.symbol);
   const chain = useStore((s) => s.chain);
-  const liveSpots = useStore((s) => s.liveSpots);
+  // subscribe to just the charted symbol's tick — not the whole liveSpots map,
+  // which churns on every tick of every watchlist / subscribed symbol
+  const liveTick = useStore((s) => s.liveSpots[s.symbol]);
+  // broker session up but its live socket down => charts are on the REST
+  // fallback; surface it loudly instead of letting the chart look frozen
+  const feedStale = useStore((s) => !!s.broker?.authed && !s.broker?.wsConnected);
   const watch = useStore((s) => s.watch);
   const instrument = useStore((s) => s.chartInstrument);
   const setInstrument = useStore((s) => s.setChartInstrument);
@@ -164,6 +169,23 @@ export function Chart() {
   useEffect(() => {
     onRef.current = on;
   }, [on]);
+
+  // collapse the whole settings toolbar for a full-height chart
+  const [barOpen, setBarOpen] = useState(() => {
+    try {
+      return localStorage.getItem("chart.barOpen") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const setBar = (v: boolean) => {
+    setBarOpen(v);
+    try {
+      localStorage.setItem("chart.barOpen", v ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  };
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -314,17 +336,29 @@ export function Chart() {
 
   const [dataSrc, setDataSrc] = useState<"auto" | "broker" | "upstox">("auto");
 
-  // fetch on symbol / instrument / timeframe / source change + poll
+  // Refresh cadence: normally 15s (chart motion between refreshes comes from the
+  // live nudge below). Only when the broker feed is *expected but down* — so the
+  // backend is serving ~3s REST quotes and there are no WS ticks — drop to 4s so
+  // the chart still moves. Both flags live in refs, updated by small effects, so
+  // the fetch loop isn't torn down (blanking the chart) on every flip.
+  const tickFreshRef = useRef(false);
+  const feedDownRef = useRef(false);
   useEffect(() => {
     let alive = true;
-    const load = () =>
+    let lastAt = 0;
+    const load = (force = false) => {
+      const now = Date.now();
+      const minGap = feedDownRef.current && !tickFreshRef.current ? 4000 : 15000;
+      if (!force && now - lastAt < minGap) return;
+      lastAt = now;
       api
         .chart(symbol, intervalS, instrument || undefined, dataSrc)
         .then((d) => alive && setData(d as ChartData))
         .catch(() => {});
+    };
     setData(null);
-    load();
-    const t = setInterval(load, 15000);
+    load(true);
+    const t = setInterval(() => load(false), 2000);
     return () => {
       alive = false;
       clearInterval(t);
@@ -338,16 +372,57 @@ export function Chart() {
     [candles, ctype]
   );
 
+  // heavy indicator maths, memoised on the candle set so a re-render that
+  // doesn't change the candles (toggles, ticks) doesn't recompute them
+  const ind = useMemo(() => {
+    const cd = priceCandles;
+    const bb = bollinger(cd, 20, 2);
+    return {
+      ema9: ema(cd, 9),
+      ema21: ema(cd, 21),
+      ema50: ema(cd, 50),
+      sma20: sma(cd, 20),
+      vwap: vwap(cd),
+      bu: bb.upper,
+      bl: bb.lower,
+      st: supertrend(cd, 10, 3),
+      rsi: rsi(cd, 14),
+      macd: macd(cd),
+    };
+  }, [priceCandles]);
+  const prevPriceRef = useRef<{ key: string; candles: Candle[] }>({ key: "", candles: [] });
+
   useEffect(() => {
     if (!chartRef.current || !data) return;
     const c = s.current;
 
-    // route price data to the selected chart-type series
+    // route price data to the selected chart-type series. When only the tail
+    // changed (same series, new/updated last bar) patch it in with update()
+    // rather than re-seeding the whole array on every 4-15s refresh.
     const asLine = priceCandles.map((k) => ({ time: k.time as any, value: k.close }));
-    (c.candle as ISeriesApi<"Candlestick">).setData(priceCandles as any);
-    (c.barS as ISeriesApi<"Bar">).setData(priceCandles as any);
-    (c.lineS as ISeriesApi<"Line">).setData(asLine as any);
-    (c.areaS as ISeriesApi<"Area">).setData(asLine as any);
+    const pkey = `${symbol}|${instrument}|${intervalS}|${ctype}`;
+    const prevP = prevPriceRef.current;
+    const canPatch =
+      prevP.key === pkey &&
+      prevP.candles.length > 0 &&
+      priceCandles.length >= prevP.candles.length &&
+      priceCandles.length - prevP.candles.length <= 3 &&
+      prevP.candles[0]?.time === priceCandles[0]?.time;
+    if (canPatch) {
+      for (let i = prevP.candles.length - 1; i < priceCandles.length; i++) {
+        const k = priceCandles[i];
+        (c.candle as ISeriesApi<"Candlestick">).update(k as any);
+        (c.barS as ISeriesApi<"Bar">).update(k as any);
+        (c.lineS as ISeriesApi<"Line">).update({ time: k.time as any, value: k.close } as any);
+        (c.areaS as ISeriesApi<"Area">).update({ time: k.time as any, value: k.close } as any);
+      }
+    } else {
+      (c.candle as ISeriesApi<"Candlestick">).setData(priceCandles as any);
+      (c.barS as ISeriesApi<"Bar">).setData(priceCandles as any);
+      (c.lineS as ISeriesApi<"Line">).setData(asLine as any);
+      (c.areaS as ISeriesApi<"Area">).setData(asLine as any);
+    }
+    prevPriceRef.current = { key: pkey, candles: priceCandles };
     (c.candle as any).applyOptions({ visible: ctype === "candle" || ctype === "heikin" });
     (c.barS as any).applyOptions({ visible: ctype === "bar" });
     (c.lineS as any).applyOptions({ visible: ctype === "line" });
@@ -359,15 +434,14 @@ export function Chart() {
       ser.setData((visible ? pts : []) as any);
     };
     const cd = priceCandles;
-    setLine("ema9", ema(cd, 9), on.ema9);
-    setLine("ema21", ema(cd, 21), on.ema21);
-    setLine("ema50", ema(cd, 50), on.ema50);
-    setLine("sma20", sma(cd, 20), on.sma20);
-    setLine("vwap", vwap(cd), on.vwap && !!data.hasVolume);
-    const bb = bollinger(cd, 20, 2);
-    setLine("bu", bb.upper, on.boll);
-    setLine("bl", bb.lower, on.boll);
-    setLine("st", supertrend(cd, 10, 3), on.supertrend);
+    setLine("ema9", ind.ema9, on.ema9);
+    setLine("ema21", ind.ema21, on.ema21);
+    setLine("ema50", ind.ema50, on.ema50);
+    setLine("sma20", ind.sma20, on.sma20);
+    setLine("vwap", ind.vwap, on.vwap && !!data.hasVolume);
+    setLine("bu", ind.bu, on.boll);
+    setLine("bl", ind.bl, on.boll);
+    setLine("st", ind.st, on.supertrend);
 
     // volume
     const vser = c.vol as ISeriesApi<"Histogram">;
@@ -386,13 +460,13 @@ export function Chart() {
 
     // rsi
     chartRef.current.priceScale("rsi").applyOptions({ visible: on.rsi });
-    const rsiPts = rsi(cd, 14);
+    const rsiPts = ind.rsi;
     setLine("rsi", rsiPts, on.rsi);
     lastRsiRef.current = on.rsi && rsiPts.length ? rsiPts[rsiPts.length - 1].value : null;
     setRsiVal(lastRsiRef.current);
 
     // macd
-    const m = on.macd ? macd(cd) : { macd: [], signal: [], hist: [] };
+    const m = on.macd ? ind.macd : { macd: [], signal: [], hist: [] };
     chartRef.current.priceScale("macd").applyOptions({ visible: on.macd });
     (c.macdLine as ISeriesApi<"Line">).applyOptions({ visible: on.macd });
     (c.macdSig as ISeriesApi<"Line">).applyOptions({ visible: on.macd });
@@ -468,21 +542,55 @@ export function Chart() {
   };
   useEffect(applyRange, [rangeD]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // live last-price nudge
-  const liveTick = liveSpots[symbol];
-  const livePx =
-    liveTick && Date.now() / 1000 - liveTick.ts < 12 ? liveTick.ltp : chain?.spot;
+  // live last-price nudge — move the last candle toward the latest price for
+  // whatever instrument is charted: the underlying tick, the charted option
+  // leg's LTP, or the ATM straddle — not always the underlying spot.
+  const tickAgeOk = !!liveTick && Date.now() / 1000 - liveTick.ts < 15;
   useEffect(() => {
-    if (!chartRef.current || !data || !candles.length || livePx == null) return;
-    const last = candles[candles.length - 1];
-    (s.current.candle as ISeriesApi<"Candlestick">).update({
+    tickFreshRef.current = tickAgeOk;
+  }, [tickAgeOk]);
+  useEffect(() => {
+    feedDownRef.current = feedStale;
+  }, [feedStale]);
+
+  const optLegPx = useMemo(() => {
+    if (!isOption || !chain) return null;
+    const [sym, , kS, ot] = instrument.split("|");
+    if (sym !== chain.symbol) return null;
+    const row = chain.rows.find((r) => r.strike === Number(kS));
+    const leg = row && (ot === "CE" ? row.call : row.put);
+    return leg && leg.ltp != null ? leg.ltp : null;
+  }, [isOption, instrument, chain]);
+
+  const livePx = isOption
+    ? optLegPx
+    : instrument.toUpperCase() === "STRADDLE"
+    ? chain?.atmStraddle ?? null
+    : tickAgeOk
+    ? liveTick!.ltp
+    : chain?.spot ?? null;
+
+  useEffect(() => {
+    if (!chartRef.current || !data || !priceCandles.length || livePx == null) return;
+    const last = priceCandles[priceCandles.length - 1];
+    if (ctype === "line") {
+      (s.current.lineS as ISeriesApi<"Line">).update({ time: last.time as any, value: livePx });
+      return;
+    }
+    if (ctype === "area") {
+      (s.current.areaS as ISeriesApi<"Area">).update({ time: last.time as any, value: livePx });
+      return;
+    }
+    const bar = {
       time: last.time as any,
       open: last.open,
       high: Math.max(last.high, livePx),
       low: Math.min(last.low, livePx),
       close: livePx,
-    });
-  }, [livePx, symbol, candles, data]);
+    };
+    (s.current.candle as ISeriesApi<"Candlestick">).update(bar);
+    (s.current.barS as ISeriesApi<"Bar">).update(bar);
+  }, [livePx, symbol, priceCandles, data, ctype]);
 
   // log / linear price scale
   useEffect(() => {
@@ -540,7 +648,19 @@ export function Chart() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs">
+      {!barOpen && (
+        <button
+          onClick={() => setBar(true)}
+          title="Show chart settings"
+          className="flex items-center gap-1 self-start rounded-br border-b border-r border-term-border bg-term-panel2 px-2 py-0.5 text-2xs text-term-dim hover:text-term-text"
+        >
+          ⚙ settings
+        </button>
+      )}
+      <div
+        className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs"
+        style={barOpen ? undefined : { display: "none" }}
+      >
         {view !== "scalper" && (
           <div className="flex overflow-hidden rounded border border-term-border">
             {(
@@ -598,7 +718,7 @@ export function Chart() {
             })
           }
           className={`rounded border px-1.5 py-0.5 ${
-            split ? "border-term-accent/50 bg-term-accent/15 text-term-text" : "border-term-border text-term-dim"
+            split ? "border-term-accent/50 bg-term-accent/15 text-term-text" : "border-transparent text-term-dim hover:bg-term-border hover:text-term-text"
           }`}
           title="Split view — underlying + derivative in one window"
         >
@@ -742,7 +862,7 @@ export function Chart() {
         <button
           onClick={() => setLogScale((v) => !v)}
           className={`rounded border px-1.5 py-0.5 ${
-            logScale ? "border-term-accent/50 bg-term-accent/15 text-term-text" : "border-term-border text-term-dim"
+            logScale ? "border-term-accent/50 bg-term-accent/15 text-term-text" : "border-transparent text-term-dim hover:bg-term-border hover:text-term-text"
           }`}
           title="Logarithmic price scale"
         >
@@ -751,7 +871,7 @@ export function Chart() {
         <button
           onClick={() => setDrawMode((v) => !v)}
           className={`rounded border px-1.5 py-0.5 ${
-            drawMode ? "border-amber-500/60 bg-amber-500/15 text-amber-400" : "border-term-border text-term-dim"
+            drawMode ? "border-amber-500/60 bg-amber-500/15 text-amber-400" : "border-transparent text-term-dim hover:bg-term-border hover:text-term-text"
           }`}
           title="Draw mode — click the chart to drop a horizontal line"
         >
@@ -773,6 +893,13 @@ export function Chart() {
         >
           ⤢
         </button>
+        <button
+          onClick={() => setBar(false)}
+          className="rounded border border-term-border px-1.5 py-0.5 text-term-dim hover:text-term-text"
+          title="Hide the settings bar for a bigger chart"
+        >
+          ⌃ hide
+        </button>
 
         {TOGGLES.map(([k, lbl]) => {
           const dim = isOption && (k === "straddle" || k === "score");
@@ -786,14 +913,22 @@ export function Chart() {
                   ? "border-term-border/40 text-term-dim/40"
                   : on[k]
                   ? "border-term-accent/50 bg-term-accent/15 text-term-text"
-                  : "border-term-border text-term-dim hover:bg-term-border"
+                  : "border-transparent text-term-dim hover:bg-term-border hover:text-term-text"
               }`}
             >
               {lbl}
             </button>
           );
         })}
-        <span className="ml-auto text-term-dim">
+        {feedStale && (
+          <span
+            className="ml-auto flex items-center gap-1 rounded border border-down/60 bg-down/15 px-1.5 py-0.5 font-semibold text-down"
+            title="Broker live feed is down — chart is on ~3s REST quotes, not tick-by-tick. Hit ↻ refresh in the header."
+          >
+            ⚠ FEED STALE · REST
+          </span>
+        )}
+        <span className={`${feedStale ? "" : "ml-auto"} text-term-dim`}>
           {data
             ? data.candleSource === "broker"
               ? `${data.candles.length} bars · Flattrade${data.hasVolume ? " + vol" : ""}`

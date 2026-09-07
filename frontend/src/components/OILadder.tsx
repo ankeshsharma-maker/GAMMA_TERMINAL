@@ -16,7 +16,8 @@ const CUT = "#ef4444"; // OI reduced (unwinding)
 export function OILadder() {
   const chain = useStore((s) => s.chain);
   const symbol = useStore((s) => s.symbol);
-  const liveSpots = useStore((s) => s.liveSpots);
+  // narrow subscription — only this symbol's live tick price
+  const liveLtp = useStore((s) => (s.chain ? s.liveSpots[s.chain.symbol]?.ltp : undefined));
   const setInstrument = useStore((s) => s.setChartInstrument);
   const instrument = useStore((s) => s.chartInstrument);
 
@@ -96,7 +97,7 @@ export function OILadder() {
       </div>
     );
 
-  const spot = chain.liveSpot?.ltp ?? liveSpots[chain.symbol]?.ltp ?? chain.spot;
+  const spot = chain.liveSpot?.ltp ?? liveLtp ?? chain.spot;
   const pick = (k: number, ot: "CE" | "PE") =>
     setInstrument(`${symbol}|${chain.expiry}|${k}|${ot}`);
   const tfLbl = tf === 0 ? "day" : `${tf}m`;

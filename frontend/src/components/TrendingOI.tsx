@@ -185,7 +185,8 @@ export function TrendingOI() {
 function TrendingOILive() {
   const { symbol, selectSymbol, selectExpiry, chain, symOptions, expiry, daily, pts, tf, setTf } =
     useTrendingOI();
-  const liveSpots = useStore((s) => s.liveSpots);
+  // narrow subscription — only the current chain symbol's tick
+  const live = useStore((s) => (s.chain ? s.liveSpots[s.chain.symbol] : undefined));
 
   const [showChart, setShowChart] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -328,7 +329,6 @@ function TrendingOILive() {
     );
   }, [showChart, pts, daily]);
 
-  const live = chain ? liveSpots[chain.symbol] : undefined;
   const spot = live?.ltp ?? chain?.spot ?? 0;
   const spotChg = live?.chgPct ?? null;
 

@@ -168,45 +168,43 @@ function DesktopShell() {
       <Header />
       <NotificationPanel />
 
-      {/* layout controls */}
-      <div className="flex items-center gap-2 border-b border-term-border bg-term-panel2 px-3 py-1 text-[10px] text-term-dim">
-        <span className="uppercase tracking-wide">Layout</span>
-        <span>Zoom</span>
-        <button className="btn px-1.5 py-0" onClick={() => setZoom((z) => clamp(z - 5, 70, 160))}>
-          −
-        </button>
-        <span className="num w-9 text-center text-term-text">{zoom}%</span>
-        <button className="btn px-1.5 py-0" onClick={() => setZoom((z) => clamp(z + 5, 70, 160))}>
-          +
-        </button>
-        <button className="btn ml-2 px-2 py-0" onClick={resetLayout}>
-          Reset
-        </button>
-        <span className="ml-3">Panels</span>
+      {/* layout utility strip — thin, icon-first */}
+      <div className="flex items-center gap-1 border-b border-term-border bg-term-bg px-3 py-0.5 text-[10px] text-term-dim">
         <button
-          className={`btn px-2 py-0 ${hideLeft ? "text-term-dim" : "text-term-text"}`}
+          className={`btn px-2 py-0 ${hideLeft ? "" : "text-term-text"}`}
           onClick={() => setHideLeft((v) => !v)}
           title="Show / hide the watchlist panel"
         >
-          {hideLeft ? "▸ Watchlist" : "◂ Watchlist"}
+          {hideLeft ? "▸" : "◂"} Watchlist
         </button>
         {!wide && (
           <button
-            className={`btn px-2 py-0 ${hideRight ? "text-term-dim" : "text-term-text"}`}
+            className={`btn px-2 py-0 ${hideRight ? "" : "text-term-text"}`}
             onClick={() => setHideRight((v) => !v)}
             title="Show / hide the right panel"
           >
-            {hideRight ? "◂ Right" : "▸ Right"}
+            {hideRight ? "◂" : "▸"} Right
           </button>
         )}
         <button
-          className={`btn px-2 py-0 ${notifDock ? "text-term-accent" : "text-term-dim"}`}
+          className={`btn px-2 py-0 ${notifDock ? "text-term-accent" : ""}`}
           onClick={() => setNotifDock(!notifDock)}
           title="Dock the alerts / unusual-activity feed as a fixed right column"
         >
-          {notifDock ? "▸ Alerts dock" : "◂ Alerts dock"}
+          {notifDock ? "▸" : "◂"} Alerts
         </button>
-        <span className="ml-auto hidden sm:inline">drag the dividers to stretch panels</span>
+        <span className="mx-1 h-3 w-px bg-term-border" />
+        <button className="btn px-1.5 py-0" onClick={() => setZoom((z) => clamp(z - 5, 70, 160))} title="Zoom out">
+          −
+        </button>
+        <span className="num w-8 text-center text-term-text">{zoom}%</span>
+        <button className="btn px-1.5 py-0" onClick={() => setZoom((z) => clamp(z + 5, 70, 160))} title="Zoom in">
+          +
+        </button>
+        <button className="btn px-2 py-0" onClick={resetLayout} title="Reset panels & zoom">
+          Reset
+        </button>
+        <span className="ml-auto hidden text-term-dim/60 sm:inline">drag dividers to resize</span>
       </div>
 
       <div

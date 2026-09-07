@@ -42,6 +42,7 @@ export interface Chain {
   pcr: number | null;
   maxPain: number;
   netGex: number;
+  atmStraddle?: number | null;
   totals: {
     ceOI: number;
     peOI: number;
