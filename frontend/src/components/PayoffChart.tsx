@@ -13,13 +13,29 @@ interface Props {
   symbol?: string;
   /** label for the tPnl curve (e.g. "T+3d") */
   tLabel?: string;
+  /** flat P&L offset (manual / booked) added to every curve */
+  offset?: number;
 }
 
 const W = 900;
 const H = 380;
 const PAD = { l: 8, r: 8, t: 16, b: 22 };
 
-export function PayoffChart({ x, expiryPnl, nowPnl, spot, breakevens, tPnl, symbol, tLabel }: Props) {
+export function PayoffChart(props: Props) {
+  const { x, spot, breakevens, symbol, tLabel } = props;
+  const off = props.offset || 0;
+  const expiryPnl = useMemo(
+    () => (off ? props.expiryPnl.map((v) => v + off) : props.expiryPnl),
+    [props.expiryPnl, off]
+  );
+  const nowPnl = useMemo(
+    () => (off ? props.nowPnl.map((v) => v + off) : props.nowPnl),
+    [props.nowPnl, off]
+  );
+  const tPnl = useMemo(
+    () => (props.tPnl && off ? props.tPnl.map((v) => v + off) : props.tPnl),
+    [props.tPnl, off]
+  );
   const [hi, setHi] = useState<number | null>(null);
 
   const g = useMemo(() => {

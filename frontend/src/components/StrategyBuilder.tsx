@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
-import { strategyPnlCurve } from "../lib/bs";
+import {
+  strategyPnlCurve,
+  legPnlAt,
+  legPriceAt,
+  positionValue,
+  bsGreeks,
+} from "../lib/bs";
 import { ivRegime, ivFit } from "../lib/iv";
 import type {
   Analysis,
@@ -141,12 +147,20 @@ export function StrategyBuilder() {
   const [tgtVal, setTgtVal] = useState("");
   const [slTgtBasis, setSlTgtBasis] = useState<"amount" | "points">("amount");
   const [panel, setPanel] = useState<"payoff" | "backtest">("payoff");
-  const [payoffTab, setPayoffTab] = useState<"chart" | "table">("chart");
+  const [payoffTab, setPayoffTab] = useState<"chart" | "table" | "legs" | "greeks">("chart");
   const [strikeSpan, setStrikeSpan] = useState(10); // ATM ± N strikes in the P&L table
   const [dayPct, setDayPct] = useState(3); // ± move for the day-by-day P&L columns
+  const [tableInterval, setTableInterval] = useState(0); // 0 = chain strikes; else ₹ step
+  const [showPct, setShowPct] = useState(true); // show the "Move %" column
+  const [gMulLot, setGMulLot] = useState(true); // greeks × lot size
+  const [gMulQty, setGMulQty] = useState(true); // greeks × number of lots
+  const [manualPnl, setManualPnl] = useState(0); // booked / manual P&L offset added to every P&L
+  const [manualStr, setManualStr] = useState("");
   const [ivSeries, setIvSeries] = useState<number[]>([]);
   // "time to expiry" payoff: days from today (0 = now / T+0, dte = expiry)
   const [tDays, setTDays] = useState(0);
+  // "target price" — the underlying level the leg tables / stats project to
+  const [tPrice, setTPrice] = useState(0);
   // customise "+ Add leg": pick type / strike / side / lots for the next leg
   const [newLegOT, setNewLegOT] = useState<OptionType>("CE");
   const [newLegSide, setNewLegSide] = useState<"BUY" | "SELL">("BUY");
@@ -413,6 +427,69 @@ export function StrategyBuilder() {
   }, [analysis, tDays, dte]);
   const tDate = new Date(Date.now() + tDays * 86400000);
   const tDateLbl = tDate.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+  const remYears = Math.max((dte - tDays) / 365, 0);
+
+  // reset the target price to spot when the position / symbol changes
+  useEffect(() => {
+    if (analysis) setTPrice(Math.round(analysis.spot));
+  }, [analysis?.symbol, analysis?.expiry]);
+  const tgtPrice = tPrice > 0 ? tPrice : analysis?.spot ?? 0;
+
+  // position time value / intrinsic value (Sensibull-style), current
+  const posVal = useMemo(
+    () => (analysis ? positionValue(analysis.legs, analysis.spot, dte / 365) : null),
+    [analysis, dte]
+  );
+
+  // per-leg P&L at the (target price, target date)
+  const legRows = useMemo(() => {
+    if (!analysis) return [];
+    const nowY = dte / 365;
+    return analysis.legs.map((leg) => ({
+      leg,
+      label: `${leg.side === "BUY" ? "B" : "S"} ${leg.lots}×${
+        leg.optionType === "FUT" ? "FUT" : `${sk(leg.strike)}${leg.optionType}`
+      }`,
+      entry: leg.entry,
+      ltp: legPriceAt(leg, analysis.spot, nowY),
+      tgtPx: legPriceAt(leg, tgtPrice, remYears),
+      tgtPnl: legPnlAt(leg, tgtPrice, remYears),
+    }));
+  }, [analysis, tgtPrice, remYears, dte]);
+
+  // per-leg greeks at the target (price, date)
+  const greekRows = useMemo(() => {
+    if (!analysis) return [];
+    const lot = analysis.lotSize || 1;
+    return analysis.legs.map((leg) => {
+      const g =
+        leg.optionType === "FUT"
+          ? { delta: 1, gamma: 0, theta: 0, vega: 0 }
+          : bsGreeks(leg.optionType, tgtPrice, leg.strike, remYears, (leg.iv || 0) / 100);
+      const sgn = leg.side === "BUY" ? 1 : -1;
+      const mul = sgn * (gMulLot ? lot : 1) * (gMulQty ? leg.lots : 1);
+      return {
+        leg,
+        label: `${leg.side === "BUY" ? "B" : "S"} ${leg.lots}×${
+          leg.optionType === "FUT" ? "FUT" : `${sk(leg.strike)}${leg.optionType}`
+        }`,
+        delta: g.delta * mul,
+        gamma: g.gamma * mul,
+        theta: g.theta * mul,
+        vega: g.vega * mul,
+      };
+    });
+  }, [analysis, tgtPrice, remYears, gMulLot, gMulQty]);
+  const greekTot = greekRows.reduce(
+    (a, r) => ({
+      delta: a.delta + r.delta,
+      gamma: a.gamma + r.gamma,
+      theta: a.theta + r.theta,
+      vega: a.vega + r.vega,
+    }),
+    { delta: 0, gamma: 0, theta: 0, vega: 0 }
+  );
+  const legTot = legRows.reduce((a, r) => a + r.tgtPnl, 0);
 
   // ---- payoff table: strikewise P&L (ATM ± strikeSpan strikes) ----
   const levelRows = useMemo(() => {
@@ -421,7 +498,12 @@ export function StrategyBuilder() {
     const step = chain?.strikeStep || 50;
 
     let strikes: number[];
-    if (chain && chain.rows.length) {
+    if (tableInterval > 0) {
+      // fixed ₹ interval around spot (Sensibull "Target Interval")
+      const base = Math.round(spot / tableInterval) * tableInterval;
+      strikes = [];
+      for (let i = -strikeSpan; i <= strikeSpan; i++) strikes.push(base + i * tableInterval);
+    } else if (chain && chain.rows.length) {
       const ks = chain.rows.map((r) => r.strike).sort((a, b) => a - b);
       let ai = ks.indexOf(chain.atmStrike);
       if (ai < 0)
@@ -463,7 +545,7 @@ export function StrategyBuilder() {
         isFloor: k === floor.k && floor.v > 0,
       }))
       .reverse(); // high strike on top, like the chain ladder
-  }, [analysis, tDays, dte, strikeSpan, chain]);
+  }, [analysis, tDays, dte, strikeSpan, tableInterval, chain]);
 
   // ---- day-by-day P&L at spot and ±dayPct% (theta decay to expiry) ----
   const dayRows = useMemo(() => {
@@ -493,6 +575,7 @@ export function StrategyBuilder() {
   }, [analysis, dte, dayPct]);
 
   const pnlCls = (v: number) => (v >= 0 ? "text-up" : "text-down");
+  const mp = (v: number | null | undefined) => (v == null ? null : v + manualPnl);
   const pnlTxt = (v: number | null) => (v == null ? "–" : `${v >= 0 ? "+" : ""}${nf(v, 0)}`);
 
   // session ATM-IV history → IV regime + strategy fit
@@ -523,6 +606,124 @@ export function StrategyBuilder() {
     out.push(dte);
     return out;
   }, [dte]);
+
+  const num2 = (v: number, d = 2) => (v >= 0 ? "+" : "") + nf(v, d);
+  const gCell = (v: number, d = 2) =>
+    `border-b border-r border-term-border/50 px-2 py-1 text-right num ${
+      Math.abs(v) < 1e-9 ? "text-term-dim" : v > 0 ? "text-up" : "text-down"
+    }`;
+
+  // ---- Legs P&L tab: per-leg P&L at the (target price, target date) ----
+  const legsEl = analysis && (
+    <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-0 lg:flex-1 lg:overflow-auto">
+      <div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-term-dim">
+        Legs P&amp;L @ {nf(tgtPrice, 0)} · {tDays === 0 ? "now" : tDateLbl}
+      </div>
+      <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/50 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
+        <thead className="text-[10px] uppercase text-term-dim">
+          <tr>
+            <th className="px-2 py-1 text-left font-medium">Instrument</th>
+            <th className="px-2 py-1 text-right font-medium">Target P&amp;L</th>
+            <th className="px-2 py-1 text-right font-medium">Target price</th>
+            <th className="px-2 py-1 text-right font-medium">Entry</th>
+            <th className="px-2 py-1 text-right font-medium">LTP (now)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {legRows.map((r, i) => (
+            <tr key={i}>
+              <td className="num border-b border-r border-term-border/50 px-2 py-1">{r.label}</td>
+              <td className={gCell(r.tgtPnl, 0)}>{pnlTxt(r.tgtPnl)}</td>
+              <td className="num border-b border-r border-term-border/50 px-2 py-1 text-right text-term-text">
+                {nf(r.tgtPx, 2)}
+              </td>
+              <td className="num border-b border-r border-term-border/50 px-2 py-1 text-right text-term-dim">
+                {nf(r.entry, 2)}
+              </td>
+              <td className="num border-b border-r border-term-border/50 px-2 py-1 text-right text-term-dim">
+                {nf(r.ltp, 2)}
+              </td>
+            </tr>
+          ))}
+          {manualPnl !== 0 && (
+            <tr>
+              <td className="border-b border-r border-term-border/50 px-2 py-1 text-term-dim">
+                Manual P&amp;L
+              </td>
+              <td className={gCell(manualPnl, 0)}>{pnlTxt(manualPnl)}</td>
+              <td className="border-b border-r border-term-border/50 px-2 py-1" />
+              <td className="border-b border-r border-term-border/50 px-2 py-1" />
+              <td className="border-b border-r border-term-border/50 px-2 py-1" />
+            </tr>
+          )}
+          <tr className="bg-term-panel2 font-semibold">
+            <td className="border-b border-r border-term-border/50 px-2 py-1">Total (projected)</td>
+            <td className={gCell(legTot + manualPnl, 0)}>{pnlTxt(legTot + manualPnl)}</td>
+            <td className="border-b border-r border-term-border/50 px-2 py-1" />
+            <td className="border-b border-r border-term-border/50 px-2 py-1" />
+            <td className="border-b border-r border-term-border/50 px-2 py-1" />
+          </tr>
+        </tbody>
+      </table>
+      <p className="mt-1 text-[9px] text-term-dim">
+        Target P&amp;L / price = Black-Scholes at the target price &amp; date sliders. LTP = theoretical now.
+      </p>
+    </div>
+  );
+
+  // ---- Greeks tab: per-leg greeks at the (target price, target date) ----
+  const greeksEl = analysis && (
+    <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-0 lg:flex-1 lg:overflow-auto">
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
+        <span className="text-2xs font-semibold uppercase tracking-wide text-term-dim">
+          Greeks @ {nf(tgtPrice, 0)} · {tDays === 0 ? "now" : tDateLbl}
+        </span>
+        <div className="flex gap-1 text-[10px]">
+          <button
+            onClick={() => setGMulLot((v) => !v)}
+            className={`rounded px-1.5 py-0.5 ${gMulLot ? "bg-term-accent text-white" : "bg-term-border text-term-dim"}`}
+          >
+            × lot size
+          </button>
+          <button
+            onClick={() => setGMulQty((v) => !v)}
+            className={`rounded px-1.5 py-0.5 ${gMulQty ? "bg-term-accent text-white" : "bg-term-border text-term-dim"}`}
+          >
+            × num lots
+          </button>
+        </div>
+      </div>
+      <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/50 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
+        <thead className="text-[10px] uppercase text-term-dim">
+          <tr>
+            <th className="px-2 py-1 text-left font-medium">Instrument</th>
+            <th className="px-2 py-1 text-right font-medium">Delta</th>
+            <th className="px-2 py-1 text-right font-medium">Gamma</th>
+            <th className="px-2 py-1 text-right font-medium">Theta / day</th>
+            <th className="px-2 py-1 text-right font-medium">Vega</th>
+          </tr>
+        </thead>
+        <tbody>
+          {greekRows.map((r, i) => (
+            <tr key={i}>
+              <td className="num border-b border-r border-term-border/50 px-2 py-1">{r.label}</td>
+              <td className={gCell(r.delta)}>{num2(r.delta)}</td>
+              <td className={gCell(r.gamma, 4)}>{num2(r.gamma, 4)}</td>
+              <td className={gCell(r.theta, 0)}>{num2(r.theta, 0)}</td>
+              <td className={gCell(r.vega, 0)}>{num2(r.vega, 0)}</td>
+            </tr>
+          ))}
+          <tr className="bg-term-panel2 font-semibold">
+            <td className="border-b border-r border-term-border/50 px-2 py-1">Total</td>
+            <td className={gCell(greekTot.delta)}>{num2(greekTot.delta)}</td>
+            <td className={gCell(greekTot.gamma, 4)}>{num2(greekTot.gamma, 4)}</td>
+            <td className={gCell(greekTot.theta, 0)}>{num2(greekTot.theta, 0)}</td>
+            <td className={gCell(greekTot.vega, 0)}>{num2(greekTot.vega, 0)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-term-border lg:grid lg:grid-cols-[330px_minmax(0,1fr)] lg:overflow-hidden">
@@ -1161,8 +1362,15 @@ export function StrategyBuilder() {
               : "Replay these legs against Upstox daily history"}
           </span>
           {panel === "payoff" && (
-            <div className="ml-auto flex gap-1">
-              {(["chart", "table"] as const).map((k) => (
+            <div className="ml-auto flex flex-wrap gap-1">
+              {(
+                [
+                  ["chart", "Chart"],
+                  ["table", "P&L table"],
+                  ["legs", "Legs P&L"],
+                  ["greeks", "Greeks"],
+                ] as const
+              ).map(([k, label]) => (
                 <button
                   key={k}
                   onClick={() => setPayoffTab(k)}
@@ -1172,7 +1380,7 @@ export function StrategyBuilder() {
                       : "border-term-border bg-term-bg/40 text-term-dim hover:text-term-text"
                   }`}
                 >
-                  {k === "chart" ? "Chart" : "P&L table"}
+                  {label}
                 </button>
               ))}
             </div>
@@ -1209,17 +1417,35 @@ export function StrategyBuilder() {
                     />
                     <StatCol
                       label="Total Profit (max)"
-                      value={analysis.maxProfitUnbounded ? "Unlimited" : `₹${nf(analysis.maxProfit, 0)}`}
+                      value={
+                        analysis.maxProfitUnbounded
+                          ? "Unlimited"
+                          : `₹${nf(analysis.maxProfit + manualPnl, 0)}`
+                      }
                       cls="text-up"
                     />
                     <StatCol
                       label="Total Loss (max)"
-                      value={analysis.maxLossUnbounded ? "Unlimited" : `₹${nf(analysis.maxLoss, 0)}`}
+                      value={
+                        analysis.maxLossUnbounded
+                          ? "Unlimited"
+                          : `₹${nf(analysis.maxLoss + manualPnl, 0)}`
+                      }
                       cls="text-down"
                     />
                     <StatCol
-                      label="Breakeven"
-                      value={analysis.breakevens.map((b) => nf(b, 0)).join(" / ") || "–"}
+                      label="Breakeven (% from spot)"
+                      value={
+                        analysis.breakevens
+                          .map(
+                            (b) =>
+                              `${nf(b, 0)} (${b >= analysis.spot ? "+" : ""}${nf(
+                                ((b - analysis.spot) / analysis.spot) * 100,
+                                1
+                              )}%)`
+                          )
+                          .join(" · ") || "–"
+                      }
                     />
                     <StatCol label="POP" value={analysis.pop != null ? `${nf(analysis.pop, 1)}%` : "–"} />
                     <StatCol label="R : R" value={analysis.rr != null ? `1:${nf(analysis.rr, 2)}` : "–"} />
@@ -1241,6 +1467,16 @@ export function StrategyBuilder() {
                       label="V Vega"
                       value={nf(analysis.greeks.vega, 0)}
                       cls={signColor(analysis.greeks.vega)}
+                    />
+                    <StatCol
+                      label="Time value"
+                      value={posVal ? `₹${nf(posVal.timeValue, 0)}` : "–"}
+                      cls={posVal ? signColor(posVal.timeValue) : ""}
+                    />
+                    <StatCol
+                      label="Intrinsic value"
+                      value={posVal ? `₹${nf(posVal.intrinsic, 0)}` : "–"}
+                      cls={posVal ? signColor(posVal.intrinsic) : ""}
                     />
                     <StatCol label="Legs" value={legs.length} />
                     <StatCol label="Spot" value={nf(analysis.spot, 1)} />
@@ -1307,6 +1543,48 @@ export function StrategyBuilder() {
                 </button>
               ))}
             </div>
+            {/* target price — drives Legs P&L, Greeks and the T+n column */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-term-border/50 pt-1.5">
+              <span className="font-semibold uppercase tracking-wide text-term-dim">
+                {symbol} target
+              </span>
+              <input
+                type="range"
+                min={Math.round(analysis.spot * 0.85)}
+                max={Math.round(analysis.spot * 1.15)}
+                step={chain?.strikeStep || 50}
+                value={Math.round(tgtPrice)}
+                onChange={(e) => setTPrice(Number(e.target.value))}
+                className="h-1 flex-1 min-w-[140px] cursor-pointer accent-sky-500"
+              />
+              <span className="num w-[188px] shrink-0 text-right text-term-text">
+                {nf(tgtPrice, 0)}{" "}
+                <span className={tgtPrice >= analysis.spot ? "text-up" : "text-down"}>
+                  ({tgtPrice >= analysis.spot ? "+" : ""}
+                  {nf(((tgtPrice - analysis.spot) / analysis.spot) * 100, 1)}%)
+                </span>
+              </span>
+              <button
+                onClick={() => setTPrice(Math.round(analysis.spot))}
+                className="rounded bg-term-border px-1.5 py-0.5 text-term-dim hover:text-term-text"
+              >
+                reset
+              </button>
+              <label className="flex items-center gap-1 text-term-dim">
+                Manual P&amp;L ₹
+                <input
+                  value={manualStr}
+                  onChange={(e) => {
+                    const s = e.target.value.replace(/[^\d.-]/g, "");
+                    setManualStr(s);
+                    setManualPnl(parseFloat(s) || 0);
+                  }}
+                  placeholder="0"
+                  title="Booked / adjustment P&L added to every P&L figure and the payoff curves"
+                  className="num w-24 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent"
+                />
+              </label>
+            </div>
           </div>
         )}
 
@@ -1322,6 +1600,7 @@ export function StrategyBuilder() {
                 tPnl={tPnl}
                 symbol={analysis.symbol}
                 tLabel={tPnl ? `T+${tDays}d` : undefined}
+                offset={manualPnl}
               />
             )}
             {analysis && (
@@ -1334,7 +1613,7 @@ export function StrategyBuilder() {
               </div>
             )}
           </div>
-        ) : (
+        ) : payoffTab === "table" ? (
           <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-0 lg:flex-1 lg:overflow-auto">
             {analysis && (
               <div className="grid gap-5 lg:grid-cols-2">
@@ -1342,35 +1621,61 @@ export function StrategyBuilder() {
                 <div className="rounded border border-term-border p-2">
                   <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
                     <span className="text-2xs font-semibold uppercase tracking-wide text-term-dim">
-                      P&amp;L by strike — spot {nf(analysis.spot, 0)}
+                      P&amp;L by {tableInterval > 0 ? "target" : "strike"} — spot {nf(analysis.spot, 0)}
                     </span>
-                    <div className="seg text-[10px]">
-                      {[10, 20, 30].map((n) => (
-                        <button
-                          key={n}
-                          onClick={() => setStrikeSpan(n)}
-                          className={strikeSpan === n ? "on" : ""}
-                        >
-                          ±{n}
-                        </button>
-                      ))}
+                    <div className="flex flex-wrap items-center gap-1">
+                      <div className="seg text-[10px]">
+                        {[10, 20, 30].map((n) => (
+                          <button
+                            key={n}
+                            onClick={() => setStrikeSpan(n)}
+                            className={strikeSpan === n ? "on" : ""}
+                          >
+                            ±{n}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="seg text-[10px]">
+                        {([["strikes", 0], ["50", 50], ["100", 100], ["200", 200]] as const).map(
+                          ([lbl, v]) => (
+                            <button
+                              key={lbl}
+                              onClick={() => setTableInterval(v)}
+                              className={tableInterval === v ? "on" : ""}
+                              title="row interval"
+                            >
+                              {lbl}
+                            </button>
+                          )
+                        )}
+                      </div>
+                      <button
+                        onClick={() => setShowPct((v) => !v)}
+                        className={`rounded px-1.5 py-0.5 text-[10px] ${
+                          showPct ? "bg-term-accent text-white" : "bg-term-border text-term-dim"
+                        }`}
+                      >
+                        %
+                      </button>
                     </div>
                   </div>
                   <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/50 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
                     <thead className="text-[10px] uppercase text-term-dim">
                       <tr>
                         <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                          Strike
+                          {tableInterval > 0 ? "Target" : "Strike"}
                         </th>
+                        {showPct && (
+                          <th className="border-b border-term-border px-2 py-1 text-right font-medium">
+                            Move
+                          </th>
+                        )}
                         <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                          Move
-                        </th>
-                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                          At expiry
+                          On expiry
                         </th>
                         {tDays > 0 && (
                           <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                            T+{tDays}d
+                            On {tDateLbl}
                           </th>
                         )}
                       </tr>
@@ -1399,28 +1704,30 @@ export function StrategyBuilder() {
                             {r.isWall && <sup className="ml-0.5 text-down">R</sup>}
                             {r.isFloor && <sup className="ml-0.5 text-up">S</sup>}
                           </td>
-                          <td
-                            className={`num border-b border-term-border/40 px-2 py-1 text-right ${
-                              r.pct >= 0 ? "text-up" : "text-down"
-                            }`}
-                          >
-                            {r.pct >= 0 ? "+" : ""}
-                            {nf(r.pct * 100, 1)}%
-                          </td>
+                          {showPct && (
+                            <td
+                              className={`num border-b border-term-border/40 px-2 py-1 text-right ${
+                                r.pct >= 0 ? "text-up" : "text-down"
+                              }`}
+                            >
+                              {r.pct >= 0 ? "+" : ""}
+                              {nf(r.pct * 100, 1)}%
+                            </td>
+                          )}
                           <td
                             className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
-                              r.exp
+                              r.exp + manualPnl
                             )}`}
                           >
-                            {pnlTxt(r.exp)}
+                            {pnlTxt(r.exp + manualPnl)}
                           </td>
                           {tDays > 0 && (
                             <td
                               className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
-                                r.tv ?? 0
+                                (r.tv ?? 0) + manualPnl
                               )}`}
                             >
-                              {pnlTxt(r.tv)}
+                              {pnlTxt(mp(r.tv))}
                             </td>
                           )}
                         </tr>
@@ -1500,24 +1807,24 @@ export function StrategyBuilder() {
                             </td>
                             <td
                               className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
-                                r.dn
+                                r.dn + manualPnl
                               )}`}
                             >
-                              {pnlTxt(r.dn)}
+                              {pnlTxt(r.dn + manualPnl)}
                             </td>
                             <td
                               className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
-                                r.sp
+                                r.sp + manualPnl
                               )}`}
                             >
-                              {pnlTxt(r.sp)}
+                              {pnlTxt(r.sp + manualPnl)}
                             </td>
                             <td
                               className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
-                                r.up
+                                r.up + manualPnl
                               )}`}
                             >
-                              {pnlTxt(r.up)}
+                              {pnlTxt(r.up + manualPnl)}
                             </td>
                             <td
                               className={`num border-b border-term-border/40 px-2 py-1 text-right ${
@@ -1535,6 +1842,10 @@ export function StrategyBuilder() {
               </div>
             )}
           </div>
+        ) : payoffTab === "legs" ? (
+          legsEl
+        ) : (
+          greeksEl
         )}
 
         {analysis && (
