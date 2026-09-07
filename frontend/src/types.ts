@@ -259,6 +259,9 @@ export interface AutoRule {
     deltaMin?: number;
     deltaMax?: number;
   };
+  /** unit for slPct / targetPct / trailPct / trailArmPct / beArmPct:
+   *  "pct" = % of entry premium, "pts" = premium points, "rs" = rupee P&L */
+  slBasis?: "pct" | "pts" | "rs";
   slPct?: number;
   targetPct?: number;
   trailPct?: number;
@@ -268,6 +271,7 @@ export interface AutoRule {
   cooldownMin: number;
   squareOff: string;
   noEntryAfter?: string;
+  noEntryBefore?: string;
   _state?: {
     open: null | {
       side: Side;

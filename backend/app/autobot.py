@@ -749,29 +749,57 @@ class AutoBot:
                 move = (ltp - base) / base * 100
                 signed = move if buy else -move  # favourable P&L %
 
-                # peak = best favourable premium seen; fav = favourable run-up %
+                # peak = best favourable premium seen
                 peak = pos.get("peak", base)
                 peak = max(peak, ltp) if buy else min(peak, ltp)
                 pos["peak"] = round(peak, 2)
-                fav = (peak - base) / base * 100 if buy else (base - peak) / base * 100
 
-                # assemble the effective stop price: fixed SL, then ratcheted up
+                # SL / target / trail unit: "pct" (of entry premium), "pts"
+                # (premium points) or "rs" (rupee P&L). Everything is converted
+                # to a premium offset in *points* for the stop price, and the
+                # favourable run-up is measured in the same unit.
+                basis = (rule.get("slBasis") or "pct").lower()
+                qty = max(1, int(pos.get("lots", 1)) * int(pos.get("lotSize", 1)))
+                unit = "pts" if basis == "pts" else "₹" if basis == "rs" else "%"
+
+                def _to_pts(v):
+                    if v in (None, ""):
+                        return None
+                    v = abs(float(v))
+                    if basis == "pts":
+                        return v
+                    if basis == "rs":
+                        return v / qty
+                    return base * v / 100.0
+
+                if basis == "pts":
+                    fav = (peak - base) if buy else (base - peak)
+                    cur_fav = (ltp - base) if buy else (base - ltp)
+                elif basis == "rs":
+                    fav = ((peak - base) if buy else (base - peak)) * qty
+                    cur_fav = ((ltp - base) if buy else (base - ltp)) * qty
+                else:
+                    fav = (peak - base) / base * 100 if buy else (base - peak) / base * 100
+                    cur_fav = signed
+
+                # assemble the effective stop price: fixed SL, then ratcheted
                 # by breakeven-arm and trailing-stop once their triggers are hit
                 stop_px = None
-                sl_pct = float(rule["slPct"]) if rule.get("slPct") not in (None, "") else None
-                if sl_pct is not None:
-                    stop_px = base * (1 - sl_pct / 100) if buy else base * (1 + sl_pct / 100)
+                sl_pts = _to_pts(rule.get("slPct"))
+                if sl_pts is not None:
+                    stop_px = base - sl_pts if buy else base + sl_pts
                 be_arm = float(rule.get("beArmPct") or 0)
                 be_on = be_arm > 0 and fav >= be_arm
                 if be_on:
                     stop_px = base if stop_px is None else (
                         max(stop_px, base) if buy else min(stop_px, base)
                     )
-                trail_pct = float(rule.get("trailPct") or 0)
+                trail_v = float(rule.get("trailPct") or 0)
                 trail_arm = float(rule.get("trailArmPct") or 0)
-                trail_on = trail_pct > 0 and fav >= trail_arm
+                trail_pts = _to_pts(rule.get("trailPct")) if trail_v > 0 else None
+                trail_on = trail_pts is not None and fav >= trail_arm
                 if trail_on:
-                    ts_px = peak * (1 - trail_pct / 100) if buy else peak * (1 + trail_pct / 100)
+                    ts_px = peak - trail_pts if buy else peak + trail_pts
                     stop_px = ts_px if stop_px is None else (
                         max(stop_px, ts_px) if buy else min(stop_px, ts_px)
                     )
@@ -783,16 +811,20 @@ class AutoBot:
                 reason = None
                 sq = _parse_hhmm(rule.get("squareOff"))
                 stop_hit = stop_px is not None and (ltp <= stop_px if buy else ltp >= stop_px)
+                tp_v = rule.get("targetPct")
+                tp_hit = (
+                    tp_v not in (None, "") and float(tp_v) != 0 and cur_fav >= abs(float(tp_v))
+                )
                 if pos.get("forceExit"):
                     reason = "kill"
                 elif stop_hit:
                     reason = (
                         "trailing stop" if trail_on
                         else "breakeven stop" if be_on
-                        else f"SL {rule.get('slPct')}%"
+                        else f"SL {rule.get('slPct')}{unit}"
                     )
-                elif rule.get("targetPct") and signed >= abs(float(rule["targetPct"])):
-                    reason = f"target {rule['targetPct']}%"
+                elif tp_hit:
+                    reason = f"target {tp_v}{unit}"
                 elif not open_mkt or (sq and now.time() >= sq):
                     reason = "square-off"
                 else:
@@ -828,6 +860,9 @@ class AutoBot:
                 continue
             nea = _parse_hhmm(rule.get("noEntryAfter"))
             if nea and now.time() >= nea:
+                continue
+            neb = _parse_hhmm(rule.get("noEntryBefore"))
+            if neb and now.time() < neb:
                 continue
 
             cx = ctx_cache.setdefault(sym, _Ctx(sym))

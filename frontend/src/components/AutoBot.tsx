@@ -313,6 +313,7 @@ function blankRule(symbol: string): Partial<AutoRule> {
     exit: [],
     entryLogic: "all",
     exitLogic: "any",
+    slBasis: "pct",
     slPct: 30,
     targetPct: 60,
     trailPct: 0,
@@ -322,6 +323,7 @@ function blankRule(symbol: string): Partial<AutoRule> {
     cooldownMin: 5,
     squareOff: "15:20",
     noEntryAfter: "",
+    noEntryBefore: "",
   };
 }
 
@@ -646,56 +648,49 @@ function RuleEditor({
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col text-[10px] text-term-dim">
-          SL % (premium)
-          <input
-            type="number"
-            step="any"
-            value={r.slPct ?? ""}
-            onChange={(e) => set({ slPct: num(e.target.value) })}
-            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
-          />
-        </label>
-        <label className="flex flex-col text-[10px] text-term-dim">
-          target %
-          <input
-            type="number"
-            step="any"
-            value={r.targetPct ?? ""}
-            onChange={(e) => set({ targetPct: num(e.target.value) })}
-            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
-          />
-        </label>
-        <label className="flex flex-col text-[10px] text-term-dim" title="0 = off. Trails the stop this % behind the best favourable premium.">
-          trail %
-          <input
-            type="number"
-            step="any"
-            value={r.trailPct ?? ""}
-            onChange={(e) => set({ trailPct: num(e.target.value) })}
-            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
-          />
-        </label>
-        <label className="flex flex-col text-[10px] text-term-dim" title="Arm the trailing stop only after the trade is this % in profit.">
-          trail arm %
-          <input
-            type="number"
-            step="any"
-            value={r.trailArmPct ?? ""}
-            onChange={(e) => set({ trailArmPct: num(e.target.value) })}
-            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
-          />
-        </label>
-        <label className="flex flex-col text-[10px] text-term-dim" title="Move the stop to breakeven once the trade is this % in profit. 0 = off.">
-          breakeven arm %
-          <input
-            type="number"
-            step="any"
-            value={r.beArmPct ?? ""}
-            onChange={(e) => set({ beArmPct: num(e.target.value) })}
-            className="num w-24 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
-          />
-        </label>
+        <div className="flex flex-col text-[10px] text-term-dim">
+          SL / target / trail unit
+          <div className="seg mt-0.5">
+            {(
+              [
+                ["pct", "%"],
+                ["pts", "Pts"],
+                ["rs", "₹"],
+              ] as const
+            ).map(([v, lbl]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => set({ slBasis: v })}
+                className={(r.slBasis ?? "pct") === v ? "on" : ""}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+        {(() => {
+          const u = r.slBasis === "pts" ? "pts" : r.slBasis === "rs" ? "₹" : "%";
+          const fields: [keyof AutoRule, string, string][] = [
+            ["slPct", `SL ${u}`, "stop-loss on the option premium (against you)"],
+            ["targetPct", `target ${u}`, "take-profit on the option premium (in your favour)"],
+            ["trailPct", `trail ${u}`, "0 = off. Trails the stop this far behind the best favourable premium."],
+            ["trailArmPct", `trail arm ${u}`, "arm the trailing stop only after the trade is this far in profit"],
+            ["beArmPct", `breakeven arm ${u}`, "move the stop to breakeven once the trade is this far in profit. 0 = off."],
+          ];
+          return fields.map(([k, label, title]) => (
+            <label key={k} className="flex flex-col text-[10px] text-term-dim" title={title}>
+              {label}
+              <input
+                type="number"
+                step="any"
+                value={(r[k] as number | undefined) ?? ""}
+                onChange={(e) => set({ [k]: num(e.target.value) } as Partial<AutoRule>)}
+                className="num w-24 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
+              />
+            </label>
+          ));
+        })()}
         <label className="flex flex-col text-[10px] text-term-dim">
           max trades/day
           <input
@@ -725,7 +720,16 @@ function RuleEditor({
             className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
           />
         </label>
-        <label className="flex flex-col text-[10px] text-term-dim">
+        <label className="flex flex-col text-[10px] text-term-dim" title="Earliest clock time an entry may fire (IST). Blank = from market open.">
+          entry after
+          <input
+            value={r.noEntryBefore ?? ""}
+            onChange={(e) => set({ noEntryBefore: e.target.value })}
+            placeholder="09:20"
+            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
+          />
+        </label>
+        <label className="flex flex-col text-[10px] text-term-dim" title="Latest clock time an entry may fire (IST).">
           no entry after
           <input
             value={r.noEntryAfter ?? ""}
@@ -1007,11 +1011,23 @@ export function AutoBotView() {
                     </ul>
                   </div>
                   <div>
-                    <span className="uppercase tracking-wide text-term-dim">
-                      exit (any) · SL {r.slPct ?? "–"}% · tgt {r.targetPct ?? "–"}%
-                      {r.trailPct ? ` · trail ${r.trailPct}%${r.trailArmPct ? `@+${r.trailArmPct}%` : ""}` : ""}
-                      {r.beArmPct ? ` · BE@+${r.beArmPct}%` : ""} · sq {r.squareOff}
-                    </span>
+                    {(() => {
+                      const u = r.slBasis === "pts" ? "pts" : r.slBasis === "rs" ? "₹" : "%";
+                      return (
+                        <span className="uppercase tracking-wide text-term-dim">
+                          exit (any) · SL {r.slPct ?? "–"}
+                          {u} · tgt {r.targetPct ?? "–"}
+                          {u}
+                          {r.trailPct
+                            ? ` · trail ${r.trailPct}${u}${
+                                r.trailArmPct ? `@+${r.trailArmPct}${u}` : ""
+                              }`
+                            : ""}
+                          {r.beArmPct ? ` · BE@+${r.beArmPct}${u}` : ""} · sq {r.squareOff}
+                          {r.noEntryBefore ? ` · from ${r.noEntryBefore}` : ""}
+                        </span>
+                      );
+                    })()}
                     <ul className="mt-0.5 space-y-0.5">
                       {(r.exit ?? []).map((c, i) => (
                         <li key={i} className="text-term-text">

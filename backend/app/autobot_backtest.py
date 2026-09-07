@@ -182,6 +182,9 @@ async def backtest_rule(rule: dict, from_date: str, to_date: str) -> dict:
     # 4. walk the days
     side = (rule.get("side") or "BUY").upper()
     sign = 1 if side == "BUY" else -1
+    basis = (rule.get("slBasis") or "pct").lower()
+    unit = "pts" if basis == "pts" else "₹" if basis == "rs" else "%"
+    qty = max(1, int(rule.get("lots", 1) or 1) * int(lot or 1))
     sl = _f(rule.get("slPct")) if rule.get("slPct") not in (None, "") else None
     tp = _f(rule.get("targetPct")) if rule.get("targetPct") not in (None, "") else None
     trl = _f(rule.get("trailPct") or 0)
@@ -206,15 +209,22 @@ async def backtest_rule(rule: dict, from_date: str, to_date: str) -> dict:
                 open_pos["date"], open_pos["i"],
             )
             px = _premium(k, ot, d, by_date[d], i - ei)
-            spct = (px - ep) / ep * 100.0 * sign if ep else 0.0
-            open_pos["peak"] = max(open_pos["peak"], spct)
+            pts_move = (px - ep) * sign
+            if basis == "pts":
+                fav = pts_move
+            elif basis == "rs":
+                fav = pts_move * qty
+            else:
+                fav = pts_move / ep * 100.0 if ep else 0.0
+            spct = pts_move / ep * 100.0 if ep else 0.0  # kept for the trade record
+            open_pos["peak"] = max(open_pos["peak"], fav)
             reason = None
-            if sl is not None and spct <= -abs(sl):
-                reason = f"SL {sl:.0f}%"
-            elif tp is not None and spct >= abs(tp):
-                reason = f"target {tp:.0f}%"
-            elif trl > 0 and open_pos["peak"] >= trl_arm and spct <= open_pos["peak"] - trl:
-                reason = f"trail ({open_pos['peak']:.0f}%→{spct:.0f}%)"
+            if sl is not None and fav <= -abs(sl):
+                reason = f"SL {sl:.0f}{unit}"
+            elif tp is not None and fav >= abs(tp):
+                reason = f"target {tp:.0f}{unit}"
+            elif trl > 0 and open_pos["peak"] >= trl_arm and fav <= open_pos["peak"] - trl:
+                reason = f"trail ({open_pos['peak']:.0f}{unit}→{fav:.0f}{unit})"
             elif exit_conds and ctx.eval_conds(exit_conds, rule.get("exitLogic", "any")):
                 reason = "exit signal"
             elif i == len(dates) - 1:
