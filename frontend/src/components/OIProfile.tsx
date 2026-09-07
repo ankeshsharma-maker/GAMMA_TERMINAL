@@ -130,6 +130,7 @@ export function OIProfile() {
 
   const rows = useMemo<ChainRow[]>(() => {
     if (!chain) return [];
+    if (count === 0) return chain.rows; // "All"
     let atm = chain.rows.findIndex((r) => r.strike === chain.atmStrike);
     if (atm < 0) atm = Math.floor(chain.rows.length / 2);
     return chain.rows.slice(Math.max(0, atm - count), atm + count + 1);
@@ -362,9 +363,6 @@ export function OIProfile() {
           const near = Math.abs(r.strike - spot) < (chain.strikeStep || 50) * 0.5;
           const cChg = dCE(r);
           const pChg = dPE(r);
-          // change-in-OI: green when OI is added, red when reduced (both legs)
-          const cCol = cChg >= 0 ? OI_ADD : OI_CUT;
-          const pCol = pChg >= 0 ? OI_ADD : OI_CUT;
 
           let content: React.ReactNode;
           if (metric === "oi") {
@@ -411,8 +409,9 @@ export function OIProfile() {
             content = (
               <div className="relative flex justify-center gap-[3px]" style={{ height: AREA }}>
                 <div className="absolute inset-x-0 border-t border-term-dim/60" style={{ top: half }} />
-                {col(cChg >= 0, cH, cCol, "Call ΔOI", cChg)}
-                {col(pChg >= 0, pH, pCol, "Put ΔOI", pChg)}
+                {/* colour by leg (Call red / Put green); up = OI added, down = reduced */}
+                {col(cChg >= 0, cH, CALL_OI, "Call ΔOI", cChg)}
+                {col(pChg >= 0, pH, PUT_OI, "Put ΔOI", pChg)}
               </div>
             );
           } else {
@@ -420,28 +419,30 @@ export function OIProfile() {
             const pOIh = (r.put.oi / oiMax) * AREA;
             const cCapH = Math.min(cOIh, (Math.abs(cChg) / oiMax) * AREA);
             const pCapH = Math.min(pOIh, (Math.abs(pChg) / oiMax) * AREA);
+            // Sensibull "Show OI" style: total-OI bar in the leg colour, with
+            // a cap = the change — hatched when OI increased, hollow outline
+            // when it decreased.
             const seg = (
               oiH: number,
               capH: number,
-              base: string,
-              cap: string,
+              legCol: string,
               added: boolean,
               title: string
             ) => (
               <div
                 title={title}
                 className="flex flex-col justify-end rounded-t-sm"
-                style={{ width: BARW, height: oiH, background: base }}
+                style={{ width: BARW, height: Math.max(2, oiH), background: `${legCol}66` }}
               >
                 {capH > 0 && (
                   <div
                     className="rounded-t-sm"
                     style={{
                       height: Math.max(2, capH),
-                      background: added ? addGrad(cap) : cap,
-                      // clearly separate the ΔOI cap from the base OI bar
-                      borderTop: "1px solid rgba(255,255,255,0.85)",
-                      boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.25)",
+                      border: `1px solid ${legCol}`,
+                      background: added
+                        ? `repeating-linear-gradient(45deg, ${legCol}, ${legCol} 2px, transparent 2px, transparent 5px)`
+                        : "transparent",
                     }}
                   />
                 )}
@@ -449,8 +450,8 @@ export function OIProfile() {
             );
             content = (
               <div className="flex items-end justify-center gap-[3px]" style={{ height: AREA }}>
-                {seg(cOIh, cCapH, CALL_OI, cCol, cChg >= 0, `Call OI ${compact(r.call.oi)} · Δ ${compact(cChg)}`)}
-                {seg(pOIh, pCapH, PUT_OI, pCol, pChg >= 0, `Put OI ${compact(r.put.oi)} · Δ ${compact(pChg)}`)}
+                {seg(cOIh, cCapH, CALL_OI, cChg >= 0, `Call OI ${compact(r.call.oi)} · Δ ${compact(cChg)}`)}
+                {seg(pOIh, pCapH, PUT_OI, pChg >= 0, `Put OI ${compact(r.put.oi)} · Δ ${compact(pChg)}`)}
               </div>
             );
           }
@@ -1089,18 +1090,18 @@ export function OIProfile() {
             OI
           </button>
           <button onClick={() => setMetric("chg")} className={metric === "chg" ? "on" : ""}>
-            Change in OI
+            ΔOI bars
           </button>
           <button onClick={() => setMetric("combined")} className={metric === "combined" ? "on" : ""}>
-            Combined
+            OI + Δ caps
           </button>
         </div>
 
-        <span className="ml-1">Strikes</span>
+        <span className="ml-1">Strikes ±</span>
         <div className="seg">
-          {[5, 10, 20, 30].map((n) => (
+          {[5, 10, 15, 20, 25, 0].map((n) => (
             <button key={n} onClick={() => setCount(n)} className={count === n ? "on" : ""}>
-              {n}
+              {n === 0 ? "All" : n}
             </button>
           ))}
         </div>
@@ -1123,7 +1124,7 @@ export function OIProfile() {
 
         <span className="ml-1">ΔOI over</span>
         <div className="seg">
-          {([[0, "Day"], [1, "1m"], [2, "2m"], [3, "3m"], [5, "5m"], [15, "15m"], [30, "30m"], [60, "1h"], [240, "4h"]] as const).map(
+          {([[0, "Full day"], [1, "1m"], [2, "2m"], [3, "3m"], [5, "5m"], [15, "15m"], [30, "30m"], [60, "1h"], [120, "2h"], [180, "3h"]] as const).map(
             ([m, l]) => (
               <button key={m} onClick={() => setTf(m)} className={tf === m ? "on" : ""}>
                 {l}
@@ -1245,18 +1246,32 @@ export function OIProfile() {
         <span>
           <Sw c={CALL_OI} /> Call OI &nbsp; <Sw c={PUT_OI} /> Put OI
         </span>
-        <span>
-          <Sw c={OI_ADD} /> OI added (buildup)
-        </span>
-        <span>
-          <Sw c={OI_CUT} /> OI reduced (unwinding)
-        </span>
+        {metric === "combined" ? (
+          <span>
+            <span
+              className="mr-1 inline-block h-2.5 w-3.5 align-middle"
+              style={{
+                background:
+                  "repeating-linear-gradient(45deg,#94a3b8,#94a3b8 2px,transparent 2px,transparent 5px)",
+              }}
+            />
+            OI increase &nbsp;
+            <span
+              className="mr-1 inline-block h-2.5 w-3.5 border border-term-dim align-middle"
+            />
+            OI decrease
+          </span>
+        ) : (
+          <span>
+            <Sw c={OI_ADD} /> OI added &nbsp; <Sw c={OI_CUT} /> OI reduced
+          </span>
+        )}
         <span>
           <span className="mr-1 inline-block border-l-2 border-dashed border-fuchsia-400 align-middle" style={{ height: 10 }} />
           γ-flip (dealer gamma zero-cross)
         </span>
         <span className="text-term-dim">
-          · “Change in OI”: added grows up, reduced grows down · Ctrl+scroll to zoom.
+          · ΔOI over the selected window · Ctrl+scroll to zoom.
         </span>
       </div>
     </div>
