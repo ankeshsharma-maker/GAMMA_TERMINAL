@@ -1338,7 +1338,7 @@ export function StrategyBuilder() {
               <div className="grid gap-5 lg:grid-cols-2">
                 {/* P&L by strike (ATM ± N from the chain ladder) */}
                 <div className="rounded border border-term-border p-2">
-                  <div className="mb-1 flex items-center justify-between gap-2">
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
                     <span className="text-2xs font-semibold uppercase tracking-wide text-term-dim">
                       P&amp;L by strike — spot {nf(analysis.spot, 0)}
                     </span>
