@@ -1,5 +1,5 @@
 import { useStore } from "../store";
-import { compact, nf, ago, sk, signColor } from "../lib/format";
+import { compact, nf, ago, sk, signColor, px } from "../lib/format";
 import { ivRegime } from "../lib/iv";
 import { api } from "../lib/api";
 import { lockNow } from "../lib/auth";
@@ -168,7 +168,7 @@ export function HeaderIndices() {
           <span className="text-[9px] font-semibold uppercase text-term-dim">
             {HDR_LABEL[r.symbol] ?? r.symbol}
           </span>
-          <span className="num text-xs font-medium">{r.spot != null ? nf(r.spot) : "–"}</span>
+          <span className="num text-xs font-medium">{r.spot != null ? px(r.spot) : "–"}</span>
           {(() => {
             const pts =
               r.chgPts != null
@@ -181,8 +181,8 @@ export function HeaderIndices() {
             return (
               <span className={`num text-[10px] ${up ? "text-up" : "text-down"}`}>
                 {up ? "▲" : "▼"}
-                {pts != null ? nf(Math.abs(pts), 2) : "–"}
-                {r.chgPct != null && ` (${nf(Math.abs(r.chgPct), 2)}%)`}
+                {pts != null ? px(Math.abs(pts), 2) : "–"}
+                {r.chgPct != null && ` (${px(Math.abs(r.chgPct), 2)}%)`}
               </span>
             );
           })()}
@@ -711,7 +711,7 @@ export function Header() {
         <>
           <div className="flex items-baseline gap-2">
             <span className="num text-lg font-semibold">
-              {nf(liveFresh ? live!.ltp : chain.spot)}
+              {px(liveFresh ? live!.ltp : chain.spot)}
             </span>
             {liveFresh && (
               <span

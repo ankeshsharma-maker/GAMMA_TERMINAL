@@ -24,6 +24,16 @@ export const compact = (n: number | null | undefined): string => {
 export const sk = (n: number | null | undefined): string =>
   n === null || n === undefined || Number.isNaN(n) ? "–" : String(Math.round(n));
 
+/** index / spot price: 2 decimals, NO thousands separators — e.g. 23779.15 */
+export const px = (n: number | null | undefined, d = 2): string =>
+  n === null || n === undefined || Number.isNaN(n)
+    ? "–"
+    : n.toLocaleString("en-US", {
+        useGrouping: false,
+        minimumFractionDigits: d,
+        maximumFractionDigits: d,
+      });
+
 export const signColor = (n: number | null | undefined): string =>
   n === null || n === undefined || n === 0
     ? "text-term-dim"

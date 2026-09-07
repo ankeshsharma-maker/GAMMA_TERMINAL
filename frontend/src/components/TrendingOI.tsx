@@ -673,21 +673,23 @@ function TrendingOIClassic() {
   const chart = useMemo(() => {
     const W = 1000;
     const H = 340;
-    const pad = { l: 52, r: 52, t: 14, b: 24 };
+    const pad = { l: 68, r: 92, t: 18, b: 26 };
     if (pts.length < 2) return null;
     const ts = pts.map((p) => p.t);
     const t0 = ts[0];
     const t1 = ts[ts.length - 1] || t0 + 1;
     const vals = pts.flatMap((p) => [p.ce, p.pe, 0]);
-    let lo = Math.min(...vals);
-    let hi = Math.max(...vals);
-    const padY = (hi - lo) * 0.12 || 1;
-    lo -= padY;
-    hi += padY;
-    const pcrs = pts.map((p) => p.pcr ?? 1);
+    // symmetric round-number scale around zero so +OI and −OI read on the
+    // same visual footing and gridlines land on tidy values
+    const mag = Math.max(Math.abs(Math.min(...vals)), Math.abs(Math.max(...vals)), 1);
+    const step = Math.pow(10, Math.floor(Math.log10(mag)));
+    const top = Math.ceil(mag / step) * step;
+    const lo = -top;
+    const hi = top;
+    const pcrs = pts.map((p) => p.pcr ?? 1).filter((v) => v > 0);
     let plo = Math.min(...pcrs, 1);
     let phi = Math.max(...pcrs, 1);
-    const pPad = (phi - plo) * 0.2 || 0.1;
+    const pPad = (phi - plo) * 0.25 || 0.1;
     plo -= pPad;
     phi += pPad;
 
@@ -706,7 +708,8 @@ function TrendingOIClassic() {
       daily
         ? new Date(t * 1000).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })
         : new Date(t * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-    const vGrid = [hi, (hi + lo) / 2, 0, lo].filter((v, i, a) => a.indexOf(v) === i);
+    const vGrid = [top, top / 2, 0, -top / 2, -top];
+    const tGrid = pts.filter((_, i) => i % Math.ceil(pts.length / 6) === 0).map((p) => p.t);
 
     return (
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-full w-full">
@@ -718,48 +721,78 @@ function TrendingOIClassic() {
               y1={y(v)}
               y2={y(v)}
               stroke="currentColor"
-              strokeOpacity={Math.abs(v) < 1e-6 ? 0.5 : 0.12}
+              strokeOpacity={v === 0 ? 0.55 : 0.14}
+              strokeWidth={v === 0 ? 1.5 : 1}
               className="text-term-dim"
             />
-            <text x={6} y={y(v) + 3} fontSize={11} className="fill-term-dim">
+            <text x={pad.l - 6} y={y(v) + 3.5} fontSize={11} textAnchor="end" className="fill-term-dim">
+              {v > 0 ? "+" : ""}
               {lakhs(v)}
             </text>
           </g>
         ))}
-        {[t0, (t0 + t1) / 2, t1].map((t, i) => (
-          <text
-            key={i}
-            x={x(t)}
-            y={H - 6}
-            fontSize={11}
-            textAnchor="middle"
-            className="fill-term-dim"
-          >
-            {fmtT(t)}
-          </text>
+        {tGrid.map((t, i) => (
+          <g key={"t" + i}>
+            <line
+              x1={x(t)}
+              x2={x(t)}
+              y1={pad.t}
+              y2={H - pad.b}
+              stroke="currentColor"
+              strokeOpacity={0.06}
+              className="text-term-dim"
+            />
+            <text x={x(t)} y={H - 8} fontSize={11} textAnchor="middle" className="fill-term-dim">
+              {fmtT(t)}
+            </text>
+          </g>
         ))}
-        {[plo + (phi - plo) * 0.15, (plo + phi) / 2, phi - (phi - plo) * 0.15].map((v, i) => (
+        {/* right axis — PCR */}
+        {[phi - (phi - plo) * 0.12, (plo + phi) / 2, plo + (phi - plo) * 0.12].map((v, i) => (
           <text
             key={"p" + i}
-            x={W - pad.r + 6}
-            y={yp(v) + 3}
-            fontSize={10}
-            className="fill-amber-400/80"
+            x={W - pad.r + 8}
+            y={yp(v) + 3.5}
+            fontSize={11}
+            className="fill-amber-400"
           >
             {nf(v, 2)}
           </text>
         ))}
-        <path d={`${cePath} L${x(t1)},${y0} L${x(t0)},${y0} Z`} fill={CE} fillOpacity={0.1} />
-        <path d={`${pePath} L${x(t1)},${y0} L${x(t0)},${y0} Z`} fill={PE} fillOpacity={0.1} />
-        <path d={pcrPath} fill="none" stroke={PCRC} strokeWidth={1.25} strokeOpacity={0.85} />
-        <path d={cePath} fill="none" stroke={CE} strokeWidth={2} />
-        <path d={pePath} fill="none" stroke={PE} strokeWidth={2} />
+        <path d={`${cePath} L${x(t1)},${y0} L${x(t0)},${y0} Z`} fill={CE} fillOpacity={0.12} />
+        <path d={`${pePath} L${x(t1)},${y0} L${x(t0)},${y0} Z`} fill={PE} fillOpacity={0.12} />
+        <path d={pcrPath} fill="none" stroke={PCRC} strokeWidth={1.5} strokeDasharray="5 3" />
+        <path d={cePath} fill="none" stroke={CE} strokeWidth={2.5} />
+        <path d={pePath} fill="none" stroke={PE} strokeWidth={2.5} />
         {last && (
           <>
-            <circle cx={x(last.t)} cy={y(last.ce)} r={3} fill={CE} />
-            <circle cx={x(last.t)} cy={y(last.pe)} r={3} fill={PE} />
+            <circle cx={x(last.t)} cy={y(last.ce)} r={3.5} fill={CE} />
+            <circle cx={x(last.t)} cy={y(last.pe)} r={3.5} fill={PE} />
+            <circle cx={x(last.t)} cy={yp(last.pcr ?? 1)} r={3} fill={PCRC} />
+            {/* endpoint value tags */}
+            <text x={x(last.t) + 7} y={y(last.ce) + 3.5} fontSize={11} fill={CE} fontWeight={600}>
+              CE {lakhs(last.ce)}
+            </text>
+            <text x={x(last.t) + 7} y={y(last.pe) + 3.5} fontSize={11} fill={PE} fontWeight={600}>
+              PE {lakhs(last.pe)}
+            </text>
+            <text
+              x={x(last.t) + 7}
+              y={yp(last.pcr ?? 1) + 3.5}
+              fontSize={11}
+              fill={PCRC}
+              fontWeight={600}
+            >
+              PCR {nf(last.pcr ?? 1, 2)}
+            </text>
           </>
         )}
+        <text x={pad.l - 6} y={pad.t - 5} fontSize={10} textAnchor="end" className="fill-term-dim">
+          OI Δ
+        </text>
+        <text x={W - pad.r + 8} y={pad.t - 5} fontSize={10} className="fill-amber-400">
+          PCR
+        </text>
       </svg>
     );
   }, [pts, last, daily]);

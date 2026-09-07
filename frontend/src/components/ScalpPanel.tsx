@@ -287,16 +287,17 @@ export function ScalpPanel() {
           </div>
         )}
         {broker?.authed && !feedErr && myRows.length > 0 && (
-          <table className="w-full border-separate border-spacing-0 border border-term-border text-2xs [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/50 [&_td]:px-1.5 [&_td]:py-1 [&_td:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border [&_th]:px-1.5 [&_th]:py-1 [&_th:last-child]:border-r-0">
-            <thead className="sticky top-0 bg-term-panel text-[10px] uppercase text-term-dim">
+          <table className="w-full min-w-[480px] border-separate border-spacing-0 overflow-hidden rounded border border-term-border text-2xs [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/40 [&_td]:px-1.5 [&_td]:py-1 [&_td:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border [&_th]:px-1.5 [&_th]:py-1 [&_th:last-child]:border-r-0 [&_tr:last-child_td]:border-b-0">
+            <thead className="sticky top-0 z-10 bg-term-panel2 text-[9px] uppercase tracking-wide text-term-dim">
               <tr>
-                <th className="text-left font-medium">Instrument</th>
-                <th className="text-right font-medium">Qty</th>
-                <th className="text-right font-medium">Avg</th>
-                <th className="text-right font-medium">LTP</th>
-                <th className="text-right font-medium">MTM</th>
-                <th className="text-right font-medium">Realised</th>
-                <th className="font-medium" />
+                <th className="text-left font-semibold">Instrument</th>
+                <th className="text-right font-semibold">Qty</th>
+                <th className="text-right font-semibold">Avg</th>
+                <th className="text-right font-semibold">LTP</th>
+                <th className="text-right font-semibold">Unrealised</th>
+                <th className="text-right font-semibold">Realised</th>
+                <th className="text-right font-semibold">Net MTM</th>
+                <th className="font-semibold" />
               </tr>
             </thead>
             <tbody>
@@ -304,15 +305,24 @@ export function ScalpPanel() {
                 const qty = n(r.netqty) ?? 0;
                 const lot = n(r.ls) ?? n(r.lotsize) ?? 0;
                 const lots = lot ? Math.abs(qty / lot) : Math.abs(qty);
-                const mtm = mtmOf(r);
+                const unl = mtmOf(r); // urmtom = unrealised mark-to-market
                 const rp = rpnlOf(r);
+                const net = unl + rp;
                 const key = String(r.tsym ?? r.symname ?? Math.random());
+                const money = (v: number, dim = false) =>
+                  v === 0 && dim ? (
+                    <span className="text-term-dim">₹0</span>
+                  ) : (
+                    <span className={signColor(v)}>
+                      {v >= 0 ? "+" : ""}₹{nf(v, 0)}
+                    </span>
+                  );
                 return (
-                  <tr key={key} className={qty === 0 ? "text-term-dim" : ""}>
+                  <tr key={key} className={qty === 0 ? "text-term-dim" : "odd:bg-term-bg/20"}>
                     <td className="num whitespace-nowrap">{r.dname ?? r.tsym}</td>
                     <td className="num text-right">
                       {qty === 0 ? (
-                        "—"
+                        "flat"
                       ) : (
                         <span className={qty > 0 ? "text-up" : "text-down"}>
                           {qty > 0 ? "L" : "S"}
@@ -326,12 +336,9 @@ export function ScalpPanel() {
                         : nf(n(r.netavgprc) ?? n(r.daybuyavgprc) ?? n(r.daysellavgprc))}
                     </td>
                     <td className="num text-right">{nf(n(r.lp))}</td>
-                    <td className={`num text-right ${signColor(mtm)}`}>₹{nf(mtm, 0)}</td>
-                    <td
-                      className={`num text-right ${rp !== 0 ? signColor(rp) : "text-term-dim"}`}
-                    >
-                      {rp >= 0 ? "+" : ""}₹{nf(rp, 0)}
-                    </td>
+                    <td className="num text-right">{money(unl, qty === 0)}</td>
+                    <td className="num text-right">{money(rp, true)}</td>
+                    <td className="num text-right font-semibold">{money(net)}</td>
                     <td className="text-center">
                       <button
                         onClick={() => squareOff(r)}
@@ -345,15 +352,20 @@ export function ScalpPanel() {
                 );
               })}
             </tbody>
-            <tfoot className="bg-term-panel font-semibold">
+            <tfoot className="bg-term-panel2 font-semibold">
               <tr>
-                <td className="num">Total</td>
+                <td className="num uppercase text-term-dim">Total</td>
                 <td />
                 <td />
                 <td />
-                <td className={`num text-right ${signColor(symMtm)}`}>₹{nf(symMtm, 0)}</td>
+                <td className={`num text-right ${signColor(symMtm)}`}>
+                  {symMtm >= 0 ? "+" : ""}₹{nf(symMtm, 0)}
+                </td>
                 <td className={`num text-right ${signColor(symRpnl)}`}>
                   {symRpnl >= 0 ? "+" : ""}₹{nf(symRpnl, 0)}
+                </td>
+                <td className={`num text-right ${signColor(symMtm + symRpnl)}`}>
+                  {symMtm + symRpnl >= 0 ? "+" : ""}₹{nf(symMtm + symRpnl, 0)}
                 </td>
                 <td />
               </tr>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
-import { nf, sk, compact, signColor } from "../lib/format";
+import { nf, sk, compact, signColor, px } from "../lib/format";
 import { ivRegime } from "../lib/iv";
 import type { View } from "../types";
 
@@ -101,7 +101,7 @@ function ChainStrip() {
   );
   return (
     <div className="flex items-center gap-3 overflow-x-auto border-b border-term-border bg-term-panel2 px-3 py-1">
-      {cell("Spot", nf(spot), "font-semibold text-[12px]")}
+      {cell("Spot", px(spot), "font-semibold text-[12px]")}
       {cell("ATM", sk(chain.atmStrike))}
       {cell("IV", chain.atmIV ? `${nf(chain.atmIV)}%` : "–")}
       {cell(
@@ -114,7 +114,7 @@ function ChainStrip() {
         nf(chain.pcr, 2),
         chain.pcr ? (chain.pcr >= 1 ? "text-up" : "text-down") : ""
       )}
-      {cell("Max Pain", nf(chain.maxPain, 0))}
+      {cell("Max Pain", px(chain.maxPain, 0))}
       {cell(
         "Net GEX",
         compact(chain.netGex),
