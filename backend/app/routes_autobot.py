@@ -60,6 +60,14 @@ async def backtest(body: dict):
     if not frm or not to:
         raise HTTPException(400, "from and to required")
     try:
-        return await backtest_rule(rule, frm, to)
+        interval = int(body.get("interval") or 86400)
+    except (TypeError, ValueError):
+        interval = 86400
+    try:
+        bars = int(body.get("bars") or 0)
+    except (TypeError, ValueError):
+        bars = 0
+    try:
+        return await backtest_rule(rule, frm, to, interval, bars)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(502, f"backtest failed: {exc}")

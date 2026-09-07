@@ -23,6 +23,8 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
   const [to, setTo] = useState(() => iso(new Date()));
   const [dte, setDte] = useState("30");
   const [ivPct, setIvPct] = useState("15");
+  const [tf, setTf] = useState(86400); // candle interval, seconds; 86400 = daily
+  const [nBars, setNBars] = useState("300"); // # candles to replay (intraday)
   const [res, setRes] = useState<Res | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -35,7 +37,13 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
       _btDTE: Number(dte) || 30,
       _btIV: (Number(ivPct) || 15) / 100,
     };
-    api.autobotBacktest({ rule: merged, from, to }).then(
+    api
+      .autobotBacktest(
+        tf >= 86400
+          ? { rule: merged, from, to }
+          : { rule: merged, from, to, interval: tf, bars: Number(nBars) || 0 }
+      )
+      .then(
       (d) => {
         setRes(d);
         setBusy(false);
@@ -115,6 +123,41 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
       </div>
 
       <div className="mb-1.5 flex flex-wrap items-center gap-2 text-term-dim">
+        <span className="uppercase tracking-wide">Timeframe</span>
+        <div className="seg">
+          {(
+            [
+              ["1m", 60],
+              ["5m", 300],
+              ["15m", 900],
+              ["30m", 1800],
+              ["1h", 3600],
+              ["1D", 86400],
+            ] as const
+          ).map(([lbl, v]) => (
+            <button key={v} onClick={() => setTf(v)} className={tf === v ? "on" : ""}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+        {tf < 86400 && (
+          <label className="flex items-center gap-1" title="How many recent candles to replay (Upstox intraday history is ~25 days)">
+            candles
+            <input
+              value={nBars}
+              onChange={(e) => setNBars(e.target.value.replace(/[^\d]/g, ""))}
+              className="num w-14 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text"
+            />
+          </label>
+        )}
+        {tf < 86400 && (
+          <span className="text-[9px] text-amber-400">
+            intraday · indicator-only, synthetic premiums
+          </span>
+        )}
+      </div>
+
+      <div className="mb-1.5 flex flex-wrap items-center gap-2 text-term-dim">
         <span className="uppercase tracking-wide">B-S model</span>
         <label className="flex items-center gap-1" title="Days-to-expiry the synthetic option starts with (used when historical option prices aren't available)">
           DTE
@@ -149,8 +192,11 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-term-dim">
             <span>
-              {res.symbol} {res.expiry ?? "—"} · {res.instrument} {res.side} · {res.days} days ·{" "}
-              {s.profitFactor != null ? `PF ${s.profitFactor}` : "PF –"}
+              {res.symbol} {res.expiry ?? "—"} · {res.instrument} {res.side} ·{" "}
+              {res.candles != null
+                ? `${res.candles} × ${(res.interval ?? 300) / 60}m (${res.days}d)`
+                : `${res.days} days`}{" "}
+              · {s.profitFactor != null ? `PF ${s.profitFactor}` : "PF –"}
             </span>
             <span
               className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${

@@ -26,12 +26,14 @@ DTE that decays as the trade is held) so long indicator backtests still work.
 from __future__ import annotations
 
 import asyncio
+import math
 from datetime import datetime
 
 from . import upstox_data
-from .autobot import _Ctx, _entry_filter_ok, _resolve_instrument
+from .autobot import _Ctx, _entry_filter_ok, _parse_hhmm, _resolve_instrument
 from .brokers.upstox import get_upstox
 from .greeks import bs_price
+from .processing import IST
 
 _STEP = {
     "NIFTY": 50, "BANKNIFTY": 100, "FINNIFTY": 50, "MIDCPNIFTY": 25,
@@ -50,14 +52,39 @@ def _f(v, d=0.0):
         return d
 
 
-def _syn_premium(ot: str, spot: float, strike: float, held_days: int,
+def _syn_premium(ot: str, spot: float, strike: float, held_days: float,
                  iv: float, dte: int) -> float:
     """Black-Scholes premium for the synthetic option model."""
-    t = max(dte - held_days, 1) / 365.0
+    t = max(dte - held_days, 0.02) / 365.0
     return round(bs_price(ot, spot, strike, t, 0.06, 0.0, iv), 2)
 
 
-async def backtest_rule(rule: dict, from_date: str, to_date: str) -> dict:
+def _resample(cands: list[dict], interval_s: int) -> list[dict]:
+    """Bucket 1-minute candles up to `interval_s`."""
+    if interval_s <= 60 or not cands:
+        return cands
+    buckets: dict[int, dict] = {}
+    for c in cands:
+        b = int(c["time"] // interval_s) * interval_s
+        cur = buckets.get(b)
+        if cur is None:
+            buckets[b] = {
+                "time": b, "open": c["open"], "high": c["high"],
+                "low": c["low"], "close": c["close"], "volume": c.get("volume", 0.0),
+            }
+        else:
+            cur["high"] = max(cur["high"], c["high"])
+            cur["low"] = min(cur["low"], c["low"])
+            cur["close"] = c["close"]
+            cur["volume"] = cur.get("volume", 0.0) + c.get("volume", 0.0)
+    return [buckets[k] for k in sorted(buckets)]
+
+
+async def backtest_rule(
+    rule: dict, from_date: str, to_date: str, interval: int = 86400, bars: int = 0
+) -> dict:
+    if interval and interval < 86400:
+        return await _backtest_intraday(rule, from_date, to_date, int(interval), int(bars or 0))
     symbol = (rule.get("symbol") or "NIFTY").upper()
     expiry = rule.get("_btExpiry") or ""
     syn_iv = _f(rule.get("_btIV"), 0.0) or 0.15
@@ -276,6 +303,173 @@ async def backtest_rule(rule: dict, from_date: str, to_date: str) -> dict:
         "synIV": round(syn_iv, 3), "synDTE": syn_dte,
         "trades": trades,
         "equity": equity,
+        "summary": {
+            "total": round(sum(pnls), 0),
+            "count": len(trades),
+            "wins": len(wins),
+            "losses": len(losses),
+            "winRate": round(len(wins) / len(trades) * 100, 1) if trades else 0.0,
+            "avgWin": round(sum(wins) / len(wins), 0) if wins else 0.0,
+            "avgLoss": round(sum(losses) / len(losses), 0) if losses else 0.0,
+            "profitFactor": round(sum(wins) / abs(sum(losses)), 2) if losses and sum(losses) else None,
+            "maxDrawdown": round(max_dd, 0),
+        },
+    }
+
+
+# --------------------------------------------------------------------------
+# intraday backtest — indicator-only, synthetic premiums, N candles at a
+# chosen timeframe (1m / 5m / 15m / 30m / 1h)
+# --------------------------------------------------------------------------
+async def _backtest_intraday(
+    rule: dict, from_date: str, to_date: str, interval: int, bars: int
+) -> dict:
+    symbol = (rule.get("symbol") or "NIFTY").upper()
+    syn_iv = _f(rule.get("_btIV"), 0.0) or 0.15
+    syn_dte = int(_f(rule.get("_btDTE"), 30) or 30)
+
+    ux = get_upstox()
+    await ux.load_instruments()
+    if not ux.underlying_key(symbol):
+        raise RuntimeError(f"Upstox has no key for {symbol}")
+
+    raw = await upstox_data.fetch_underlying_candles(symbol, interval)
+    if len(raw) < 30:
+        await asyncio.sleep(2)
+        raw = await upstox_data.fetch_underlying_candles(symbol, interval)
+    cands = _resample(raw, interval)
+    if len(cands) < 30:
+        raise RuntimeError(
+            f"only {len(cands)} intraday candles for {symbol} at {interval//60}m "
+            "— Upstox intraday history is ~25 days; pick a wider timeframe or fewer bars"
+        )
+
+    def _dstr(ts: int) -> str:
+        return datetime.fromtimestamp(ts, IST).strftime("%Y-%m-%d")
+
+    in_win = [c for c in cands if from_date <= _dstr(c["time"]) <= to_date]
+    if bars > 0:
+        in_win = in_win[-bars:]
+    if len(in_win) < 3:
+        raise RuntimeError(
+            f"only {len(in_win)} candle(s) for {symbol} in {from_date}..{to_date} at "
+            f"{interval//60}m"
+        )
+    first_ts = in_win[0]["time"]
+    warm_i = next((i for i, c in enumerate(cands) if c["time"] >= first_ts), 0)
+    series = cands[max(0, warm_i - 150) : cands.index(in_win[-1]) + 1]
+
+    step = _STEP.get(symbol, 50)
+    lot = _LOT.get(symbol, 1)
+    hist = [{"t": c["time"], "spot": c["close"]} for c in series]
+
+    side = (rule.get("side") or "BUY").upper()
+    sign = 1 if side == "BUY" else -1
+    basis = (rule.get("slBasis") or "pct").lower()
+    unit = "pts" if basis == "pts" else "\u20b9" if basis == "rs" else "%"
+    qty = max(1, int(rule.get("lots", 1) or 1) * int(lot or 1))
+    sl = _f(rule.get("slPct")) if rule.get("slPct") not in (None, "") else None
+    tp = _f(rule.get("targetPct")) if rule.get("targetPct") not in (None, "") else None
+    trl = _f(rule.get("trailPct") or 0)
+    trl_arm = _f(rule.get("trailArmPct") or 0)
+    max_pd = int(rule.get("maxTradesPerDay", 3) or 3)
+    cd_bars = max(0, math.ceil(_f(rule.get("cooldownMin") or 0) * 60 / interval))
+    sq = _parse_hhmm(rule.get("squareOff"))
+    neb = _parse_hhmm(rule.get("noEntryBefore"))
+    nea = _parse_hhmm(rule.get("noEntryAfter"))
+    entry_conds, exit_conds = rule.get("entry", []), rule.get("exit", [])
+
+    trades: list[dict] = []
+    open_pos = None
+    cd_until = -1
+    day_count: dict[str, int] = {}
+
+    for i, c in enumerate(series):
+        ts = c["time"]
+        spot = c["close"]
+        dkey = _dstr(ts)
+        clk = datetime.fromtimestamp(ts, IST).time()
+        tradable = ts >= first_ts
+        ctx = _Ctx(symbol, hist[: i + 1])
+
+        if open_pos:
+            k, ot, ep, ei = open_pos["k"], open_pos["ot"], open_pos["entry"], open_pos["i"]
+            held_days = (i - ei) * interval / 86400.0
+            px = _syn_premium(ot, spot, k, held_days, syn_iv, syn_dte)
+            pts_move = (px - ep) * sign
+            fav = (
+                pts_move if basis == "pts"
+                else pts_move * qty if basis == "rs"
+                else (pts_move / ep * 100.0 if ep else 0.0)
+            )
+            open_pos["peak"] = max(open_pos["peak"], fav)
+            reason = None
+            if sl is not None and fav <= -abs(sl):
+                reason = f"SL {sl:.0f}{unit}"
+            elif tp is not None and fav >= abs(tp):
+                reason = f"target {tp:.0f}{unit}"
+            elif trl > 0 and open_pos["peak"] >= trl_arm and fav <= open_pos["peak"] - trl:
+                reason = f"trail ({open_pos['peak']:.0f}{unit}\u2192{fav:.0f}{unit})"
+            elif exit_conds and ctx.eval_conds(exit_conds, rule.get("exitLogic", "any")):
+                reason = "exit signal"
+            elif sq and clk >= sq:
+                reason = "square-off"
+            elif i == len(series) - 1:
+                reason = "range end"
+            if reason:
+                spct = pts_move / ep * 100.0 if ep else 0.0
+                trades.append({
+                    "entryDate": open_pos["d"], "exitDate": dkey, "strike": k, "ot": ot,
+                    "side": side, "entryPx": round(ep, 2), "exitPx": round(px, 2),
+                    "pnlPct": round(spct, 1),
+                    "pnlRs": round(pts_move * qty, 0),
+                    "reason": reason,
+                })
+                open_pos = None
+                cd_until = i + cd_bars
+            continue
+
+        if not tradable or i <= cd_until:
+            continue
+        if day_count.get(dkey, 0) >= max_pd:
+            continue
+        if neb and clk < neb:
+            continue
+        if nea and clk >= nea:
+            continue
+        if sq and clk >= sq:
+            continue
+        if not ctx.eval_conds(entry_conds, rule.get("entryLogic", "all")):
+            continue
+        base = round(spot / step) * step
+        strike, ot = _resolve_instrument(rule.get("instrument", "ATM_CE"), base, step)
+        px = _syn_premium(ot, spot, strike, 0.0, syn_iv, syn_dte)
+        if px <= 0:
+            continue
+        ok, _ = _entry_filter_ok(rule.get("entryFilter") or {}, px, 0.5, 0.0, 0.0)
+        if not ok:
+            continue
+        open_pos = {"k": strike, "ot": ot, "entry": px, "d": dkey, "peak": 0.0, "i": i}
+        day_count[dkey] = day_count.get(dkey, 0) + 1
+
+    pnls = [t["pnlRs"] for t in trades]
+    wins = [p for p in pnls if p > 0]
+    losses = [p for p in pnls if p <= 0]
+    equity, run, peak, max_dd = [], 0.0, 0.0, 0.0
+    for p in pnls:
+        run += p
+        equity.append(run)
+        peak = max(peak, run)
+        max_dd = min(max_dd, run - peak)
+
+    return {
+        "symbol": symbol, "expiry": None, "from": from_date, "to": to_date,
+        "instrument": rule.get("instrument"), "side": side, "lots": rule.get("lots", 1),
+        "lot": lot, "days": len({_dstr(c["time"]) for c in in_win}),
+        "interval": interval, "candles": len(in_win),
+        "pricing": "synthetic", "hasChain": False,
+        "synIV": round(syn_iv, 3), "synDTE": syn_dte,
+        "trades": trades, "equity": equity,
         "summary": {
             "total": round(sum(pnls), 0),
             "count": len(trades),

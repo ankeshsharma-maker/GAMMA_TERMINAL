@@ -454,7 +454,14 @@ export const api = {
         days: number;
       };
     }>("/api/upstox/backtest", { method: "POST", body: JSON.stringify(body) }),
-  autobotBacktest: (body: { rule?: unknown; ruleId?: string; from: string; to: string }) =>
+  autobotBacktest: (body: {
+    rule?: unknown;
+    ruleId?: string;
+    from: string;
+    to: string;
+    interval?: number;
+    bars?: number;
+  }) =>
     j<{
       symbol: string;
       expiry: string | null;
@@ -462,6 +469,8 @@ export const api = {
       side: string;
       lot: number;
       days: number;
+      interval?: number;
+      candles?: number;
       pricing: "historical" | "synthetic" | "mixed";
       hasChain: boolean;
       synIV: number;
