@@ -1142,10 +1142,15 @@ export function OIProfile() {
           <>
             <span className="ml-1">Zoom</span>
             <div className="seg">
-              <button onClick={() => setZoom((z) => zClamp(z - 0.25))}>−</button>
-              <button className="on pointer-events-none">{Math.round(zoom * 100)}%</button>
-              <button onClick={() => setZoom((z) => zClamp(z + 0.25))}>+</button>
-              <button onClick={() => setZoom(1)}>reset</button>
+              {[100, 95, 90, 85, 80].map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setZoom(p / 100)}
+                  className={Math.round(zoom * 100) === p ? "on" : ""}
+                >
+                  {p}
+                </button>
+              ))}
             </div>
           </>
         )}
