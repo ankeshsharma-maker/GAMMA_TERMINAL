@@ -629,13 +629,13 @@ export function OIProfile() {
       center: string;
       sub: string;
     }) => {
-      const R = 38;
-      const SW = 17;
+      const R = 40;
+      const SW = 12;
       const C = 2 * Math.PI * R;
       const t = Math.abs(aVal) + Math.abs(bVal) || 1;
       const aLen = (Math.abs(aVal) / t) * C;
       return (
-        <svg viewBox="0 0 100 100" className="w-full max-w-[320px]">
+        <svg viewBox="0 0 100 100" className="w-full max-w-[300px]">
           <circle cx="50" cy="50" r={R} fill="none" stroke="#1e2733" strokeWidth={SW} />
           <circle
             cx="50"
@@ -657,10 +657,10 @@ export function OIProfile() {
             strokeDasharray={`${aLen.toFixed(1)} ${C}`}
             transform="rotate(-90 50 50)"
           />
-          <text x="50" y="47" textAnchor="middle" className="fill-term-text" fontSize="27" fontWeight="700">
+          <text x="50" y="46" textAnchor="middle" className="fill-term-text" fontSize="20" fontWeight="700">
             {center}
           </text>
-          <text x="50" y="63" textAnchor="middle" className="fill-term-dim" fontSize="11">
+          <text x="50" y="62" textAnchor="middle" className="fill-term-dim" fontSize="10">
             {sub}
           </text>
         </svg>

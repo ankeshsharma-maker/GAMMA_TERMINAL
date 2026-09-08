@@ -267,19 +267,25 @@ export function Watchlist() {
   const [presetBusy, setPresetBusy] = useState(false);
   const loadPreset = async (p: (typeof WL_PRESETS)[number]) => {
     if (presetBusy || !watchlists) return;
+    const target = watchlists.active ?? 0;
+    const listName = watchlists.lists[target]?.name ?? "this list";
+    if (!window.confirm(`Add ${p.syms.length} symbols from "${p.name}" to ${listName}?`)) return;
     setPresetBusy(true);
+    let added = 0;
     try {
-      let target = watchlists.active ?? 0;
-      if (watchlists.lists.length < 8) {
-        await wlAddList();
-        const w = useStore.getState().watchlists;
-        target = w ? w.lists.length - 1 : target;
-        await wlSetActive(target);
-        await wlRename(target, p.name);
+      for (const s of p.syms) {
+        try {
+          await wlAdd(target, s);
+          added++;
+        } catch {
+          /* skip a symbol the catalog doesn't know */
+        }
       }
-      for (const s of p.syms) await wlAdd(target, s);
+      await wlSetActive(target);
     } finally {
       setPresetBusy(false);
+      if (added < p.syms.length)
+        alert(`Added ${added}/${p.syms.length} — the rest aren't in the F&O catalog.`);
     }
   };
   const active = watchlists?.active ?? 0;
