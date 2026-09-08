@@ -37,6 +37,30 @@ export function ScalpPanel() {
     else quickTrade(symbol, ot, side, scalpLots);
   };
 
+  // one-tap ATM / OTM strike jump — CE OTM is above spot, PE OTM below
+  const [sideHint, setSideHint] = useState<"CE" | "PE" | null>(null);
+  const quickPick = (off: number, ot: "CE" | "PE") => {
+    if (!atm) return;
+    if (off === 0) {
+      setPick(atm);
+      setSideHint(null);
+      return;
+    }
+    const target = ot === "CE" ? atm + off * step : atm - off * step;
+    const near = strikes.length
+      ? strikes.reduce((a, b) => (Math.abs(b - target) < Math.abs(a - target) ? b : a), strikes[0])
+      : target;
+    setPick(near || target);
+    setSideHint(ot);
+  };
+  const QCHIPS: [string, number, "CE" | "PE"][] = [
+    ["PE OTM2", 2, "PE"],
+    ["PE OTM1", 1, "PE"],
+    ["ATM", 0, "CE"],
+    ["CE OTM1", 1, "CE"],
+    ["CE OTM2", 2, "CE"],
+  ];
+
   // ---- live P&L straight from the broker position book (5s poll) ----
   const [brokerRows, setBrokerRows] = useState<any[]>([]);
   const [feedErr, setFeedErr] = useState<string | null>(null);
@@ -134,7 +158,9 @@ export function ScalpPanel() {
   }) => (
     <button
       onClick={() => fire(ot, side)}
-      className={`flex flex-col items-center rounded-md py-1.5 font-bold leading-tight transition-colors ${cls}`}
+      className={`flex flex-col items-center rounded-md py-1.5 font-bold leading-tight transition-colors ${cls} ${
+        sideHint === ot ? "ring-2 ring-term-accent" : ""
+      }`}
     >
       <span className="text-xs">{label}</span>
       <span className="text-[9px] font-normal opacity-70">
@@ -194,6 +220,35 @@ export function ScalpPanel() {
         ))}
       </div>
 
+      {/* one-tap ATM / OTM shortcuts */}
+      {atm && step ? (
+        <div className="flex items-center gap-1 border-b border-term-border px-3 py-1.5">
+          <span className="mr-0.5 text-[10px] uppercase tracking-wide text-term-dim">Quick</span>
+          {QCHIPS.map(([lbl, n, ot]) => {
+            const strike = n === 0 ? atm : ot === "CE" ? atm + n * step : atm - n * step;
+            const active = Math.round(pick) === Math.round(strike);
+            return (
+              <button
+                key={lbl}
+                onClick={() => quickPick(n, ot)}
+                title={`${sk(strike)} ${n === 0 ? "" : ot}`.trim()}
+                className={`flex-1 rounded border px-1 py-1 text-[10px] font-semibold leading-tight ${
+                  active
+                    ? "border-term-accent bg-term-accent/20 text-term-text"
+                    : n === 0
+                    ? "border-term-border bg-term-bg/60 text-term-text"
+                    : ot === "CE"
+                    ? "border-up/40 text-up hover:bg-up/10"
+                    : "border-down/40 text-down hover:bg-down/10"
+                }`}
+              >
+                {lbl}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
       {/* quick strike picker */}
       <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border px-3 py-2 text-2xs">
         <span className="text-term-dim">Strike</span>
@@ -201,14 +256,14 @@ export function ScalpPanel() {
           <>
             <button
               className="btn px-2 py-0.5"
-              onClick={() => step && setPick((k) => k - step)}
+              onClick={() => { if (step) { setPick((k) => k - step); setSideHint(null); } }}
               disabled={!step}
             >
               −
             </button>
             <select
               value={pick || ""}
-              onChange={(e) => setPick(Number(e.target.value))}
+              onChange={(e) => { setPick(Number(e.target.value)); setSideHint(null); }}
               className="num rounded border border-term-border bg-term-bg px-1.5 py-0.5 font-semibold text-term-text"
             >
               {strikes.map((k) => (
@@ -220,7 +275,7 @@ export function ScalpPanel() {
             </select>
             <button
               className="btn px-2 py-0.5"
-              onClick={() => step && setPick((k) => k + step)}
+              onClick={() => { if (step) { setPick((k) => k + step); setSideHint(null); } }}
               disabled={!step}
             >
               +
