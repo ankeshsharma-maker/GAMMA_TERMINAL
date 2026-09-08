@@ -44,14 +44,23 @@ export const signColor = (n: number | null | undefined): string =>
 export const pct = (n: number | null | undefined): string =>
   n === null || n === undefined || Number.isNaN(n) ? "–" : `${n > 0 ? "+" : ""}${n.toFixed(2)}%`;
 
-export const hhmm = (epoch?: number | null): string =>
-  epoch
-    ? new Date(epoch * 1000).toLocaleTimeString("en-IN", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      })
-    : "–";
+/** time from an epoch (seconds OR ms) or an ISO / date string. */
+export const hhmm = (t?: number | string | null): string => {
+  if (t == null || t === "") return "–";
+  let d: Date;
+  if (typeof t === "number") {
+    d = new Date(t < 1e12 ? t * 1000 : t); // <1e12 => seconds
+  } else {
+    const n = Number(t);
+    d = Number.isFinite(n) ? new Date(n < 1e12 ? n * 1000 : n) : new Date(t);
+  }
+  if (Number.isNaN(d.getTime())) return "–";
+  return d.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+};
 
 export const ago = (epoch?: number | null): string => {
   if (!epoch) return "–";

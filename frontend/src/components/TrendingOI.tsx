@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { lakhs, nf, compact } from "../lib/format";
@@ -643,6 +643,22 @@ function TrendingOILive() {
 function TrendingOIClassic() {
   const { symbol, selectSymbol, chain, symOptions, expiry, daily, pts, tf, setTf } = useTrendingOI();
 
+  // measure the chart box so the SVG can render 1:1 with the pixel grid —
+  // a stretched viewBox (preserveAspectRatio="none") was making the lines
+  // and labels look blurry / distorted.
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      setBox({ w: Math.round(el.clientWidth - 24), h: Math.round(el.clientHeight - 24) });
+    });
+    ro.observe(el);
+    setBox({ w: Math.round(el.clientWidth - 24), h: Math.round(el.clientHeight - 24) });
+    return () => ro.disconnect();
+  }, []);
+
   const last = pts[pts.length - 1];
   const first = pts[0];
   const net = last ? last.pe - last.ce : 0; // >0 => puts adding faster
@@ -671,10 +687,10 @@ function TrendingOIClassic() {
   }, [last, first, priceChg, netOi, pts.length]);
 
   const chart = useMemo(() => {
-    const W = 1000;
-    const H = 340;
-    const pad = { l: 68, r: 92, t: 18, b: 26 };
-    if (pts.length < 2) return null;
+    const W = box.w;
+    const H = box.h;
+    const pad = { l: 60, r: 82, t: 16, b: 24 };
+    if (pts.length < 2 || W < 120 || H < 100) return null;
     const ts = pts.map((p) => p.t);
     const t0 = ts[0];
     const t1 = ts[ts.length - 1] || t0 + 1;
@@ -712,7 +728,7 @@ function TrendingOIClassic() {
     const tGrid = pts.filter((_, i) => i % Math.ceil(pts.length / 6) === 0).map((p) => p.t);
 
     return (
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-full w-full">
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block">
         {vGrid.map((v, i) => (
           <g key={i}>
             <line
@@ -795,7 +811,7 @@ function TrendingOIClassic() {
         </text>
       </svg>
     );
-  }, [pts, last, daily]);
+  }, [pts, last, daily, box.w, box.h]);
 
   const intervals = useMemo(() => {
     if (pts.length < 2) return [];
@@ -1043,7 +1059,7 @@ function TrendingOIClassic() {
       )}
 
       {/* chart */}
-      <div className="min-h-0 flex-1 p-3">
+      <div ref={boxRef} className="relative min-h-0 flex-1 overflow-hidden p-3">
         {chart ?? (
           <div className="flex h-full items-center justify-center text-xs text-term-dim">
             {daily

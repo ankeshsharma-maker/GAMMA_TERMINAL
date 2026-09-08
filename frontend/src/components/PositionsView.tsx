@@ -495,10 +495,19 @@ function OrdersTab() {
   };
   const passFilter = (s: string) => filter === "all" || stBucket(s || "") === filter;
 
+  const tsOf = (o: any): number => {
+    const raw = o?.ts ?? o?.time ?? o?.norentm ?? o?.exch_tm ?? o?.orderTime;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) return n < 1e12 ? n * 1000 : n;
+    const d = raw ? new Date(raw) : null;
+    return d && !Number.isNaN(d.getTime()) ? d.getTime() : 0;
+  };
+
   // unified session order history: live-routed + paper
   const log = [
-    ...liveLog,
+    ...liveLog.map((o) => ({ ...o, _ms: tsOf(o) })),
     ...(paper?.orders ?? []).map((o) => ({
+      _ms: tsOf(o),
       ts: o.ts,
       symbol: o.symbol,
       strike: o.strike,
@@ -510,7 +519,7 @@ function OrdersTab() {
       status: "FILLED",
       orderId: `@${nf(o.price)}`,
     })),
-  ].sort((a, b) => b.ts - a.ts);
+  ].sort((a, b) => b._ms - a._ms);
 
   const isPaper = (o: any) => (o.mode || "").toLowerCase() === "paper";
   const shownLog = log.filter(
@@ -566,7 +575,7 @@ function OrdersTab() {
           <tbody>
             {shownLog.map((o, i) => (
               <tr key={i}>
-                <TD cls="num text-term-dim">{hhmm(o.ts)}</TD>
+                <TD cls="num text-term-dim">{o._ms ? hhmm(o._ms) : "–"}</TD>
                 <TD cls="num">
                   {o.symbol} {sk(o.strike)}
                   {o.optionType}
