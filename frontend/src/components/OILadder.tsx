@@ -138,8 +138,8 @@ export function OILadder() {
           <div className="text-[8px] uppercase text-term-dim" style={{ color: CALL }}>
             Total Call OI
           </div>
-          <div className="num text-2xs font-bold text-term-text">{compact(ceTot)}</div>
-          <div className={`num text-2xs ${ceChgTot >= 0 ? "text-up" : "text-down"}`}>
+          <div className="num text-sm font-bold text-term-text">{compact(ceTot)}</div>
+          <div className={`num text-xs ${ceChgTot >= 0 ? "text-up" : "text-down"}`}>
             {ceChgTot >= 0 ? "▲" : "▼"} {compact(Math.abs(ceChgTot))} · {tfLbl}
           </div>
         </div>
@@ -147,8 +147,8 @@ export function OILadder() {
           <div className="text-[8px] uppercase text-term-dim" style={{ color: PUT }}>
             Total Put OI
           </div>
-          <div className="num text-2xs font-bold text-term-text">{compact(peTot)}</div>
-          <div className={`num text-2xs ${peChgTot >= 0 ? "text-up" : "text-down"}`}>
+          <div className="num text-sm font-bold text-term-text">{compact(peTot)}</div>
+          <div className={`num text-xs ${peChgTot >= 0 ? "text-up" : "text-down"}`}>
             {peChgTot >= 0 ? "▲" : "▼"} {compact(Math.abs(peChgTot))} · {tfLbl}
           </div>
         </div>
@@ -187,15 +187,15 @@ export function OILadder() {
               {/* call — combined OI bar (grows left) + ΔOI cap at the tip */}
               <button
                 onClick={() => pick(r.strike, "CE")}
-                className="relative flex h-8 items-center justify-end gap-1 pr-1"
+                className="relative flex h-9 items-center justify-end gap-1 pr-1"
                 title={`${r.strike} CE · OI ${compact(r.call.oi)} · Δ ${compact(cChg)}`}
               >
-                <span className={`num text-2xs ${cChg >= 0 ? "text-up" : "text-down"}`}>
+                <span className={`num text-xs ${cChg >= 0 ? "text-up" : "text-down"}`}>
                   {cChg >= 0 ? "▲" : "▼"}
                   {compact(Math.abs(cChg))}
                 </span>
-                <span className="num text-2xs font-semibold text-term-text">{compact(r.call.oi)}</span>
-                <span className="relative h-3.5 w-full max-w-[55%]">
+                <span className="num text-sm font-semibold text-term-text">{compact(r.call.oi)}</span>
+                <span className="relative h-3.5 w-full max-w-[46%]">
                   <span
                     className="absolute right-0 top-0 h-full rounded-l-sm"
                     style={{ width: `${cBarW}%`, background: CALL }}
@@ -210,7 +210,7 @@ export function OILadder() {
               {/* strike */}
               <button
                 onClick={() => pick(r.strike, isATM || r.strike >= spot ? "CE" : "PE")}
-                className={`num flex h-8 items-center justify-center px-2 text-xs leading-none ${
+                className={`num flex h-9 items-center justify-center px-2 text-sm leading-none ${
                   isWall
                     ? "font-bold text-down"
                     : isFloor
@@ -227,10 +227,10 @@ export function OILadder() {
               {/* put — combined OI bar (grows right) + ΔOI cap at the tip */}
               <button
                 onClick={() => pick(r.strike, "PE")}
-                className="relative flex h-8 items-center gap-1 pl-1"
+                className="relative flex h-9 items-center gap-1 pl-1"
                 title={`${r.strike} PE · OI ${compact(r.put.oi)} · Δ ${compact(pChg)}`}
               >
-                <span className="relative h-3.5 w-full max-w-[55%]">
+                <span className="relative h-3.5 w-full max-w-[46%]">
                   <span
                     className="absolute left-0 top-0 h-full rounded-r-sm"
                     style={{ width: `${pBarW}%`, background: PUT }}
@@ -240,8 +240,8 @@ export function OILadder() {
                     style={{ width: `${pCapW}%`, background: pChg >= 0 ? ADD : CUT }}
                   />
                 </span>
-                <span className="num text-2xs font-semibold text-term-text">{compact(r.put.oi)}</span>
-                <span className={`num text-2xs ${pChg >= 0 ? "text-up" : "text-down"}`}>
+                <span className="num text-sm font-semibold text-term-text">{compact(r.put.oi)}</span>
+                <span className={`num text-xs ${pChg >= 0 ? "text-up" : "text-down"}`}>
                   {pChg >= 0 ? "▲" : "▼"}
                   {compact(Math.abs(pChg))}
                 </span>
