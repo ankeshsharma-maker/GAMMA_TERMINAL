@@ -464,6 +464,8 @@ function HoldingsTab() {
 function OrdersTab() {
   const broker = useStore((s) => s.broker);
   const paper = useStore((s) => s.paper);
+  const orderMode = useStore((s) => s.orderMode);
+  const [src, setSrc] = useState<"live" | "paper">(orderMode === "live" ? "live" : "paper");
   const [book, setBook] = useState<any[]>([]);
   const [liveLog, setLiveLog] = useState<any[]>([]);
   useEffect(() => {
@@ -510,13 +512,25 @@ function OrdersTab() {
     })),
   ].sort((a, b) => b.ts - a.ts);
 
-  const shownLog = log.filter((o) => passFilter(o.status || ""));
+  const isPaper = (o: any) => (o.mode || "").toLowerCase() === "paper";
+  const shownLog = log.filter(
+    (o) => passFilter(o.status || "") && (src === "paper" ? isPaper(o) : !isPaper(o))
+  );
   const shownBook = book.filter((o) => passFilter(o.status || ""));
 
   return (
     <div className="min-h-0 flex-1 overflow-auto">
-      <div className="flex items-center gap-2 px-3 py-1.5">
-        <span className="text-[10px] font-semibold uppercase text-term-dim">Session order history</span>
+      <div className="flex flex-wrap items-center gap-2 px-3 py-1.5">
+        <div className="seg text-[11px]">
+          {(["live", "paper"] as const).map((s) => (
+            <button key={s} onClick={() => setSrc(s)} className={src === s ? "on" : ""}>
+              {s === "live" ? "Live" : "Paper"}
+            </button>
+          ))}
+        </div>
+        <span className="text-[10px] font-semibold uppercase text-term-dim">
+          {src === "live" ? "Live" : "Paper"} order history
+        </span>
         <div className="seg ml-auto text-[10px]">
           {(["all", "open", "executed", "cancelled"] as const).map((f) => (
             <button key={f} onClick={() => setFilter(f)} className={filter === f ? "on" : ""}>
@@ -526,7 +540,15 @@ function OrdersTab() {
         </div>
       </div>
       {shownLog.length === 0 ? (
-        <Empty>{filter === "all" ? "No orders this session." : `No ${filter} orders.`}</Empty>
+        <Empty>
+          {src === "live"
+            ? filter === "all"
+              ? "No live orders this session."
+              : `No ${filter} live orders.`
+            : filter === "all"
+            ? "No paper orders this session."
+            : `No ${filter} paper orders.`}
+        </Empty>
       ) : (
         <table className="w-full border-separate border-spacing-0 border border-term-border text-xs">
           <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
@@ -561,7 +583,7 @@ function OrdersTab() {
         </table>
       )}
 
-      {broker?.authed && (
+      {src === "live" && broker?.authed && (
         <>
           <div className="mt-2 px-3 py-1.5 text-[10px] font-semibold uppercase text-term-dim">
             Flattrade order book

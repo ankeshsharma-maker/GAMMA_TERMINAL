@@ -114,20 +114,35 @@ function loadHdrSymbols(): string[] {
 export function HeaderIndices() {
   const [pinned, setPinned] = useState<string[]>(loadHdrSymbols);
   const watch = useStore((s) => s.watch);
+  const indexSet = useStore((s) => s.indexSet);
   const [rows, setRows] = useState<
     { symbol: string; spot: number | null; chgPct: number | null; chgPts?: number | null }[]
   >([]);
   const [options, setOptions] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
 
-  // the ticker = pinned indices + every non-option instrument on the watchlist
+  const isIndex = useMemo(() => {
+    const set = new Set(indexSet.map((s) => s.toUpperCase()));
+    return (s: string) => {
+      const u = s.toUpperCase();
+      return u === "INDIA VIX" || u === "VIX" || u.includes("NIFTY") || set.has(u);
+    };
+  }, [indexSet]);
+
+  // the ticker shows INDICES ONLY — pinned indices + any index on the watchlist
   const wlSyms = useMemo(
-    () => [...new Set(watch.filter((w) => w.kind !== "option").map((w) => w.symbol.toUpperCase()))],
-    [watch]
+    () => [
+      ...new Set(
+        watch
+          .filter((w) => w.kind !== "option" && isIndex(w.symbol))
+          .map((w) => w.symbol.toUpperCase())
+      ),
+    ],
+    [watch, isIndex]
   );
   const symbols = useMemo(
-    () => [...new Set([...pinned, ...wlSyms])].slice(0, 16),
-    [pinned, wlSyms]
+    () => [...new Set([...pinned.filter(isIndex), ...wlSyms])].slice(0, 12),
+    [pinned, wlSyms, isIndex]
   );
   // per-symbol change straight off the watchlist store, as a fallback for
   // anything the header endpoint can't price a change for (stocks when the
@@ -178,6 +193,10 @@ export function HeaderIndices() {
   const addCustom = () => {
     const s = addTxt.trim().toUpperCase();
     if (!s) return;
+    if (!isIndex(s)) {
+      alert("The header ticker shows indices only (NIFTY, BANKNIFTY, FINNIFTY, SENSEX, BANKEX, INDIA VIX…).");
+      return;
+    }
     if (!pinned.includes(s) && pinned.length < HDR_MAX) setAndPersist([...pinned, s]);
     setAddTxt("");
   };
@@ -203,18 +222,18 @@ export function HeaderIndices() {
         return (
           <div
             key={sym}
-            className="flex shrink-0 items-baseline gap-1 rounded border border-term-border bg-term-bg/60 px-1.5 py-0.5"
+            className="flex shrink-0 items-baseline gap-1.5 rounded border border-term-border bg-term-bg/60 px-2 py-1"
             title={sym}
           >
-            <span className="text-[9px] font-semibold uppercase text-term-dim">
+            <span className="text-[10px] font-semibold uppercase text-term-dim">
               {HDR_LABEL[sym] ?? sym}
             </span>
-            <span className="num text-xs font-medium">
+            <span className="num text-sm font-semibold">
               {spot != null ? px(spot, spot < 100 ? 2 : 0) : "–"}
             </span>
             {(pts != null || pct != null) && (
               <span
-                className={`num text-[10px] ${
+                className={`num text-xs ${
                   (pct ?? pts ?? 0) >= 0 ? "text-up" : "text-down"
                 }`}
               >
