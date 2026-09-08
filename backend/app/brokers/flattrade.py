@@ -25,6 +25,9 @@ import struct
 import time
 from datetime import datetime
 from typing import Awaitable, Callable
+from zoneinfo import ZoneInfo
+
+_IST = ZoneInfo("Asia/Kolkata")
 
 
 def _totp(secret: str) -> str:
@@ -408,7 +411,17 @@ class FlattradeBroker:
         candles: list[dict] = []
         for r in rows:
             try:
-                t = datetime.strptime(r["time"], "%d-%m-%Y %H:%M:%S").timestamp()
+                # Noren gives `ssboe` (epoch seconds, UTC) and `time` (an IST
+                # string). Prefer ssboe; parsing `time` naively made every bar
+                # land 5.5h early (chart then showed 20:32 for a 15:02 bar).
+                if r.get("ssboe"):
+                    t = int(float(r["ssboe"]))
+                else:
+                    t = int(
+                        datetime.strptime(r["time"], "%d-%m-%Y %H:%M:%S")
+                        .replace(tzinfo=_IST)
+                        .timestamp()
+                    )
                 candles.append(
                     {
                         "time": int(t),
