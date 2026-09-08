@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "./store";
-import { Header } from "./components/Header";
+import { Header, FontScale, applyFontScale } from "./components/Header";
 import { Watchlist } from "./components/Watchlist";
 import { ExpiryTabs } from "./components/ExpiryTabs";
 import { OptionChain } from "./components/OptionChain";
@@ -86,6 +86,7 @@ function Shell() {
   const init = useStore((s) => s.init);
   const isMobile = useIsMobile();
   useEffect(() => {
+    applyFontScale();
     init();
   }, [init]);
   return isMobile ? <MobileShell /> : <DesktopShell />;
@@ -201,6 +202,9 @@ function DesktopShell() {
         <button className="btn px-1.5 py-0" onClick={() => setZoom((z) => clamp(z + 5, 70, 160))} title="Zoom in">
           +
         </button>
+        <span className="mx-1 h-3 w-px bg-term-border" />
+        <span className="text-term-dim">Text</span>
+        <FontScale />
         <button className="btn px-2 py-0" onClick={resetLayout} title="Reset panels & zoom">
           Reset
         </button>

@@ -13,6 +13,9 @@ body,
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  /* user-adjustable text scale (A- / A+ in the header); rem-based Tailwind
+     text + spacing scale together so the layout stays proportional */
+  font-size: calc(16px * var(--ui-font-scale, 1));
 }
 
 body {

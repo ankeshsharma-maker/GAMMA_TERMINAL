@@ -295,6 +295,10 @@ export function Chart() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const s = useRef<Record<string, ISeriesApi<any>>>({});
+  const rsiGuidesRef = useRef<any[]>([]);
+  const macdZeroRef = useRef<any>(null);
+  // top edge (0..1 from the top) of the oscillator band — drives the divider
+  const [oscTop, setOscTop] = useState<number | null>(null);
 
   useEffect(() => {
     if (!wrapRef.current) return;
@@ -654,12 +658,63 @@ export function Chart() {
       chartRef.current.priceScale("right").applyOptions({
         scaleMargins: { top: 0.06, bottom: reserve },
       });
+      let oscTopFrac: number | null = null;
       sub.forEach((p, i) => {
         const bottom = 0.02 + (n - 1 - i) * (band + gap); // i=0 sits highest
+        const topFrac = 1 - bottom - band;
         chartRef.current!.priceScale(p).applyOptions({
-          scaleMargins: { top: 1 - bottom - band, bottom },
-          visible: false, // overlays read off the price grid; no extra axis clutter
+          scaleMargins: { top: topFrac, bottom },
+          // oscillators (RSI / MACD) get their own axis, like a TradingView
+          // lower pane; the rest just read off the price grid
+          visible: p === "rsi" || p === "macd",
         });
+        if ((p === "rsi" || p === "macd") && (oscTopFrac == null || topFrac < oscTopFrac))
+          oscTopFrac = topFrac;
+      });
+      setOscTop(oscTopFrac);
+    }
+
+    // ---- RSI 30 / 50 / 70 guides + MACD zero line (TradingView-style) ----
+    for (const g of rsiGuidesRef.current) {
+      try {
+        (c.rsi as ISeriesApi<"Line">).removePriceLine(g);
+      } catch {
+        /* ignore */
+      }
+    }
+    rsiGuidesRef.current = [];
+    if (eff.rsi) {
+      const mk = (price: number, color: string, style: LineStyle, title: string) =>
+        (c.rsi as ISeriesApi<"Line">).createPriceLine({
+          price,
+          color,
+          lineWidth: 1,
+          lineStyle: style,
+          axisLabelVisible: true,
+          title,
+        });
+      rsiGuidesRef.current = [
+        mk(70, "#ef4444aa", LineStyle.Dashed, "70"),
+        mk(50, "#64748b66", LineStyle.Dotted, ""),
+        mk(30, "#22c55eaa", LineStyle.Dashed, "30"),
+      ];
+    }
+    if (macdZeroRef.current) {
+      try {
+        (c.macdHist as ISeriesApi<"Histogram">).removePriceLine(macdZeroRef.current);
+      } catch {
+        /* ignore */
+      }
+      macdZeroRef.current = null;
+    }
+    if (eff.macd) {
+      macdZeroRef.current = (c.macdHist as ISeriesApi<"Histogram">).createPriceLine({
+        price: 0,
+        color: "#64748b66",
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        axisLabelVisible: false,
+        title: "",
       });
     }
 
@@ -1177,6 +1232,18 @@ export function Chart() {
 
       <div className={`relative min-h-0 ${split ? "flex-[3]" : "flex-1"}`}>
         <div ref={wrapRef} className="absolute inset-0" />
+        {oscTop != null && (
+          <>
+            <div
+              className="pointer-events-none absolute inset-x-0 z-10 border-t border-term-border/80"
+              style={{ top: `${oscTop * 100}%` }}
+            />
+            <div
+              className="pointer-events-none absolute inset-x-0 bottom-0 z-0 bg-term-bg/25"
+              style={{ top: `${oscTop * 100}%` }}
+            />
+          </>
+        )}
         {legend && (
           <div className="pointer-events-none absolute left-2 top-1 z-10 rounded bg-term-panel/80 px-2 py-0.5 text-[10px] num text-term-text">
             {symbol} · {legend}

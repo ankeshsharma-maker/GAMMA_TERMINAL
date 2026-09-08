@@ -12,6 +12,7 @@ import {
   BrokerPill,
   UpstoxPill,
   ClassFilter,
+  FontScale,
   useBookPnl,
 } from "./Header";
 
@@ -225,6 +226,9 @@ export function MobileShell() {
         <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-2 py-1.5">
           <BrokerPill />
           <UpstoxPill />
+          <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
+            Text <FontScale />
+          </span>
           <button
             onClick={lockNow}
             className="ml-auto rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:text-term-text"
