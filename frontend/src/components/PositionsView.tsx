@@ -297,104 +297,102 @@ function BrokerTab() {
           Square off selected ({selected.size})
         </button>
       </div>
-      <table className="w-full border-separate border-spacing-0 border border-term-border text-xs">
-        <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
-          <tr>
-            <th className="border-b border-r border-term-border px-2 py-1.5">
-              <input type="checkbox" checked={allSelected} onChange={toggleAll} />
-            </th>
-            <TH>Symbol</TH>
-            <TH>Product</TH>
-            <TH>Net Qty</TH>
-            <TH>Avg</TH>
-            <TH>LTP</TH>
-            <TH>MTM</TH>
-            <TH>Realized</TH>
-            <TH>Today's P&L</TH>
-            <TH>Trade</TH>
-            <TH> </TH>
-          </tr>
-        </thead>
-        <tbody>
-          {withPnl.length === 0 && (
-            <tr>
-              <TD cls="text-center text-term-dim">
-                <span className="block py-3">No open broker positions.</span>
-              </TD>
-              <td colSpan={10} />
-            </tr>
-          )}
-          {withPnl.map(({ r, mtm, rpnl, today, key }, i) => {
-            const qty = n(r.netqty) ?? 0;
-            const isBusy = busy.has(r.tsym);
-            return (
-              <tr key={i}>
-                <td className="border-b border-r border-term-border/50 px-2 py-1.5">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(key)}
-                    onChange={() => toggleOne(key)}
-                    disabled={!key}
-                  />
-                </td>
-                <TD cls="num font-medium">{r.tsym ?? r.symname ?? "—"}</TD>
-                <TD cls="text-term-dim">{r.prd ?? "—"}</TD>
-                <TD cls={`num ${qty > 0 ? "text-up" : qty < 0 ? "text-down" : ""}`}>{qty}</TD>
-                <TD cls="num">{nf(n(r.netavgprc) ?? n(r.daybuyavgprc))}</TD>
-                <TD cls="num">{nf(n(r.lp))}</TD>
-                <TD cls={`num ${signColor(mtm)}`}>₹{nf(mtm, 0)}</TD>
-                <TD cls={`num ${signColor(rpnl)}`}>₹{nf(rpnl, 0)}</TD>
-                <TD cls={`num ${signColor(today)}`}>₹{nf(today, 0)}</TD>
-                <TD>
-                  <div className="flex gap-0.5">
-                    <button
-                      disabled={isBusy}
-                      onClick={() => trade(r, "BUY")}
-                      className="rounded bg-up/15 px-1.5 text-[10px] font-bold text-up hover:bg-up/30 disabled:opacity-40"
-                      title={`Buy ${lots} lot(s) live`}
-                    >
-                      B
-                    </button>
-                    <button
-                      disabled={isBusy}
-                      onClick={() => trade(r, "SELL")}
-                      className="rounded bg-down/15 px-1.5 text-[10px] font-bold text-down hover:bg-down/30 disabled:opacity-40"
-                      title={`Sell ${lots} lot(s) live`}
-                    >
-                      S
-                    </button>
-                  </div>
-                </TD>
-                <TD>
-                  <button
-                    disabled={isBusy || !qty}
-                    onClick={() => squareOff(r)}
-                    className="btn px-1.5 py-0.5 text-[10px] hover:text-down disabled:opacity-40"
-                    title="Flatten this position with an opposite-side MARKET order"
-                  >
-                    {isBusy ? "…" : "Square off"}
-                  </button>
-                </TD>
-              </tr>
-            );
-          })}
-        </tbody>
-        <tfoot>
-          <tr className="bg-term-panel2 font-semibold">
-            <TD>{" "}</TD>
-            <TD cls="font-semibold">TOTAL</TD>
-            <TD>{" "}</TD>
-            <TD>{" "}</TD>
-            <TD>{" "}</TD>
-            <TD>{" "}</TD>
-            <TD cls={`num ${signColor(totalMtm)}`}>₹{nf(totalMtm, 0)}</TD>
-            <TD cls={`num ${signColor(totalRealized)}`}>₹{nf(totalRealized, 0)}</TD>
-            <TD cls={`num ${signColor(totalToday)}`}>₹{nf(totalToday, 0)}</TD>
-            <TD>{" "}</TD>
-            <TD>{" "}</TD>
-          </tr>
-        </tfoot>
-      </table>
+      {/* select-all + count */}
+      {withPnl.length > 0 && (
+        <label className="mb-1 flex items-center gap-1.5 px-1 text-[10px] text-term-dim">
+          <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+          {withPnl.length} position{withPnl.length > 1 ? "s" : ""} · tap a card to select
+        </label>
+      )}
+
+      <div className="overflow-hidden rounded-lg border border-term-border">
+        {withPnl.length === 0 && (
+          <div className="px-3 py-6 text-center text-2xs text-term-dim">
+            No open broker positions.
+          </div>
+        )}
+        {withPnl.map(({ r, today, key }, i) => {
+          const qty = n(r.netqty) ?? 0;
+          const isBusy = busy.has(r.tsym);
+          const avg = n(r.netavgprc) ?? n(r.daybuyavgprc) ?? n(r.daysellavgprc);
+          const sel = selected.has(key);
+          return (
+            <div
+              key={i}
+              onClick={() => key && toggleOne(key)}
+              className={`cursor-pointer border-b border-term-border/50 px-3 py-2 last:border-b-0 ${
+                sel ? "bg-term-accent/10" : "hover:bg-term-panel/50"
+              }`}
+            >
+              <div className="flex items-center justify-between text-[10px] text-term-dim">
+                <span className="num">
+                  Qty. <span className="text-term-text">{qty}</span> · Avg.{" "}
+                  <span className="text-term-text">₹{nf(avg ?? 0, 2)}</span>
+                </span>
+                <span className="rounded bg-term-border/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-term-dim">
+                  {r.prd ?? "NRML"}
+                </span>
+              </div>
+              <div className="mt-0.5 flex items-center justify-between">
+                <span className="num text-sm font-semibold text-term-text">
+                  {r.dname ?? r.tsym ?? r.symname ?? "—"}
+                </span>
+                <span className={`num text-base font-bold ${signColor(today)}`}>
+                  {nf(today, 2)}
+                </span>
+              </div>
+              <div className="mt-0.5 flex items-center justify-between text-[10px] text-term-dim">
+                <span className="uppercase tracking-wide">
+                  {(r.exch ?? "NFO")} · MKT · DAY
+                </span>
+                <span className="num">
+                  LTP <span className="text-term-text">{nf(n(r.lp), 2)}</span>
+                </span>
+              </div>
+
+              <div
+                className="mt-1.5 flex items-center gap-1.5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  disabled={isBusy}
+                  onClick={() => trade(r, "BUY")}
+                  className="rounded bg-up/15 px-2 py-0.5 text-[10px] font-bold text-up hover:bg-up/30 disabled:opacity-40"
+                  title={`Buy ${lots} lot(s) live`}
+                >
+                  Buy
+                </button>
+                <button
+                  disabled={isBusy}
+                  onClick={() => trade(r, "SELL")}
+                  className="rounded bg-down/15 px-2 py-0.5 text-[10px] font-bold text-down hover:bg-down/30 disabled:opacity-40"
+                  title={`Sell ${lots} lot(s) live`}
+                >
+                  Sell
+                </button>
+                <button
+                  disabled={isBusy || !qty}
+                  onClick={() => squareOff(r)}
+                  className="ml-auto rounded border border-down/50 px-2 py-0.5 text-[10px] font-semibold text-down hover:bg-down/10 disabled:opacity-30"
+                  title="Flatten this position with an opposite-side MARKET order"
+                >
+                  {isBusy ? "…" : "Square off"}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {withPnl.length > 0 && (
+          <div className="flex items-center justify-between bg-term-panel2 px-3 py-2 text-2xs font-semibold">
+            <span className="uppercase text-term-dim">Total</span>
+            <span className="num flex gap-3">
+              <span className={signColor(totalMtm)}>MTM ₹{nf(totalMtm, 0)}</span>
+              <span className={signColor(totalRealized)}>Rlz ₹{nf(totalRealized, 0)}</span>
+              <span className={signColor(totalToday)}>P&amp;L ₹{nf(totalToday, 0)}</span>
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
