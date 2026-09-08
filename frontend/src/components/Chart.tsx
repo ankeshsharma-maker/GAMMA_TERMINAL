@@ -465,6 +465,7 @@ export function Chart() {
   // the fetch loop isn't torn down (blanking the chart) on every flip.
   const tickFreshRef = useRef(false);
   const feedDownRef = useRef(false);
+  const lastSymRef = useRef("");
   useEffect(() => {
     let alive = true;
     let lastAt = 0;
@@ -478,7 +479,14 @@ export function Chart() {
         .then((d) => alive && setData(d as ChartData))
         .catch(() => {});
     };
-    setData(null);
+    // only blank when the underlying instrument actually changed — a plain
+    // timeframe / source switch keeps the current candles on screen and just
+    // swaps them in when the new set lands (~1s), so it doesn't flash "loading".
+    const symKey = `${symbol}|${instrument}`;
+    if (lastSymRef.current !== symKey) {
+      setData(null);
+      lastSymRef.current = symKey;
+    }
     load(true);
     const t = setInterval(() => load(false), 2000);
     return () => {
