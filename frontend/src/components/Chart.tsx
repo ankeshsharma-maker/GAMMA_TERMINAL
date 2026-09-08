@@ -417,7 +417,7 @@ export function Chart() {
       lineWidth: 1,
       priceScaleId: "macd",
       priceLineVisible: false,
-      lastValueVisible: false,
+      lastValueVisible: true, // show the live MACD value on the axis
     });
     c.macdSig = chart.addLineSeries({
       color: "#f97316",
@@ -684,19 +684,21 @@ export function Chart() {
     }
     rsiGuidesRef.current = [];
     if (eff.rsi) {
-      const mk = (price: number, color: string, style: LineStyle, title: string) =>
+      // guide lines only — no 70 / 30 axis tags; the axis just carries the
+      // live RSI value (series lastValueVisible)
+      const mk = (price: number, color: string, style: LineStyle) =>
         (c.rsi as ISeriesApi<"Line">).createPriceLine({
           price,
           color,
           lineWidth: 1,
           lineStyle: style,
-          axisLabelVisible: true,
-          title,
+          axisLabelVisible: false,
+          title: "",
         });
       rsiGuidesRef.current = [
-        mk(70, "#ef4444aa", LineStyle.Dashed, "70"),
-        mk(50, "#64748b66", LineStyle.Dotted, ""),
-        mk(30, "#22c55eaa", LineStyle.Dashed, "30"),
+        mk(70, "#ef4444aa", LineStyle.Dashed),
+        mk(50, "#64748b66", LineStyle.Dotted),
+        mk(30, "#22c55eaa", LineStyle.Dashed),
       ];
     }
     if (macdZeroRef.current) {
