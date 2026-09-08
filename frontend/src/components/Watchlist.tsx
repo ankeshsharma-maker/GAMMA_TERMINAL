@@ -7,6 +7,19 @@ import type { WatchQuote } from "../types";
 type WlView = "list" | "grid";
 type SortKey = "none" | "az" | "ltp" | "pct" | "chg";
 
+/** one-click preset watchlists — loads into a new list (or the active one at max) */
+const WL_PRESETS: { name: string; syms: string[] }[] = [
+  { name: "Indices", syms: ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX", "INDIA VIX"] },
+  { name: "Bank pack", syms: ["BANKNIFTY", "HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "KOTAKBANK", "BANKBARODA", "PNB", "INDUSINDBK", "AUBANK", "FEDERALBNK"] },
+  { name: "Liquid option movers", syms: ["RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "TCS", "SBIN", "TATAMOTORS", "TATASTEEL", "AXISBANK", "ADANIENT"] },
+  { name: "NIFTY heavyweights", syms: ["RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "TCS", "ITC", "LT", "BHARTIARTL", "SBIN", "AXISBANK"] },
+  { name: "IT pack", syms: ["TCS", "INFY", "HCLTECH", "WIPRO", "TECHM", "LTIM", "PERSISTENT", "COFORGE", "MPHASIS"] },
+  { name: "Auto pack", syms: ["MARUTI", "TATAMOTORS", "M&M", "BAJAJ-AUTO", "EICHERMOT", "HEROMOTOCO", "TVSMOTOR", "ASHOKLEY", "BOSCHLTD"] },
+  { name: "Metals & energy", syms: ["TATASTEEL", "JSWSTEEL", "HINDALCO", "VEDL", "JINDALSTEL", "SAIL", "NMDC", "COALINDIA", "ONGC", "NTPC", "POWERGRID"] },
+  { name: "High-beta momentum", syms: ["ADANIENT", "ADANIPORTS", "ADANIGREEN", "RELIANCE", "DLF", "IRCTC", "IEX", "POLYCAB", "TRENT"] },
+  { name: "Pharma & FMCG", syms: ["SUNPHARMA", "DRREDDY", "CIPLA", "DIVISLAB", "ITC", "HINDUNILVR", "NESTLEIND", "BRITANNIA", "DABUR"] },
+];
+
 const wPx = (w: WatchQuote) => (w.kind === "option" ? w.ltp : w.liveSpot ?? w.spot) ?? null;
 const wPct = (w: WatchQuote) => (w.kind === "option" ? w.chgPct : w.liveChgPct) ?? null;
 const wChg = (w: WatchQuote) => {
@@ -251,6 +264,24 @@ export function Watchlist() {
     });
   };
   const hasOptions = watch.some((w) => w.kind === "option");
+  const [presetBusy, setPresetBusy] = useState(false);
+  const loadPreset = async (p: (typeof WL_PRESETS)[number]) => {
+    if (presetBusy || !watchlists) return;
+    setPresetBusy(true);
+    try {
+      let target = watchlists.active ?? 0;
+      if (watchlists.lists.length < 8) {
+        await wlAddList();
+        const w = useStore.getState().watchlists;
+        target = w ? w.lists.length - 1 : target;
+        await wlSetActive(target);
+        await wlRename(target, p.name);
+      }
+      for (const s of p.syms) await wlAdd(target, s);
+    } finally {
+      setPresetBusy(false);
+    }
+  };
   const active = watchlists?.active ?? 0;
   const searchTimer = useRef<number | null>(null);
 
@@ -523,6 +554,23 @@ export function Watchlist() {
             </button>
           )}
         </div>
+        <select
+          value=""
+          disabled={presetBusy}
+          onChange={(e) => {
+            const p = WL_PRESETS.find((x) => x.name === e.target.value);
+            if (p) loadPreset(p);
+          }}
+          title="Load a ready-made watchlist into a new list"
+          className="mt-1.5 w-full rounded border border-term-border bg-term-bg py-1 text-[10px] text-term-dim outline-none transition hover:border-term-accent focus:border-term-accent disabled:opacity-50"
+        >
+          <option value="">{presetBusy ? "loading preset…" : "＋ Load a preset watchlist…"}</option>
+          {WL_PRESETS.map((p) => (
+            <option key={p.name} value={p.name}>
+              {p.name} · {p.syms.length}
+            </option>
+          ))}
+        </select>
 
         {openSearch && results.length > 0 && (
           <div className="absolute left-3 right-3 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-md border border-term-border bg-term-panel shadow-xl">
