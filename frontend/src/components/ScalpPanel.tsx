@@ -166,9 +166,9 @@ export function ScalpPanel() {
         <button
           onClick={squareOffSym}
           disabled={myOpen.length === 0}
-          className="ml-auto shrink-0 rounded bg-down px-2 py-1 text-[10px] font-bold text-white disabled:opacity-30"
+          className="ml-auto shrink-0 rounded-md border border-down bg-down px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white shadow-sm hover:bg-red-600 disabled:border-term-border disabled:bg-term-border/40 disabled:text-term-dim"
         >
-          Flatten {symbol}
+          Square off
         </button>
       </div>
 
