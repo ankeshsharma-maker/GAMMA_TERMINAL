@@ -104,15 +104,10 @@ function QuoteRow({ w }: { w: WatchQuote }) {
           {px != null ? nf(px) : "–"}
         </span>
         {(chg != null || pct != null) && (
-          <span className={`num flex items-center gap-1 text-[11px] tabular-nums ${col}`}>
-            <span className="text-[9px]">{up ? "▲" : "▼"}</span>
+          <span className={`num mt-0.5 flex items-center gap-1 text-xs tabular-nums ${col}`}>
+            <span>{up ? "↑" : "↓"}</span>
             {chg != null && <span>{nf(Math.abs(chg))}</span>}
-            {pct != null && (
-              <span>
-                {pct >= 0 ? "+" : "−"}
-                {nf(Math.abs(pct), 2)}%
-              </span>
-            )}
+            {pct != null && <span>({nf(Math.abs(pct), 2)}%)</span>}
           </span>
         )}
       </div>

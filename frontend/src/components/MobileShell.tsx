@@ -16,21 +16,112 @@ import {
   useBookPnl,
 } from "./Header";
 
-/** compact P&L chips for the mobile top strip — broker book when linked */
+/** compact P&L for the mobile top strip — broker book when linked */
 function MobilePnl() {
   const p = useBookPnl();
   if (!p) return null;
-  const cell = (l: string, v: number) => (
-    <span className="flex shrink-0 flex-col items-end leading-none">
-      <span className="text-[8px] uppercase text-term-dim">{l}</span>
-      <span className={`num text-[11px] font-semibold ${signColor(v)}`}>₹{nf(v, 0)}</span>
-    </span>
-  );
+  const overall = p.realized + p.mtm;
   return (
-    <div className="ml-auto flex shrink-0 items-center gap-2.5 border-l border-term-border pl-2">
-      {cell(p.source === "broker" ? "MTM" : "P.MTM", p.mtm)}
-      {cell("Today", p.today)}
-      {cell("Real", p.realized)}
+    <div className="ml-auto flex shrink-0 items-center gap-3 border-l border-term-border pl-2">
+      <span className="flex flex-col items-end leading-none">
+        <span className="text-[8px] uppercase text-term-dim">P&amp;L</span>
+        <span className={`num text-xs font-bold ${signColor(overall)}`}>₹{nf(overall, 0)}</span>
+      </span>
+      <span className="flex flex-col items-end leading-none">
+        <span className="text-[8px] uppercase text-term-dim">Today</span>
+        <span className={`num text-xs font-semibold ${signColor(p.today)}`}>₹{nf(p.today, 0)}</span>
+      </span>
+    </div>
+  );
+}
+
+/** two big index quotes across the top of the mobile watchlist */
+function MobileIndexBand() {
+  const [rows, setRows] = useState<
+    { symbol: string; spot: number | null; chgPct: number | null; chgPts?: number | null }[]
+  >([]);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      api.indicesHeader(["NIFTY", "SENSEX"]).then((d) => alive && setRows(d.indices), () => {});
+    load();
+    const t = window.setInterval(load, 8000);
+    return () => {
+      alive = false;
+      window.clearInterval(t);
+    };
+  }, []);
+  if (rows.length === 0) return null;
+  const label: Record<string, string> = { NIFTY: "NIFTY 50", "INDIA VIX": "INDIA VIX" };
+  return (
+    <div className="grid shrink-0 grid-cols-2 divide-x divide-term-border border-b border-term-border bg-term-panel2">
+      {rows.slice(0, 2).map((r) => {
+        const up = (r.chgPct ?? 0) >= 0;
+        const pts =
+          r.chgPts ??
+          (r.chgPct != null && r.spot != null ? r.spot - r.spot / (1 + r.chgPct / 100) : null);
+        return (
+          <div key={r.symbol} className="flex flex-col items-center gap-0.5 py-2">
+            <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-term-dim">
+              {label[r.symbol] ?? r.symbol}
+              {r.chgPct != null && (
+                <span className={up ? "text-up" : "text-down"}>{up ? "↑" : "↓"}</span>
+              )}
+            </span>
+            <span className={`num text-base font-bold ${up ? "text-up" : "text-down"}`}>
+              {r.spot != null ? nf(r.spot, r.spot < 100 ? 2 : 0) : "–"}
+            </span>
+            {(pts != null || r.chgPct != null) && (
+              <span className={`num text-[11px] ${up ? "text-up" : "text-down"}`}>
+                {pts != null ? `${up ? "+" : "−"}${nf(Math.abs(pts), 2)} ` : ""}
+                {r.chgPct != null ? `(${nf(Math.abs(r.chgPct), 2)}%)` : ""}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** full "Overall / Today's Return" card — top of the Positions / Orders tabs */
+function MobileReturnCard() {
+  const p = useBookPnl();
+  const [open, setOpen] = useState(false);
+  if (!p) return null;
+  const overall = p.realized + p.mtm;
+  return (
+    <div className="mx-2 mt-2 rounded-xl border border-term-border bg-term-panel px-3 py-3">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between"
+      >
+        <span className="text-xs uppercase tracking-wide text-term-dim">
+          Overall Return {p.source === "paper" && <span className="text-[9px]">· paper</span>}
+        </span>
+        <span className="flex items-center gap-2">
+          <span className={`num text-xl font-bold ${signColor(overall)}`}>₹{nf(overall, 2)}</span>
+          <span className="text-term-dim">{open ? "▴" : "▾"}</span>
+        </span>
+      </button>
+      {open && (
+        <div className="mt-2 flex items-start justify-between border-t border-term-border/60 pt-2">
+          <span className="flex flex-col">
+            <span className="text-2xs uppercase text-term-dim">Realized</span>
+            <span className={`num text-sm font-semibold ${signColor(p.realized)}`}>
+              ₹{nf(p.realized, 2)}
+            </span>
+          </span>
+          <span className="flex flex-col items-end">
+            <span className="text-2xs uppercase text-term-dim">Unrealized</span>
+            <span className={`num text-sm font-semibold ${signColor(p.mtm)}`}>₹{nf(p.mtm, 2)}</span>
+          </span>
+        </div>
+      )}
+      <div className="mt-2 flex items-center justify-between border-t border-term-border/60 pt-2">
+        <span className="text-xs uppercase tracking-wide text-term-dim">Today's Return</span>
+        <span className={`num text-base font-bold ${signColor(p.today)}`}>₹{nf(p.today, 2)}</span>
+      </div>
     </div>
   );
 }
@@ -137,7 +228,12 @@ function MobileBody({ view }: { view: View }) {
         </>
       );
     case "watchlist":
-      return <Watchlist />;
+      return (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <MobileIndexBand />
+          <Watchlist />
+        </div>
+      );
     case "oiprofile":
       return <OIProfile />;
     case "scrip":
@@ -162,9 +258,19 @@ function MobileBody({ view }: { view: View }) {
     case "builder":
       return <StrategyBuilder />;
     case "positions":
-      return <PositionsView />;
+      return (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <MobileReturnCard />
+          <PositionsView />
+        </div>
+      );
     case "orders":
-      return <PositionsView initialTab="orders" />;
+      return (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <MobileReturnCard />
+          <PositionsView initialTab="orders" />
+        </div>
+      );
     case "auto":
       return <AutoBotView />;
     case "funds":
