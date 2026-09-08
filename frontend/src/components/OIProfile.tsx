@@ -37,7 +37,7 @@ export function OIProfile() {
   const [tf, setTf] = useState(5); // minutes; 0 = change since day open
   const [win, setWin] = useState<Record<string, { ceOiChg: number; peOiChg: number }>>({});
   const [winCov, setWinCov] = useState(0);
-  const [donutW, setDonutW] = useState(280); // resizable OI-split panel width (px)
+  const [donutW, setDonutW] = useState(340); // resizable OI-split panel width (px)
   const scrollRef = useRef<HTMLDivElement>(null);
   const didCenter = useRef(false);
 
@@ -629,13 +629,13 @@ export function OIProfile() {
       center: string;
       sub: string;
     }) => {
-      const R = 40;
-      const SW = 13;
+      const R = 38;
+      const SW = 17;
       const C = 2 * Math.PI * R;
       const t = Math.abs(aVal) + Math.abs(bVal) || 1;
       const aLen = (Math.abs(aVal) / t) * C;
       return (
-        <svg viewBox="0 0 100 100" className="w-full max-w-[210px]">
+        <svg viewBox="0 0 100 100" className="w-full max-w-[320px]">
           <circle cx="50" cy="50" r={R} fill="none" stroke="#1e2733" strokeWidth={SW} />
           <circle
             cx="50"
@@ -657,10 +657,10 @@ export function OIProfile() {
             strokeDasharray={`${aLen.toFixed(1)} ${C}`}
             transform="rotate(-90 50 50)"
           />
-          <text x="50" y="48" textAnchor="middle" className="fill-term-text" fontSize="19" fontWeight="700">
+          <text x="50" y="47" textAnchor="middle" className="fill-term-text" fontSize="27" fontWeight="700">
             {center}
           </text>
-          <text x="50" y="62" textAnchor="middle" className="fill-term-dim" fontSize="9">
+          <text x="50" y="63" textAnchor="middle" className="fill-term-dim" fontSize="11">
             {sub}
           </text>
         </svg>
@@ -668,7 +668,7 @@ export function OIProfile() {
     };
 
     const Row = ({ c, label, val }: { c: string; label: string; val: string }) => (
-      <div className="flex items-center justify-between text-2xs">
+      <div className="flex items-center justify-between text-xs">
         <span className="flex items-center gap-1">
           <Sw c={c} /> {label}
         </span>
@@ -681,7 +681,7 @@ export function OIProfile() {
         className="flex shrink-0 flex-col items-center gap-2 overflow-y-auto p-3"
         style={{ width: donutW }}
       >
-        <div className="text-center text-2xs font-semibold uppercase tracking-wide text-term-dim">
+        <div className="text-center text-xs font-semibold uppercase tracking-wide text-term-dim">
           Total OI · {count}±ATM
         </div>
         <MiniDonut
@@ -697,7 +697,7 @@ export function OIProfile() {
           <Row c={PUT_OI} label="Put" val={`${crores(pe)} · ${nf((pe / tot) * 100, 0)}%`} />
         </div>
 
-        <div className="mt-1 w-full border-t border-term-border/50 pt-2 text-center text-2xs font-semibold uppercase tracking-wide text-term-dim">
+        <div className="mt-1 w-full border-t border-term-border/50 pt-2 text-center text-xs font-semibold uppercase tracking-wide text-term-dim">
           Change in OI · {tfLbl}
         </div>
         {dtot > 0 ? (
