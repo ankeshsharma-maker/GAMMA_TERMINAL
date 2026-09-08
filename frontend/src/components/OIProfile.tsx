@@ -17,8 +17,6 @@ const OI_ADD = "#22c55e";
 const OI_CUT = "#ef4444";
 
 const zClamp = (z: number) => Math.min(3, Math.max(0.5, z));
-// "OI added" fill — flat (no gradient)
-const addGrad = (c: string) => c;
 
 export function OIProfile() {
   const chain = useStore((s) => s.chain);
@@ -39,7 +37,7 @@ export function OIProfile() {
   const [tf, setTf] = useState(5); // minutes; 0 = change since day open
   const [win, setWin] = useState<Record<string, { ceOiChg: number; peOiChg: number }>>({});
   const [winCov, setWinCov] = useState(0);
-  const [donutW, setDonutW] = useState(240); // resizable OI-split panel width (px)
+  const [donutW, setDonutW] = useState(280); // resizable OI-split panel width (px)
   const scrollRef = useRef<HTMLDivElement>(null);
   const didCenter = useRef(false);
 
@@ -384,14 +382,14 @@ export function OIProfile() {
             const half = AREA / 2;
             const cH = (Math.abs(cChg) / chgMax) * half;
             const pH = (Math.abs(pChg) / chgMax) * half;
-            const col = (up: boolean, h: number, color: string, label: string, delta: number) => (
+            const col = (up: boolean, h: number, label: string, delta: number) => (
               <div className="flex flex-col" style={{ width: BARW, height: AREA }}>
                 <div className="flex flex-1 items-end justify-center">
                   {up && (
                     <div
                       title={`${label} +${compact(delta)}`}
                       className="rounded-t-sm"
-                      style={{ width: BARW, height: Math.max(h > 0 ? 2 : 0, h), background: addGrad(color) }}
+                      style={{ width: BARW, height: Math.max(h > 0 ? 2 : 0, h), background: OI_ADD }}
                     />
                   )}
                 </div>
@@ -400,7 +398,7 @@ export function OIProfile() {
                     <div
                       title={`${label} ${compact(delta)}`}
                       className="rounded-b-sm"
-                      style={{ width: BARW, height: Math.max(h > 0 ? 2 : 0, h), background: color }}
+                      style={{ width: BARW, height: Math.max(h > 0 ? 2 : 0, h), background: OI_CUT }}
                     />
                   )}
                 </div>
@@ -409,9 +407,9 @@ export function OIProfile() {
             content = (
               <div className="relative flex justify-center gap-[3px]" style={{ height: AREA }}>
                 <div className="absolute inset-x-0 border-t border-term-dim/60" style={{ top: half }} />
-                {/* colour by leg (Call red / Put green); up = OI added, down = reduced */}
-                {col(cChg >= 0, cH, CALL_OI, "Call ΔOI", cChg)}
-                {col(pChg >= 0, pH, PUT_OI, "Put ΔOI", pChg)}
+                {/* green = OI added (up), red = OI reduced (down); left bar = Call, right = Put */}
+                {col(cChg >= 0, cH, "Call ΔOI", cChg)}
+                {col(pChg >= 0, pH, "Put ΔOI", pChg)}
               </div>
             );
           } else {
@@ -419,9 +417,9 @@ export function OIProfile() {
             const pOIh = (r.put.oi / oiMax) * AREA;
             const cCapH = Math.min(cOIh, (Math.abs(cChg) / oiMax) * AREA);
             const pCapH = Math.min(pOIh, (Math.abs(pChg) / oiMax) * AREA);
-            // Sensibull "Show OI" style: total-OI bar in the leg colour, with
-            // a cap = the change — hatched when OI increased, hollow outline
-            // when it decreased.
+            // total-OI bar in the (translucent) leg colour, with a SOLID cap
+            // for the change over the window — green if OI was added, red if
+            // reduced — so the ΔOI reads at a glance.
             const seg = (
               oiH: number,
               capH: number,
@@ -431,18 +429,15 @@ export function OIProfile() {
             ) => (
               <div
                 title={title}
-                className="flex flex-col justify-end rounded-t-sm"
-                style={{ width: BARW, height: Math.max(2, oiH), background: `${legCol}66` }}
+                className="flex flex-col justify-end overflow-hidden rounded-t-sm"
+                style={{ width: BARW, height: Math.max(2, oiH), background: `${legCol}55` }}
               >
                 {capH > 0 && (
                   <div
-                    className="rounded-t-sm"
                     style={{
                       height: Math.max(2, capH),
-                      border: `1px solid ${legCol}`,
-                      background: added
-                        ? `repeating-linear-gradient(45deg, ${legCol}, ${legCol} 2px, transparent 2px, transparent 5px)`
-                        : "transparent",
+                      background: added ? OI_ADD : OI_CUT,
+                      borderTop: `1px solid ${added ? OI_ADD : OI_CUT}`,
                     }}
                   />
                 )}
@@ -620,13 +615,13 @@ export function OIProfile() {
       center: string;
       sub: string;
     }) => {
-      const R = 42;
-      const SW = 15;
+      const R = 40;
+      const SW = 13;
       const C = 2 * Math.PI * R;
       const t = Math.abs(aVal) + Math.abs(bVal) || 1;
       const aLen = (Math.abs(aVal) / t) * C;
       return (
-        <svg viewBox="0 0 100 100" className="w-full max-w-[130px]">
+        <svg viewBox="0 0 100 100" className="w-full max-w-[210px]">
           <circle cx="50" cy="50" r={R} fill="none" stroke="#1e2733" strokeWidth={SW} />
           <circle
             cx="50"
@@ -648,10 +643,10 @@ export function OIProfile() {
             strokeDasharray={`${aLen.toFixed(1)} ${C}`}
             transform="rotate(-90 50 50)"
           />
-          <text x="50" y="47" textAnchor="middle" className="fill-term-text" fontSize="14" fontWeight="700">
+          <text x="50" y="48" textAnchor="middle" className="fill-term-text" fontSize="19" fontWeight="700">
             {center}
           </text>
-          <text x="50" y="59" textAnchor="middle" className="fill-term-dim" fontSize="7.5">
+          <text x="50" y="62" textAnchor="middle" className="fill-term-dim" fontSize="9">
             {sub}
           </text>
         </svg>
@@ -659,7 +654,7 @@ export function OIProfile() {
     };
 
     const Row = ({ c, label, val }: { c: string; label: string; val: string }) => (
-      <div className="flex items-center justify-between text-[10px]">
+      <div className="flex items-center justify-between text-2xs">
         <span className="flex items-center gap-1">
           <Sw c={c} /> {label}
         </span>
@@ -672,7 +667,7 @@ export function OIProfile() {
         className="flex shrink-0 flex-col items-center gap-2 overflow-y-auto p-3"
         style={{ width: donutW }}
       >
-        <div className="text-center text-[10px] font-semibold uppercase tracking-wide text-term-dim">
+        <div className="text-center text-2xs font-semibold uppercase tracking-wide text-term-dim">
           Total OI · {count}±ATM
         </div>
         <MiniDonut
@@ -688,7 +683,7 @@ export function OIProfile() {
           <Row c={PUT_OI} label="Put" val={`${crores(pe)} · ${nf((pe / tot) * 100, 0)}%`} />
         </div>
 
-        <div className="mt-1 w-full border-t border-term-border/50 pt-2 text-center text-[10px] font-semibold uppercase tracking-wide text-term-dim">
+        <div className="mt-1 w-full border-t border-term-border/50 pt-2 text-center text-2xs font-semibold uppercase tracking-wide text-term-dim">
           Change in OI · {tfLbl}
         </div>
         {dtot > 0 ? (
@@ -723,7 +718,7 @@ export function OIProfile() {
             </div>
           </>
         ) : (
-          <div className="text-[10px] text-term-dim">no OI change yet</div>
+          <div className="text-2xs text-term-dim">no OI change yet</div>
         )}
       </div>
     );
@@ -1246,26 +1241,11 @@ export function OIProfile() {
         <span>
           <Sw c={CALL_OI} /> Call OI &nbsp; <Sw c={PUT_OI} /> Put OI
         </span>
-        {metric === "combined" ? (
-          <span>
-            <span
-              className="mr-1 inline-block h-2.5 w-3.5 align-middle"
-              style={{
-                background:
-                  "repeating-linear-gradient(45deg,#94a3b8,#94a3b8 2px,transparent 2px,transparent 5px)",
-              }}
-            />
-            OI increase &nbsp;
-            <span
-              className="mr-1 inline-block h-2.5 w-3.5 border border-term-dim align-middle"
-            />
-            OI decrease
-          </span>
-        ) : (
-          <span>
-            <Sw c={OI_ADD} /> OI added &nbsp; <Sw c={OI_CUT} /> OI reduced
-          </span>
-        )}
+        <span>
+          <span className="mr-1 inline-block h-2.5 w-3.5 align-middle" style={{ background: "#94a3b855" }} />
+          total OI &nbsp;
+          <Sw c={OI_ADD} /> ΔOI added &nbsp; <Sw c={OI_CUT} /> ΔOI reduced
+        </span>
         <span>
           <span className="mr-1 inline-block border-l-2 border-dashed border-fuchsia-400 align-middle" style={{ height: 10 }} />
           γ-flip (dealer gamma zero-cross)
