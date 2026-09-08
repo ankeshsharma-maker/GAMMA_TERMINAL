@@ -106,13 +106,25 @@ def _resolve_header_index(sym: str) -> dict:
             chg = idx.get("pChange")
         chg_pts = idx.get("variation")
 
-    # 3. last-resort: derive points from spot + % (prevClose = spot / (1 + %/100))
+    # 3. derive points from spot + % (prevClose = spot / (1 + %/100))
     if chg_pts is None and spot is not None and chg is not None:
         try:
             prev = float(spot) / (1 + float(chg) / 100)
             chg_pts = float(spot) - prev
         except (TypeError, ValueError, ZeroDivisionError):
             chg_pts = None
+
+    # 4. no change at all (SENSEX / BANKEX and F&O stocks the NSE index
+    #    catalog doesn't carry) — fall back to move-from-session-open so the
+    #    ticker still shows an arrow + points + % like every other row.
+    if spot is not None and chg is None and chg_pts is None:
+        try:
+            op = store.session_open(su, float(spot))
+            if op:
+                chg_pts = round(float(spot) - op, 2)
+                chg = round((float(spot) - op) / op * 100, 2)
+        except Exception:  # noqa: BLE001
+            pass
 
     return {"symbol": su, "spot": spot, "chgPct": chg, "chgPts": chg_pts}
 
