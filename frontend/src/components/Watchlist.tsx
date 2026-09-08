@@ -100,18 +100,19 @@ function QuoteRow({ w }: { w: WatchQuote }) {
         </div>
       </button>
       <div className="flex shrink-0 flex-col items-end leading-tight">
-        <span className={`num text-sm font-semibold tabular-nums ${col}`}>
+        <span className={`num text-[15px] font-semibold tabular-nums ${col}`}>
           {px != null ? nf(px) : "–"}
         </span>
         {(chg != null || pct != null) && (
-          <span className={`num text-[10px] tabular-nums ${col}`}>
-            {up ? "▲" : "▼"} {chg != null ? `${chg >= 0 ? "+" : "−"}${nf(Math.abs(chg))}` : "–"}
-          </span>
-        )}
-        {pct != null && (
-          <span className={`num text-[10px] tabular-nums ${col}`}>
-            {pct >= 0 ? "+" : "−"}
-            {nf(Math.abs(pct), 2)}%
+          <span className={`num flex items-center gap-1 text-[11px] tabular-nums ${col}`}>
+            <span className="text-[9px]">{up ? "▲" : "▼"}</span>
+            {chg != null && <span>{nf(Math.abs(chg))}</span>}
+            {pct != null && (
+              <span>
+                {pct >= 0 ? "+" : "−"}
+                {nf(Math.abs(pct), 2)}%
+              </span>
+            )}
           </span>
         )}
       </div>
