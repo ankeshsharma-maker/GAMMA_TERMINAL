@@ -374,11 +374,22 @@ class FlattradeBroker:
         sym = symbol.upper()
         if sym in INDEX_FEED_TOKENS:
             return INDEX_FEED_TOKENS[sym]
+        # BSE indices (SENSEX / BANKEX) have no NSE scrip — don't let the loose
+        # fallback below grab a same-named NSE ETF (e.g. a SENSEX ETF ~₹880),
+        # which was polluting the header spot. Leave them to the chain spot.
+        if sym in ("SENSEX", "BANKEX", "SENSEX50", "SNSX50"):
+            return None
         vals = await self.search_scrip("NSE", sym)
         for v in vals:
             if v.get("tsym", "").upper() in (f"{sym}-EQ", sym) and v.get("token"):
                 return ("NSE", v["token"])
-        return ("NSE", vals[0]["token"]) if vals and vals[0].get("token") else None
+        # only accept a fuzzy first hit if it's clearly the same underlying
+        top = vals[0] if vals else None
+        if top and top.get("token"):
+            tsym = top.get("tsym", "").upper()
+            if tsym.startswith(sym) or tsym.replace("-EQ", "") == sym:
+                return ("NSE", top["token"])
+        return None
 
     async def quotes(self, exch: str, token: str) -> dict:
         out = await self._post("GetQuotes", {"exch": exch, "token": token})
