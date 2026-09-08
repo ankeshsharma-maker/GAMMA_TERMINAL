@@ -321,7 +321,15 @@ export function ScalpPanel() {
         />
       </div>
 
-      <RuleOrder symbol={symbol} expiry={expiry} strike={pick || atm || 0} lots={scalpLots} />
+      <RuleOrder
+        symbol={symbol}
+        expiry={expiry}
+        strike={pick || atm || 0}
+        strikes={strikes}
+        step={step}
+        atm={atm}
+        lots={scalpLots}
+      />
 
       <div className="flex items-center justify-between border-y border-term-border px-3 py-1.5 text-2xs">
         <span className="font-semibold uppercase text-term-dim">

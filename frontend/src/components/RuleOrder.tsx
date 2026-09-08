@@ -11,21 +11,30 @@ const STAT: Record<string, string> = {
 };
 
 /** Price-triggered conditional order on one option leg: enter when the leg's
- *  LTP crosses a level, then bracket it with SL / trailing SL / target. */
+ *  LTP crosses a level, then bracket it with SL / trailing SL / target.
+ *  Colour follows market direction — bullish (Buy CE / Sell PE) is green,
+ *  bearish (Buy PE / Sell CE) is red. */
 export function RuleOrder({
   symbol,
   expiry,
   strike,
+  strikes = [],
+  step = 0,
+  atm,
   lots,
 }: {
   symbol: string;
   expiry?: string;
   strike: number;
+  strikes?: number[];
+  step?: number;
+  atm?: number;
   lots: number;
 }) {
   const orderMode = useStore((s) => s.orderMode);
   const [open, setOpen] = useState(false);
   const [rules, setRules] = useState<any[]>([]);
+  const [k, setK] = useState<number>(strike || atm || 0);
   const [ot, setOt] = useState<"CE" | "PE">("CE");
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
   const [dir, setDir] = useState<"gte" | "lte">("gte");
@@ -35,6 +44,11 @@ export function RuleOrder({
   const [tgt, setTgt] = useState("");
   const [trail, setTrail] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // adopt the panel's strike only until the user picks one here
+  useEffect(() => {
+    if (!k && (strike || atm)) setK(strike || atm || 0);
+  }, [strike, atm]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let alive = true;
@@ -47,8 +61,16 @@ export function RuleOrder({
     };
   }, []);
 
+  const bull = (side === "BUY" && ot === "CE") || (side === "SELL" && ot === "PE");
+  const chip = (on: boolean) =>
+    on
+      ? bull
+        ? "border-up bg-up/20 text-up"
+        : "border-down bg-down/20 text-down"
+      : "border-term-border text-term-dim hover:text-term-text";
+
   const create = async () => {
-    if (!expiry || !strike) return;
+    if (!expiry || !k) return alert("Pick a strike");
     if (!trig) return alert("Set the trigger price");
     if (!sl && !tgt && !trail) return alert("Set a stop-loss, target or trail");
     setBusy(true);
@@ -56,7 +78,7 @@ export function RuleOrder({
       const d = await api.legRuleAdd({
         symbol,
         expiry,
-        strike,
+        strike: k,
         optionType: ot,
         side,
         lots,
@@ -89,6 +111,7 @@ export function RuleOrder({
   };
 
   const live = rules.filter((r) => r.status === "waiting" || r.status === "active");
+  const list = strikes.length ? strikes : k ? [k] : [];
 
   return (
     <div className="border-b border-term-border text-2xs">
@@ -102,27 +125,68 @@ export function RuleOrder({
 
       {open && (
         <div className="space-y-1.5 px-3 pb-2">
+          {/* side + type */}
           <div className="flex flex-wrap items-center gap-1">
-            <div className="seg">
-              <button className={side === "BUY" ? "on" : ""} onClick={() => setSide("BUY")}>
-                Buy
-              </button>
-              <button className={side === "SELL" ? "on" : ""} onClick={() => setSide("SELL")}>
-                Sell
-              </button>
+            <div className="flex overflow-hidden rounded border">
+              {(["BUY", "SELL"] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setSide(s)}
+                  className={`border-r px-2 py-0.5 font-semibold last:border-r-0 ${chip(side === s)}`}
+                >
+                  {s === "BUY" ? "Buy" : "Sell"}
+                </button>
+              ))}
             </div>
-            <div className="seg">
-              <button className={ot === "CE" ? "on" : ""} onClick={() => setOt("CE")}>
-                CE
-              </button>
-              <button className={ot === "PE" ? "on" : ""} onClick={() => setOt("PE")}>
-                PE
-              </button>
+            <div className="flex overflow-hidden rounded border">
+              {(["CE", "PE"] as const).map((o) => (
+                <button
+                  key={o}
+                  onClick={() => setOt(o)}
+                  className={`border-r px-2 py-0.5 font-semibold last:border-r-0 ${chip(ot === o)}`}
+                >
+                  {o}
+                </button>
+              ))}
             </div>
-            <span className="num text-term-dim">{sk(strike)}</span>
             <span className="ml-auto text-[10px] text-term-dim">×{lots} · {orderMode}</span>
           </div>
 
+          {/* strike picker */}
+          <div className="flex items-center gap-1">
+            <span className="text-term-dim">Strike</span>
+            <button
+              className="btn px-2 py-0.5"
+              disabled={!step}
+              onClick={() => step && setK((v) => (v || atm || 0) - step)}
+            >
+              −
+            </button>
+            <select
+              value={k || ""}
+              onChange={(e) => setK(Number(e.target.value))}
+              className={`num flex-1 rounded border bg-term-bg px-1.5 py-0.5 font-semibold text-term-text outline-none ${
+                bull ? "border-up/50 focus:border-up" : "border-down/50 focus:border-down"
+              }`}
+            >
+              {!list.includes(k) && k ? <option value={k}>{sk(k)}</option> : null}
+              {list.map((s) => (
+                <option key={s} value={s}>
+                  {sk(s)}
+                  {s === atm ? "  (ATM)" : ""}
+                </option>
+              ))}
+            </select>
+            <button
+              className="btn px-2 py-0.5"
+              disabled={!step}
+              onClick={() => step && setK((v) => (v || atm || 0) + step)}
+            >
+              +
+            </button>
+          </div>
+
+          {/* trigger */}
           <div className="flex items-center gap-1">
             <span className="text-term-dim">LTP</span>
             <div className="seg">
@@ -148,6 +212,7 @@ export function RuleOrder({
             </div>
           </div>
 
+          {/* SL / target / trail */}
           <div className="flex items-center gap-1">
             {(
               [
@@ -171,52 +236,64 @@ export function RuleOrder({
           <button
             onClick={create}
             disabled={busy || !expiry}
-            className="btn btn-buy w-full py-1 font-semibold disabled:opacity-40"
+            className={`w-full rounded py-1 font-semibold text-white disabled:opacity-40 ${
+              bull ? "bg-up hover:bg-green-600" : "bg-down hover:bg-red-600"
+            }`}
           >
-            {busy ? "…" : `Create rule — ${side} ${sk(strike)} ${ot}`}
+            {busy ? "…" : `Create rule — ${side} ${sk(k)} ${ot}`}
           </button>
 
           {rules.length > 0 && (
             <div className="mt-1 space-y-1">
-              {rules.map((r) => (
-                <div
-                  key={r.id}
-                  className="flex items-center justify-between rounded border border-term-border/60 px-2 py-1"
-                >
-                  <div className="min-w-0 leading-tight">
-                    <div className="num truncate">
-                      {r.side} {sk(r.strike)} {r.optionType} ×{r.lots}{" "}
-                      <span className="text-term-dim">
-                        @ LTP {r.triggerDir === "gte" ? "≥" : "≤"} {nf(r.triggerPx, 2)}
-                      </span>
+              {rules.map((r) => {
+                const rbull =
+                  (r.side === "BUY" && r.optionType === "CE") ||
+                  (r.side === "SELL" && r.optionType === "PE");
+                return (
+                  <div
+                    key={r.id}
+                    className={`flex items-center justify-between rounded border px-2 py-1 ${
+                      rbull ? "border-up/30" : "border-down/30"
+                    }`}
+                  >
+                    <div className="min-w-0 leading-tight">
+                      <div className="num truncate">
+                        <span className={rbull ? "text-up" : "text-down"}>
+                          {r.side} {sk(r.strike)} {r.optionType}
+                        </span>{" "}
+                        ×{r.lots}{" "}
+                        <span className="text-term-dim">
+                          @ LTP {r.triggerDir === "gte" ? "≥" : "≤"} {nf(r.triggerPx, 2)}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-term-dim">
+                        {[
+                          r.sl != null && `SL ${r.sl}`,
+                          r.target != null && `tgt ${r.target}`,
+                          r.trail != null && `trail ${r.trail}`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}{" "}
+                        {r.unit} ·{" "}
+                        <span className={STAT[r.status] ?? ""}>
+                          {r.status}
+                          {r.entryPx ? ` @${nf(r.entryPx, 1)}` : ""}
+                          {r.exitReason ? ` (${r.exitReason})` : ""}
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-[10px] text-term-dim">
-                      {[
-                        r.sl != null && `SL ${r.sl}`,
-                        r.target != null && `tgt ${r.target}`,
-                        r.trail != null && `trail ${r.trail}`,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}{" "}
-                      {r.unit} ·{" "}
-                      <span className={STAT[r.status] ?? ""}>
-                        {r.status}
-                        {r.entryPx ? ` @${nf(r.entryPx, 1)}` : ""}
-                        {r.exitReason ? ` (${r.exitReason})` : ""}
-                      </span>
-                    </div>
+                    {(r.status === "waiting" || r.status === "active") && (
+                      <button
+                        onClick={() => del(r.id)}
+                        className="shrink-0 rounded px-1.5 text-term-dim hover:text-down"
+                        title="Cancel rule"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
-                  {(r.status === "waiting" || r.status === "active") && (
-                    <button
-                      onClick={() => del(r.id)}
-                      className="shrink-0 rounded px-1.5 text-term-dim hover:text-down"
-                      title="Cancel rule"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
