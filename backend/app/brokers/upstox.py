@@ -34,6 +34,9 @@ from ..config import (
 log = logging.getLogger("upstox")
 
 _API = "https://api.upstox.com/v2"
+# Historical-candle moved to V3 (V2 /historical-candle/.../{1minute|30minute|day}/...
+# was retired). Auth, /option/chain and /option/contract stay on V2.
+_API_V3 = "https://api.upstox.com/v3"
 _SESSION_FILE = Path(DATA_DIR) / "upstox_session.json"
 
 # underlying -> Upstox instrument_key (indices). Equities/others fall back to a
@@ -172,11 +175,12 @@ class Upstox:
             pass
 
     # ---- authed GET ------------------------------------------------------
-    async def get(self, path: str, params: dict | None = None) -> dict:
+    async def get(self, path: str, params: dict | None = None, *, v3: bool = False) -> dict:
         if not self.authed:
             raise RuntimeError("Upstox not authenticated")
+        base = _API_V3 if v3 else _API
         r = await self._http.get(
-            f"{_API}{path}",
+            f"{base}{path}",
             params=params or {},
             headers={"Authorization": f"Bearer {self._token}", "Accept": "application/json"},
         )

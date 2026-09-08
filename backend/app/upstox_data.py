@@ -209,7 +209,7 @@ async def fetch_history_chain(
     async def _one(strike: float, side: str, ik: str):
         async with sem:
             try:
-                h = await ux.get(f"/historical-candle/{ik}/day/{to_date}/{from_date}")
+                h = await ux.get(f"/historical-candle/{ik}/days/1/{to_date}/{from_date}", v3=True)
                 return strike, side, h.get("data", {}).get("candles", []) or []
             except Exception:  # noqa: BLE001
                 return strike, side, []
@@ -219,7 +219,7 @@ async def fetch_history_chain(
     # 3. underlying daily closes (spot)
     spot_by_date: dict[str, float] = {}
     try:
-        uh = await ux.get(f"/historical-candle/{key}/day/{to_date}/{from_date}")
+        uh = await ux.get(f"/historical-candle/{key}/days/1/{to_date}/{from_date}", v3=True)
         for c in uh.get("data", {}).get("candles", []) or []:
             spot_by_date[c[0][:10]] = _num(c[4])
     except Exception:  # noqa: BLE001
@@ -300,13 +300,13 @@ async def run_backtest(
 
     # daily closes per leg -> {date: close}
     async def _c(ik: str):
-        h = await ux.get(f"/historical-candle/{ik}/day/{to_date}/{from_date}")
+        h = await ux.get(f"/historical-candle/{ik}/days/1/{to_date}/{from_date}", v3=True)
         return {c[0][:10]: _num(c[4]) for c in h.get("data", {}).get("candles", []) or []}
 
     closes = await asyncio.gather(*[_c(ik) for _, ik in resolved])
     # underlying spot per day
     try:
-        uh = await ux.get(f"/historical-candle/{key}/day/{to_date}/{from_date}")
+        uh = await ux.get(f"/historical-candle/{key}/days/1/{to_date}/{from_date}", v3=True)
         spot_by_date = {c[0][:10]: _num(c[4]) for c in uh.get("data", {}).get("candles", []) or []}
     except Exception:  # noqa: BLE001
         spot_by_date = {}
@@ -509,7 +509,7 @@ async def indicator_scan(symbols: list[str], as_of: str, lookback: int = 90) -> 
         if not key:
             return None
         try:
-            h = await ux.get(f"/historical-candle/{key}/day/{as_of}/{start}")
+            h = await ux.get(f"/historical-candle/{key}/days/1/{as_of}/{start}", v3=True)
             c = h.get("data", {}).get("candles", []) or []
             c = [x for x in c if x[0][:10] <= as_of]
             closes = [_num(x[4]) for x in c]
@@ -575,25 +575,38 @@ def _candle_ts(iso_ts: str) -> int:
 
 
 def _ux_hist_window(interval_s: int, today, day_back: int):
-    """(upstox candle unit, from-date) for a chart interval in seconds.
+    """(upstox v3 unit, interval, from-date) for a chart interval in seconds.
 
-    Upstox v2 only offers 1minute / 30minute / day. build_chart() re-buckets
-    to the requested interval, so we always pick the *finest* unit that still
-    has enough history — otherwise a 5-min chart would show 30-min candles."""
+    Upstox v3 historical-candle takes unit ('minutes'/'hours'/'days') + a
+    numeric interval. build_chart() re-buckets to the requested interval, so we
+    pick the *finest* unit that still has enough history (a 5-min chart on
+    30-min bars would look wrong)."""
     from datetime import timedelta
 
+    # v3 caps the per-request range for sub-day units — keep 1-min well under a
+    # month and 30-min under a quarter so the fetch doesn't 400.
     if interval_s <= 3600:            # 1m .. 1h  -> 1-min bars, bucket up
-        return "1minute", today - timedelta(days=25)
+        return "minutes", 1, today - timedelta(days=20)
     if interval_s <= 21600:           # 2h .. 6h  -> 30-min bars
-        return "30minute", today - timedelta(days=120)
-    return "day", today - timedelta(days=day_back)
+        return "minutes", 30, today - timedelta(days=90)
+    return "days", 1, today - timedelta(days=day_back)
+
+
+def _hc(key: str, unit: str, interval: int, to_date: str, from_date: str) -> str:
+    """v3 historical-candle path: /historical-candle/{key}/{unit}/{interval}/{to}/{from}"""
+    return f"/historical-candle/{key}/{unit}/{interval}/{to_date}/{from_date}"
+
+
+def _hc_intraday(key: str, unit: str, interval: int) -> str:
+    """v3 intraday path: /historical-candle/intraday/{key}/{unit}/{interval}"""
+    return f"/historical-candle/intraday/{key}/{unit}/{interval}"
 
 
 async def fetch_underlying_candles(symbol: str, interval_s: int) -> list[dict]:
-    """OHLCV candles for an index / F&O-stock underlying from Upstox v2
+    """OHLCV candles for an index / F&O-stock underlying from Upstox v3
     historical-candle, shaped for charting.build_chart(). `interval_s` picks
-    the Upstox unit: <=60 -> 1minute (~10d), <=1800 -> 30minute (~90d),
-    else -> day (~5y). Past history + today's intraday are merged."""
+    the unit: <=1h -> minutes/1 (~25d), <=6h -> minutes/30 (~120d),
+    else -> days/1 (~5y). Past history + today's intraday are merged."""
     from datetime import date, timedelta
 
     ux = get_upstox()
@@ -608,7 +621,7 @@ async def fetch_underlying_candles(symbol: str, interval_s: int) -> list[dict]:
         return hit[1]
 
     today = date.today()
-    unit, frm = _ux_hist_window(interval_s, today, 1825)
+    unit, interval, frm = _ux_hist_window(interval_s, today, 1825)
 
     out: list[dict] = []
     seen: set[int] = set()
@@ -627,16 +640,14 @@ async def fetch_underlying_candles(symbol: str, interval_s: int) -> list[dict]:
             })
 
     try:
-        h = await ux.get(
-            f"/historical-candle/{key}/{unit}/{today.isoformat()}/{frm.isoformat()}"
-        )
+        h = await ux.get(_hc(key, unit, interval, today.isoformat(), frm.isoformat()), v3=True)
         _push(h.get("data", {}).get("candles", []))
     except Exception as exc:  # noqa: BLE001
         log.warning("upstox hist candles %s failed: %s", symbol, exc)
 
-    if unit in ("1minute", "30minute"):
+    if unit == "minutes":
         try:
-            h = await ux.get(f"/historical-candle/intraday/{key}/{unit}")
+            h = await ux.get(_hc_intraday(key, unit, interval), v3=True)
             _push(h.get("data", {}).get("candles", []))
         except Exception as exc:  # noqa: BLE001
             log.debug("upstox intraday candles %s failed: %s", symbol, exc)
@@ -652,7 +663,7 @@ async def fetch_underlying_candles(symbol: str, interval_s: int) -> list[dict]:
 async def fetch_option_candles(
     symbol: str, expiry: str, strike: float, ot: str, interval_s: int
 ) -> list[dict]:
-    """OHLCV candles for one option contract from Upstox v2 historical-candle.
+    """OHLCV candles for one option contract from Upstox v3 historical-candle.
     `expiry` is the app's 'DD-Mon-YYYY'. Same interval mapping as
     fetch_underlying_candles. [] if the contract key can't be resolved."""
     from datetime import date, timedelta
@@ -665,7 +676,7 @@ async def fetch_option_candles(
         return []
 
     today = date.today()
-    unit, frm = _ux_hist_window(interval_s, today, 400)
+    unit, interval, frm = _ux_hist_window(interval_s, today, 400)
 
     out: list[dict] = []
     seen: set[int] = set()
@@ -684,16 +695,14 @@ async def fetch_option_candles(
             })
 
     try:
-        h = await ux.get(
-            f"/historical-candle/{key}/{unit}/{today.isoformat()}/{frm.isoformat()}"
-        )
+        h = await ux.get(_hc(key, unit, interval, today.isoformat(), frm.isoformat()), v3=True)
         _push(h.get("data", {}).get("candles", []))
     except Exception as exc:  # noqa: BLE001
         log.warning("upstox option candles %s %s %s%s failed: %s", symbol, expiry, strike, ot, exc)
 
-    if unit in ("1minute", "30minute"):
+    if unit == "minutes":
         try:
-            h = await ux.get(f"/historical-candle/intraday/{key}/{unit}")
+            h = await ux.get(_hc_intraday(key, unit, interval), v3=True)
             _push(h.get("data", {}).get("candles", []))
         except Exception:  # noqa: BLE001
             pass

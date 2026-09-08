@@ -187,7 +187,7 @@ async def backtest_rule(
             async def _one(k, ot, ik):
                 async with sem:
                     try:
-                        h = await ux.get(f"/historical-candle/{ik}/day/{to_date}/{from_date}")
+                        h = await ux.get(f"/historical-candle/{ik}/days/1/{to_date}/{from_date}", v3=True)
                         return (k, ot), {
                             c[0][:10]: _f(c[4])
                             for c in h.get("data", {}).get("candles", []) or []
