@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
+import { RuleOrder } from "./RuleOrder";
 
 const n = (v: unknown): number | null => {
   const x = Number(v);
@@ -319,6 +320,8 @@ export function ScalpPanel() {
           cls="border border-up/40 text-up/90 hover:bg-up/10"
         />
       </div>
+
+      <RuleOrder symbol={symbol} expiry={expiry} strike={pick || atm || 0} lots={scalpLots} />
 
       <div className="flex items-center justify-between border-y border-term-border px-3 py-1.5 text-2xs">
         <span className="font-semibold uppercase text-term-dim">

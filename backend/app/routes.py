@@ -694,3 +694,38 @@ def strategy_schedules_clear():
     from . import schedules
 
     return {"schedules": schedules.clear_finished()}
+
+
+# ---- price-triggered leg rules (entry @ price + SL / trail / target) ----
+@router.get("/leg-rules")
+def leg_rules_list():
+    from . import leg_rules
+
+    return {"rules": leg_rules.list_rules()}
+
+
+@router.post("/leg-rules")
+def leg_rules_add(body: dict):
+    from . import leg_rules
+
+    for k in ("symbol", "expiry", "strike", "optionType", "triggerPx"):
+        if body.get(k) in (None, ""):
+            raise HTTPException(status_code=422, detail=f"{k} is required")
+    if not any(body.get(k) for k in ("sl", "target", "trail")):
+        raise HTTPException(status_code=422, detail="set a stop-loss, target or trail")
+    row = leg_rules.add_rule(body)
+    return {"rule": row, "rules": leg_rules.list_rules()}
+
+
+@router.delete("/leg-rules/{rid}")
+def leg_rules_del(rid: str):
+    from . import leg_rules
+
+    return {"rules": leg_rules.cancel(rid)}
+
+
+@router.post("/leg-rules/clear")
+def leg_rules_clear():
+    from . import leg_rules
+
+    return {"rules": leg_rules.clear_finished()}

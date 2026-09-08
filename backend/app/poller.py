@@ -282,6 +282,27 @@ async def run_poller(stop: asyncio.Event) -> None:
         except Exception as exc:  # noqa: BLE001
             log.warning("broker-bracket tick failed: %s", exc)
 
+        try:
+            from . import leg_rules
+
+            lev = await leg_rules.tick()
+            for e in lev:
+                store.add_alert(
+                    {
+                        "ts": time.time(), "symbol": e.get("symbol", ""),
+                        "kind": e["kind"], "severity": "info",
+                        "message": e["message"], "score": 0,
+                    }
+                )
+                log.info("LEG-RULE %s", e["message"])
+            if lev:
+                await hub.broadcast_all({"type": "alerts", "data": store.get_alerts(50)})
+                await hub.broadcast_all(
+                    {"type": "legRules", "data": leg_rules.list_rules()}
+                )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("leg-rule tick failed: %s", exc)
+
         interval = POLL_INTERVAL if _in_market_hours() else OFFHOURS_POLL_INTERVAL
         try:
             await asyncio.wait_for(stop.wait(), timeout=interval)
