@@ -110,7 +110,7 @@ def _resolve_header_index(sym: str) -> dict:
     if chg_pts is None and spot is not None and chg is not None:
         try:
             prev = float(spot) / (1 + float(chg) / 100)
-            chg_pts = float(spot) - prev
+            chg_pts = round(float(spot) - prev, 2)
         except (TypeError, ValueError, ZeroDivisionError):
             chg_pts = None
 
