@@ -192,9 +192,13 @@ export function ScalpPanel() {
         <button
           onClick={squareOffSym}
           disabled={myOpen.length === 0}
-          className="ml-auto shrink-0 rounded-md border border-down bg-down px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white shadow-sm hover:bg-red-600 disabled:border-term-border disabled:bg-term-border/40 disabled:text-term-dim"
+          className={`ml-auto shrink-0 rounded-md border px-3 py-1.5 text-xs font-bold uppercase tracking-wide ${
+            myOpen.length === 0
+              ? "cursor-not-allowed border-term-border bg-term-border/30 text-term-dim"
+              : "animate-pulse border-red-400 bg-red-600 text-white shadow-sm ring-2 ring-red-400/50 hover:animate-none hover:bg-red-700"
+          }`}
         >
-          Square off
+          Square off{myOpen.length > 0 ? ` (${myOpen.length})` : ""}
         </button>
       </div>
 
