@@ -93,8 +93,15 @@ async def _poll_once(fast: bool) -> None:
         ltp = _num(q.get("last_price"))
         if ltp is None:
             continue
-        prev = _num((q.get("ohlc") or {}).get("close")) or _num(q.get("close_price"))
-        chg = round((ltp - prev) / prev * 100, 2) if prev else _num(q.get("net_change"))
+        # net_change ( = ltp − prev-close ) is correct both intraday and after
+        # close; ohlc.close flips to *today's* close once the session ends.
+        net = _num(q.get("net_change"))
+        if net is not None:
+            base = ltp - net  # true previous close
+            chg = round(net / base * 100, 2) if base else None
+        else:
+            prev = _num((q.get("ohlc") or {}).get("close")) or _num(q.get("close_price"))
+            chg = round((ltp - prev) / prev * 100, 2) if prev else None
         store.set_live_spot(sym, ltp, chg)
         if now - _last_emit.get(sym, 0) >= 0.9:
             _last_emit[sym] = now
