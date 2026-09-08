@@ -60,7 +60,15 @@ async def _desired_symbols() -> set[str]:
     return {s.upper() for s in (set(DEFAULT_SYMBOLS) | wl | subs)}
 
 
-_bad_tokens: set[str] = set()  # tokens that keep returning junk — stop polling them
+_bad_tokens: set[str] = set()  # tokens that keep 400ing — stop polling them
+_tok_fail: dict[str, int] = {}  # consecutive GetQuotes failures per token
+
+
+def _mark_bad(sym: str, token: str, why: str) -> None:
+    _bad_tokens.add(token)
+    _token_cache.pop(sym, None)
+    _tok_fail.pop(token, None)
+    log.info("dropping bad feed token for %s: %s", sym, why)
 
 
 async def _rest_poll(broker) -> None:
@@ -72,15 +80,16 @@ async def _rest_poll(broker) -> None:
         try:
             q = await broker.quotes(exch, token)
         except Exception as exc:  # noqa: BLE001
-            log.debug("rest quote failed for %s: %s", sym, exc)
+            _tok_fail[token] = _tok_fail.get(token, 0) + 1
+            if _tok_fail[token] >= 3:
+                _mark_bad(sym, token, str(exc)[:120])
+            else:
+                log.debug("rest quote failed for %s: %s", sym, exc)
             continue
-        if q and q.get("stat") == "Not_Ok":
-            # a bad token (e.g. SENSEX / BANKEX have no NSE scrip) — quit
-            # hammering GetQuotes with it every 3s
-            _bad_tokens.add(token)
-            _token_cache.pop(sym, None)
-            log.info("dropping bad feed token for %s (%s)", sym, q.get("emsg"))
+        if q and str(q.get("stat", "")).lower().startswith("not"):
+            _mark_bad(sym, token, str(q.get("emsg"))[:120])
             continue
+        _tok_fail.pop(token, None)
         if q and q.get("lp") is not None:
             _tok2sym[token] = sym
             await _on_tick(token, {"lp": q.get("lp"), "pc": q.get("pc")})
