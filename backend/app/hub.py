@@ -19,14 +19,24 @@ class Hub:
         await ws.accept()
         async with self._lock:
             self._conns[ws] = {}
-        await self.send(ws, {"type": "watchlist", "data": store.watch_quotes()})
-        await self.send(ws, {"type": "scan", "data": store.get_scan()})
-        await self.send(ws, {"type": "alerts", "data": store.get_alerts(50)})
-        await self.send(ws, {"type": "unusual", "data": store.get_unusual(60)})
-        await self.send(
-            ws,
-            {"type": "screener", "data": store.get_universe(), "progress": store.universe_progress},
-        )
+        # send the initial state, but never let one bad payload abort the
+        # handshake — that was dropping the socket and forcing the client
+        # into a reconnect loop (= "no live updates / slowness").
+        for msg in (
+            lambda: {"type": "watchlist", "data": store.watch_quotes()},
+            lambda: {"type": "scan", "data": store.get_scan()},
+            lambda: {"type": "alerts", "data": store.get_alerts(50)},
+            lambda: {"type": "unusual", "data": store.get_unusual(60)},
+            lambda: {
+                "type": "screener",
+                "data": store.get_universe(),
+                "progress": store.universe_progress,
+            },
+        ):
+            try:
+                await self.send(ws, msg())
+            except Exception:  # noqa: BLE001
+                pass
 
     async def disconnect(self, ws: WebSocket) -> None:
         async with self._lock:

@@ -60,16 +60,28 @@ async def _desired_symbols() -> set[str]:
     return {s.upper() for s in (set(DEFAULT_SYMBOLS) | wl | subs)}
 
 
+_bad_tokens: set[str] = set()  # tokens that keep returning junk — stop polling them
+
+
 async def _rest_poll(broker) -> None:
     """One round of GetQuotes for every cached feed token, pushed through the
     same `_on_tick` path the WS uses. Only runs while the WS feed is down."""
     for sym, (exch, token) in list(_token_cache.items()):
+        if token in _bad_tokens:
+            continue
         try:
             q = await broker.quotes(exch, token)
         except Exception as exc:  # noqa: BLE001
             log.debug("rest quote failed for %s: %s", sym, exc)
             continue
-        if q:
+        if q and q.get("stat") == "Not_Ok":
+            # a bad token (e.g. SENSEX / BANKEX have no NSE scrip) — quit
+            # hammering GetQuotes with it every 3s
+            _bad_tokens.add(token)
+            _token_cache.pop(sym, None)
+            log.info("dropping bad feed token for %s (%s)", sym, q.get("emsg"))
+            continue
+        if q and q.get("lp") is not None:
             _tok2sym[token] = sym
             await _on_tick(token, {"lp": q.get("lp"), "pc": q.get("pc")})
 

@@ -194,7 +194,15 @@ class Store:
             key = (symbol, exp, fa)
             chain = self._processed.get(key)
             if chain is None:
-                chain = build_chain(raw, symbol, exp)
+                try:
+                    chain = build_chain(raw, symbol, exp)
+                except Exception as exc:  # noqa: BLE001
+                    # a malformed / wrong-exchange payload (e.g. an NSE reply
+                    # cached for SENSEX) must not propagate — it was crashing
+                    # the /ws handshake via watch_quotes() and forcing the
+                    # client into a reconnect loop.
+                    self.errors[symbol] = f"chain build failed: {exc}"
+                    return None
                 chain["fetchedAt"] = fa
                 # merge the full expiry list we know about (v3 payload carries it too)
                 if self.expiries.get(symbol):
