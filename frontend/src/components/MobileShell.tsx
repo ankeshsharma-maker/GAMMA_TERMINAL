@@ -102,7 +102,7 @@ function ChainStrip() {
   );
   return (
     <div className="flex items-center gap-3 overflow-x-auto border-b border-term-border bg-term-panel2 px-3 py-1">
-      {cell("Spot", px(spot), "font-semibold text-[12px]")}
+      {cell("Spot", px(spot, spot < 100 ? 2 : 0), "font-semibold text-[12px]")}
       {cell("ATM", sk(chain.atmStrike))}
       {cell("IV", chain.atmIV ? `${nf(chain.atmIV)}%` : "–")}
       {cell(

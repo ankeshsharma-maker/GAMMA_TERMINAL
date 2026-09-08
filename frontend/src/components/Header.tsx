@@ -209,7 +209,9 @@ export function HeaderIndices() {
             <span className="text-[9px] font-semibold uppercase text-term-dim">
               {HDR_LABEL[sym] ?? sym}
             </span>
-            <span className="num text-xs font-medium">{spot != null ? px(spot) : "–"}</span>
+            <span className="num text-xs font-medium">
+              {spot != null ? px(spot, spot < 100 ? 2 : 0) : "–"}
+            </span>
             {(pts != null || pct != null) && (
               <span
                 className={`num text-[10px] ${
@@ -217,7 +219,7 @@ export function HeaderIndices() {
                 }`}
               >
                 {(pct ?? pts ?? 0) >= 0 ? "▲" : "▼"}
-                {pts != null ? px(Math.abs(pts), 2) : "–"}
+                {pts != null ? px(Math.abs(pts), Math.abs(pts) < 100 ? 2 : 0) : "–"}
                 {pct != null && ` (${px(Math.abs(pct), 2)}%)`}
               </span>
             )}
@@ -808,7 +810,10 @@ export function Header() {
         <>
           <div className="flex items-baseline gap-2">
             <span className="num text-lg font-semibold">
-              {px(liveFresh ? live!.ltp : chain.spot)}
+              {(() => {
+                const s = liveFresh ? live!.ltp : chain.spot;
+                return px(s, s < 100 ? 2 : 0);
+              })()}
             </span>
             {liveFresh && (
               <span

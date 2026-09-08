@@ -505,7 +505,7 @@ export function OIProfile() {
   // ---- OI-Ladder-style horizontal rows (combined total OI bar + ΔOI cap) ----
   const ladderEl = (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="sticky top-0 z-10 grid grid-cols-[1fr_auto_1fr] items-center divide-x divide-term-border border-b border-term-border bg-term-panel2 text-[9px] uppercase text-term-dim">
+      <div className="sticky top-0 z-10 grid grid-cols-[1fr_auto_1fr] items-center divide-x divide-term-border border-b border-term-border bg-term-panel2 text-[10px] uppercase text-term-dim">
         <span className="px-3 py-1 text-right" style={{ color: CALL_OI }}>
           Call OI · Δ
         </span>
@@ -532,26 +532,33 @@ export function OIProfile() {
               isATM ? "bg-term-accent/10" : near ? "bg-term-accent/[0.04]" : ""
             }`}
           >
-            <div className="relative flex h-7 items-center justify-end gap-1.5 pr-2 text-2xs">
-              <span className={`num text-[10px] ${cChg >= 0 ? "text-up" : "text-down"}`}>
+            {/* Call — ΔOI, then a full-width bar with the OI value sitting in the cell */}
+            <div className="flex h-10 items-center gap-1.5 pr-2">
+              <span
+                className={`num w-16 shrink-0 text-right text-xs font-semibold ${
+                  cChg >= 0 ? "text-up" : "text-down"
+                }`}
+              >
                 {cChg >= 0 ? "▲" : "▼"}
                 {compact(Math.abs(cChg))}
               </span>
-              <span className="num text-[10px] font-medium text-term-text">{compact(r.call.oi)}</span>
-              <span className="relative h-4 w-full max-w-[55%]">
+              <span className="relative h-6 min-w-0 flex-1">
                 <span
-                  className="absolute right-0 top-0 h-full rounded-l-sm"
+                  className="absolute right-0 top-0 h-full rounded-l"
                   style={{ width: `${cBarW}%`, background: CALL_OI }}
                 />
                 <span
                   className="absolute right-0 top-0 h-full"
                   style={{ width: `${cCapW}%`, background: cChg >= 0 ? OI_ADD : OI_CUT }}
                 />
+                <span className="num absolute right-1 top-1/2 -translate-y-1/2 text-xs font-bold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.7)]">
+                  {compact(r.call.oi)}
+                </span>
               </span>
             </div>
 
             <div
-              className={`num flex h-7 items-center justify-center px-3 text-2xs leading-none ${
+              className={`num flex h-10 items-center justify-center px-3 text-sm leading-none ${
                 isRes
                   ? "font-bold text-down"
                   : isFloor
@@ -562,23 +569,30 @@ export function OIProfile() {
               }`}
             >
               {sk(r.strike)}
-              {isRes && <sup className="ml-0.5 text-[8px]">R</sup>}
-              {isFloor && <sup className="ml-0.5 text-[8px]">S</sup>}
+              {isRes && <sup className="ml-0.5 text-[9px]">R</sup>}
+              {isFloor && <sup className="ml-0.5 text-[9px]">S</sup>}
             </div>
 
-            <div className="relative flex h-7 items-center gap-1.5 pl-2 text-2xs">
-              <span className="relative h-4 w-full max-w-[55%]">
+            {/* Put — mirrored */}
+            <div className="flex h-10 items-center gap-1.5 pl-2">
+              <span className="relative h-6 min-w-0 flex-1">
                 <span
-                  className="absolute left-0 top-0 h-full rounded-r-sm"
+                  className="absolute left-0 top-0 h-full rounded-r"
                   style={{ width: `${pBarW}%`, background: PUT_OI }}
                 />
                 <span
                   className="absolute left-0 top-0 h-full"
                   style={{ width: `${pCapW}%`, background: pChg >= 0 ? OI_ADD : OI_CUT }}
                 />
+                <span className="num absolute left-1 top-1/2 -translate-y-1/2 text-xs font-bold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.7)]">
+                  {compact(r.put.oi)}
+                </span>
               </span>
-              <span className="num text-[10px] font-medium text-term-text">{compact(r.put.oi)}</span>
-              <span className={`num text-[10px] ${pChg >= 0 ? "text-up" : "text-down"}`}>
+              <span
+                className={`num w-16 shrink-0 text-xs font-semibold ${
+                  pChg >= 0 ? "text-up" : "text-down"
+                }`}
+              >
                 {pChg >= 0 ? "▲" : "▼"}
                 {compact(Math.abs(pChg))}
               </span>
@@ -1151,20 +1165,29 @@ export function OIProfile() {
           </>
         )}
 
-        <span className="ml-auto num">
-          Spot <span className="text-term-text">{nf(spot, 1)}</span> · PCR{" "}
-          <span className="text-term-text">{nf(chain.pcr, 2)}</span> · Max Pain{" "}
-          <span className="text-term-text">{nf(chain.maxPain, 0)}</span>
+        <div className="num ml-auto flex flex-wrap items-center gap-1.5 text-[10px]">
+          <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
+            <span className="text-term-dim">Spot </span>
+            <span className="text-term-text">{nf(spot, 1)}</span>
+          </span>
+          <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
+            <span className="text-term-dim">PCR </span>
+            <span className="text-term-text">{nf(chain.pcr, 2)}</span>
+          </span>
+          <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
+            <span className="text-term-dim">Max Pain </span>
+            <span className="text-term-text">{nf(chain.maxPain, 0)}</span>
+          </span>
           {gammaFlip && (
-            <>
-              {" "}
-              · γ-flip <span className="text-fuchsia-400">{sk(gammaFlip.strike)}</span>{" "}
+            <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
+              <span className="text-term-dim">γ-flip </span>
+              <span className="text-fuchsia-400">{sk(gammaFlip.strike)}</span>{" "}
               <span className={spot >= gammaFlip.strike ? "text-up" : "text-down"}>
-                ({spot >= gammaFlip.strike ? "long-γ / stable" : "short-γ / volatile"})
+                {spot >= gammaFlip.strike ? "long-γ" : "short-γ"}
               </span>
-            </>
+            </span>
           )}
-        </span>
+        </div>
       </div>
 
       {/* legend / totals */}

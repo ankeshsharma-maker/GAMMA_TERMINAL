@@ -146,7 +146,7 @@ export function ScalpPanel() {
   return (
     <div className="flex h-full flex-col bg-term-panel2">
       {/* live P&L straight from the broker position book */}
-      <div className="flex items-center gap-3 border-b border-term-border bg-term-panel px-3 py-1.5">
+      <div className="flex items-end gap-4 border-b border-term-border bg-term-panel px-3 py-1.5">
         <div className="flex flex-col leading-tight">
           <span className="text-[9px] uppercase tracking-wide text-term-dim">
             MTM ({open.length})
@@ -158,9 +158,10 @@ export function ScalpPanel() {
           <span className={`num text-sm font-bold ${signColor(totToday)}`}>₹{nf(totToday, 0)}</span>
         </div>
         {broker?.authed && (
-          <span className="num text-[10px] text-term-dim">
-            realised <span className={signColor(totRpnl)}>₹{nf(totRpnl, 0)}</span>
-          </span>
+          <div className="flex flex-col leading-tight">
+            <span className="text-[9px] uppercase tracking-wide text-term-dim">Realised</span>
+            <span className={`num text-sm font-bold ${signColor(totRpnl)}`}>₹{nf(totRpnl, 0)}</span>
+          </div>
         )}
         <button
           onClick={squareOffSym}
