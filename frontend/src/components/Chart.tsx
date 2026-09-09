@@ -274,6 +274,10 @@ export function Chart() {
     return z;
   }, [on, indHidden]);
 
+  // ƒx indicator picker
+  const [fxOpen, setFxOpen] = useState(false);
+  const activeInd = TOGGLES.filter(([k]) => on[k]).length;
+
   const onRef = useRef(eff);
   useEffect(() => {
     onRef.current = eff;
@@ -1210,25 +1214,68 @@ export function Chart() {
           ⌃ hide bar
         </button>
 
-        {TOGGLES.map(([k, lbl]) => {
-          const dim = (isOption && (k === "straddle" || k === "score")) || indHidden;
-          return (
-            <button
-              key={k}
-              disabled={dim}
-              onClick={() => setOn((o) => ({ ...o, [k]: !o[k] }))}
-              className={`rounded border px-1.5 py-0.5 ${
-                dim
-                  ? "border-term-border/40 text-term-dim/40"
-                  : on[k]
-                  ? "border-term-accent/50 bg-term-accent/15 text-term-text"
-                  : "border-transparent text-term-dim hover:bg-term-border hover:text-term-text"
-              }`}
-            >
-              {lbl}
-            </button>
-          );
-        })}
+        <span className="relative">
+          <button
+            onClick={() => setFxOpen((o) => !o)}
+            title="Indicators"
+            className={`rounded border px-2 py-0.5 font-semibold ${
+              fxOpen || activeInd
+                ? "border-term-accent/50 bg-term-accent/15 text-term-text"
+                : "border-term-border text-term-dim hover:bg-term-border hover:text-term-text"
+            }`}
+          >
+            ƒx{activeInd ? ` · ${activeInd}` : ""}
+          </button>
+          {fxOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setFxOpen(false)} />
+              <div className="absolute left-0 top-full z-50 mt-1 max-h-[60vh] w-[190px] overflow-y-auto rounded-lg border border-term-border bg-term-panel p-1 text-2xs shadow-2xl">
+                <div className="flex items-center justify-between px-2 py-1 text-term-dim">
+                  <span className="font-semibold uppercase tracking-wide">Indicators</span>
+                  {activeInd > 0 && (
+                    <button
+                      onClick={() =>
+                        setOn((o) => {
+                          const z = { ...o };
+                          (Object.keys(z) as ToggleKey[]).forEach((k) => (z[k] = false));
+                          return z;
+                        })
+                      }
+                      className="hover:text-down"
+                    >
+                      clear
+                    </button>
+                  )}
+                </div>
+                {TOGGLES.map(([k, lbl]) => {
+                  const dis = isOption && (k === "straddle" || k === "score");
+                  return (
+                    <button
+                      key={k}
+                      disabled={dis}
+                      onClick={() => setOn((o) => ({ ...o, [k]: !o[k] }))}
+                      className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left ${
+                        dis
+                          ? "cursor-not-allowed text-term-dim/40"
+                          : on[k]
+                          ? "bg-term-accent/15 text-term-text"
+                          : "text-term-dim hover:bg-term-border hover:text-term-text"
+                      }`}
+                    >
+                      <span>{lbl}</span>
+                      {on[k] && <span className="text-term-accent">✓</span>}
+                    </button>
+                  );
+                })}
+                {indHidden && activeInd > 0 && (
+                  <div className="px-2 py-1 text-[9px] text-amber-400">
+                    indicators are hidden — “▨ hide indicators” to show them
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </span>
         {feedStale && (
           <span
             className="ml-auto flex items-center gap-1 rounded border border-down/60 bg-down/15 px-1.5 py-0.5 font-semibold text-down"
