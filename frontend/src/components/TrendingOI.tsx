@@ -694,47 +694,79 @@ function TrendingOIClassic() {
   const chart = useMemo(() => {
     const W = box.w;
     const H = box.h;
-    if (pts.length < 2 || W < 140 || H < 120) return null;
+    if (pts.length < 2 || W < 140 || H < 150) return null;
 
-    const padL = 52;
+    const padL = 50;
     const padR = 14;
-    const padT = 14;
-    const padB = 22;
-    const gap = 10;
+    const padT = 12;
+    const padB = 20;
+    const gap = 8;
     const plotW = W - padL - padR;
-    const innerH = H - padT - padB - gap;
-    const stripH = Math.max(44, Math.min(92, Math.round(innerH * 0.3)));
-    const topH = innerH - stripH;
-    const topBot = padT + topH;
+    const innerH = H - padT - padB - gap * 2;
+    const stripH = Math.max(36, Math.min(78, Math.round(innerH * 0.22)));
+    const restH = innerH - stripH;
+    const spotH = Math.round(restH * 0.46);
+    const colH = restH - spotH;
+    const spotTop = padT;
+    const colTop = padT + spotH + gap;
+    const stripTop = colTop + colH + gap;
 
-    const ts = pts.map((p) => p.t);
-    const t0 = ts[0];
-    const t1 = ts[ts.length - 1] || t0 + 1;
-    const x = (t: number) => padL + ((t - t0) / (t1 - t0 || 1)) * plotW;
+    // ---- per-interval Call / Put ΔOI buckets (Put up, Call down) ----
+    const w = daily ? 86400 : Math.max(1, tf) * 60;
+    const buckets: Pt[] = [];
+    let bk = -1;
+    for (const p of pts) {
+      const k = Math.floor(p.t / w);
+      if (k !== bk) {
+        buckets.push(p);
+        bk = k;
+      } else buckets[buckets.length - 1] = p;
+    }
+    let bars: { t: number; dce: number; dpe: number }[] = [];
+    for (let i = 1; i < buckets.length; i++)
+      bars.push({
+        t: buckets[i].t,
+        dce: buckets[i].ce - buckets[i - 1].ce,
+        dpe: buckets[i].pe - buckets[i - 1].pe,
+      });
+    const maxBars = Math.max(8, Math.floor(plotW / 7));
+    bars = bars.slice(-maxBars);
 
-    // ---- top pane: cumulative Call / Put ΔOI on a symmetric ± scale ----
-    const vals = pts.flatMap((p) => [p.ce, p.pe]);
-    const mag = Math.max(Math.abs(Math.min(...vals, 0)), Math.abs(Math.max(...vals, 0)), 1);
-    const stepV = Math.pow(10, Math.floor(Math.log10(mag)));
-    const top = Math.ceil(mag / stepV) * stepV;
-    const y = (v: number) => padT + (1 - (v + top) / (2 * top || 1)) * topH;
-    const y0 = y(0);
-    const oiLine = (sel: (p: Pt) => number) =>
-      pts.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(sel(p)).toFixed(1)}`).join(" ");
-    const cePath = oiLine((p) => p.ce);
-    const pePath = oiLine((p) => p.pe);
-    const vGrid = [top, top / 2, 0, -top / 2, -top];
+    // shared time window — clipped to the visible bars
+    const winT0 = bars.length ? bars[0].t : pts[0].t;
+    const winT1 = (bars.length ? bars[bars.length - 1].t : pts[pts.length - 1].t) || winT0 + 1;
+    const x = (t: number) => padL + ((t - winT0) / (winT1 - winT0 || 1)) * plotW;
+    const vpts = pts.filter((p) => p.t >= winT0);
 
-    // ---- bottom strip: PCR on its own scale, with a 1.0 reference ----
-    const pcrs = pts.map((p) => p.pcr ?? 1).filter((v) => v > 0);
+    // ---- top pane: spot price ----
+    const sv = vpts.map((p) => p.spot).filter((v) => Number.isFinite(v) && v > 0);
+    let slo = sv.length ? Math.min(...sv) : 0;
+    let shi = sv.length ? Math.max(...sv) : 1;
+    const sPad = (shi - slo) * 0.12 || Math.max(1, shi * 0.001);
+    slo -= sPad;
+    shi += sPad;
+    const ys = (v: number) => spotTop + (1 - (v - slo) / (shi - slo || 1)) * spotH;
+    const spotPath = vpts
+      .map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${ys(p.spot).toFixed(1)}`)
+      .join(" ");
+    const spotGrid = [shi - sPad, (slo + shi) / 2, slo + sPad];
+
+    // ---- mid pane: diverging ΔOI columns ----
+    const cmax = Math.max(1, ...bars.flatMap((b) => [Math.abs(b.dce), Math.abs(b.dpe)]));
+    const zeroY = colTop + colH / 2;
+    const half = colH / 2 - 3;
+    const barW = Math.max(3, Math.min(14, (plotW / Math.max(1, bars.length)) * 0.62));
+    const hOf = (v: number) => Math.max(v !== 0 ? 1.5 : 0, (Math.abs(v) / cmax) * half);
+
+    // ---- bottom strip: PCR ----
+    const pcrs = vpts.map((p) => p.pcr ?? 1).filter((v) => v > 0);
     let plo = Math.min(...pcrs, 1);
     let phi = Math.max(...pcrs, 1);
     const pPad = (phi - plo) * 0.25 || 0.1;
     plo -= pPad;
     phi += pPad;
-    const stripTop = topBot + gap;
     const yp = (v: number) => stripTop + (1 - (v - plo) / (phi - plo || 1)) * stripH;
-    const pcrPath = pts
+    const pcrPath = vpts
       .map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${yp(p.pcr ?? 1).toFixed(1)}`)
       .join(" ");
 
@@ -742,134 +774,91 @@ function TrendingOIClassic() {
       daily
         ? new Date(t * 1000).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })
         : new Date(t * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-    const tGrid = pts
-      .filter((_, i) => i % Math.max(1, Math.ceil(pts.length / 6)) === 0)
-      .map((p) => p.t);
-
-    const endX = Math.min(x(last?.t ?? t1) + 7, W - padR - 52);
+    const step = Math.max(1, Math.ceil(vpts.length / 6));
+    const tGrid = vpts.filter((_, i) => i % step === 0).map((p) => p.t);
+    const lastSpot = vpts[vpts.length - 1]?.spot;
+    const lastPcr = vpts[vpts.length - 1]?.pcr ?? null;
 
     return (
       <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block">
-        {/* ---- top pane: cumulative Call / Put ΔOI ---- */}
-        {vGrid.map((v, i) => (
-          <g key={"g" + i}>
-            <line
-              x1={padL}
-              x2={W - padR}
-              y1={y(v)}
-              y2={y(v)}
-              stroke="currentColor"
-              strokeOpacity={v === 0 ? 0.55 : 0.13}
-              strokeWidth={v === 0 ? 1.5 : 1}
-              className="text-term-dim"
-            />
-            <text
-              x={padL - 6}
-              y={y(v) + 3.5}
-              fontSize={10}
-              textAnchor="end"
-              className="fill-term-dim"
-            >
-              {v > 0 ? "+" : ""}
-              {lakhs(v)}
-            </text>
-          </g>
+        {/* ---- top pane: spot ---- */}
+        <rect x={padL} y={spotTop} width={plotW} height={spotH} fill="none" stroke="currentColor" strokeOpacity={0.12} className="text-term-dim" />
+        {spotGrid.map((v, i) => (
+          <text key={"sg" + i} x={padL - 6} y={ys(v) + 3.5} fontSize={9} textAnchor="end" className="fill-term-dim">
+            {nf(v, 0)}
+          </text>
         ))}
-        <text x={padL - 6} y={padT + 8} textAnchor="end" fontSize={9} className="fill-term-dim">
-          ΔOI
-        </text>
-        <path d={`${cePath} L${x(t1)},${y0} L${x(t0)},${y0} Z`} fill={CE} fillOpacity={0.12} />
-        <path d={`${pePath} L${x(t1)},${y0} L${x(t0)},${y0} Z`} fill={PE} fillOpacity={0.12} />
-        <path d={cePath} fill="none" stroke={CE} strokeWidth={2.5} />
-        <path d={pePath} fill="none" stroke={PE} strokeWidth={2.5} />
-        {last && (
+        <path d={`${spotPath} L${x(winT1).toFixed(1)},${(spotTop + spotH).toFixed(1)} L${x(winT0).toFixed(1)},${(spotTop + spotH).toFixed(1)} Z`} fill="#38bdf8" fillOpacity={0.08} />
+        <path d={spotPath} fill="none" stroke="#38bdf8" strokeWidth={2} />
+        {lastSpot != null && (
           <>
-            <circle cx={x(last.t)} cy={y(last.ce)} r={3.5} fill={CE} />
-            <circle cx={x(last.t)} cy={y(last.pe)} r={3.5} fill={PE} />
-            <text x={endX} y={y(last.ce) + 3.5} fontSize={11} fill={CE} fontWeight={600}>
-              CE {lakhs(last.ce)}
+            <circle cx={x(winT1)} cy={ys(lastSpot)} r={3} fill="#38bdf8" />
+            <text x={padL - 6} y={spotTop + 9} textAnchor="end" fontSize={9} fill="#38bdf8" fontWeight={600}>
+              spot
             </text>
-            <text x={endX} y={y(last.pe) + 3.5} fontSize={11} fill={PE} fontWeight={600}>
-              PE {lakhs(last.pe)}
+            <text x={W - padR} y={spotTop + 10} textAnchor="end" fontSize={10} fill="#38bdf8" fontWeight={600}>
+              {nf(lastSpot, 1)}
             </text>
           </>
         )}
 
+        {/* ---- mid pane: diverging ΔOI columns ---- */}
+        <line x1={padL} x2={W - padR} y1={zeroY} y2={zeroY} stroke="currentColor" strokeOpacity={0.5} strokeWidth={1.25} className="text-term-dim" />
+        <text x={padL - 6} y={colTop + 9} textAnchor="end" fontSize={9} fill={PE} fontWeight={600}>
+          Put +
+        </text>
+        <text x={padL - 6} y={colTop + colH - 3} textAnchor="end" fontSize={9} fill={CE} fontWeight={600}>
+          Call +
+        </text>
+        <text x={padL - 6} y={colTop + colH / 2 - 3} textAnchor="end" fontSize={8} className="fill-term-dim">
+          {lakhs(cmax)}
+        </text>
+        {bars.map((b, i) => {
+          const cx = x(b.t);
+          const pH = hOf(b.dpe);
+          const cH = hOf(b.dce);
+          return (
+            <g key={i}>
+              <rect x={cx - barW / 2} y={zeroY - pH} width={barW} height={pH} rx={1} fill={PE} fillOpacity={b.dpe >= 0 ? 0.95 : 0.4}>
+                <title>Put ΔOI {b.dpe >= 0 ? "+" : ""}{compact(b.dpe)} · {fmtT(b.t)}</title>
+              </rect>
+              <rect x={cx - barW / 2} y={zeroY} width={barW} height={cH} rx={1} fill={CE} fillOpacity={b.dce >= 0 ? 0.95 : 0.4}>
+                <title>Call ΔOI {b.dce >= 0 ? "+" : ""}{compact(b.dce)} · {fmtT(b.t)}</title>
+              </rect>
+            </g>
+          );
+        })}
+
         {/* ---- bottom strip: PCR ---- */}
-        <rect
-          x={padL}
-          y={stripTop}
-          width={plotW}
-          height={stripH}
-          fill="none"
-          stroke="currentColor"
-          strokeOpacity={0.15}
-          className="text-term-dim"
-        />
+        <rect x={padL} y={stripTop} width={plotW} height={stripH} fill="none" stroke="currentColor" strokeOpacity={0.15} className="text-term-dim" />
         {plo < 1 && phi > 1 && (
           <>
-            <line
-              x1={padL}
-              x2={W - padR}
-              y1={yp(1)}
-              y2={yp(1)}
-              stroke={PCRC}
-              strokeOpacity={0.55}
-              strokeWidth={1}
-              strokeDasharray="4 3"
-            />
-            <text
-              x={padL - 6}
-              y={yp(1) + 3.5}
-              fontSize={9}
-              textAnchor="end"
-              className="fill-term-dim"
-            >
+            <line x1={padL} x2={W - padR} y1={yp(1)} y2={yp(1)} stroke={PCRC} strokeOpacity={0.55} strokeWidth={1} strokeDasharray="4 3" />
+            <text x={padL - 6} y={yp(1) + 3.5} fontSize={9} textAnchor="end" className="fill-term-dim">
               1.0
             </text>
           </>
         )}
         <path d={pcrPath} fill="none" stroke={PCRC} strokeWidth={2} />
-        {last && <circle cx={x(last.t)} cy={yp(last.pcr ?? 1)} r={3} fill={PCRC} />}
-        <text
-          x={padL - 6}
-          y={stripTop + 10}
-          textAnchor="end"
-          fontSize={10}
-          fill={PCRC}
-          fontWeight={600}
-        >
+        {lastPcr != null && <circle cx={x(winT1)} cy={yp(lastPcr)} r={3} fill={PCRC} />}
+        <text x={padL - 6} y={stripTop + 10} textAnchor="end" fontSize={10} fill={PCRC} fontWeight={600}>
           PCR
         </text>
-        {last?.pcr != null && (
-          <text
-            x={W - padR}
-            y={stripTop + 11}
-            textAnchor="end"
-            fontSize={10}
-            fill={PCRC}
-            fontWeight={600}
-          >
-            {nf(last.pcr, 2)}
+        {lastPcr != null && (
+          <text x={W - padR} y={stripTop + 11} textAnchor="end" fontSize={10} fill={PCRC} fontWeight={600}>
+            {nf(lastPcr, 2)}
           </text>
         )}
 
         {/* ---- shared time axis ---- */}
         {tGrid.map((t, i) => (
-          <text
-            key={"t" + i}
-            x={x(t)}
-            y={H - 6}
-            fontSize={10}
-            textAnchor="middle"
-            className="fill-term-dim"
-          >
+          <text key={"t" + i} x={x(t)} y={H - 6} fontSize={10} textAnchor="middle" className="fill-term-dim">
             {fmtT(t)}
           </text>
         ))}
       </svg>
     );
-  }, [pts, last, daily, box.w, box.h]);
+  }, [pts, last, daily, tf, box.w, box.h]);
 
   const intervals = useMemo(() => {
     if (pts.length < 2) return [];
