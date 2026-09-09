@@ -430,43 +430,62 @@ export function OIProfile() {
               </div>
             );
           } else {
-            const cOIh = (r.call.oi / oiMax) * AREA;
-            const pOIh = (r.put.oi / oiMax) * AREA;
-            // the ΔOI cap stays a *cap* — at most ~45% of the bar — so the
-            // solid leg colour (red = call, green = put) always dominates.
-            const cCapH = Math.min(cOIh * 0.45, (Math.abs(cChg) / oiMax) * AREA);
-            const pCapH = Math.min(pOIh * 0.45, (Math.abs(pChg) / oiMax) * AREA);
-            // base = SOLID leg colour (call red / put green). Cap on top =
-            // SOLID green when OI added, HOLLOW red outline when reduced, with a
-            // dark separator so it detaches from the base.
+            // Sensibull "OI Change" style: the bar spans max(start, now) OI in
+            // the leg's own colour. The part that changed over the window is
+            // hatched — bright hatch = OI increase, pale hatch = OI decrease.
             const seg = (
-              oiH: number,
-              capH: number,
-              legCol: string,
-              added: boolean,
+              nowOI: number,
+              chg: number,
+              base: string,
+              bright: string,
+              pale: string,
               title: string
-            ) => (
-              <div
-                title={title}
-                className="flex flex-col justify-end overflow-hidden rounded-t-sm"
-                style={{ width: BARW, height: Math.max(2, oiH), background: legCol }}
-              >
-                {capH > 1 && (
-                  <div
-                    style={{
-                      height: Math.max(2, capH),
-                      background: added ? OI_ADD : "transparent",
-                      boxShadow: added ? undefined : `inset 0 0 0 1.5px ${OI_CUT}`,
-                      borderTop: "2px solid #0b0f16",
-                    }}
-                  />
-                )}
-              </div>
-            );
+            ) => {
+              const startOI = Math.max(0, nowOI - chg);
+              const hiH = Math.min(AREA, (Math.max(nowOI, startOI) / oiMax) * AREA);
+              const loH = Math.min(hiH, (Math.min(nowOI, startOI) / oiMax) * AREA);
+              const chgH = hiH - loH;
+              const inc = chg >= 0;
+              return (
+                <div
+                  title={title}
+                  className="flex flex-col justify-end overflow-hidden rounded-t-sm"
+                  style={{ width: BARW, height: Math.max(2, hiH) }}
+                >
+                  {chgH > 1 && (
+                    <div
+                      style={{
+                        height: Math.max(2, chgH),
+                        backgroundColor: inc ? base : "transparent",
+                        backgroundImage: `repeating-linear-gradient(45deg, ${
+                          inc ? bright : pale
+                        } 0 2px, transparent 2px 4.5px)`,
+                        borderTop: `1.5px solid ${inc ? bright : pale}`,
+                      }}
+                    />
+                  )}
+                  <div style={{ flex: 1, background: base }} />
+                </div>
+              );
+            };
             content = (
               <div className="flex items-end justify-center gap-[3px]" style={{ height: AREA }}>
-                {seg(cOIh, cCapH, CALL_OI, cChg >= 0, `Call OI ${compact(r.call.oi)} · Δ ${compact(cChg)}`)}
-                {seg(pOIh, pCapH, PUT_OI, pChg >= 0, `Put OI ${compact(r.put.oi)} · Δ ${compact(pChg)}`)}
+                {seg(
+                  r.call.oi,
+                  cChg,
+                  CALL_OI,
+                  "#f87171",
+                  "rgba(185,28,28,0.45)",
+                  `Call OI ${compact(r.call.oi)} · Δ ${compact(cChg)}`
+                )}
+                {seg(
+                  r.put.oi,
+                  pChg,
+                  PUT_OI,
+                  "#4ade80",
+                  "rgba(21,128,61,0.45)",
+                  `Put OI ${compact(r.put.oi)} · Δ ${compact(pChg)}`
+                )}
               </div>
             );
           }
@@ -1320,9 +1339,30 @@ export function OIProfile() {
           <Sw c={CALL_OI} /> Call OI &nbsp; <Sw c={PUT_OI} /> Put OI
         </span>
         <span>
-          <span className="mr-1 inline-block h-2.5 w-3.5 align-middle" style={{ background: "#94a3b855" }} />
-          total OI &nbsp;
-          <Sw c={OI_ADD} /> ΔOI added (solid) &nbsp; <Sw c={OI_CUT} hollow /> ΔOI reduced (hollow)
+          {metric === "combined" ? (
+            <>
+              bar = OI (leg colour) &nbsp;
+              <span
+                className="mr-1 inline-block h-2.5 w-3.5 align-middle"
+                style={{ backgroundImage: "repeating-linear-gradient(45deg,#94a3b8 0 2px,transparent 2px 4.5px)" }}
+              />
+              hatched = increase &nbsp;
+              <span
+                className="mr-1 inline-block h-2.5 w-3.5 align-middle"
+                style={{ backgroundImage: "repeating-linear-gradient(45deg,#94a3b855 0 2px,transparent 2px 4.5px)" }}
+              />
+              pale = decrease
+            </>
+          ) : metric === "chg" ? (
+            <>
+              <Sw c={OI_ADD} /> OI added (solid, up) &nbsp; <Sw c={OI_CUT} hollow /> OI reduced (hollow, down)
+            </>
+          ) : (
+            <>
+              <span className="mr-1 inline-block h-2.5 w-3.5 align-middle" style={{ background: "#94a3b855" }} />
+              bar height = total OI at each strike
+            </>
+          )}
         </span>
         <span>
           <span className="mr-1 inline-block border-l-2 border-dashed border-fuchsia-400 align-middle" style={{ height: 10 }} />
