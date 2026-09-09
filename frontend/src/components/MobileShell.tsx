@@ -158,6 +158,7 @@ const BOTTOM_NAV: NavItem[] = [
 const TOP_NAV: NavItem[] = [
   { v: "chart", icon: "📈", label: "Chart" },
   { v: "scrip", icon: "▤", label: "OI" },
+  { v: "oiprofile", icon: "📊", label: "OI Profile" },
   { v: "scanner", icon: "📡", label: "Scan" },
   { v: "trendingoi", icon: "🔥", label: "Trend OI" },
   { v: "auto", icon: "🤖", label: "Auto" },
