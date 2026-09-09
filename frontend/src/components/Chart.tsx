@@ -11,6 +11,7 @@ import {
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { MiniChart } from "./MiniChart";
+import { SelectMenu } from "./SelectMenu";
 import {
   bollinger,
   ema,
@@ -64,6 +65,7 @@ const TOGGLES = [
   ["macd", "MACD"],
   ["oi", "OI"],
   ["oichg", "ΔOI"],
+  ["fibpivot", "Fib Pivots"],
   ["straddle", "ATM Straddle"],
   ["score", "Blast Score"],
 ] as const;
@@ -228,6 +230,7 @@ export function Chart() {
     oi: false,
     oichg: false,
     pivot: false,
+    fibpivot: false,
     straddle: false, // ATM CE+PE price (a volatility proxy) — opt-in, it was crowding every chart
     score: false,
   });
@@ -845,23 +848,25 @@ export function Chart() {
     );
   }, [priceLines, data]);
 
-  // classic pivot points from the previous session (PP / R1-3 / S1-3)
+  // pivot points from the previous session — classic or Fibonacci (PP / R1-3 / S1-3)
   useEffect(() => {
     const cs = s.current.candle as ISeriesApi<"Candlestick"> | undefined;
     if (!cs) return;
     pvtRefs.current.forEach((pl) => cs.removePriceLine(pl));
     pvtRefs.current = [];
-    if (!eff.pivot) return;
-    const p = pivots(priceCandles);
+    if (!eff.pivot && !eff.fibpivot) return;
+    const fib = eff.fibpivot; // fib wins if both are on
+    const p = pivots(priceCandles, fib);
     if (!p) return;
+    const tag = fib ? "f" : "";
     const rows: [string, number, string, LineStyle][] = [
-      ["R3", p.r3, "#f87171", LineStyle.Dotted],
-      ["R2", p.r2, "#f87171", LineStyle.Dashed],
-      ["R1", p.r1, "#f87171", LineStyle.Dashed],
-      ["PP", p.pp, "#eab308", LineStyle.Solid],
-      ["S1", p.s1, "#4ade80", LineStyle.Dashed],
-      ["S2", p.s2, "#4ade80", LineStyle.Dashed],
-      ["S3", p.s3, "#4ade80", LineStyle.Dotted],
+      [`${tag}R3`, p.r3, "#f87171", LineStyle.Dotted],
+      [`${tag}R2`, p.r2, "#f87171", LineStyle.Dashed],
+      [`${tag}R1`, p.r1, "#f87171", LineStyle.Dashed],
+      [`${tag}PP`, p.pp, "#eab308", LineStyle.Solid],
+      [`${tag}S1`, p.s1, "#4ade80", LineStyle.Dashed],
+      [`${tag}S2`, p.s2, "#4ade80", LineStyle.Dashed],
+      [`${tag}S3`, p.s3, "#4ade80", LineStyle.Dotted],
     ];
     pvtRefs.current = rows.map(([title, price, color, lineStyle]) =>
       cs.createPriceLine({
@@ -873,7 +878,7 @@ export function Chart() {
         title,
       })
     );
-  }, [eff.pivot, priceCandles, data]);
+  }, [eff.pivot, eff.fibpivot, priceCandles, data]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -1035,26 +1040,16 @@ export function Chart() {
           </div>
         )}
 
-        <select
+        <SelectMenu
           value={intervalS}
-          onChange={(e) => setIntervalS(Number(e.target.value))}
-          className="num rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs font-semibold text-term-text outline-none focus:border-term-accent"
+          options={TIMEFRAMES}
+          onChange={setIntervalS}
           title="Candle timeframe"
-        >
-          {TIMEFRAMES.map(([lbl, v]) => (
-            <option key={v} value={v}>
-              {lbl}
-            </option>
-          ))}
-        </select>
+        />
 
-        <select
+        <SelectMenu
           value={rangeD}
-          onChange={(e) => setRangeD(Number(e.target.value))}
-          className="num rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs font-semibold text-term-text outline-none focus:border-term-accent"
-          title="Visible history window"
-        >
-          {(
+          options={
             [
               ["1D", 1],
               ["3M", 90],
@@ -1062,12 +1057,11 @@ export function Chart() {
               ["1Y", 365],
               ["All", 0],
             ] as const
-          ).map(([lbl, d]) => (
-            <option key={lbl} value={d}>
-              {lbl}
-            </option>
-          ))}
-        </select>
+          }
+          onChange={setRangeD}
+          title="Visible history window"
+          width={100}
+        />
 
         <select
           value={dataSrc}

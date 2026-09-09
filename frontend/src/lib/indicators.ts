@@ -228,9 +228,19 @@ export interface Pivots {
   s3: number;
 }
 
-const calcPivots = (h: number, l: number, c: number): Pivots => {
+const calcPivots = (h: number, l: number, c: number, fib = false): Pivots => {
   const pp = (h + l + c) / 3;
   const range = h - l;
+  if (fib)
+    return {
+      pp,
+      r1: pp + 0.382 * range,
+      s1: pp - 0.382 * range,
+      r2: pp + 0.618 * range,
+      s2: pp - 0.618 * range,
+      r3: pp + range,
+      s3: pp - range,
+    };
   return {
     pp,
     r1: 2 * pp - l,
@@ -246,7 +256,7 @@ const calcPivots = (h: number, l: number, c: number): Pivots => {
  *  Groups the (intraday) candle series by IST calendar day and uses the last
  *  completed day. For a 1D series each candle is a day, so it just uses the
  *  prior candle. null when there isn't a prior session yet. */
-export const pivots = (candles: Candle[]): Pivots | null => {
+export const pivots = (candles: Candle[], fib = false): Pivots | null => {
   if (candles.length < 2) return null;
   const dayKey = (t: number) =>
     new Date(t * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -264,10 +274,10 @@ export const pivots = (candles: Candle[]): Pivots | null => {
   const keys = [...days.keys()].sort();
   if (keys.length >= 2) {
     const prev = days.get(keys[keys.length - 2])!;
-    return calcPivots(prev.h, prev.l, prev.c);
+    return calcPivots(prev.h, prev.l, prev.c, fib);
   }
   const k = candles[candles.length - 2];
-  return calcPivots(k.high, k.low, k.close);
+  return calcPivots(k.high, k.low, k.close, fib);
 };
 
 export const heikinAshi = (candles: Candle[]): Candle[] => {

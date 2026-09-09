@@ -4,6 +4,7 @@ import { ClassFilter } from "./Header";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { compact, crores, nf, sk } from "../lib/format";
+import { SelectMenu } from "./SelectMenu";
 import { useIsMobile } from "../lib/useIsMobile";
 import type { ChainRow } from "../types";
 
@@ -1227,19 +1228,25 @@ export function OIProfile() {
           </div>
 
           <span className="ml-1">ΔOI over</span>
-          <select
+          <SelectMenu
             value={tf}
-            onChange={(e) => setTf(Number(e.target.value))}
-            className="num rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent"
-          >
-            {([[0, "Full day"], [1, "1m"], [2, "2m"], [3, "3m"], [5, "5m"], [15, "15m"], [30, "30m"], [60, "1h"], [120, "2h"], [180, "3h"]] as const).map(
-              ([m, l]) => (
-                <option key={m} value={m}>
-                  {l}
-                </option>
-              )
-            )}
-          </select>
+            options={
+              [
+                ["Full day", 0],
+                ["1m", 1],
+                ["2m", 2],
+                ["3m", 3],
+                ["5m", 5],
+                ["15m", 15],
+                ["30m", 30],
+                ["1h", 60],
+                ["2h", 120],
+                ["3h", 180],
+              ] as const
+            }
+            onChange={setTf}
+            title="ΔOI window"
+          />
           {tf > 0 && winCov > 0 && winCov < tf - 0.5 && (
             <span className="text-amber-400">
               history {winCov}m / {tf}m — still filling

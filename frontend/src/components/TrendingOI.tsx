@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { lakhs, nf, compact } from "../lib/format";
+import { SelectMenu } from "./SelectMenu";
 
 type Pt = {
   t: number;
@@ -501,17 +502,8 @@ function TrendingOILive() {
       {/* timeframe controls */}
       <div className="flex flex-wrap items-center gap-2 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
         <span className="uppercase tracking-wide">Timeframe</span>
-        <select
-          value={tf}
-          onChange={(e) => setTf(Number(e.target.value))}
-          className="num rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent"
-        >
-          {TF.map(([lbl, v]) => (
-            <option key={v} value={v}>
-              {lbl}
-            </option>
-          ))}
-        </select>
+        <SelectMenu value={tf} options={TF} onChange={setTf} title="Bucket timeframe" />
+
         <span className="ml-auto flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-full bg-up" /> auto-refresh{" "}
           {daily ? "60s" : "15s"}
@@ -966,17 +958,14 @@ function TrendingOIClassic() {
         </select>
         {chain?.expiry && <span className="num">{chain.expiry}</span>}
         <span className="ml-1">Interval</span>
-        <select
+        <SelectMenu
           value={tf}
-          onChange={(e) => setTf(Number(e.target.value))}
-          className="num rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent"
-        >
-          {([1, 3, 5, 15, 30, 60, 240, 1440] as const).map((m) => (
-            <option key={m} value={m}>
-              {m < 60 ? `${m}m` : m < 1440 ? `${m / 60}h` : "1D"}
-            </option>
-          ))}
-        </select>
+          options={[1, 3, 5, 15, 30, 60, 240, 1440].map(
+            (m) => [m < 60 ? `${m}m` : m < 1440 ? `${m / 60}h` : "1D", m] as const
+          )}
+          onChange={setTf}
+          title="Bucket interval"
+        />
         {daily && (
           <span className="text-amber-400">
             {expiry ? "daily OI history · Upstox" : "pick an expiry for daily view"}
