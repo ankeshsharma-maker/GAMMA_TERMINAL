@@ -143,18 +143,24 @@ import { ScalpCharts } from "./ScalpCharts";
 import { AutoBotView } from "./AutoBot";
 import { Funds } from "./Funds";
 
-/** left icon rail — order is the tab order down the screen */
-const NAV: { v: View; icon: string; label: string }[] = [
+type NavItem = { v: View; icon: string; label: string };
+
+/** bottom tab bar — the 5 things you act on */
+const BOTTOM_NAV: NavItem[] = [
   { v: "watchlist", icon: "★", label: "Watch" },
+  { v: "orders", icon: "📜", label: "Orders" },
+  { v: "positions", icon: "💼", label: "Pos" },
+  { v: "scalper", icon: "⚡", label: "Scalp" },
+  { v: "builder", icon: "🧱", label: "Build" },
+];
+
+/** top strip — the analysis views */
+const TOP_NAV: NavItem[] = [
   { v: "chart", icon: "📈", label: "Chart" },
   { v: "scrip", icon: "▤", label: "OI" },
   { v: "scanner", icon: "📡", label: "Scan" },
   { v: "trendingoi", icon: "🔥", label: "Trend OI" },
-  { v: "scalper", icon: "⚡", label: "Scalp" },
-  { v: "builder", icon: "🧱", label: "Build" },
   { v: "auto", icon: "🤖", label: "Auto" },
-  { v: "positions", icon: "💼", label: "Pos" },
-  { v: "orders", icon: "📜", label: "Orders" },
   { v: "funds", icon: "💰", label: "Funds" },
 ];
 
@@ -349,31 +355,47 @@ export function MobileShell() {
       )}
 
       <NotificationPanel />
+
+      {/* ── top strip: analysis views ─────────────────────────── */}
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-term-border bg-term-panel2 px-1.5 py-1">
+        {TOP_NAV.map((n) => (
+          <button
+            key={n.v}
+            onClick={() => setView(n.v)}
+            className={`flex shrink-0 items-center gap-1 rounded px-2 py-1 text-[11px] ${
+              view === n.v
+                ? "bg-term-accent text-white"
+                : "text-term-dim active:bg-term-border"
+            }`}
+          >
+            <span className="text-[13px] leading-none">{n.icon}</span>
+            {n.label}
+          </button>
+        ))}
+      </div>
+
       <ChainStrip />
 
-      {/* ── rail + content ──────────────────────────────────── */}
-      <div className="flex min-h-0 flex-1">
-        <nav className="flex w-[52px] shrink-0 flex-col overflow-y-auto border-r border-term-border bg-term-panel2 min-[560px]:w-16">
-          {NAV.map((n) => (
-            <button
-              key={n.v}
-              onClick={() => setView(n.v)}
-              className={`flex flex-col items-center gap-0.5 py-2 ${
-                view === n.v
-                  ? "bg-term-accent text-white"
-                  : "text-term-dim active:bg-term-border"
-              }`}
-            >
-              <span className="text-[15px] leading-none">{n.icon}</span>
-              <span className="text-[8px] uppercase tracking-wide">{n.label}</span>
-            </button>
-          ))}
-        </nav>
+      {/* ── content ───────────────────────────────────────────── */}
+      <main className="flex min-h-0 flex-1 flex-col overflow-auto">
+        <MobileBody view={view} />
+      </main>
 
-        <main className="flex min-h-0 flex-1 flex-col overflow-auto">
-          <MobileBody view={view} />
-        </main>
-      </div>
+      {/* ── bottom tab bar ────────────────────────────────────── */}
+      <nav className="flex shrink-0 border-t border-term-border bg-term-panel2">
+        {BOTTOM_NAV.map((n) => (
+          <button
+            key={n.v}
+            onClick={() => setView(n.v)}
+            className={`flex flex-1 flex-col items-center gap-0.5 py-1.5 ${
+              view === n.v ? "text-term-accent" : "text-term-dim active:bg-term-border"
+            }`}
+          >
+            <span className="text-[17px] leading-none">{n.icon}</span>
+            <span className="text-[8px] uppercase tracking-wide">{n.label}</span>
+          </button>
+        ))}
+      </nav>
 
       <OrderConfirm />
     </div>
