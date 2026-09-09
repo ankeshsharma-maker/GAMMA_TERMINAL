@@ -301,7 +301,9 @@ export function OIProfile() {
   const PLOT_H = TAG + AREA + LBL;
   const chartEl = (
     <div
-      className={`w-full overflow-auto p-3 ${isMobile ? "" : "min-h-0 flex-1"}`}
+      className={`w-full p-3 ${
+        isMobile ? "overflow-x-auto" : "min-h-0 flex-1 overflow-auto"
+      }`}
     >
       <div className="flex items-end" style={{ minHeight: "100%" }}>
         {/* Y axis — OI (or ΔOI) values */}
@@ -509,7 +511,7 @@ export function OIProfile() {
 
   // ---- OI-Ladder-style horizontal rows (combined total OI bar + ΔOI cap) ----
   const ladderEl = (
-    <div className={`overflow-y-auto ${isMobile ? "" : "min-h-0 flex-1"}`}>
+    <div className={isMobile ? "" : "min-h-0 flex-1 overflow-y-auto"}>
       <div className="sticky top-0 z-10 grid grid-cols-[1fr_auto_1fr] items-center divide-x divide-term-border border-b border-term-border bg-term-panel2 text-[10px] uppercase text-term-dim">
         <span className="px-3 py-1 text-right" style={{ color: CALL_OI }}>
           Call OI · Δ
@@ -683,8 +685,8 @@ export function OIProfile() {
 
     return (
       <div
-        className={`flex shrink-0 flex-col items-center gap-2 overflow-y-auto border-term-border p-3 ${
-          isMobile ? "w-full border-t" : "border-r"
+        className={`flex shrink-0 flex-col items-center gap-2 border-term-border p-3 ${
+          isMobile ? "w-full border-t" : "overflow-y-auto border-r"
         }`}
         style={isMobile ? undefined : { width: donutW }}
       >
@@ -784,7 +786,7 @@ export function OIProfile() {
     const fmtT = (t: number) =>
       new Date(t * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
     return (
-      <div className={`overflow-hidden p-3 ${isMobile ? "h-[70vh]" : "min-h-0 flex-1"}`}>
+      <div className={`overflow-hidden p-3 ${isMobile ? "h-[68vh]" : "min-h-0 flex-1"}`}>
         <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
           <span className="font-semibold text-term-text">{symbol} · Session PCR vs Price</span>
           <span className={`num text-lg font-bold ${bullish ? "text-up" : "text-down"}`}>
@@ -847,7 +849,7 @@ export function OIProfile() {
   // Call bar = red, Put bar = green (leg shown by colour); above the zero line
   // = OI added, below = OI reduced (reduced bars dimmed so direction reads even
   // without checking the axis). Spot + Max Pain marked, ATM band shaded.
-  const sensiCls = isMobile ? "" : "min-h-0 flex-1";
+  const sensiCls = isMobile ? "overflow-x-auto" : "min-h-0 flex-1 overflow-auto";
   const sensiEl = (() => {
     const COL = 34; // px per strike
     const H = 340;
@@ -907,7 +909,7 @@ export function OIProfile() {
     };
 
     return (
-      <div className={`overflow-auto p-3 ${sensiCls}`}>
+      <div className={`p-3 ${sensiCls}`}>
         <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px]">
           {chip(symbol, nf(spot, 1))}
           {chip("ATM", sk(chain.atmStrike))}
@@ -1066,7 +1068,9 @@ export function OIProfile() {
   })();
 
   return (
-    <div className={`flex flex-col ${isMobile ? "shrink-0" : "min-h-0 flex-1"}`}>
+    <div
+      className={`flex min-h-0 flex-1 flex-col ${isMobile ? "overflow-y-auto" : ""}`}
+    >
       {/* toolbar */}
       <div className="border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
         {/* row 1 — always visible: symbol / expiry / view switch / readout */}
