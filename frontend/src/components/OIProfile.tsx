@@ -432,11 +432,13 @@ export function OIProfile() {
           } else {
             const cOIh = (r.call.oi / oiMax) * AREA;
             const pOIh = (r.put.oi / oiMax) * AREA;
-            const cCapH = Math.min(cOIh, (Math.abs(cChg) / oiMax) * AREA);
-            const pCapH = Math.min(pOIh, (Math.abs(pChg) / oiMax) * AREA);
-            // total-OI bar in the (translucent) leg colour, capped by the ΔOI
-            // over the window — SOLID green cap = OI added, HOLLOW red cap = OI
-            // reduced, so add vs cut reads by shape not just colour.
+            // the ΔOI cap stays a *cap* — at most ~45% of the bar — so the
+            // solid leg colour (red = call, green = put) always dominates.
+            const cCapH = Math.min(cOIh * 0.45, (Math.abs(cChg) / oiMax) * AREA);
+            const pCapH = Math.min(pOIh * 0.45, (Math.abs(pChg) / oiMax) * AREA);
+            // base = SOLID leg colour (call red / put green). Cap on top =
+            // SOLID green when OI added, HOLLOW red outline when reduced, with a
+            // dark separator so it detaches from the base.
             const seg = (
               oiH: number,
               capH: number,
@@ -447,15 +449,15 @@ export function OIProfile() {
               <div
                 title={title}
                 className="flex flex-col justify-end overflow-hidden rounded-t-sm"
-                style={{ width: BARW, height: Math.max(2, oiH), background: `${legCol}55` }}
+                style={{ width: BARW, height: Math.max(2, oiH), background: legCol }}
               >
-                {capH > 0 && (
+                {capH > 1 && (
                   <div
                     style={{
                       height: Math.max(2, capH),
                       background: added ? OI_ADD : "transparent",
                       boxShadow: added ? undefined : `inset 0 0 0 1.5px ${OI_CUT}`,
-                      borderTop: `2px solid ${added ? OI_ADD : OI_CUT}`,
+                      borderTop: "2px solid #0b0f16",
                     }}
                   />
                 )}
