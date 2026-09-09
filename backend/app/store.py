@@ -92,6 +92,9 @@ class Store:
             return sorted(every | (extra or set()))
 
     def set_expiries(self, symbol: str, expiries: list[str]) -> None:
+        from .processing import future_expiries
+
+        expiries = future_expiries(expiries)
         with _lock:
             if expiries:
                 self.expiries[symbol.upper()] = expiries
@@ -102,7 +105,11 @@ class Store:
         return exps[0] if exps else None
 
     def resolve_expiry(self, symbol: str, expiry: Optional[str]) -> Optional[str]:
+        from .processing import is_expired
+
         exps = self.expiries.get(symbol.upper()) or []
+        if expiry and is_expired(expiry):
+            expiry = None  # requested expiry has already passed
         if expiry and expiry in exps:
             return expiry
         if expiry and not exps:
@@ -120,7 +127,9 @@ class Store:
             self.errors.pop(symbol, None)
             rec_exps = payload.get("records", {}).get("expiryDates")
             if rec_exps:
-                self.expiries[symbol] = list(rec_exps)
+                from .processing import future_expiries
+
+                self.expiries[symbol] = future_expiries(list(rec_exps))
             self._processed = {
                 k: v for k, v in self._processed.items() if not (k[0] == symbol and k[1] == expiry)
             }

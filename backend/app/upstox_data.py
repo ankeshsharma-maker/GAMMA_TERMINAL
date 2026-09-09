@@ -94,7 +94,9 @@ async def fetch_expiries(symbol: str) -> list[str]:
         if e and e not in seen:
             seen.append(e)
     seen.sort()
-    return [_iso_to_nse(e) for e in seen]
+    from .processing import future_expiries
+
+    return future_expiries([_iso_to_nse(e) for e in seen])
 
 
 async def fetch_chain_payload(symbol: str, expiry: str) -> dict | None:

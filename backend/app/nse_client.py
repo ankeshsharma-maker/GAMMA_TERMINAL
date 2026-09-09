@@ -121,8 +121,10 @@ class NSEClient:
         )
 
     async def expiries(self, symbol: str) -> list[str]:
+        from .processing import future_expiries
+
         info = await self.contract_info(symbol)
-        return list(info.get("expiryDates", []) or [])
+        return future_expiries(list(info.get("expiryDates", []) or []))
 
     async def option_chain(self, symbol: str, expiry: str) -> dict:
         """Raw v3 payload for one expiry, with quote-key aliases applied in place."""

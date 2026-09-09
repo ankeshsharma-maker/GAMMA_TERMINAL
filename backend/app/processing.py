@@ -75,6 +75,25 @@ def days_to_expiry(expiry: str, now: datetime | None = None) -> float:
     return round(year_fraction(expiry, now) * 365.0, 2)
 
 
+def is_expired(expiry: str, now: datetime | None = None) -> bool:
+    """True once the expiry's 15:30 IST cutoff has passed. Unparseable → False
+    (never hide a contract just because the date format changed)."""
+    now = now or datetime.now(IST)
+    try:
+        exp = datetime.strptime(expiry, "%d-%b-%Y").replace(hour=15, minute=30, tzinfo=IST)
+    except (ValueError, TypeError):
+        return False
+    return exp < now
+
+
+def future_expiries(expiries: list[str], now: datetime | None = None) -> list[str]:
+    """Drop already-expired dates, order preserved. If that would empty the list
+    (clock skew, format change), return the original untouched."""
+    now = now or datetime.now(IST)
+    out = [e for e in expiries if not is_expired(e, now)]
+    return out or list(expiries)
+
+
 def _leg(raw: dict | None, kind: str, spot: float, strike: float, t: float) -> dict:
     raw = raw or {}
     tc = max(t, _MIN_T)
@@ -120,7 +139,7 @@ def build_chain(
     strike_window: int = STRIKE_WINDOW,
 ) -> dict:
     records = raw.get("records", {})
-    expiries: list[str] = records.get("expiryDates", []) or []
+    expiries: list[str] = future_expiries(records.get("expiryDates", []) or [])
     data = records.get("data", []) or []
     if not expiries:
         raise ValueError(f"no expiries in NSE payload for {symbol}")
