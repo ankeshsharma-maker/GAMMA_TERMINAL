@@ -279,8 +279,11 @@ export function OIProfile() {
     setZoom((z) => zClamp(z * (e.deltaY < 0 ? 1.12 : 0.89)));
   };
 
-  const Sw = ({ c }: { c: string }) => (
-    <span className="inline-block h-2.5 w-3.5 rounded-sm align-middle" style={{ background: c }} />
+  const Sw = ({ c, hollow }: { c: string; hollow?: boolean }) => (
+    <span
+      className="inline-block h-2.5 w-3.5 rounded-sm align-middle"
+      style={hollow ? { boxShadow: `inset 0 0 0 1.5px ${c}` } : { background: c }}
+    />
   );
 
   // ---- the horizontal column chart ----
@@ -389,12 +392,14 @@ export function OIProfile() {
             const half = AREA / 2;
             const cH = (Math.abs(cChg) / chgMax) * half;
             const pH = (Math.abs(pChg) / chgMax) * half;
+            // candle convention: OI added = SOLID body (up); OI reduced =
+            // HOLLOW body (down) — so add vs cut reads by shape, not colour.
             const col = (up: boolean, h: number, label: string, delta: number) => (
               <div className="flex flex-col" style={{ width: BARW, height: AREA }}>
                 <div className="flex flex-1 items-end justify-center">
                   {up && (
                     <div
-                      title={`${label} +${compact(delta)}`}
+                      title={`${label} +${compact(delta)} · OI added`}
                       className="rounded-t-sm"
                       style={{ width: BARW, height: Math.max(h > 0 ? 2 : 0, h), background: OI_ADD }}
                     />
@@ -403,9 +408,14 @@ export function OIProfile() {
                 <div className="flex flex-1 items-start justify-center">
                   {!up && (
                     <div
-                      title={`${label} ${compact(delta)}`}
+                      title={`${label} ${compact(delta)} · OI reduced`}
                       className="rounded-b-sm"
-                      style={{ width: BARW, height: Math.max(h > 0 ? 2 : 0, h), background: OI_CUT }}
+                      style={{
+                        width: BARW,
+                        height: Math.max(h > 0 ? 2 : 0, h),
+                        background: "transparent",
+                        boxShadow: `inset 0 0 0 1.5px ${OI_CUT}`,
+                      }}
                     />
                   )}
                 </div>
@@ -424,9 +434,9 @@ export function OIProfile() {
             const pOIh = (r.put.oi / oiMax) * AREA;
             const cCapH = Math.min(cOIh, (Math.abs(cChg) / oiMax) * AREA);
             const pCapH = Math.min(pOIh, (Math.abs(pChg) / oiMax) * AREA);
-            // total-OI bar in the (translucent) leg colour, with a SOLID cap
-            // for the change over the window — green if OI was added, red if
-            // reduced — so the ΔOI reads at a glance.
+            // total-OI bar in the (translucent) leg colour, capped by the ΔOI
+            // over the window — SOLID green cap = OI added, HOLLOW red cap = OI
+            // reduced, so add vs cut reads by shape not just colour.
             const seg = (
               oiH: number,
               capH: number,
@@ -443,8 +453,9 @@ export function OIProfile() {
                   <div
                     style={{
                       height: Math.max(2, capH),
-                      background: added ? OI_ADD : OI_CUT,
-                      borderTop: `1px solid ${added ? OI_ADD : OI_CUT}`,
+                      background: added ? OI_ADD : "transparent",
+                      boxShadow: added ? undefined : `inset 0 0 0 1.5px ${OI_CUT}`,
+                      borderTop: `2px solid ${added ? OI_ADD : OI_CUT}`,
                     }}
                   />
                 )}
@@ -890,6 +901,8 @@ export function OIProfile() {
     const bar = (x: number, bw: number, v: number, col: string, leg: string, strike: number) => {
       const y1 = yOf(Math.max(0, v));
       const y2 = yOf(Math.min(0, v));
+      const added = v >= 0;
+      // added = filled body, reduced = hollow body (candle convention)
       return (
         <rect
           x={x}
@@ -897,12 +910,13 @@ export function OIProfile() {
           width={bw}
           height={Math.max(1, y2 - y1)}
           rx={1}
-          fill={col}
-          fillOpacity={v >= 0 ? 0.95 : 0.45}
+          fill={added ? col : "none"}
+          stroke={col}
+          strokeWidth={added ? 0 : 1.5}
         >
           <title>
-            {leg} {v >= 0 ? "+" : ""}
-            {compact(v)} @ {sk(strike)} · {v >= 0 ? "OI added" : "OI reduced"}
+            {leg} {added ? "+" : ""}
+            {compact(v)} @ {sk(strike)} · {added ? "OI added" : "OI reduced"}
           </title>
         </rect>
       );
@@ -1047,7 +1061,7 @@ export function OIProfile() {
           <span>
             <Sw c={PUT_C} /> Put OI change
           </span>
-          <span>above 0 = OI added · below 0 = OI reduced (dimmed)</span>
+          <span>above 0 = OI added (solid) · below 0 = OI reduced (hollow)</span>
           <span>
             <span
               className="mr-1 inline-block border-l-2 border-dashed align-middle"
@@ -1233,7 +1247,7 @@ export function OIProfile() {
           <span className="font-semibold text-down">Call OI</span>{" "}
           <span className="num">{crores(chain.totals.ceOI)}</span> ·{" "}
           <Sw c={OI_ADD} /> added <span style={{ color: OI_ADD }}>+{compact(flow.ceAdd)}</span> ·{" "}
-          <Sw c={OI_CUT} /> reduced <span style={{ color: OI_CUT }}>{compact(flow.ceCut)}</span>
+          <Sw c={OI_CUT} hollow /> reduced <span style={{ color: OI_CUT }}>{compact(flow.ceCut)}</span>
         </span>
         <span className="text-term-dim">
           Resistance {sk(stats.resistance)} · Floor {sk(stats.floor)} · ATM {sk(chain.atmStrike)}
@@ -1242,7 +1256,7 @@ export function OIProfile() {
           <span className="font-semibold text-up">Put OI</span>{" "}
           <span className="num">{crores(chain.totals.peOI)}</span> ·{" "}
           <Sw c={OI_ADD} /> added <span style={{ color: OI_ADD }}>+{compact(flow.peAdd)}</span> ·{" "}
-          <Sw c={OI_CUT} /> reduced <span style={{ color: OI_CUT }}>{compact(flow.peCut)}</span>
+          <Sw c={OI_CUT} hollow /> reduced <span style={{ color: OI_CUT }}>{compact(flow.peCut)}</span>
         </span>
       </div>
 
@@ -1306,7 +1320,7 @@ export function OIProfile() {
         <span>
           <span className="mr-1 inline-block h-2.5 w-3.5 align-middle" style={{ background: "#94a3b855" }} />
           total OI &nbsp;
-          <Sw c={OI_ADD} /> ΔOI added &nbsp; <Sw c={OI_CUT} /> ΔOI reduced
+          <Sw c={OI_ADD} /> ΔOI added (solid) &nbsp; <Sw c={OI_CUT} hollow /> ΔOI reduced (hollow)
         </span>
         <span>
           <span className="mr-1 inline-block border-l-2 border-dashed border-fuchsia-400 align-middle" style={{ height: 10 }} />
