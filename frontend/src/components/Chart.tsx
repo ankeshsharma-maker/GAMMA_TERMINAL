@@ -274,8 +274,9 @@ export function Chart() {
     return z;
   }, [on, indHidden]);
 
-  // ƒx indicator picker
+  // ƒx indicator picker + MTF overlay picker
   const [fxOpen, setFxOpen] = useState(false);
+  const [mtfOpen, setMtfOpen] = useState(false);
   const activeInd = TOGGLES.filter(([k]) => on[k]).length;
 
   const onRef = useRef(eff);
@@ -1047,8 +1048,10 @@ export function Chart() {
           ))}
         </select>
 
-        <div
-          className="flex overflow-hidden rounded border border-term-border"
+        <select
+          value={rangeD}
+          onChange={(e) => setRangeD(Number(e.target.value))}
+          className="num rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs font-semibold text-term-text outline-none focus:border-term-accent"
           title="Visible history window"
         >
           {(
@@ -1060,19 +1063,11 @@ export function Chart() {
               ["All", 0],
             ] as const
           ).map(([lbl, d]) => (
-            <button
-              key={lbl}
-              onClick={() => setRangeD(d)}
-              className={`px-1.5 py-0.5 text-2xs font-semibold ${
-                rangeD === d
-                  ? "bg-term-accent text-white"
-                  : "bg-term-bg text-term-dim hover:bg-term-border hover:text-term-text"
-              }`}
-            >
+            <option key={lbl} value={d}>
               {lbl}
-            </button>
+            </option>
           ))}
-        </div>
+        </select>
 
         <select
           value={dataSrc}
@@ -1144,50 +1139,87 @@ export function Chart() {
         </button>
 
         {/* multi-timeframe indicator overlay */}
-        <span className="flex items-center gap-1 rounded border border-cyan-500/40 bg-cyan-500/10 px-1 py-0.5">
-          <span className="text-[10px] font-semibold text-cyan-300">MTF</span>
-          <select
-            value={mtf?.ind ?? ""}
-            onChange={(e) =>
-              setMtf(
-                e.target.value
-                  ? { ind: e.target.value, len: mtf?.len ?? 21, tf: mtf?.tf ?? 900 }
-                  : null
-              )
-            }
-            className="rounded border border-term-border bg-term-bg px-1 py-0.5 text-[10px] text-term-text outline-none"
+        <span className="relative">
+          <button
+            onClick={() => setMtfOpen((o) => !o)}
+            title="Multi-timeframe indicator overlay"
+            className={`rounded border px-2 py-0.5 font-semibold ${
+              mtfOpen || mtf
+                ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-200"
+                : "border-term-border text-term-dim hover:bg-term-border hover:text-term-text"
+            }`}
           >
-            <option value="">off</option>
-            {MTF_INDS.map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </select>
-          {mtf && mtf.ind !== "vwap" && (
-            <input
-              type="number"
-              min={2}
-              max={400}
-              value={mtf.len}
-              onChange={(e) => setMtf({ ...mtf, len: Math.max(2, Number(e.target.value) || 21) })}
-              className="w-11 rounded border border-term-border bg-term-bg px-1 py-0.5 text-[10px] text-term-text outline-none"
-              title="Indicator length / period"
-            />
-          )}
-          {mtf && (
-            <select
-              value={mtf.tf}
-              onChange={(e) => setMtf({ ...mtf, tf: Number(e.target.value) })}
-              className="rounded border border-term-border bg-term-bg px-1 py-0.5 text-[10px] text-term-text outline-none"
-              title="Timeframe the indicator is computed on"
-            >
-              {TIMEFRAMES.map(([l, v]) => (
-                <option key={v} value={v}>
-                  @ {l}
-                </option>
-              ))}
-            </select>
+            MTF
+            {mtf
+              ? ` · ${MTF_INDS.find(([v]) => v === mtf.ind)?.[1] ?? mtf.ind}`
+              : ""}
+          </button>
+          {mtfOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setMtfOpen(false)} />
+              <div className="absolute left-0 top-full z-50 mt-1 w-[210px] space-y-1.5 rounded-lg border border-term-border bg-term-panel p-3 text-2xs shadow-2xl">
+                <div className="flex items-center justify-between text-term-dim">
+                  <span className="font-semibold uppercase tracking-wide">MTF overlay</span>
+                  {mtf && (
+                    <button onClick={() => setMtf(null)} className="hover:text-down">
+                      off
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-term-dim">Indicator</span>
+                  <select
+                    value={mtf?.ind ?? ""}
+                    onChange={(e) =>
+                      setMtf(
+                        e.target.value
+                          ? { ind: e.target.value, len: mtf?.len ?? 21, tf: mtf?.tf ?? 900 }
+                          : null
+                      )
+                    }
+                    className="num rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+                  >
+                    <option value="">off</option>
+                    {MTF_INDS.map(([v, l]) => (
+                      <option key={v} value={v}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {mtf && mtf.ind !== "vwap" && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-term-dim">Length</span>
+                    <input
+                      type="number"
+                      min={2}
+                      max={400}
+                      value={mtf.len}
+                      onChange={(e) =>
+                        setMtf({ ...mtf, len: Math.max(2, Number(e.target.value) || 21) })
+                      }
+                      className="w-16 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+                    />
+                  </div>
+                )}
+                {mtf && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-term-dim">On timeframe</span>
+                    <select
+                      value={mtf.tf}
+                      onChange={(e) => setMtf({ ...mtf, tf: Number(e.target.value) })}
+                      className="num rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+                    >
+                      {TIMEFRAMES.map(([l, v]) => (
+                        <option key={v} value={v}>
+                          @ {l}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </span>
 

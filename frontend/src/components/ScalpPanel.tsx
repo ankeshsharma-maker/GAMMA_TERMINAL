@@ -161,13 +161,13 @@ export function ScalpPanel() {
   }) => (
     <button
       onClick={() => fire(ot, side)}
-      className={`flex flex-col items-center rounded-md py-1.5 font-bold leading-tight transition-colors ${cls} ${
+      className={`flex items-baseline justify-center gap-1.5 rounded py-1 font-bold leading-none transition-colors ${cls} ${
         sideHint === ot ? "ring-2 ring-term-accent" : ""
       }`}
     >
-      <span className="text-xs">{label}</span>
-      <span className="text-[9px] font-normal opacity-70">
-        {pick ? `${nf(pick, 0)} ${ot}` : ot} × {scalpLots}
+      <span className="text-[11px]">{label}</span>
+      <span className="text-[8px] font-normal opacity-70">
+        {pick ? `${nf(pick, 0)} ${ot}` : ot}×{scalpLots}
       </span>
     </button>
   );
@@ -306,7 +306,7 @@ export function ScalpPanel() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 p-3">
+      <div className="grid grid-cols-2 gap-1.5 px-2 py-1.5">
         <BigBtn label="BUY CALL" ot="CE" side="BUY" cls="bg-up/20 text-up hover:bg-up/30" />
         <BigBtn label="BUY PUT" ot="PE" side="BUY" cls="bg-down/20 text-down hover:bg-down/30" />
         <BigBtn
