@@ -306,6 +306,22 @@ async def chart(
 
     base_candles = None
     src_label = "broker"
+
+    # sub-minute: build candles from this session's live tick stream. There is no
+    # historical source finer than 1-min, so these only exist from subscribe time.
+    if interval < 60:
+        tc = store.tick_candles(symbol, interval)
+        if tc:
+            return build_chart(
+                symbol,
+                store.get_history(symbol),
+                store.get_scan_history(symbol),
+                interval_s=interval,
+                base_candles=tc,
+                source_label="ticks",
+            )
+        # no ticks yet — fall through and show 1-min until they accumulate
+
     prefer_ux = store.data_source() == "upstox" and get_upstox().authed
 
     async def _ux_candles():

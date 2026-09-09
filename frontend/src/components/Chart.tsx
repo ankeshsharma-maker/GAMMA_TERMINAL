@@ -36,6 +36,8 @@ interface ChartData {
 }
 
 const TIMEFRAMES: [string, number][] = [
+  ["15s", 15],
+  ["30s", 30],
   ["1m", 60],
   ["3m", 180],
   ["5m", 300],
@@ -76,11 +78,13 @@ const dedupe = (pts: Pt[] = []) => {
 /* ---- IST time rendering (lightweight-charts draws UTC by default, so the
  *      NSE session 09:15-15:30 was showing ~5.5h off) ---- */
 const IST = "Asia/Kolkata";
+let _tfSecs = false; // show seconds on the axis / crosshair for sub-minute intervals
 const istTime = (t: number) =>
   new Date(t * 1000).toLocaleTimeString("en-GB", {
     timeZone: IST,
     hour: "2-digit",
     minute: "2-digit",
+    ...(_tfSecs ? { second: "2-digit" as const } : {}),
     hour12: false,
   });
 const istDate = (t: number) =>
@@ -456,6 +460,12 @@ export function Chart() {
     };
   }, []);
 
+  // seconds on the time axis / crosshair only for sub-minute intervals
+  useEffect(() => {
+    _tfSecs = intervalS < 60;
+    chartRef.current?.applyOptions({ timeScale: { secondsVisible: intervalS < 60 } });
+  }, [intervalS]);
+
   const [dataSrc, setDataSrc] = useState<"auto" | "broker" | "upstox">("auto");
 
   // Refresh cadence: normally 15s (chart motion between refreshes comes from the
@@ -471,7 +481,8 @@ export function Chart() {
     let lastAt = 0;
     const load = (force = false) => {
       const now = Date.now();
-      const minGap = feedDownRef.current && !tickFreshRef.current ? 4000 : 15000;
+      const minGap =
+        intervalS < 60 ? 3000 : feedDownRef.current && !tickFreshRef.current ? 4000 : 15000;
       if (!force && now - lastAt < minGap) return;
       lastAt = now;
       api

@@ -67,6 +67,7 @@ class Store:
             "scanned": 0, "total": 0, "cycleStart": None, "lastFull": None, "current": None,
         }
         self.live_spot: dict[str, dict] = {}          # symbol -> {ltp, chgPct, ts}
+        self.tick_ohlc: dict[str, deque] = {}         # symbol -> deque[{t,o,h,l,c}] @ _TICK_BUCKET_S
         self.index_quotes: dict[str, dict] = {}       # NSE index name -> {last, pChange, ts}
         self.index_catalog: list[dict] = []           # [{symbol, name, category}]
         self.opt_history: dict[str, deque] = {}       # option key -> deque[{t, ltp}]
@@ -530,13 +531,55 @@ class Store:
         return out[:limit]
 
     # ---- live broker feed ---------------------------------------
+    _TICK_BUCKET_S = 5                       # base OHLC bucket for tick candles
+    _TICK_OHLC_MAXLEN = 2600                 # ~3.6h of 5s bars
+
     def set_live_spot(self, symbol: str, ltp: float, chg_pct: float | None = None) -> None:
+        now = time.time()
         with _lock:
             self.live_spot[symbol.upper()] = {
                 "ltp": round(ltp, 2),
                 "chgPct": round(chg_pct, 2) if chg_pct is not None else None,
-                "ts": time.time(),
+                "ts": now,
             }
+            self._record_tick(symbol.upper(), float(ltp), now)
+
+    def _record_tick(self, sym: str, price: float, ts: float) -> None:
+        """Fold a live tick into a 5s OHLC bar (in-memory, session only)."""
+        b = int(ts // self._TICK_BUCKET_S) * self._TICK_BUCKET_S
+        dq = self.tick_ohlc.get(sym)
+        if dq is None:
+            dq = deque(maxlen=self._TICK_OHLC_MAXLEN)
+            self.tick_ohlc[sym] = dq
+        if dq and dq[-1]["t"] == b:
+            bar = dq[-1]
+            if price > bar["h"]:
+                bar["h"] = price
+            if price < bar["l"]:
+                bar["l"] = price
+            bar["c"] = price
+        elif dq and dq[-1]["t"] > b:
+            return  # stale out-of-order tick
+        else:
+            dq.append({"t": b, "o": price, "h": price, "l": price, "c": price})
+
+    def tick_candles(self, symbol: str, interval_s: int, lookback_s: int = 4 * 3600) -> list[dict]:
+        """5s tick bars re-bucketed to `interval_s`, lightweight-charts shape.
+        Empty until enough ticks have arrived this session."""
+        with _lock:
+            base = [b for b in self.tick_ohlc.get(symbol.upper(), ()) if b["t"] >= time.time() - lookback_s]
+        out: list[dict] = []
+        for bar in base:
+            b = int(bar["t"] // interval_s) * interval_s
+            if out and out[-1]["time"] == b:
+                k = out[-1]
+                k["high"] = max(k["high"], bar["h"])
+                k["low"] = min(k["low"], bar["l"])
+                k["close"] = bar["c"]
+            else:
+                out.append({"time": b, "open": bar["o"], "high": bar["h"],
+                            "low": bar["l"], "close": bar["c"], "volume": 0})
+        return out
 
     def get_live_spot(self, symbol: str) -> dict | None:
         with _lock:
