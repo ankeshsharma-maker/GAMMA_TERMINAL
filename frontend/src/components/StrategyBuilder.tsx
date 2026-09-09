@@ -1386,12 +1386,33 @@ export function StrategyBuilder() {
             </button>
           </div>
           {saved.map((s) => (
-            <div key={s.id} className="flex items-center justify-between text-2xs">
-              <button className="truncate text-left text-term-accent hover:underline" onClick={() => loadSaved(s)}>
+            <div
+              key={s.id}
+              className="flex items-center gap-1.5 rounded border border-term-border/60 bg-term-bg/40 px-2 py-1 text-2xs"
+            >
+              <span className="num min-w-0 flex-1 truncate">
                 {s.name} <span className="text-term-dim">· {s.symbol}</span>
+              </span>
+              <button
+                onClick={() => loadSaved(s)}
+                className="shrink-0 rounded border border-term-border px-1.5 py-0.5 font-semibold text-term-accent hover:bg-term-accent/15"
+              >
+                Edit
               </button>
-              <button className="text-term-dim hover:text-down" onClick={() => delSaved(s.id)}>
-                ×
+              <button
+                onClick={() => {
+                  loadSaved(s);
+                  setPanel("backtest");
+                }}
+                className="shrink-0 rounded border border-term-border px-1.5 py-0.5 text-term-dim hover:text-term-text"
+              >
+                Backtest
+              </button>
+              <button
+                onClick={() => delSaved(s.id)}
+                className="shrink-0 rounded border border-term-border px-1.5 py-0.5 text-term-dim hover:border-down hover:text-down"
+              >
+                Delete
               </button>
             </div>
           ))}

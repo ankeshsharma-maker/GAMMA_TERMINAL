@@ -165,66 +165,6 @@ const TOP_NAV: NavItem[] = [
   { v: "funds", icon: "💰", label: "Funds" },
 ];
 
-function ChainStrip() {
-  const chain = useStore((s) => s.chain);
-  // narrow subscription — only this symbol's tick, not the whole map
-  const live = useStore((s) => (s.chain ? s.liveSpots[s.chain.symbol] : undefined));
-  const [ivSeries, setIvSeries] = useState<number[]>([]);
-  const sym = chain?.symbol;
-  useEffect(() => {
-    if (!sym) return;
-    let alive = true;
-    const load = () =>
-      api.history(sym).then(
-        (d) =>
-          alive &&
-          setIvSeries(d.points.map((p) => p.atmIV).filter((v): v is number => v != null)),
-        () => {}
-      );
-    load();
-    const id = window.setInterval(load, 60000);
-    return () => {
-      alive = false;
-      window.clearInterval(id);
-    };
-  }, [sym]);
-  if (!chain) return null;
-  const reg = ivRegime(ivSeries, chain.atmIV);
-  const fresh = live && Date.now() / 1000 - live.ts < 12;
-  const spot = fresh ? live!.ltp : chain.spot;
-  const cell = (label: string, value: React.ReactNode, cls = "") => (
-    <div className="flex shrink-0 flex-col leading-none">
-      <span className="text-[8px] uppercase tracking-wide text-term-dim">{label}</span>
-      <span className={`num text-[11px] ${cls}`}>{value}</span>
-    </div>
-  );
-  return (
-    <div className="flex items-center gap-3 overflow-x-auto border-b border-term-border bg-term-panel2 px-3 py-1">
-      {cell("Spot", px(spot, spot < 100 ? 2 : 0), "font-semibold text-[12px]")}
-      {cell("ATM", sk(chain.atmStrike))}
-      {cell("IV", chain.atmIV ? `${nf(chain.atmIV)}%` : "–")}
-      {cell(
-        "IV zone",
-        reg.pctile != null ? `${reg.label} ${reg.pctile}%` : reg.label,
-        reg.cls
-      )}
-      {cell(
-        "PCR",
-        nf(chain.pcr, 2),
-        chain.pcr ? (chain.pcr >= 1 ? "text-up" : "text-down") : ""
-      )}
-      {cell("Max Pain", px(chain.maxPain, 0))}
-      {cell(
-        "Net GEX",
-        compact(chain.netGex),
-        (chain.netGex ?? 0) >= 0 ? "text-up" : "text-down"
-      )}
-      {cell("DTE", nf(chain.dte, 1))}
-      {cell("Lot", chain.lotSize)}
-    </div>
-  );
-}
-
 function MobileBody({ view }: { view: View }) {
   switch (view) {
     case "chain":
@@ -331,15 +271,15 @@ export function MobileShell() {
         <AlertBell />
       </div>
 
-      {/* stocks / indices filter — applies to watchlist, chain, OI, scanner… */}
-      <div className="flex items-center gap-2 overflow-x-auto border-b border-term-border bg-term-panel2 px-2 py-1">
-        <span className="shrink-0 text-[9px] uppercase tracking-wide text-term-dim">Show</span>
-        <ClassFilter />
+      <div className="flex items-center border-b border-term-border bg-term-panel2 px-2 py-0.5">
         <MobilePnl />
       </div>
 
       {brokerOpen && (
         <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-2 py-1.5">
+          <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
+            Show <ClassFilter />
+          </span>
           <BrokerPill />
           <UpstoxPill />
           <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
@@ -356,8 +296,7 @@ export function MobileShell() {
       )}
 
       <NotificationPanel />
-
-      {/* ── top strip: analysis views ─────────────────────────── */}
+      {/* ── top strip: analysis views ───────────────────────── */}
       <div className="flex items-center gap-1 overflow-x-auto border-b border-term-border bg-term-panel2 px-1.5 py-1">
         {TOP_NAV.map((n) => (
           <button
@@ -374,8 +313,6 @@ export function MobileShell() {
           </button>
         ))}
       </div>
-
-      <ChainStrip />
 
       {/* ── content ───────────────────────────────────────────── */}
       <main className="flex min-h-0 flex-1 flex-col overflow-auto">

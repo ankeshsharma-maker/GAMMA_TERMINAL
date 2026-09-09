@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { RefreshChainBtn } from "./RefreshChainBtn";
+import { SelectMenu } from "./SelectMenu";
 import { compact, lakhs, nf, signColor, sk } from "../lib/format";
 import type { ChainRow, Leg, UnusualKind } from "../types";
 import { OrderTicket } from "./OrderTicket";
@@ -664,28 +665,30 @@ export function OptionChain() {
           ))}
         </div>
 
-        <span className="ml-1" title="Change-in-OI window (needs a few minutes of live history for the shorter ones)">
+        <span
+          className="ml-1"
+          title="Change-in-OI window (needs a few minutes of live history for the shorter ones)"
+        >
           ΔOI
         </span>
-        <div className="seg">
-          {(
+        <SelectMenu
+          value={oiTf}
+          options={
             [
-              [0, "Day"],
-              [1, "1m"],
-              [2, "2m"],
-              [3, "3m"],
-              [5, "5m"],
-              [15, "15m"],
-              [30, "30m"],
-              [60, "1h"],
-              [240, "4h"],
+              ["Day", 0],
+              ["1m", 1],
+              ["2m", 2],
+              ["3m", 3],
+              ["5m", 5],
+              ["15m", 15],
+              ["30m", 30],
+              ["1h", 60],
+              ["4h", 240],
             ] as const
-          ).map(([m, l]) => (
-            <button key={m} onClick={() => setOiTf(m)} className={oiTf === m ? "on" : ""}>
-              {l}
-            </button>
-          ))}
-        </div>
+          }
+          onChange={setOiTf}
+          title="ΔOI window"
+        />
 
         <span className="ml-3 text-up">■ CALLS</span>
         <span className="text-down">■ PUTS</span>
