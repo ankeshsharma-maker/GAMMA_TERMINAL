@@ -32,6 +32,10 @@ const sentCls = (s: string) =>
 
 const VIEW_LS = "trendingoi.view";
 
+// Live data table: columns hidden on a phone (< sm), shown from sm up. Keeps the
+// 7 core columns readable on a Fold cover screen instead of a 12-wide crush.
+const LIVE_HIDE_SM = new Set([4, 7, 8, 9, 10]); // Diff OI, Chng-dir, PCR, COI PCR, Vol PCR
+
 /* ------------------------------------------------------------------ *
  *  Shared session / daily history loader                             *
  * ------------------------------------------------------------------ */
@@ -361,7 +365,7 @@ function TrendingOILive() {
   ];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
       {/* header */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-2 text-2xs">
         <span className="text-sm font-semibold">{symbol} Trending OI Live</span>
@@ -520,10 +524,11 @@ function TrendingOILive() {
         </div>
       )}
 
-      {/* data table — scrolls horizontally on a phone so the 12 columns keep
-          their width instead of crushing into each other */}
-      <div className="overflow-x-auto p-2 lg:min-h-0 lg:flex-1 lg:overflow-auto">
-        <table className="w-full min-w-[760px] border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
+      {/* data table — a phone shows the 7 core columns; sm+ adds the 5 detail
+          PCR / direction columns. Scrolls inside its own box so it never widens
+          the page. */}
+      <div className="max-w-full overflow-x-auto p-2 lg:min-h-0 lg:flex-1 lg:overflow-auto">
+        <table className="w-full min-w-[560px] border-separate border-spacing-0 border border-term-border text-2xs sm:min-w-[820px] [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
           <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
             <tr>
               {[
@@ -544,7 +549,7 @@ function TrendingOILive() {
                   key={h}
                   className={`px-2 py-1.5 font-medium last:border-r-0 ${
                     i === 0 || i === 11 ? "text-left" : "text-right"
-                  }`}
+                  } ${LIVE_HIDE_SM.has(i) ? "hidden sm:table-cell" : ""}`}
                 >
                   {h}
                 </th>
@@ -575,7 +580,7 @@ function TrendingOILive() {
                   <span className="block text-[9px] opacity-70">({sInr(r.pInt)})</span>
                 </td>
                 <td
-                  className={`num px-2 py-1 text-right ${
+                  className={`num hidden px-2 py-1 text-right sm:table-cell ${
                     r.diff >= 0 ? "text-up" : "text-down"
                   }`}
                 >
@@ -599,23 +604,23 @@ function TrendingOILive() {
                   </span>
                 </td>
                 <td
-                  className={`num px-2 py-1 text-right ${
+                  className={`num hidden px-2 py-1 text-right sm:table-cell ${
                     r.chngInDir >= 0 ? "text-up" : "text-down"
                   }`}
                 >
                   {inr(r.chngInDir)}
                 </td>
-                <td className="num px-2 py-1 text-right">
+                <td className="num hidden px-2 py-1 text-right sm:table-cell">
                   {r.pcr != null ? nf(r.pcr, 3) : "–"}
                 </td>
                 <td
-                  className={`num px-2 py-1 text-right ${
+                  className={`num hidden px-2 py-1 text-right sm:table-cell ${
                     r.coiPcr != null ? (r.coiPcr >= 0 ? "text-up" : "text-down") : "text-term-dim"
                   }`}
                 >
                   {r.coiPcr != null ? nf(r.coiPcr, 3) : "–"}
                 </td>
-                <td className="num px-2 py-1 text-right">
+                <td className="num hidden px-2 py-1 text-right sm:table-cell">
                   {r.volPcr != null ? nf(r.volPcr, 2) : "–"}
                 </td>
                 <td className={`px-2 py-1 font-semibold ${sentCls(r.sentiment)}`}>
@@ -898,7 +903,7 @@ function TrendingOIClassic() {
   }, [sentBars]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden">
       {/* toolbar */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
         <span className="font-semibold uppercase tracking-wide">Trending OI</span>
@@ -1073,8 +1078,8 @@ function TrendingOIClassic() {
 
       {/* recent intervals */}
       {intervals.length > 0 && (
-        <div className="max-h-[34%] shrink-0 overflow-y-auto border-t border-term-border p-2">
-          <table className="w-full border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
+        <div className="max-h-[34%] max-w-full shrink-0 overflow-auto border-t border-term-border p-2">
+          <table className="w-full min-w-[480px] border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
             <thead className="sticky top-0 bg-term-panel text-[10px] uppercase text-term-dim">
               <tr>
                 <th className="px-3 py-1 text-left font-medium">{daily ? "Date" : "Time"}</th>

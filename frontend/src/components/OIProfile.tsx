@@ -678,8 +678,8 @@ export function OIProfile() {
 
     return (
       <div
-        className="flex shrink-0 flex-col items-center gap-2 overflow-y-auto p-3"
-        style={{ width: donutW }}
+        className="flex w-full shrink-0 flex-col items-center gap-2 overflow-y-auto border-b border-term-border p-3 sm:w-[var(--dw)] sm:border-b-0 sm:border-r"
+        style={{ "--dw": `${donutW}px` } as React.CSSProperties}
       >
         <div className="text-center text-2xs font-semibold uppercase tracking-wide text-term-dim">
           Total OI · {count}±ATM
@@ -1242,14 +1242,14 @@ export function OIProfile() {
       )}
 
       {layout === "chart" && (
-        <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
           {donutEl && (
             <>
               {donutEl}
               <div
                 onMouseDown={startDonutDrag}
                 title="Drag to resize the OI-split panel"
-                className="w-1.5 shrink-0 cursor-col-resize bg-term-border/50 transition-colors hover:bg-term-accent/70"
+                className="hidden w-1.5 shrink-0 cursor-col-resize bg-term-border/50 transition-colors hover:bg-term-accent/70 sm:block"
               />
             </>
           )}
