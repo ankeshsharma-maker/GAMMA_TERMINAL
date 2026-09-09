@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
+import { useIsMobile } from "../lib/useIsMobile";
 import { RuleOrder } from "./RuleOrder";
 
 const n = (v: unknown): number | null => {
@@ -20,6 +21,7 @@ export function ScalpPanel() {
     quickTradeAt,
   } = useStore();
   const broker = useStore((s) => s.broker);
+  const isMobile = useIsMobile();
 
   const wq = watch.find((w) => w.symbol === symbol);
   const atm = chain?.atmStrike ?? wq?.atmStrike;
@@ -171,7 +173,7 @@ export function ScalpPanel() {
   );
 
   return (
-    <div className="flex h-full flex-col bg-term-panel2">
+    <div className={`flex flex-col bg-term-panel2 ${isMobile ? "" : "h-full"}`}>
       {/* live P&L straight from the broker position book */}
       <div className="flex items-end gap-4 border-b border-term-border bg-term-panel px-3 py-1.5">
         <div className="flex flex-col leading-tight">
@@ -345,7 +347,7 @@ export function ScalpPanel() {
         </span>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-2">
+      <div className={`p-2 ${isMobile ? "overflow-x-auto" : "min-h-0 flex-1 overflow-auto"}`}>
         {!broker?.authed && (
           <div className="p-4 text-center text-2xs text-term-dim">
             Connect Flattrade (header) to see the live broker P&amp;L feed.

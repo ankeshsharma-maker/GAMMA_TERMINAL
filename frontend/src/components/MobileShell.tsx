@@ -245,12 +245,15 @@ function MobileBody({ view }: { view: View }) {
     case "chart":
       return <Chart />;
     case "scalper":
+      // one vertical scroll: fixed-height chart on top, full panel (incl. the
+      // open-positions list) below — the panel used to be crammed into 45% with
+      // an inner flex-1 that collapsed to nothing on a phone.
       return (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <div className="h-[46vh] shrink-0 border-b border-term-border">
             <ScalpCharts />
           </div>
-          <div className="max-h-[45%] shrink-0 overflow-auto border-t border-term-border">
+          <div className="shrink-0">
             <ScalpPanel />
           </div>
         </div>
