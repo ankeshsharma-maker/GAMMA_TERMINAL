@@ -342,7 +342,7 @@ export function StrategyBuilder() {
             ? 0
             : newLegStrike || atm || strikes[Math.floor(strikes.length / 2)] || 0,
         side,
-        lots: newLegLots,
+        lots: Math.max(1, newLegLots || 1),
       },
     ]);
 
@@ -1035,8 +1035,13 @@ export function StrategyBuilder() {
                   <input
                     type="number"
                     min="1"
-                    value={newLegLots}
-                    onChange={(e) => setNewLegLots(Math.max(1, Number(e.target.value) || 1))}
+                    inputMode="numeric"
+                    value={newLegLots || ""}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/[^\d]/g, "");
+                      setNewLegLots(v === "" ? 0 : Math.min(999, Number(v)));
+                    }}
+                    onBlur={() => setNewLegLots((n) => n || 1)}
                     className="num w-14 rounded border border-term-border bg-term-bg px-2 py-1 text-term-text"
                   />
                 </label>
