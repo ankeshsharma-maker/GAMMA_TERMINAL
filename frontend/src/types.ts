@@ -319,6 +319,9 @@ export interface StrategyLeg {
   side: Side;
   lots: number;
   price?: number | null;
+  /** client-only: leg is an already-open position (fetched from broker / paper).
+   *  Counted in the payoff but skipped on Execute unless the user opts it in. */
+  held?: boolean;
 }
 
 export interface ResolvedLeg extends StrategyLeg {

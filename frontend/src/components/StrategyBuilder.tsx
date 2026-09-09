@@ -137,9 +137,13 @@ export function StrategyBuilder() {
   const [mult, setMult] = useState(1);
 
   const scaled = useCallback(
-    (ls: StrategyLeg[]) => ls.map((l) => ({ ...l, lots: Math.max(1, l.lots * mult) })),
+    (ls: StrategyLeg[]) =>
+      ls.map(({ held: _h, ...l }) => ({ ...l, lots: Math.max(1, l.lots * mult) })),
     [mult]
   );
+  // legs to actually send on Execute: skip already-open ("held") positions
+  // unless the user ticks "also execute held legs".
+  const [executeHeld, setExecuteHeld] = useState(false);
 
   // paper bracket: after executing, attach an auto SL / target to each fresh
   // leg via check_stops() — either ₹ amount (split by qty) or premium points
@@ -168,7 +172,9 @@ export function StrategyBuilder() {
   const [newLegStrike, setNewLegStrike] = useState(0); // 0 => ATM
   const [addingLeg, setAddingLeg] = useState(false); // collapse the add-leg form
   const doExecute = useCallback(async () => {
-    const ls = scaled(legs);
+    const toRun = executeHeld ? legs : legs.filter((l) => !l.held);
+    const ls = scaled(toRun);
+    if (ls.length === 0) return; // everything is a held position and "execute held" is off
     const exp = expiry ?? chain?.expiry;
     const sl = parseFloat(slVal);
     const tgt = parseFloat(tgtVal);
@@ -198,6 +204,7 @@ export function StrategyBuilder() {
   }, [
     scaled,
     legs,
+    executeHeld,
     slVal,
     tgtVal,
     slTgtBasis,
@@ -213,6 +220,8 @@ export function StrategyBuilder() {
     [chain]
   );
   const atm = chain?.atmStrike ?? 0;
+  const heldCount = legs.filter((l) => l.held).length;
+  const runLegCount = executeHeld ? legs.length : legs.length - heldCount;
 
   useEffect(() => {
     api.strategyTemplates(symbol, expiry ?? undefined).then(
@@ -354,9 +363,10 @@ export function StrategyBuilder() {
     api.strategyFromPaper().then(
       (d) => {
         setFromBroker(false);
+        setExecuteHeld(false);
         selectSymbol(d.symbol, true);
         selectExpiry(d.expiry);
-        setLegs(d.legs);
+        setLegs(d.legs.map((l) => ({ ...l, held: true })));
         setAnalysis(d.analysis);
         setErr(null);
       },
@@ -367,9 +377,10 @@ export function StrategyBuilder() {
     api.strategyFromBroker().then(
       (d) => {
         setFromBroker(true);
+        setExecuteHeld(false);
         selectSymbol(d.symbol, true);
         selectExpiry(d.expiry);
-        setLegs(d.legs);
+        setLegs(d.legs.map((l) => ({ ...l, held: true })));
         setAnalysis(d.analysis);
         setErr(null);
       },
@@ -379,7 +390,12 @@ export function StrategyBuilder() {
   const doSave = () => {
     if (!saveName.trim() || !legs.length || !expiry) return;
     api
-      .saveStrategy({ name: saveName.trim(), symbol, expiry, legs })
+      .saveStrategy({
+        name: saveName.trim(),
+        symbol,
+        expiry,
+        legs: legs.map(({ held: _h, ...l }) => l),
+      })
       .then((d) => {
         setSaved(d.strategies);
         setSaveName("");
@@ -828,8 +844,28 @@ export function StrategyBuilder() {
             </div>
           )}
           {legs.map((leg, i) => (
-            <div key={i} className="border-b border-term-border/50 p-2 text-2xs">
+            <div
+              key={i}
+              className={`border-b border-term-border/50 p-2 text-2xs ${
+                leg.held ? "bg-amber-500/[0.07]" : ""
+              }`}
+            >
               <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setLeg(i, { held: !leg.held })}
+                  title={
+                    leg.held
+                      ? "Held position — tap to include it in Execute"
+                      : "Tap to mark as an already-open position (skipped on Execute)"
+                  }
+                  className={`rounded border px-1.5 py-1 leading-none ${
+                    leg.held
+                      ? "border-amber-500/50 bg-amber-500/15 text-amber-400"
+                      : "border-term-border text-term-dim hover:text-term-text"
+                  }`}
+                >
+                  {leg.held ? "🔒" : "🔓"}
+                </button>
                 <button
                   onClick={() =>
                     setLeg(i, {
@@ -915,6 +951,12 @@ export function StrategyBuilder() {
                   <span className="num text-term-dim">IV {nf(analysis.legs[i].iv, 1)}</span>
                 )}
               </div>
+              {leg.held && (
+                <div className="mt-1 text-[9px] text-amber-400/80">
+                  held position ·{" "}
+                  {executeHeld ? "will be sent on Execute" : "in payoff, skipped on Execute"}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -1197,15 +1239,31 @@ export function StrategyBuilder() {
                 : "₹ split across legs by qty"}
             </span>
           </div>
+          {heldCount > 0 && (
+            <label
+              className="flex items-center gap-1.5 text-2xs text-amber-400"
+              title="Execute skips positions fetched from the broker / paper book and only sends the new legs (e.g. the hedge). Tick this to also re-send the held legs."
+            >
+              <input
+                type="checkbox"
+                checked={executeHeld}
+                onChange={(e) => setExecuteHeld(e.target.checked)}
+              />
+              also execute {heldCount} held leg{heldCount === 1 ? "" : "s"}
+            </label>
+          )}
           <button
-            disabled={legs.length === 0}
+            disabled={legs.length === 0 || runLegCount === 0}
             onClick={doExecute}
             className={`btn py-2 font-semibold disabled:opacity-40 ${
               orderMode === "live" ? "btn-sell" : "btn-buy"
             }`}
           >
-            {orderMode === "live" ? "Execute LIVE" : "Execute (paper)"} · {legs.length} leg
-            {legs.length === 1 ? "" : "s"}
+            {orderMode === "live" ? "Execute LIVE" : "Execute (paper)"} · {runLegCount} leg
+            {runLegCount === 1 ? "" : "s"}
+            {heldCount > 0 && !executeHeld && (
+              <span className="ml-1 text-2xs text-amber-400">· {heldCount} held</span>
+            )}
             {mult > 1 && <span className="ml-1 text-2xs">(×{mult})</span>}
             {orderMode !== "live" && (parseFloat(slVal) > 0 || parseFloat(tgtVal) > 0) && (
               <span className="ml-1 text-2xs">
