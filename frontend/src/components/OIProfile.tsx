@@ -30,7 +30,8 @@ export function OIProfile() {
   const symClassOk = useStore((s) => s.symClassOk);
 
   const isMobile = useIsMobile();
-  const [tools, setTools] = useState(false); // mobile: show the extra control rows
+  // which slide-out panel is open over the chart (null = none)
+  const [panel, setPanel] = useState<null | "controls" | "info">(null);
   const [metric, setMetric] = useState<Metric>("combined");
   const [layout, setLayout] = useState<"chart" | "ladder" | "sensibull" | "pcr">("chart");
   const [pcrPts, setPcrPts] = useState<{ t: number; pcr: number; spot: number }[]>([]);
@@ -1106,212 +1107,272 @@ export function OIProfile() {
     <div
       className={`flex min-h-0 flex-1 flex-col ${isMobile ? "overflow-y-auto" : ""}`}
     >
-      {/* toolbar */}
-      <div className="border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
-        {/* row 1 — always visible: symbol / expiry / view switch / readout */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span className="font-semibold uppercase tracking-wide">OI Profile</span>
-
-          <RefreshChainBtn />
-
-          <ClassFilter />
+      {/* slim bar — symbol / expiry / key readout / view switch / panels */}
+      <div className="relative flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
+        <RefreshChainBtn />
+        <select
+          value={symbol}
+          onChange={(e) => selectSymbol(e.target.value, true)}
+          className="rounded border border-term-border bg-term-bg px-1 py-0.5 font-semibold text-term-text outline-none focus:border-term-accent"
+          title="Underlying"
+        >
+          {symOptions.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+        {chain.expiries.length > 0 && (
           <select
-            value={symbol}
-            onChange={(e) => selectSymbol(e.target.value, true)}
-            className="rounded border border-term-border bg-term-bg px-1 py-0.5 font-semibold text-term-text outline-none focus:border-term-accent"
-            title="Underlying (list filtered by the All / Indices / Stocks toggle)"
+            value={expiry}
+            onChange={(e) => selectExpiry(e.target.value)}
+            className="num rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
           >
-            {symOptions.map((s) => (
-              <option key={s} value={s}>
-                {s}
+            {chain.expiries.map((e) => (
+              <option key={e} value={e}>
+                {e}
               </option>
             ))}
           </select>
+        )}
 
-          {chain.expiries.length > 0 && (
-            <select
-              value={expiry}
-              onChange={(e) => selectExpiry(e.target.value)}
-              className="num rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
-            >
-              {chain.expiries.map((e) => (
-                <option key={e} value={e}>
-                  {e}
-                </option>
-              ))}
-            </select>
-          )}
-
-          <span className="ml-1">Show</span>
-          <div className="seg">
-            {(
-              [
-                ["chart", "chart"],
-                ["ladder", "ladder"],
-                ["sensibull", "sensibull"],
-                ["pcr", "pcr"],
-              ] as const
-            ).map(([v, l]) => (
-              <button key={v} onClick={() => setLayout(v)} className={layout === v ? "on" : ""}>
-                {l}
-              </button>
-            ))}
-          </div>
-
-          {isMobile && (
-            <button
-              onClick={() => setTools((t) => !t)}
-              className={`rounded border px-1.5 py-0.5 ${
-                tools ? "border-term-accent text-term-accent" : "border-term-border"
-              }`}
-              title="Show / hide the chart controls"
-            >
-              ⚙ {tools ? "▴" : "▾"}
-            </button>
-          )}
-
-          <div className="num ml-auto flex flex-wrap items-center gap-1.5 text-[10px]">
-            <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
-              <span className="text-term-dim">Spot </span>
-              <span className="text-term-text">{nf(spot, 1)}</span>
-            </span>
-            <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
-              <span className="text-term-dim">PCR </span>
-              <span className="text-term-text">{nf(chain.pcr, 2)}</span>
-            </span>
-            <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
-              <span className="text-term-dim">Max Pain </span>
-              <span className="text-term-text">{nf(chain.maxPain, 0)}</span>
-            </span>
-            {gammaFlip && (
-              <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
-                <span className="text-term-dim">γ-flip </span>
-                <span className="text-fuchsia-400">{sk(gammaFlip.strike)}</span>{" "}
-                <span className={spot >= gammaFlip.strike ? "text-up" : "text-down"}>
-                  {spot >= gammaFlip.strike ? "long-γ" : "short-γ"}
-                </span>
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* row 2 — chart controls (collapsible on a phone) */}
-        <div
-          className={`mt-1 w-full flex-wrap items-center gap-x-3 gap-y-1 ${
-            isMobile && !tools ? "hidden" : "flex"
-          }`}
-        >
-          <span className="ml-1">View</span>
-          <div className="seg">
-            <button onClick={() => setMetric("oi")} className={metric === "oi" ? "on" : ""}>
-              OI
-            </button>
-            <button onClick={() => setMetric("chg")} className={metric === "chg" ? "on" : ""}>
-              ΔOI bars
-            </button>
-            <button
-              onClick={() => setMetric("combined")}
-              className={metric === "combined" ? "on" : ""}
-            >
-              OI + Δ caps
-            </button>
-          </div>
-
-          <span className="ml-1">Strikes ±</span>
-          <div className="seg">
-            {[5, 10, 15, 20, 25, 0].map((n) => (
-              <button key={n} onClick={() => setCount(n)} className={count === n ? "on" : ""}>
-                {n === 0 ? "All" : n}
-              </button>
-            ))}
-          </div>
-
-          <span className="ml-1">ΔOI over</span>
-          <div className="seg">
-            {([[0, "Full day"], [1, "1m"], [2, "2m"], [3, "3m"], [5, "5m"], [15, "15m"], [30, "30m"], [60, "1h"], [120, "2h"], [180, "3h"]] as const).map(
-              ([m, l]) => (
-                <button key={m} onClick={() => setTf(m)} className={tf === m ? "on" : ""}>
-                  {l}
-                </button>
-              )
-            )}
-          </div>
-          {tf > 0 && winCov > 0 && winCov < tf - 0.5 && (
-            <span className="text-amber-400">
-              history {winCov}m / {tf}m — still filling
-            </span>
-          )}
-          {tf > 0 && winCov === 0 && <span className="text-amber-400">collecting OI history…</span>}
-
-          {layout === "chart" && (
-            <>
-              <span className="ml-1">Zoom</span>
-              <div className="seg">
-                {[100, 95, 90, 85, 80].map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setZoom(p / 100)}
-                    className={Math.round(zoom * 100) === p ? "on" : ""}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* legend / totals */}
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-term-border bg-term-panel px-3 py-1 text-[10px]">
-        <span className="text-term-dim">
-          <span className="font-semibold text-down">Call OI</span>{" "}
-          <span className="num">{crores(chain.totals.ceOI)}</span> ·{" "}
-          <Sw c={OI_ADD} /> added <span style={{ color: OI_ADD }}>+{compact(flow.ceAdd)}</span> ·{" "}
-          <Sw c={OI_CUT} hollow /> reduced <span style={{ color: OI_CUT }}>{compact(flow.ceCut)}</span>
-        </span>
-        <span className="text-term-dim">
-          Resistance {sk(stats.resistance)} · Floor {sk(stats.floor)} · ATM {sk(chain.atmStrike)}
-        </span>
-        <span className="text-term-dim">
-          <span className="font-semibold text-up">Put OI</span>{" "}
-          <span className="num">{crores(chain.totals.peOI)}</span> ·{" "}
-          <Sw c={OI_ADD} /> added <span style={{ color: OI_ADD }}>+{compact(flow.peAdd)}</span> ·{" "}
-          <Sw c={OI_CUT} hollow /> reduced <span style={{ color: OI_CUT }}>{compact(flow.peCut)}</span>
-        </span>
-      </div>
-
-      {/* overall OI verdict */}
-      {verdict && (
-        <div
-          className={`flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b px-3 py-1 text-[10px] ${
-            verdict.bias === "BULLISH"
-              ? "border-up/40 bg-up/10"
-              : verdict.bias === "BEARISH"
-              ? "border-down/40 bg-down/10"
-              : "border-term-border bg-term-panel"
-          }`}
-        >
-          <span
-            className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${
-              verdict.bias === "BULLISH"
-                ? "bg-up text-white"
-                : verdict.bias === "BEARISH"
-                ? "bg-down text-white"
-                : "bg-term-border text-term-dim"
-            }`}
-          >
-            OI TREND: {verdict.bias}
+        <span className="num flex items-center gap-x-2 text-[10px]">
+          <span>
+            Spot <span className="text-term-text">{nf(spot, 1)}</span>
           </span>
-          <span className="text-term-dim">score {verdict.score > 0 ? "+" : ""}{verdict.score}</span>
-          {verdict.pros.length > 0 && (
-            <span className="text-up">▲ {verdict.pros.join(" · ")}</span>
+          <span>
+            PCR <span className="text-term-text">{nf(chain.pcr, 2)}</span>
+          </span>
+          <span className="hidden sm:inline">
+            Max Pain <span className="text-term-text">{nf(chain.maxPain, 0)}</span>
+          </span>
+          {gammaFlip && (
+            <span className="hidden sm:inline">
+              γ-flip <span className="text-fuchsia-400">{sk(gammaFlip.strike)}</span>{" "}
+              <span className={spot >= gammaFlip.strike ? "text-up" : "text-down"}>
+                {spot >= gammaFlip.strike ? "long-γ" : "short-γ"}
+              </span>
+            </span>
           )}
-          {verdict.cons.length > 0 && (
-            <span className="text-down">▼ {verdict.cons.join(" · ")}</span>
+          {verdict && (
+            <span
+              className={`rounded px-1 font-bold ${
+                verdict.bias === "BULLISH"
+                  ? "bg-up/20 text-up"
+                  : verdict.bias === "BEARISH"
+                  ? "bg-down/20 text-down"
+                  : "bg-term-border text-term-dim"
+              }`}
+            >
+              {verdict.bias}
+            </span>
           )}
+        </span>
+
+        <div className="ml-auto flex items-center gap-1.5">
+          <div className="seg">
+            {(["chart", "ladder", "sensibull", "pcr"] as const).map((v) => (
+              <button key={v} onClick={() => setLayout(v)} className={layout === v ? "on" : ""}>
+                {v === "sensibull" ? "sensi" : v}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setPanel((p) => (p === "controls" ? null : "controls"))}
+            className={`rounded border px-2 py-0.5 font-semibold ${
+              panel === "controls"
+                ? "border-term-accent text-term-accent"
+                : "border-term-border text-term-dim hover:text-term-text"
+            }`}
+            title="Chart controls"
+          >
+            ⚙ Controls
+          </button>
+          <button
+            onClick={() => setPanel((p) => (p === "info" ? null : "info"))}
+            className={`rounded border px-2 py-0.5 font-semibold ${
+              panel === "info"
+                ? "border-term-accent text-term-accent"
+                : "border-term-border text-term-dim hover:text-term-text"
+            }`}
+            title="Legend & OI read"
+          >
+            ⓘ
+          </button>
         </div>
-      )}
+
+        {panel && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setPanel(null)} />
+            <div className="absolute right-2 top-full z-50 mt-1 max-h-[72vh] w-[280px] max-w-[92vw] space-y-1.5 overflow-y-auto rounded-lg border border-term-border bg-term-panel p-3 text-2xs shadow-2xl">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold uppercase tracking-wide text-term-dim">
+                  {panel === "controls" ? "Chart controls" : "OI read"}
+                </span>
+                <button
+                  onClick={() => setPanel(null)}
+                  className="text-term-dim hover:text-term-text"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {panel === "controls" ? (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="shrink-0 text-term-dim">List</span>
+                    <ClassFilter />
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="shrink-0 text-term-dim">View</span>
+                    <div className="seg">
+                      {(
+                        [
+                          ["oi", "OI"],
+                          ["chg", "ΔOI"],
+                          ["combined", "OI+Δ"],
+                        ] as const
+                      ).map(([m, l]) => (
+                        <button
+                          key={m}
+                          onClick={() => setMetric(m)}
+                          className={metric === m ? "on" : ""}
+                        >
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="shrink-0 text-term-dim">Strikes ±</span>
+                    <div className="seg">
+                      {[5, 10, 15, 20, 25, 0].map((n) => (
+                        <button
+                          key={n}
+                          onClick={() => setCount(n)}
+                          className={count === n ? "on" : ""}
+                        >
+                          {n === 0 ? "All" : n}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="shrink-0 text-term-dim">ΔOI over</span>
+                    <select
+                      value={tf}
+                      onChange={(e) => setTf(Number(e.target.value))}
+                      className="num rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+                    >
+                      {(
+                        [
+                          [0, "Full day"],
+                          [1, "1m"],
+                          [2, "2m"],
+                          [3, "3m"],
+                          [5, "5m"],
+                          [15, "15m"],
+                          [30, "30m"],
+                          [60, "1h"],
+                          [120, "2h"],
+                          [180, "3h"],
+                        ] as const
+                      ).map(([m, l]) => (
+                        <option key={m} value={m}>
+                          {l}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {layout === "chart" && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="shrink-0 text-term-dim">Zoom</span>
+                      <div className="seg">
+                        {[100, 95, 90, 85, 80].map((p) => (
+                          <button
+                            key={p}
+                            onClick={() => setZoom(p / 100)}
+                            className={Math.round(zoom * 100) === p ? "on" : ""}
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {tf > 0 && winCov > 0 && winCov < tf - 0.5 && (
+                    <div className="text-amber-400">
+                      history {winCov}m / {tf}m — still filling
+                    </div>
+                  )}
+                  {tf > 0 && winCov === 0 && (
+                    <div className="text-amber-400">collecting OI history…</div>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-1.5 text-[10px] text-term-dim">
+                  <div>
+                    <span className="font-semibold text-down">Call OI</span>{" "}
+                    <span className="num text-term-text">{crores(chain.totals.ceOI)}</span> ·{" "}
+                    <Sw c={OI_ADD} /> +{compact(flow.ceAdd)} · <Sw c={OI_CUT} hollow />{" "}
+                    {compact(flow.ceCut)}
+                  </div>
+                  <div>
+                    <span className="font-semibold text-up">Put OI</span>{" "}
+                    <span className="num text-term-text">{crores(chain.totals.peOI)}</span> ·{" "}
+                    <Sw c={OI_ADD} /> +{compact(flow.peAdd)} · <Sw c={OI_CUT} hollow />{" "}
+                    {compact(flow.peCut)}
+                  </div>
+                  <div>
+                    Resistance <span className="text-term-text">{sk(stats.resistance)}</span> · Floor{" "}
+                    <span className="text-term-text">{sk(stats.floor)}</span> · ATM{" "}
+                    <span className="text-term-text">{sk(chain.atmStrike)}</span>
+                  </div>
+                  {verdict && (
+                    <div className="border-t border-term-border/50 pt-1.5">
+                      <span
+                        className={`rounded px-1.5 py-0.5 font-bold ${
+                          verdict.bias === "BULLISH"
+                            ? "bg-up text-white"
+                            : verdict.bias === "BEARISH"
+                            ? "bg-down text-white"
+                            : "bg-term-border text-term-dim"
+                        }`}
+                      >
+                        OI TREND: {verdict.bias}
+                      </span>{" "}
+                      score {verdict.score > 0 ? "+" : ""}
+                      {verdict.score}
+                      {verdict.pros.length > 0 && (
+                        <div className="mt-0.5 text-up">▲ {verdict.pros.join(" · ")}</div>
+                      )}
+                      {verdict.cons.length > 0 && (
+                        <div className="mt-0.5 text-down">▼ {verdict.cons.join(" · ")}</div>
+                      )}
+                    </div>
+                  )}
+                  <div className="border-t border-term-border/50 pt-1.5">
+                    <Sw c={CALL_OI} /> Call OI &nbsp; <Sw c={PUT_OI} /> Put OI
+                    {metric === "combined" && (
+                      <div className="mt-0.5">bar = OI · hatched = increase · pale = decrease</div>
+                    )}
+                    {metric === "chg" && (
+                      <div className="mt-0.5">solid up = OI added · hollow down = OI reduced</div>
+                    )}
+                    <div className="mt-0.5">
+                      <span
+                        className="mr-1 inline-block border-l-2 border-dashed border-fuchsia-400 align-middle"
+                        style={{ height: 10 }}
+                      />
+                      γ-flip · Ctrl+scroll zooms the chart
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
 
       {layout === "chart" && (
         <div className={`flex ${isMobile ? "flex-col-reverse" : "min-h-0 flex-1 flex-row"}`}>
@@ -1333,45 +1394,6 @@ export function OIProfile() {
       {layout === "ladder" && ladderEl}
       {layout === "sensibull" && sensiEl}
       {layout === "pcr" && pcrEl}
-
-      <div className="flex flex-wrap items-center gap-x-3 border-t border-term-border px-3 py-1 text-[9px] text-term-dim">
-        <span>
-          <Sw c={CALL_OI} /> Call OI &nbsp; <Sw c={PUT_OI} /> Put OI
-        </span>
-        <span>
-          {metric === "combined" ? (
-            <>
-              bar = OI (leg colour) &nbsp;
-              <span
-                className="mr-1 inline-block h-2.5 w-3.5 align-middle"
-                style={{ backgroundImage: "repeating-linear-gradient(45deg,#94a3b8 0 2px,transparent 2px 4.5px)" }}
-              />
-              hatched = increase &nbsp;
-              <span
-                className="mr-1 inline-block h-2.5 w-3.5 align-middle"
-                style={{ backgroundImage: "repeating-linear-gradient(45deg,#94a3b855 0 2px,transparent 2px 4.5px)" }}
-              />
-              pale = decrease
-            </>
-          ) : metric === "chg" ? (
-            <>
-              <Sw c={OI_ADD} /> OI added (solid, up) &nbsp; <Sw c={OI_CUT} hollow /> OI reduced (hollow, down)
-            </>
-          ) : (
-            <>
-              <span className="mr-1 inline-block h-2.5 w-3.5 align-middle" style={{ background: "#94a3b855" }} />
-              bar height = total OI at each strike
-            </>
-          )}
-        </span>
-        <span>
-          <span className="mr-1 inline-block border-l-2 border-dashed border-fuchsia-400 align-middle" style={{ height: 10 }} />
-          γ-flip (dealer gamma zero-cross)
-        </span>
-        <span className="text-term-dim">
-          · ΔOI over the selected window · Ctrl+scroll to zoom.
-        </span>
-      </div>
     </div>
   );
 }
