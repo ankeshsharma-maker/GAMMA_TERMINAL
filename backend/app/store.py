@@ -791,25 +791,70 @@ class Store:
 
             sym = entry
             chain = self.get_chain(sym)
-            if chain:
-                live = self.live_spot.get(sym)
-                out.append(
-                    {
-                        "key": sym,
-                        "kind": "symbol",
-                        "symbol": sym,
-                        "spot": chain["spot"],
-                        "liveSpot": live["ltp"] if live else None,
-                        "liveChgPct": live["chgPct"] if live else None,
-                        "atmIV": chain["atmIV"],
-                        "atmStrike": chain["atmStrike"],
-                        "pcr": chain["pcr"],
-                        "dte": chain["dte"],
-                        "expiry": chain["expiry"],
-                        "lotSize": chain["lotSize"],
-                        "fetchedAt": chain.get("fetchedAt"),
-                    }
-                )
+            live = self.live_spot.get(sym.upper())
+
+            # NSE index catalog carries the index names *and* INDIA VIX with a
+            # day change (pChange + variation) — the only source for a row with
+            # no option chain (INDIA VIX) or no broker/Upstox feed.
+            idxq = None
+            needle = sym.upper().replace(" ", "")
+            for nm, q in list(self.index_quotes.items()):
+                if nm.upper().replace(" ", "") == needle:
+                    idxq = q
+                    break
+
+            spot = (
+                (live["ltp"] if live else None)
+                or (chain["spot"] if chain else None)
+                or (idxq.get("last") if idxq else None)
+            )
+            chg_pct = live["chgPct"] if live else None
+            variation = None
+            if idxq:
+                if chg_pct is None:
+                    chg_pct = idxq.get("pChange")
+                if idxq.get("variation") is not None:
+                    variation = idxq.get("variation")
+            if variation is None and spot is not None and chg_pct is not None:
+                try:
+                    prev = float(spot) / (1 + float(chg_pct) / 100)
+                    variation = round(float(spot) - prev, 2)
+                except (TypeError, ValueError, ZeroDivisionError):
+                    variation = None
+            # last resort — move from the first spot seen today, so a plain stock
+            # with no live feed still shows an arrow + points + % like the rest
+            if spot is not None and chg_pct is None and variation is None:
+                try:
+                    op = self.session_open(sym, float(spot))
+                    if op:
+                        variation = round(float(spot) - op, 2)
+                        chg_pct = round((float(spot) - op) / op * 100, 2)
+                except Exception:  # noqa: BLE001
+                    pass
+
+            if chain or spot is not None:
+                row = {
+                    "key": sym,
+                    "kind": "symbol",
+                    "symbol": sym,
+                    "spot": chain["spot"] if chain else spot,
+                    "liveSpot": (live["ltp"] if live else None) or spot,
+                    "liveChgPct": chg_pct,
+                    "variation": variation,
+                }
+                if chain:
+                    row.update(
+                        {
+                            "atmIV": chain["atmIV"],
+                            "atmStrike": chain["atmStrike"],
+                            "pcr": chain["pcr"],
+                            "dte": chain["dte"],
+                            "expiry": chain["expiry"],
+                            "lotSize": chain["lotSize"],
+                            "fetchedAt": chain.get("fetchedAt"),
+                        }
+                    )
+                out.append(row)
             else:
                 out.append(
                     {"key": sym, "kind": "symbol", "symbol": sym, "spot": None,

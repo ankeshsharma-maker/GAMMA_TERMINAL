@@ -60,8 +60,12 @@ function DelBtn({ onClick, title }: { onClick: (e: React.MouseEvent) => void; ti
 }
 
 const BSE_SYMS = new Set(["SENSEX", "BANKEX", "SENSEX50", "SNSX50"]);
-const wExch = (w: WatchQuote) =>
-  w.kind === "index" ? "INDEX" : BSE_SYMS.has(w.symbol.toUpperCase()) ? "BSE" : "NSE";
+const wExch = (w: WatchQuote) => {
+  const u = w.symbol.toUpperCase();
+  if (BSE_SYMS.has(u)) return "BSE";
+  if (w.kind === "index" || u === "INDIA VIX" || u === "VIX" || u.includes("NIFTY")) return "INDEX";
+  return "NSE";
+};
 const wAbsChg = (w: WatchQuote) => {
   if (w.variation != null) return w.variation;
   const p = wPx(w);
