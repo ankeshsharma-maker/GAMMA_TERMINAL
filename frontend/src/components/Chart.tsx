@@ -138,8 +138,15 @@ const MTF_INDS: [string, string][] = [
   ["sma", "SMA"],
   ["vwap", "VWAP"],
   ["boll", "Bollinger mid"],
+  ["bollu", "Bollinger upper"],
+  ["bolll", "Bollinger lower"],
   ["supertrend", "Supertrend"],
+  ["rsi", "RSI"],
+  ["macd", "MACD"],
+  ["macdsig", "MACD signal"],
 ];
+// MTF indicators whose values sit off the price scale — drawn on a hidden axis
+const MTF_OSC = new Set(["rsi", "macd", "macdsig"]);
 
 export function Chart() {
   const symbol = useStore((s) => s.symbol);
@@ -396,6 +403,21 @@ export function Chart() {
       priceLineVisible: false,
       lastValueVisible: true,
     });
+    // second MTF line on its own hidden auto-scaled axis, for oscillator MTF
+    // indicators (RSI / MACD) whose values don't live on the price scale
+    c.mtf2 = chart.addLineSeries({
+      color: "#22d3ee",
+      lineWidth: 2,
+      lineStyle: LineStyle.Dashed,
+      priceScaleId: "mtfosc",
+      priceLineVisible: false,
+      lastValueVisible: false,
+      visible: false,
+    });
+    chart.priceScale("mtfosc").applyOptions({
+      visible: false,
+      scaleMargins: { top: 0.7, bottom: 0.04 },
+    });
 
     c.straddle = chart.addLineSeries({
       color: "#a855f7",
@@ -593,23 +615,37 @@ export function Chart() {
     setLine("st", ind.st, eff.supertrend);
 
     // multi-timeframe indicator overlay (dashed cyan) — indicator computed on
-    // candles resampled to `mtf.tf`, then stepped back onto the chart timeline
+    // candles resampled to `mtf.tf`, then stepped back onto the chart timeline.
+    // Price-scale indicators go on c.mtf; oscillators (RSI/MACD) on c.mtf2's
+    // hidden auto-scaled axis so their shape reads without swamping price.
     {
       const mser = c.mtf as ISeriesApi<"Line">;
+      const mser2 = c.mtf2 as ISeriesApi<"Line">;
       if (mtf && cd.length && !indHidden) {
         const rc = mtf.tf > (intervalS || 0) ? resampleCandles(cd, mtf.tf) : cd;
+        const L = mtf.len || 21;
         let raw: Pt[] = [];
-        if (mtf.ind === "ema") raw = ema(rc, mtf.len || 21);
-        else if (mtf.ind === "sma") raw = sma(rc, mtf.len || 20);
+        if (mtf.ind === "ema") raw = ema(rc, L);
+        else if (mtf.ind === "sma") raw = sma(rc, L);
         else if (mtf.ind === "vwap") raw = vwap(rc);
-        else if (mtf.ind === "boll") raw = bollinger(rc, mtf.len || 20, 2).mid;
+        else if (mtf.ind === "boll") raw = bollinger(rc, L, 2).mid;
+        else if (mtf.ind === "bollu") raw = bollinger(rc, L, 2).upper;
+        else if (mtf.ind === "bolll") raw = bollinger(rc, L, 2).lower;
         else if (mtf.ind === "supertrend") raw = supertrend(rc, mtf.len || 10, 3);
+        else if (mtf.ind === "rsi") raw = rsi(rc, mtf.len || 14);
+        else if (mtf.ind === "macd") raw = macd(rc).macd;
+        else if (mtf.ind === "macdsig") raw = macd(rc).signal;
         const pts = stepOnto(cd, raw);
-        mser.applyOptions({ visible: pts.length > 0 });
-        mser.setData(pts as any);
+        const osc = MTF_OSC.has(mtf.ind);
+        (osc ? mser2 : mser).setData(pts as any);
+        (osc ? mser2 : mser).applyOptions({ visible: pts.length > 0 });
+        (osc ? mser : mser2).setData([]);
+        (osc ? mser : mser2).applyOptions({ visible: false });
       } else {
         mser.applyOptions({ visible: false });
         mser.setData([]);
+        mser2.applyOptions({ visible: false });
+        mser2.setData([]);
       }
     }
 

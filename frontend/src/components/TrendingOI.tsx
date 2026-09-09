@@ -978,129 +978,83 @@ function TrendingOIClassic() {
         </span>
       </div>
 
-      {/* live readout */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-term-border bg-term-panel px-3 py-1.5 text-2xs">
+      {/* compact stats strip — one line, freeing the rest for the chart */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel px-3 py-1 text-2xs">
         <Tile
-          label="Call OI Δ"
+          label="Call Δ"
           value={last ? lakhs(last.ce) : "–"}
           cls={last && last.ce >= 0 ? "text-down" : "text-up"}
         />
         <Tile
-          label="Put OI Δ"
+          label="Put Δ"
           value={last ? lakhs(last.pe) : "–"}
           cls={last && last.pe >= 0 ? "text-up" : "text-down"}
         />
         <Tile
-          label={netOi >= 0 ? "Net OI added" : "Net OI reduced"}
+          label={netOi >= 0 ? "Net +" : "Net −"}
           value={last ? lakhs(netOi) : "–"}
           cls={netOi >= 0 ? "text-term-text" : "text-amber-400"}
         />
         <Tile
-          label="Bias (PE − CE)"
+          label="Bias"
           value={last ? lakhs(net) : "–"}
           cls={net >= 0 ? "text-up" : "text-down"}
         />
         <Tile
           label="PCR"
-          value={last?.pcr != null ? nf(last.pcr, 2) : "–"}
-          cls={last?.pcr != null ? (last.pcr >= 1 ? "text-up" : "text-down") : ""}
+          value={pcrNow != null ? nf(pcrNow, 2) : "–"}
+          cls={pcrNow != null ? (pcrNow >= 1 ? "text-up" : "text-down") : ""}
         />
+        {pcrStats && (
+          <span className="num text-[9px] text-term-dim">
+            o{nf(pcrStats.open, 2)} l{nf(pcrStats.lo, 2)} h{nf(pcrStats.hi, 2)}
+            {pcrDelta != null && (
+              <span className={pcrDelta >= 0 ? " text-up" : " text-down"}>
+                {" "}
+                Δ{pcrDelta >= 0 ? "+" : ""}
+                {nf(pcrDelta, 2)}
+              </span>
+            )}
+          </span>
+        )}
         <Tile
-          label="Spot Δ (session)"
+          label="Spot Δ"
           value={last ? `${priceChg >= 0 ? "+" : ""}${nf(priceChg, 1)}` : "–"}
           cls={priceChg >= 0 ? "text-up" : "text-down"}
         />
         {buildup && (
           <span
-            className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${buildup.cls}`}
+            className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${buildup.cls}`}
             title={buildup.note}
           >
             {buildup.txt}
           </span>
         )}
         {bias && (
-          <span className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${bias.cls}`}>
+          <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${bias.cls}`}>
             {bias.txt}
           </span>
         )}
+        {sentBars.length > 0 && (
+          <span className="flex items-center gap-1.5 text-[9px] text-term-dim">
+            <span className="uppercase tracking-wide">Sent {tfLbl}</span>
+            <span className="text-up">▲{sentTally.bull}</span>
+            <span className="text-down">▼{sentTally.bear}</span>
+            <span className="flex h-2 w-16 overflow-hidden rounded-sm bg-term-bg">
+              {sentSplit.map(
+                (sp) =>
+                  sp.pct > 0 && (
+                    <span
+                      key={sp.key}
+                      style={{ width: `${sp.pct}%`, background: sp.col }}
+                      title={`${sp.label} · ${sp.n}`}
+                    />
+                  )
+              )}
+            </span>
+          </span>
+        )}
       </div>
-
-      {/* PCR value + sentiment mix, side by side */}
-      {(pcrNow != null || sentBars.length > 0) && (
-        <div className="grid shrink-0 grid-cols-2 divide-x divide-term-border border-b border-term-border bg-term-panel">
-          <div className="flex items-center gap-3 px-3 py-2">
-            <div className="flex flex-col leading-none">
-              <span className="text-[9px] uppercase tracking-wide text-term-dim">PCR</span>
-              <span
-                className={`num text-xl font-bold ${
-                  pcrNow != null ? (pcrNow >= 1 ? "text-up" : "text-down") : "text-term-dim"
-                }`}
-              >
-                {pcrNow != null ? nf(pcrNow, 2) : "–"}
-              </span>
-            </div>
-            <div className="flex flex-col gap-0.5 text-[10px] text-term-dim">
-              <span>
-                {pcrNow != null
-                  ? pcrNow >= 1
-                    ? "put-heavy · supportive"
-                    : "call-heavy · heavy"
-                  : "collecting…"}
-              </span>
-              {pcrStats && (
-                <span className="num">
-                  open {nf(pcrStats.open, 2)} · lo {nf(pcrStats.lo, 2)} · hi {nf(pcrStats.hi, 2)}
-                </span>
-              )}
-              {pcrDelta != null && (
-                <span className={`num ${pcrDelta >= 0 ? "text-up" : "text-down"}`}>
-                  session Δ {pcrDelta >= 0 ? "+" : ""}
-                  {nf(pcrDelta, 2)}
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="flex flex-col justify-center gap-1 px-3 py-2">
-            <div className="flex items-center justify-between text-[9px] uppercase tracking-wide text-term-dim">
-              <span>
-                Sentiment · {tfLbl} × {sentBars.length}
-              </span>
-              <span className="normal-case">
-                <span className="text-up">▲ {sentTally.bull}</span>{" "}
-                <span className="text-down">▼ {sentTally.bear}</span>
-              </span>
-            </div>
-            {sentBars.length > 0 ? (
-              <>
-                <div className="flex h-2.5 w-full overflow-hidden rounded-sm bg-term-bg">
-                  {sentSplit.map(
-                    (s) =>
-                      s.pct > 0 && (
-                        <div
-                          key={s.key}
-                          style={{ width: `${s.pct}%`, background: s.col }}
-                          title={`${s.label} · ${s.n}`}
-                        />
-                      )
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[8px] text-term-dim">
-                  {sentSplit
-                    .filter((s) => s.n > 0)
-                    .map((s) => (
-                      <span key={s.key}>
-                        <span style={{ color: s.col }}>■</span> {s.label} {s.n}
-                      </span>
-                    ))}
-                </div>
-              </>
-            ) : (
-              <span className="text-[10px] text-term-dim">need a few buckets</span>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* chart */}
       <div ref={boxRef} className="relative min-h-0 flex-1 overflow-hidden p-3">
