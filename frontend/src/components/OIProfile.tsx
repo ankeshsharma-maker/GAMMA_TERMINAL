@@ -4,6 +4,7 @@ import { ClassFilter } from "./Header";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { compact, crores, nf, sk } from "../lib/format";
+import { useIsMobile } from "../lib/useIsMobile";
 import type { ChainRow } from "../types";
 
 type Metric = "oi" | "chg" | "combined";
@@ -28,6 +29,8 @@ export function OIProfile() {
   const symClass = useStore((s) => s.symClass);
   const symClassOk = useStore((s) => s.symClassOk);
 
+  const isMobile = useIsMobile();
+  const [tools, setTools] = useState(false); // mobile: show the extra control rows
   const [metric, setMetric] = useState<Metric>("combined");
   const [layout, setLayout] = useState<"chart" | "ladder" | "sensibull" | "pcr">("chart");
   const [pcrPts, setPcrPts] = useState<{ t: number; pcr: number; spot: number }[]>([]);
@@ -297,7 +300,9 @@ export function OIProfile() {
 
   const PLOT_H = TAG + AREA + LBL;
   const chartEl = (
-    <div className="min-h-0 flex-1 overflow-auto p-3">
+    <div
+      className={`w-full overflow-auto p-3 ${isMobile ? "" : "min-h-0 flex-1"}`}
+    >
       <div className="flex items-end" style={{ minHeight: "100%" }}>
         {/* Y axis — OI (or ΔOI) values */}
         <div
@@ -504,7 +509,7 @@ export function OIProfile() {
 
   // ---- OI-Ladder-style horizontal rows (combined total OI bar + ΔOI cap) ----
   const ladderEl = (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className={`overflow-y-auto ${isMobile ? "" : "min-h-0 flex-1"}`}>
       <div className="sticky top-0 z-10 grid grid-cols-[1fr_auto_1fr] items-center divide-x divide-term-border border-b border-term-border bg-term-panel2 text-[10px] uppercase text-term-dim">
         <span className="px-3 py-1 text-right" style={{ color: CALL_OI }}>
           Call OI · Δ
@@ -678,8 +683,10 @@ export function OIProfile() {
 
     return (
       <div
-        className="flex w-full shrink-0 flex-col items-center gap-2 overflow-y-auto border-b border-term-border p-3 sm:w-[var(--dw)] sm:border-b-0 sm:border-r"
-        style={{ "--dw": `${donutW}px` } as React.CSSProperties}
+        className={`flex shrink-0 flex-col items-center gap-2 overflow-y-auto border-term-border p-3 ${
+          isMobile ? "w-full border-t" : "border-r"
+        }`}
+        style={isMobile ? undefined : { width: donutW }}
       >
         <div className="text-center text-2xs font-semibold uppercase tracking-wide text-term-dim">
           Total OI · {count}±ATM
@@ -777,7 +784,7 @@ export function OIProfile() {
     const fmtT = (t: number) =>
       new Date(t * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
     return (
-      <div className="min-h-0 flex-1 overflow-hidden p-3">
+      <div className={`overflow-hidden p-3 ${isMobile ? "h-[70vh]" : "min-h-0 flex-1"}`}>
         <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
           <span className="font-semibold text-term-text">{symbol} · Session PCR vs Price</span>
           <span className={`num text-lg font-bold ${bullish ? "text-up" : "text-down"}`}>
@@ -840,6 +847,7 @@ export function OIProfile() {
   // Call bar = red, Put bar = green (leg shown by colour); above the zero line
   // = OI added, below = OI reduced (reduced bars dimmed so direction reads even
   // without checking the axis). Spot + Max Pain marked, ATM band shaded.
+  const sensiCls = isMobile ? "" : "min-h-0 flex-1";
   const sensiEl = (() => {
     const COL = 34; // px per strike
     const H = 340;
@@ -899,7 +907,7 @@ export function OIProfile() {
     };
 
     return (
-      <div className="min-h-0 flex-1 overflow-auto p-3">
+      <div className={`overflow-auto p-3 ${sensiCls}`}>
         <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px]">
           {chip(symbol, nf(spot, 1))}
           {chip("ATM", sk(chain.atmStrike))}
@@ -1058,134 +1066,159 @@ export function OIProfile() {
   })();
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className={`flex flex-col ${isMobile ? "shrink-0" : "min-h-0 flex-1"}`}>
       {/* toolbar */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
-        <span className="font-semibold uppercase tracking-wide">OI Profile</span>
+      <div className="border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
+        {/* row 1 — always visible: symbol / expiry / view switch / readout */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="font-semibold uppercase tracking-wide">OI Profile</span>
 
-        <RefreshChainBtn />
+          <RefreshChainBtn />
 
-        <ClassFilter />
-        <select
-          value={symbol}
-          onChange={(e) => selectSymbol(e.target.value, true)}
-          className="rounded border border-term-border bg-term-bg px-1 py-0.5 font-semibold text-term-text outline-none focus:border-term-accent"
-          title="Underlying (list filtered by the All / Indices / Stocks toggle)"
-        >
-          {symOptions.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-
-        {chain.expiries.length > 0 && (
+          <ClassFilter />
           <select
-            value={expiry}
-            onChange={(e) => selectExpiry(e.target.value)}
-            className="num rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+            value={symbol}
+            onChange={(e) => selectSymbol(e.target.value, true)}
+            className="rounded border border-term-border bg-term-bg px-1 py-0.5 font-semibold text-term-text outline-none focus:border-term-accent"
+            title="Underlying (list filtered by the All / Indices / Stocks toggle)"
           >
-            {chain.expiries.map((e) => (
-              <option key={e} value={e}>
-                {e}
+            {symOptions.map((s) => (
+              <option key={s} value={s}>
+                {s}
               </option>
             ))}
           </select>
-        )}
 
-        <span className="ml-1">View</span>
-        <div className="seg">
-          <button onClick={() => setMetric("oi")} className={metric === "oi" ? "on" : ""}>
-            OI
-          </button>
-          <button onClick={() => setMetric("chg")} className={metric === "chg" ? "on" : ""}>
-            ΔOI bars
-          </button>
-          <button onClick={() => setMetric("combined")} className={metric === "combined" ? "on" : ""}>
-            OI + Δ caps
-          </button>
-        </div>
+          {chain.expiries.length > 0 && (
+            <select
+              value={expiry}
+              onChange={(e) => selectExpiry(e.target.value)}
+              className="num rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+            >
+              {chain.expiries.map((e) => (
+                <option key={e} value={e}>
+                  {e}
+                </option>
+              ))}
+            </select>
+          )}
 
-        <span className="ml-1">Strikes ±</span>
-        <div className="seg">
-          {[5, 10, 15, 20, 25, 0].map((n) => (
-            <button key={n} onClick={() => setCount(n)} className={count === n ? "on" : ""}>
-              {n === 0 ? "All" : n}
-            </button>
-          ))}
-        </div>
-
-        <span className="ml-1">Show</span>
-        <div className="seg">
-          {(
-            [
-              ["chart", "chart"],
-              ["ladder", "ladder"],
-              ["sensibull", "sensibull"],
-              ["pcr", "pcr"],
-            ] as const
-          ).map(([v, l]) => (
-            <button key={v} onClick={() => setLayout(v)} className={layout === v ? "on" : ""}>
-              {l}
-            </button>
-          ))}
-        </div>
-
-        <span className="ml-1">ΔOI over</span>
-        <div className="seg">
-          {([[0, "Full day"], [1, "1m"], [2, "2m"], [3, "3m"], [5, "5m"], [15, "15m"], [30, "30m"], [60, "1h"], [120, "2h"], [180, "3h"]] as const).map(
-            ([m, l]) => (
-              <button key={m} onClick={() => setTf(m)} className={tf === m ? "on" : ""}>
+          <span className="ml-1">Show</span>
+          <div className="seg">
+            {(
+              [
+                ["chart", "chart"],
+                ["ladder", "ladder"],
+                ["sensibull", "sensibull"],
+                ["pcr", "pcr"],
+              ] as const
+            ).map(([v, l]) => (
+              <button key={v} onClick={() => setLayout(v)} className={layout === v ? "on" : ""}>
                 {l}
               </button>
-            )
+            ))}
+          </div>
+
+          {isMobile && (
+            <button
+              onClick={() => setTools((t) => !t)}
+              className={`rounded border px-1.5 py-0.5 ${
+                tools ? "border-term-accent text-term-accent" : "border-term-border"
+              }`}
+              title="Show / hide the chart controls"
+            >
+              ⚙ {tools ? "▴" : "▾"}
+            </button>
           )}
-        </div>
-        {tf > 0 && winCov > 0 && winCov < tf - 0.5 && (
-          <span className="text-amber-400">
-            history {winCov}m / {tf}m — still filling
-          </span>
-        )}
-        {tf > 0 && winCov === 0 && <span className="text-amber-400">collecting OI history…</span>}
 
-        {layout === "chart" && (
-          <>
-            <span className="ml-1">Zoom</span>
-            <div className="seg">
-              {[100, 95, 90, 85, 80].map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setZoom(p / 100)}
-                  className={Math.round(zoom * 100) === p ? "on" : ""}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-
-        <div className="num ml-auto flex flex-wrap items-center gap-1.5 text-[10px]">
-          <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
-            <span className="text-term-dim">Spot </span>
-            <span className="text-term-text">{nf(spot, 1)}</span>
-          </span>
-          <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
-            <span className="text-term-dim">PCR </span>
-            <span className="text-term-text">{nf(chain.pcr, 2)}</span>
-          </span>
-          <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
-            <span className="text-term-dim">Max Pain </span>
-            <span className="text-term-text">{nf(chain.maxPain, 0)}</span>
-          </span>
-          {gammaFlip && (
+          <div className="num ml-auto flex flex-wrap items-center gap-1.5 text-[10px]">
             <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
-              <span className="text-term-dim">γ-flip </span>
-              <span className="text-fuchsia-400">{sk(gammaFlip.strike)}</span>{" "}
-              <span className={spot >= gammaFlip.strike ? "text-up" : "text-down"}>
-                {spot >= gammaFlip.strike ? "long-γ" : "short-γ"}
-              </span>
+              <span className="text-term-dim">Spot </span>
+              <span className="text-term-text">{nf(spot, 1)}</span>
             </span>
+            <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
+              <span className="text-term-dim">PCR </span>
+              <span className="text-term-text">{nf(chain.pcr, 2)}</span>
+            </span>
+            <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
+              <span className="text-term-dim">Max Pain </span>
+              <span className="text-term-text">{nf(chain.maxPain, 0)}</span>
+            </span>
+            {gammaFlip && (
+              <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
+                <span className="text-term-dim">γ-flip </span>
+                <span className="text-fuchsia-400">{sk(gammaFlip.strike)}</span>{" "}
+                <span className={spot >= gammaFlip.strike ? "text-up" : "text-down"}>
+                  {spot >= gammaFlip.strike ? "long-γ" : "short-γ"}
+                </span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* row 2 — chart controls (collapsible on a phone) */}
+        <div
+          className={`mt-1 w-full flex-wrap items-center gap-x-3 gap-y-1 ${
+            isMobile && !tools ? "hidden" : "flex"
+          }`}
+        >
+          <span className="ml-1">View</span>
+          <div className="seg">
+            <button onClick={() => setMetric("oi")} className={metric === "oi" ? "on" : ""}>
+              OI
+            </button>
+            <button onClick={() => setMetric("chg")} className={metric === "chg" ? "on" : ""}>
+              ΔOI bars
+            </button>
+            <button
+              onClick={() => setMetric("combined")}
+              className={metric === "combined" ? "on" : ""}
+            >
+              OI + Δ caps
+            </button>
+          </div>
+
+          <span className="ml-1">Strikes ±</span>
+          <div className="seg">
+            {[5, 10, 15, 20, 25, 0].map((n) => (
+              <button key={n} onClick={() => setCount(n)} className={count === n ? "on" : ""}>
+                {n === 0 ? "All" : n}
+              </button>
+            ))}
+          </div>
+
+          <span className="ml-1">ΔOI over</span>
+          <div className="seg">
+            {([[0, "Full day"], [1, "1m"], [2, "2m"], [3, "3m"], [5, "5m"], [15, "15m"], [30, "30m"], [60, "1h"], [120, "2h"], [180, "3h"]] as const).map(
+              ([m, l]) => (
+                <button key={m} onClick={() => setTf(m)} className={tf === m ? "on" : ""}>
+                  {l}
+                </button>
+              )
+            )}
+          </div>
+          {tf > 0 && winCov > 0 && winCov < tf - 0.5 && (
+            <span className="text-amber-400">
+              history {winCov}m / {tf}m — still filling
+            </span>
+          )}
+          {tf > 0 && winCov === 0 && <span className="text-amber-400">collecting OI history…</span>}
+
+          {layout === "chart" && (
+            <>
+              <span className="ml-1">Zoom</span>
+              <div className="seg">
+                {[100, 95, 90, 85, 80].map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setZoom(p / 100)}
+                    className={Math.round(zoom * 100) === p ? "on" : ""}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -1242,15 +1275,17 @@ export function OIProfile() {
       )}
 
       {layout === "chart" && (
-        <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
+        <div className={`flex ${isMobile ? "flex-col-reverse" : "min-h-0 flex-1 flex-row"}`}>
           {donutEl && (
             <>
               {donutEl}
-              <div
-                onMouseDown={startDonutDrag}
-                title="Drag to resize the OI-split panel"
-                className="hidden w-1.5 shrink-0 cursor-col-resize bg-term-border/50 transition-colors hover:bg-term-accent/70 sm:block"
-              />
+              {!isMobile && (
+                <div
+                  onMouseDown={startDonutDrag}
+                  title="Drag to resize the OI-split panel"
+                  className="w-1.5 shrink-0 cursor-col-resize bg-term-border/50 transition-colors hover:bg-term-accent/70"
+                />
+              )}
             </>
           )}
           {chartEl}
