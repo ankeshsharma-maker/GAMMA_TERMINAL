@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { lakhs, nf, compact } from "../lib/format";
-import { usePanel, PanelButtons, Popover, Row } from "./Popover";
 
 type Pt = {
   t: number;
@@ -194,7 +193,6 @@ function TrendingOILive() {
   const live = useStore((s) => (s.chain ? s.liveSpots[s.chain.symbol] : undefined));
 
   const [showChart, setShowChart] = useState(false);
-  const [panel, setPanel] = usePanel();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 30000);
@@ -368,8 +366,9 @@ function TrendingOILive() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
-      {/* slim bar */}
-      <div className="relative flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs">
+      {/* header */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-2 text-2xs">
+        <span className="text-sm font-semibold">{symbol} Trending OI Live</span>
         <select
           value={symbol}
           onChange={(e) => selectSymbol(e.target.value, true)}
@@ -394,7 +393,7 @@ function TrendingOILive() {
             ))}
           </select>
         ) : null}
-        <span className="num text-[10px] text-term-dim">
+        <span className="num text-term-dim">
           Spot <span className="text-term-text">{nf(spot, 1)}</span>
           {spotChg != null && (
             <span className={spotChg >= 0 ? "text-up" : "text-down"}>
@@ -404,79 +403,115 @@ function TrendingOILive() {
             </span>
           )}
         </span>
-        {L && (
-          <span
-            className={`rounded px-1 text-[10px] font-bold ${
-              L.sentiment === "Bullish"
-                ? "bg-up/20 text-up"
-                : L.sentiment === "Bearish"
-                ? "bg-down/20 text-down"
-                : "bg-term-border text-term-dim"
-            }`}
-          >
-            {L.sentiment}
-          </span>
-        )}
-        <span className="ml-auto flex items-center gap-1.5">
-          <span className="hidden text-[10px] text-term-dim sm:inline">
-            Refreshed{" "}
-            {new Date(now).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
-          </span>
-          <PanelButtons panel={panel} setPanel={setPanel} />
+        <span className="ml-auto text-term-dim">
+          Refreshed{" "}
+          {new Date(now).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
         </span>
+        <button
+          onClick={() => setShowChart((v) => !v)}
+          className={`rounded border px-2 py-0.5 font-semibold ${
+            showChart
+              ? "border-term-accent bg-term-accent text-white"
+              : "border-term-border text-term-dim"
+          }`}
+        >
+          {showChart ? "Hide chart" : "Show chart"}
+        </button>
+      </div>
 
-        <Popover open={panel === "controls"} onClose={() => setPanel(null)} title="Controls">
-          <Row label="Timeframe">
-            <div className="seg">
-              {TF.map(([lbl, v]) => (
-                <button key={v} onClick={() => setTf(v)} className={tf === v ? "on" : ""}>
-                  {lbl}
-                </button>
-              ))}
-            </div>
-          </Row>
-          <Row label="Chart">
-            <button
-              onClick={() => setShowChart((v) => !v)}
-              className={`rounded border px-2 py-0.5 font-semibold ${
-                showChart
-                  ? "border-term-accent text-term-accent"
-                  : "border-term-border text-term-dim"
+      {/* summary band */}
+      <div className="border-b border-term-border bg-term-panel px-3 py-2">
+        <div className="mb-1.5 flex items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-term-dim">
+            Trending OI Summary
+          </span>
+          {L && (
+            <span
+              className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                L.sentiment === "Bullish"
+                  ? "bg-up text-white"
+                  : L.sentiment === "Bearish"
+                  ? "bg-down text-white"
+                  : "bg-term-border text-term-dim"
               }`}
             >
-              {showChart ? "shown" : "hidden"}
-            </button>
-          </Row>
-          <div className="text-[10px] text-term-dim">
-            auto-refresh {daily ? "60s" : "15s"}
-          </div>
-        </Popover>
-
-        <Popover open={panel === "info"} onClose={() => setPanel(null)} title="Trending OI summary">
-          {L ? (
-            <>
-              <div className="text-[10px] text-term-dim">
-                latest {tf < 1440 ? `${tf}-min` : "daily"} bucket at {fmtTime(L.t)}
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                <Card label="Current bias" value={L.sentiment} valueCls={sentCls(L.sentiment)} sub={`Diff OI ${inr(L.diff)}`} />
-                <Card label="OI pressure" value={L.pInt >= L.cInt ? "PE stronger" : "CE stronger"} valueCls={L.pInt >= L.cInt ? "text-up" : "text-down"} sub={`CE ${compact(L.cCum)} / PE ${compact(L.pCum)}`} />
-                <Card label="PCR" value={L.pcr != null ? nf(L.pcr, 3) : "–"} valueCls={L.pcr != null ? (L.pcr >= 1 ? "text-up" : "text-down") : ""} sub={P?.pcr != null && L.pcr != null ? `${L.pcr - P.pcr >= 0 ? "+" : ""}${nf(L.pcr - P.pcr, 3)} vs prev` : "put/call OI"} />
-                <Card label="COI PCR" value={L.coiPcr != null ? nf(L.coiPcr, 3) : "–"} valueCls={L.coiPcr != null ? (L.coiPcr >= 0 ? "text-up" : "text-down") : ""} sub="ΔPE / ΔCE OI" />
-                <Card label="Vol PCR" value={L.volPcr != null ? nf(L.volPcr, 3) : "–"} valueCls={L.volPcr != null ? (L.volPcr >= 1 ? "text-up" : "text-down") : ""} sub="put/call vol" />
-                <Card label="Dir. change" value={sInr(L.chngInDir)} valueCls={L.chngInDir >= 0 ? "text-up" : "text-down"} sub={P ? `${sInr(L.chngInDir - P.chngInDir)} mom` : "vs prev"} />
-              </div>
-            </>
-          ) : (
-            <div className="text-2xs text-term-dim">
-              {daily
-                ? expiry
-                  ? `loading daily OI history for ${symbol}…`
-                  : "pick an expiry for the 1D view"
-                : `collecting OI history for ${symbol}… (needs a few snapshots)`}
-            </div>
+              {L.sentiment}
+            </span>
           )}
-        </Popover>
+          {L && (
+            <span className="text-[10px] text-term-dim">
+              latest {tf < 1440 ? `${tf}-min` : "daily"} bucket at {fmtTime(L.t)}
+            </span>
+          )}
+        </div>
+        {L ? (
+          <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
+            <Card
+              label="Current bias"
+              value={L.sentiment}
+              valueCls={sentCls(L.sentiment)}
+              sub={`Diff OI ${inr(L.diff)}`}
+            />
+            <Card
+              label="Change in OI pressure"
+              value={L.pInt >= L.cInt ? "PE OI stronger" : "CE OI stronger"}
+              valueCls={L.pInt >= L.cInt ? "text-up" : "text-down"}
+              sub={`CE ${compact(L.cCum)} / PE ${compact(L.pCum)}`}
+            />
+            <Card
+              label="PCR"
+              value={L.pcr != null ? nf(L.pcr, 3) : "–"}
+              valueCls={L.pcr != null ? (L.pcr >= 1 ? "text-up" : "text-down") : ""}
+              sub={
+                P?.pcr != null && L.pcr != null
+                  ? `${L.pcr - P.pcr >= 0 ? "+" : ""}${nf(L.pcr - P.pcr, 3)} vs prev`
+                  : "put OI / call OI"
+              }
+            />
+            <Card
+              label="COI PCR"
+              value={L.coiPcr != null ? nf(L.coiPcr, 3) : "–"}
+              valueCls={L.coiPcr != null ? (L.coiPcr >= 0 ? "text-up" : "text-down") : ""}
+              sub="Δ put OI / Δ call OI"
+            />
+            <Card
+              label="Volume PCR"
+              value={L.volPcr != null ? nf(L.volPcr, 3) : "–"}
+              valueCls={L.volPcr != null ? (L.volPcr >= 1 ? "text-up" : "text-down") : ""}
+              sub="put volume / call volume"
+            />
+            <Card
+              label="Direction change"
+              value={sInr(L.chngInDir)}
+              valueCls={L.chngInDir >= 0 ? "text-up" : "text-down"}
+              sub={P ? `${sInr(L.chngInDir - P.chngInDir)} momentum` : "vs previous bucket"}
+            />
+          </div>
+        ) : (
+          <div className="text-2xs text-term-dim">
+            {daily
+              ? expiry
+                ? `loading daily OI history for ${symbol}…`
+                : "pick an expiry for the 1D view"
+              : `collecting OI history for ${symbol}… (needs a few snapshots)`}
+          </div>
+        )}
+      </div>
+
+      {/* timeframe controls */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
+        <span className="uppercase tracking-wide">Timeframe</span>
+        <div className="seg">
+          {TF.map(([lbl, v]) => (
+            <button key={v} onClick={() => setTf(v)} className={tf === v ? "on" : ""}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+        <span className="ml-auto flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-full bg-up" /> auto-refresh{" "}
+          {daily ? "60s" : "15s"}
+        </span>
       </div>
 
       {showChart && (
@@ -611,9 +646,7 @@ function TrendingOILive() {
  *  CLASSIC — original CE/PE build-up trend chart + PCR overlay       *
  * ================================================================== */
 function TrendingOIClassic() {
-  const { symbol, selectSymbol, selectExpiry, chain, symOptions, expiry, daily, pts, tf, setTf } =
-    useTrendingOI();
-  const [panel, setPanel] = usePanel();
+  const { symbol, selectSymbol, chain, symOptions, expiry, daily, pts, tf, setTf } = useTrendingOI();
 
   // measure the chart box so the SVG can render 1:1 with the pixel grid —
   // a stretched viewBox (preserveAspectRatio="none") was making the lines
@@ -913,8 +946,9 @@ function TrendingOIClassic() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden">
-      {/* slim bar */}
-      <div className="relative flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
+      {/* toolbar */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
+        <span className="font-semibold uppercase tracking-wide">Trending OI</span>
         <select
           value={symbol}
           onChange={(e) => selectSymbol(e.target.value, true)}
@@ -926,109 +960,150 @@ function TrendingOIClassic() {
             </option>
           ))}
         </select>
-        {chain?.expiries?.length ? (
-          <select
-            value={expiry}
-            onChange={(e) => selectExpiry(e.target.value)}
-            className="num rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
-          >
-            {chain.expiries.map((e) => (
-              <option key={e} value={e}>
-                {e}
-              </option>
-            ))}
-          </select>
-        ) : (
-          chain?.expiry && <span className="num">{chain.expiry}</span>
+        {chain?.expiry && <span className="num">{chain.expiry}</span>}
+        <span className="ml-1">Interval</span>
+        <div className="seg">
+          {([1, 3, 5, 15, 30, 60, 240, 1440] as const).map((m) => (
+            <button key={m} onClick={() => setTf(m)} className={tf === m ? "on" : ""}>
+              {m < 60 ? `${m}m` : m < 1440 ? `${m / 60}h` : "1D"}
+            </button>
+          ))}
+        </div>
+        {daily && (
+          <span className="text-amber-400">
+            {expiry ? "daily OI history · Upstox" : "pick an expiry for daily view"}
+          </span>
         )}
-        <span className="text-[10px]">
-          Int <span className="text-term-text">{tfLbl}</span>
+        <span className="ml-auto">
+          <span style={{ color: CE }}>■</span> Call OI Δ &nbsp;
+          <span style={{ color: PE }}>■</span> Put OI Δ &nbsp;
+          <span style={{ color: PCRC }}>■</span> PCR
         </span>
-        {last?.pcr != null && (
-          <span className={`num text-[10px] ${last.pcr >= 1 ? "text-up" : "text-down"}`}>
-            PCR {nf(last.pcr, 2)}
+      </div>
+
+      {/* live readout */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-term-border bg-term-panel px-3 py-1.5 text-2xs">
+        <Tile
+          label="Call OI Δ"
+          value={last ? lakhs(last.ce) : "–"}
+          cls={last && last.ce >= 0 ? "text-down" : "text-up"}
+        />
+        <Tile
+          label="Put OI Δ"
+          value={last ? lakhs(last.pe) : "–"}
+          cls={last && last.pe >= 0 ? "text-up" : "text-down"}
+        />
+        <Tile
+          label={netOi >= 0 ? "Net OI added" : "Net OI reduced"}
+          value={last ? lakhs(netOi) : "–"}
+          cls={netOi >= 0 ? "text-term-text" : "text-amber-400"}
+        />
+        <Tile
+          label="Bias (PE − CE)"
+          value={last ? lakhs(net) : "–"}
+          cls={net >= 0 ? "text-up" : "text-down"}
+        />
+        <Tile
+          label="PCR"
+          value={last?.pcr != null ? nf(last.pcr, 2) : "–"}
+          cls={last?.pcr != null ? (last.pcr >= 1 ? "text-up" : "text-down") : ""}
+        />
+        <Tile
+          label="Spot Δ (session)"
+          value={last ? `${priceChg >= 0 ? "+" : ""}${nf(priceChg, 1)}` : "–"}
+          cls={priceChg >= 0 ? "text-up" : "text-down"}
+        />
+        {buildup && (
+          <span
+            className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${buildup.cls}`}
+            title={buildup.note}
+          >
+            {buildup.txt}
           </span>
         )}
         {bias && (
-          <span className={`rounded px-1 text-[10px] font-bold ${bias.cls}`}>{bias.txt}</span>
+          <span className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${bias.cls}`}>
+            {bias.txt}
+          </span>
         )}
-        <span className="ml-auto">
-          <PanelButtons panel={panel} setPanel={setPanel} />
-        </span>
+      </div>
 
-        <Popover open={panel === "controls"} onClose={() => setPanel(null)} title="Controls">
-          <Row label="Interval">
-            <div className="seg">
-              {([1, 3, 5, 15, 30, 60, 240, 1440] as const).map((m) => (
-                <button key={m} onClick={() => setTf(m)} className={tf === m ? "on" : ""}>
-                  {m < 60 ? `${m}m` : m < 1440 ? `${m / 60}h` : "1D"}
-                </button>
-              ))}
-            </div>
-          </Row>
-          {daily && (
-            <div className="text-amber-400">
-              {expiry ? "daily OI history · Upstox" : "pick an expiry for daily view"}
-            </div>
-          )}
-        </Popover>
-
-        <Popover open={panel === "info"} onClose={() => setPanel(null)} title="OI read">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-            <Tile label="Call OI Δ" value={last ? lakhs(last.ce) : "–"} cls={last && last.ce >= 0 ? "text-down" : "text-up"} />
-            <Tile label="Put OI Δ" value={last ? lakhs(last.pe) : "–"} cls={last && last.pe >= 0 ? "text-up" : "text-down"} />
-            <Tile label={netOi >= 0 ? "Net OI added" : "Net OI reduced"} value={last ? lakhs(netOi) : "–"} cls={netOi >= 0 ? "text-term-text" : "text-amber-400"} />
-            <Tile label="Bias (PE − CE)" value={last ? lakhs(net) : "–"} cls={net >= 0 ? "text-up" : "text-down"} />
-            <Tile label="PCR" value={last?.pcr != null ? nf(last.pcr, 2) : "–"} cls={last?.pcr != null ? (last.pcr >= 1 ? "text-up" : "text-down") : ""} />
-            <Tile label="Spot Δ (session)" value={last ? `${priceChg >= 0 ? "+" : ""}${nf(priceChg, 1)}` : "–"} cls={priceChg >= 0 ? "text-up" : "text-down"} />
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {buildup && (
-              <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${buildup.cls}`} title={buildup.note}>
-                {buildup.txt}
+      {/* PCR value + sentiment mix, side by side */}
+      {(pcrNow != null || sentBars.length > 0) && (
+        <div className="grid shrink-0 grid-cols-2 divide-x divide-term-border border-b border-term-border bg-term-panel">
+          <div className="flex items-center gap-3 px-3 py-2">
+            <div className="flex flex-col leading-none">
+              <span className="text-[9px] uppercase tracking-wide text-term-dim">PCR</span>
+              <span
+                className={`num text-xl font-bold ${
+                  pcrNow != null ? (pcrNow >= 1 ? "text-up" : "text-down") : "text-term-dim"
+                }`}
+              >
+                {pcrNow != null ? nf(pcrNow, 2) : "–"}
               </span>
-            )}
-            {bias && (
-              <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${bias.cls}`}>{bias.txt}</span>
-            )}
-          </div>
-          {pcrStats && (
-            <div className="num text-[10px] text-term-dim">
-              PCR open {nf(pcrStats.open, 2)} · lo {nf(pcrStats.lo, 2)} · hi {nf(pcrStats.hi, 2)}
+            </div>
+            <div className="flex flex-col gap-0.5 text-[10px] text-term-dim">
+              <span>
+                {pcrNow != null
+                  ? pcrNow >= 1
+                    ? "put-heavy · supportive"
+                    : "call-heavy · heavy"
+                  : "collecting…"}
+              </span>
+              {pcrStats && (
+                <span className="num">
+                  open {nf(pcrStats.open, 2)} · lo {nf(pcrStats.lo, 2)} · hi {nf(pcrStats.hi, 2)}
+                </span>
+              )}
               {pcrDelta != null && (
-                <span className={pcrDelta >= 0 ? " text-up" : " text-down"}>
-                  {" "}· session Δ {pcrDelta >= 0 ? "+" : ""}
+                <span className={`num ${pcrDelta >= 0 ? "text-up" : "text-down"}`}>
+                  session Δ {pcrDelta >= 0 ? "+" : ""}
                   {nf(pcrDelta, 2)}
                 </span>
               )}
             </div>
-          )}
-          {sentBars.length > 0 && (
-            <div>
-              <div className="mb-0.5 flex items-center justify-between text-[9px] uppercase tracking-wide text-term-dim">
-                <span>Sentiment · {tfLbl} × {sentBars.length}</span>
-                <span className="normal-case">
-                  <span className="text-up">▲ {sentTally.bull}</span>{" "}
-                  <span className="text-down">▼ {sentTally.bear}</span>
-                </span>
-              </div>
-              <div className="flex h-2.5 w-full overflow-hidden rounded-sm bg-term-bg">
-                {sentSplit.map(
-                  (s) =>
-                    s.pct > 0 && (
-                      <div key={s.key} style={{ width: `${s.pct}%`, background: s.col }} title={`${s.label} · ${s.n}`} />
-                    )
-                )}
-              </div>
-            </div>
-          )}
-          <div className="border-t border-term-border/50 pt-1.5 text-[10px]">
-            <span style={{ color: CE }}>■</span> Call OI Δ &nbsp;
-            <span style={{ color: PE }}>■</span> Put OI Δ &nbsp;
-            <span style={{ color: PCRC }}>■</span> PCR
           </div>
-        </Popover>
-      </div>
+
+          <div className="flex flex-col justify-center gap-1 px-3 py-2">
+            <div className="flex items-center justify-between text-[9px] uppercase tracking-wide text-term-dim">
+              <span>
+                Sentiment · {tfLbl} × {sentBars.length}
+              </span>
+              <span className="normal-case">
+                <span className="text-up">▲ {sentTally.bull}</span>{" "}
+                <span className="text-down">▼ {sentTally.bear}</span>
+              </span>
+            </div>
+            {sentBars.length > 0 ? (
+              <>
+                <div className="flex h-2.5 w-full overflow-hidden rounded-sm bg-term-bg">
+                  {sentSplit.map(
+                    (s) =>
+                      s.pct > 0 && (
+                        <div
+                          key={s.key}
+                          style={{ width: `${s.pct}%`, background: s.col }}
+                          title={`${s.label} · ${s.n}`}
+                        />
+                      )
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[8px] text-term-dim">
+                  {sentSplit
+                    .filter((s) => s.n > 0)
+                    .map((s) => (
+                      <span key={s.key}>
+                        <span style={{ color: s.col }}>■</span> {s.label} {s.n}
+                      </span>
+                    ))}
+                </div>
+              </>
+            ) : (
+              <span className="text-[10px] text-term-dim">need a few buckets</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* chart */}
       <div ref={boxRef} className="relative min-h-0 flex-1 overflow-hidden p-3">
