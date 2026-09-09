@@ -501,13 +501,17 @@ function TrendingOILive() {
       {/* timeframe controls */}
       <div className="flex flex-wrap items-center gap-2 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
         <span className="uppercase tracking-wide">Timeframe</span>
-        <div className="seg">
+        <select
+          value={tf}
+          onChange={(e) => setTf(Number(e.target.value))}
+          className="num rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent"
+        >
           {TF.map(([lbl, v]) => (
-            <button key={v} onClick={() => setTf(v)} className={tf === v ? "on" : ""}>
+            <option key={v} value={v}>
               {lbl}
-            </button>
+            </option>
           ))}
-        </div>
+        </select>
         <span className="ml-auto flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-full bg-up" /> auto-refresh{" "}
           {daily ? "60s" : "15s"}
@@ -962,13 +966,17 @@ function TrendingOIClassic() {
         </select>
         {chain?.expiry && <span className="num">{chain.expiry}</span>}
         <span className="ml-1">Interval</span>
-        <div className="seg">
+        <select
+          value={tf}
+          onChange={(e) => setTf(Number(e.target.value))}
+          className="num rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent"
+        >
           {([1, 3, 5, 15, 30, 60, 240, 1440] as const).map((m) => (
-            <button key={m} onClick={() => setTf(m)} className={tf === m ? "on" : ""}>
+            <option key={m} value={m}>
               {m < 60 ? `${m}m` : m < 1440 ? `${m / 60}h` : "1D"}
-            </button>
+            </option>
           ))}
-        </div>
+        </select>
         {daily && (
           <span className="text-amber-400">
             {expiry ? "daily OI history · Upstox" : "pick an expiry for daily view"}

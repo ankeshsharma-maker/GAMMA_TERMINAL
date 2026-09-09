@@ -1227,15 +1227,19 @@ export function OIProfile() {
           </div>
 
           <span className="ml-1">ΔOI over</span>
-          <div className="seg">
+          <select
+            value={tf}
+            onChange={(e) => setTf(Number(e.target.value))}
+            className="num rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent"
+          >
             {([[0, "Full day"], [1, "1m"], [2, "2m"], [3, "3m"], [5, "5m"], [15, "15m"], [30, "30m"], [60, "1h"], [120, "2h"], [180, "3h"]] as const).map(
               ([m, l]) => (
-                <button key={m} onClick={() => setTf(m)} className={tf === m ? "on" : ""}>
+                <option key={m} value={m}>
                   {l}
-                </button>
+                </option>
               )
             )}
-          </div>
+          </select>
           {tf > 0 && winCov > 0 && winCov < tf - 0.5 && (
             <span className="text-amber-400">
               history {winCov}m / {tf}m — still filling

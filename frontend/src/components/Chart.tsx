@@ -1030,21 +1030,18 @@ export function Chart() {
           </div>
         )}
 
-        <div className="flex overflow-hidden rounded border border-term-border">
+        <select
+          value={intervalS}
+          onChange={(e) => setIntervalS(Number(e.target.value))}
+          className="num rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs font-semibold text-term-text outline-none focus:border-term-accent"
+          title="Candle timeframe"
+        >
           {TIMEFRAMES.map(([lbl, v]) => (
-            <button
-              key={v}
-              onClick={() => setIntervalS(v)}
-              className={`px-1.5 py-0.5 text-2xs font-semibold ${
-                intervalS === v
-                  ? "bg-term-accent text-white"
-                  : "bg-term-bg text-term-dim hover:bg-term-border hover:text-term-text"
-              }`}
-            >
+            <option key={v} value={v}>
               {lbl}
-            </button>
+            </option>
           ))}
-        </div>
+        </select>
 
         <div
           className="flex overflow-hidden rounded border border-term-border"
