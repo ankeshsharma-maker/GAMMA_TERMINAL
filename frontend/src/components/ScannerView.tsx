@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Scanner } from "./Scanner";
 import { Screener } from "./Screener";
-import { Alerts } from "./Alerts";
 import { HistoricalScan } from "./HistoricalScan";
 import { IndicatorScan } from "./IndicatorScan";
 import { Movers } from "./Movers";
@@ -46,12 +45,7 @@ export function ScannerView() {
         </span>
       </div>
 
-      {tab === "blast" && (
-        <>
-          <Scanner />
-          <Alerts compact />
-        </>
-      )}
+      {tab === "blast" && <Scanner />}
       {tab === "movers" && <Movers />}
       {tab === "screener" && <Screener />}
       {tab === "history" && <HistoricalScan />}
