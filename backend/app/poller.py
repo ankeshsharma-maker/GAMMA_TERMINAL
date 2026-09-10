@@ -35,16 +35,27 @@ def _in_market_hours(now: datetime | None = None) -> bool:
     return _MKT_OPEN <= now.time() <= _MKT_CLOSE
 
 
+def _is_bse_index(symbol: str) -> bool:
+    """SENSEX / BANKEX — NSE has no option chain for these, only Upstox does."""
+    try:
+        key = get_upstox().instrument_key(symbol)
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(key) and str(key).startswith("BSE_INDEX")
+
+
 def _use_upstox(symbol: str) -> bool:
     # Upstox's Analytics Access Token serves *frozen* intraday data on the
     # /v2/option/chain REST endpoint (OI / LTP don't tick during the session),
-    # so "Change in OI" never updates on it. Use Upstox for the live option
-    # chain ONLY for BSE indices (SENSEX / BANKEX) that NSE can't provide;
-    # every NSE underlying (indices + F&O stocks) uses NSE's live chain.
-    if store.data_source() != "upstox" or not get_upstox().authed:
+    # so "Change in OI" never updates on it — so every NSE underlying uses
+    # NSE's live chain. BSE indices (SENSEX / BANKEX) have no NSE chain at all,
+    # so they ALWAYS go through Upstox whenever it's authed, regardless of the
+    # user's data-source toggle.
+    if not get_upstox().authed:
         return False
-    key = get_upstox().instrument_key(symbol)
-    return bool(key) and key.startswith("BSE_INDEX")
+    if _is_bse_index(symbol):
+        return True
+    return store.data_source() == "upstox"
 
 
 async def _ensure_expiries(symbol: str) -> None:
@@ -69,6 +80,15 @@ async def _refresh(symbol: str, expiry: str) -> None:
         payload = None
         if _use_upstox(symbol):
             payload = await upstox_data.fetch_chain_payload(symbol, expiry)
+        if not payload and _is_bse_index(symbol):
+            # NSE has no SENSEX / BANKEX chain — an empty Upstox response (e.g.
+            # the front expiry not active pre-open) must NOT fall through to a
+            # doomed NSE call that would just clobber the last good snapshot.
+            store.put_error(
+                symbol,
+                "Upstox returned an empty option chain (front expiry may not be live yet).",
+            )
+            return
         if not payload:  # non-Upstox symbol, or a miss this cycle -> NSE
             payload = await client.option_chain(symbol, expiry)
         events = store.put_raw(symbol, expiry, payload)

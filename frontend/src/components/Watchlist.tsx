@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
+import { useIsMobile } from "../lib/useIsMobile";
 import type { WatchQuote } from "../types";
 
 type WlView = "list" | "grid";
@@ -232,6 +233,7 @@ export function Watchlist() {
   const wlAdd = useStore((s) => s.wlAdd);
   const wlAddList = useStore((s) => s.wlAddList);
   const wlDeleteList = useStore((s) => s.wlDeleteList);
+  const isMobile = useIsMobile();
   const [input, setInput] = useState("");
   const [renaming, setRenaming] = useState<number | null>(null);
   const [results, setResults] = useState<Awaited<ReturnType<typeof api.symbolSearch>>["results"]>([]);
@@ -518,8 +520,12 @@ export function Watchlist() {
         </div>
       )}
 
-      {/* search + actions */}
-      <div className="relative border-y border-term-border/60 bg-term-panel/30 px-3 py-2">
+      {/* search + actions — on mobile this jumps to the top, right under the index band */}
+      <div
+        className={`relative border-y border-term-border/60 bg-term-panel/30 px-3 py-2 ${
+          isMobile ? "order-first" : ""
+        }`}
+      >
         <form onSubmit={submit} className="flex items-center gap-1.5">
           <div className="relative flex-1">
             <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-term-dim">
