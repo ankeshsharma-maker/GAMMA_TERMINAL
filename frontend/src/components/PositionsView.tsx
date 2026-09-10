@@ -78,12 +78,15 @@ function BrokerTab() {
 
   let totalMtm = 0;
   let totalRealized = 0;
+  let totalDay = 0;
   const withPnl = rows.map((r) => {
     const mtm = mark(r) ?? n(r.urmtom) ?? n(r.mtm) ?? 0;
     const rpnl = n(r.rpnl) ?? 0;
+    const day = Number.isFinite(+r._dayPnl) ? +r._dayPnl : rpnl + (n(r.urmtom) ?? 0);
     totalMtm += mtm;
     totalRealized += rpnl;
-    return { r, mtm, rpnl, today: mtm + rpnl, key: String(r.tsym ?? r.symname ?? "") };
+    totalDay += day;
+    return { r, mtm, rpnl, day, today: mtm + rpnl, key: String(r.tsym ?? r.symname ?? "") };
   });
   const totalToday = totalMtm + totalRealized;
   const allKeys = withPnl.map((w) => w.key).filter(Boolean);
@@ -208,9 +211,9 @@ function BrokerTab() {
       {/* summary header */}
       <div className="mb-2 grid grid-cols-3 gap-2">
         {([
-          ["Realised P&L", totalRealized],
-          ["MTM (open)", totalMtm],
-          ["Today's P&L", totalToday],
+          ["Realised", totalRealized],
+          ["MTM · vs entry", totalToday],
+          ["P&L · prev close", totalDay],
         ] as const).map(([label, val]) => (
           <div key={label} className="rounded border border-term-border bg-term-bg/40 px-3 py-1.5">
             <div className="text-[9px] uppercase tracking-wide text-term-dim">{label}</div>

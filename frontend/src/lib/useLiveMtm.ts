@@ -29,5 +29,11 @@ export function useLiveMtm() {
     const v = byKey.get(String(r.token ?? r.tsym ?? ""));
     return v === undefined ? null : v;
   };
-  return { fresh, mark, total: fresh && live ? live.total : null };
+  return {
+    fresh,
+    mark,
+    total: fresh && live ? live.total : null,
+    // Flattrade "P&L" — day M2M from the previous close
+    dayPnl: fresh && live && Number.isFinite(+live.dayPnl) ? +live.dayPnl : null,
+  };
 }

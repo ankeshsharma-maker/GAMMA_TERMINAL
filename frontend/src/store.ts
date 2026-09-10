@@ -82,6 +82,7 @@ interface State {
     rows: any[];
     total: number;
     realized: number;
+    dayPnl: number;
     ts: number;
     feedTs: number;
   } | null;

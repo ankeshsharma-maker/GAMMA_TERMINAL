@@ -110,12 +110,12 @@ function MobileIndexBand() {
   );
 }
 
-/** full "Overall / Today's Return" card — top of the Positions / Orders tabs */
+/** P&L card — top of the Positions / Orders tabs. Labels match Flattrade:
+ *  MTM = P&L vs entry price; P&L = day M2M from the previous close. */
 function MobileReturnCard() {
   const p = useBookPnl();
   const [open, setOpen] = useState(false);
   if (!p) return null;
-  const overall = p.realized + p.mtm;
   return (
     <div className="mx-2 mt-2 rounded-xl border border-term-border bg-term-panel px-3 py-3">
       <button
@@ -123,10 +123,10 @@ function MobileReturnCard() {
         className="flex w-full items-center justify-between"
       >
         <span className="text-xs uppercase tracking-wide text-term-dim">
-          Overall Return {p.source === "paper" && <span className="text-[9px]">· paper</span>}
+          MTM {p.source === "paper" && <span className="text-[9px]">· paper</span>}
         </span>
         <span className="flex items-center gap-2">
-          <span className={`num text-base font-bold ${signColor(overall)}`}>₹{nf(overall, 2)}</span>
+          <span className={`num text-base font-bold ${signColor(p.today)}`}>₹{nf(p.today, 2)}</span>
           <span className="text-term-dim">{open ? "▴" : "▾"}</span>
         </span>
       </button>
@@ -145,8 +145,10 @@ function MobileReturnCard() {
         </div>
       )}
       <div className="mt-2 flex items-center justify-between border-t border-term-border/60 pt-2">
-        <span className="text-xs uppercase tracking-wide text-term-dim">Today's Return</span>
-        <span className={`num text-base font-bold ${signColor(p.today)}`}>₹{nf(p.today, 2)}</span>
+        <span className="text-xs uppercase tracking-wide text-term-dim">
+          P&amp;L <span className="text-[9px] normal-case">· from prev close</span>
+        </span>
+        <span className={`num text-base font-bold ${signColor(p.dayPnl)}`}>₹{nf(p.dayPnl, 2)}</span>
       </div>
     </div>
   );

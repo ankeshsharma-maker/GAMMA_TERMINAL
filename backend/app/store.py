@@ -633,25 +633,38 @@ class Store:
             snap_ts = self.broker_positions_ts
         total = 0.0
         realized = 0.0
+        day_total = 0.0
         for r in rows:
-            realized += _fnum(r.get("rpnl")) or 0.0
+            rpnl = _fnum(r.get("rpnl")) or 0.0
+            realized += rpnl
             anchor_mtm = _fnum(r.get("urmtom"))
             if anchor_mtm is None:
                 anchor_mtm = _fnum(r.get("mtm"))
             netqty = _fnum(r.get("netqty")) or 0.0
             anchor_lp = _fnum(r.get("lp"))
+            # day P&L (Flattrade "P&L" — measured from prev close for CF legs);
+            # falls back to total-vs-entry when the broker didn't tag it
+            base_day = _fnum(r.get("_dayPnl"))
+            if base_day is None:
+                base_day = rpnl + (anchor_mtm or 0.0)
             live = legs.get(str(r.get("token")))
             if live and netqty and anchor_mtm is not None and anchor_lp and now - live["ts"] < 30:
                 pf = _fnum(r.get("prcftr")) or 1.0
                 mult = _fnum(r.get("mult")) or 1.0
-                r["urmtom"] = round(anchor_mtm + netqty * (live["ltp"] - anchor_lp) * pf * mult, 2)
+                new_ur = round(anchor_mtm + netqty * (live["ltp"] - anchor_lp) * pf * mult, 2)
+                r["_dayPnl"] = round(base_day + (new_ur - anchor_mtm), 2)  # moves 1:1 with urmtom
+                r["urmtom"] = new_ur
                 r["lp"] = live["ltp"]
                 r["_liveMtm"] = True
+            else:
+                r["_dayPnl"] = round(base_day, 2)
             total += _fnum(r.get("urmtom")) or 0.0
+            day_total += _fnum(r.get("_dayPnl")) or 0.0
         return {
             "rows": rows,
             "total": round(total, 2),
             "realized": round(realized, 2),
+            "dayPnl": round(day_total, 2),
             "ts": snap_ts,
             "feedTs": now,
         }

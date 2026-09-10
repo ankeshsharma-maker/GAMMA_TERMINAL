@@ -411,11 +411,11 @@ const _num = (v: unknown) => {
  *  broker is linked, otherwise the paper book. Shared by the desktop header
  *  and the mobile top strip. */
 export function useBookPnl():
-  | { source: "broker" | "paper"; mtm: number; realized: number; today: number }
+  | { source: "broker" | "paper"; mtm: number; realized: number; today: number; dayPnl: number }
   | null {
   const paper = useStore((s) => s.paper);
   const broker = useStore((s) => s.broker);
-  const { mark } = useLiveMtm();
+  const { mark, dayPnl: liveDay } = useLiveMtm();
   const [bpos, setBpos] = useState<any[] | null>(null);
 
   useEffect(() => {
@@ -438,7 +438,14 @@ export function useBookPnl():
     // live socket MTM (re-marked tick-by-tick) when available, else the 5s poll
     const mtm = bpos.reduce((s, r) => s + (mark(r) ?? (_num(r.urmtom) || _num(r.mtm))), 0);
     const realized = bpos.reduce((s, r) => s + _num(r.rpnl), 0);
-    return { source: "broker", mtm, realized, today: mtm + realized };
+    // Flattrade "P&L" — day M2M from prev close; live sum when fresh, else the poll
+    const dayPnl =
+      liveDay ??
+      bpos.reduce(
+        (s, r) => s + (Number.isFinite(+r._dayPnl) ? +r._dayPnl : _num(r.rpnl) + _num(r.urmtom)),
+        0
+      );
+    return { source: "broker", mtm, realized, today: mtm + realized, dayPnl };
   }
   if (!paper) return null;
   return {
@@ -446,10 +453,11 @@ export function useBookPnl():
     mtm: paper.unrealized,
     realized: paper.realized,
     today: paper.total,
+    dayPnl: paper.total,
   };
 }
 
-/** live P&L / MTM summary on the dashboard header */
+/** live P&L / MTM summary on the dashboard header — labels match Flattrade */
 function PnlStrip() {
   const p = useBookPnl();
   if (!p) return null;
@@ -457,14 +465,22 @@ function PnlStrip() {
   return (
     <div
       className="flex items-center gap-1.5"
-      title={broker ? "Broker book P&L (Flattrade)" : "Paper book P&L (broker not linked)"}
+      title={
+        broker
+          ? "MTM = P&L vs your entry price (Flattrade 'MTM'). P&L = day M2M from the previous close (Flattrade 'P&L') — differs by the overnight gap on carried positions."
+          : "Paper book P&L (broker not linked)"
+      }
     >
       <Stat
-        label={broker ? "Broker MTM" : "Paper MTM"}
-        value={`₹${nf(p.mtm, 0)}`}
-        cls={signColor(p.mtm)}
+        label={broker ? "MTM" : "Paper MTM"}
+        value={`₹${nf(p.today, 0)}`}
+        cls={signColor(p.today)}
       />
-      <Stat label={broker ? "Today" : "Total"} value={`₹${nf(p.today, 0)}`} cls={signColor(p.today)} />
+      <Stat
+        label={broker ? "P&L" : "Total"}
+        value={`₹${nf(p.dayPnl, 0)}`}
+        cls={signColor(p.dayPnl)}
+      />
     </div>
   );
 }

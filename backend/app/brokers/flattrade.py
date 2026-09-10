@@ -30,6 +30,27 @@ from zoneinfo import ZoneInfo
 _IST = ZoneInfo("Asia/Kolkata")
 
 
+def _f(v) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _day_pnl(r: dict) -> float:
+    """Noren's *day* M2M — P&L measured from the previous close (``upldprc``) for
+    any carried-forward legs, matching the "P&L" figure Flattrade's own app
+    shows. ``rpnl``/``urmtom`` alone are measured from the actual entry price
+    (the "MTM" figure); the two differ by the overnight gap on CF positions.
+    For pure-intraday rows (no CF qty) it collapses to ``rpnl + urmtom``."""
+    day = _f(r.get("rpnl")) + _f(r.get("urmtom"))
+    upld = _f(r.get("upldprc"))
+    if upld:
+        day += _f(r.get("cfbuyqty")) * (_f(r.get("cfbuyavgprc")) - upld)
+        day -= _f(r.get("cfsellqty")) * (_f(r.get("cfsellavgprc")) - upld)
+    return round(day, 2)
+
+
 def _totp(secret: str) -> str:
     """RFC-6238 TOTP (30s, 6 digits, SHA-1). `secret` is the base32 string from
     the broker's 2FA setup. If a 6-digit code is passed instead, it's returned
@@ -350,7 +371,10 @@ class FlattradeBroker:
 
     async def positions(self) -> list:
         out = await self._post("PositionBook", {"actid": self.client_id})
-        return out if isinstance(out, list) else []
+        rows = out if isinstance(out, list) else []
+        for r in rows:
+            r["_dayPnl"] = _day_pnl(r)
+        return rows
 
     async def order_book(self) -> list:
         out = await self._post("OrderBook", {"actid": self.client_id})
