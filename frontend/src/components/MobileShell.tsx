@@ -131,7 +131,6 @@ import { OrderConfirm } from "./OrderConfirm";
 import { Watchlist } from "./Watchlist";
 import { ExpiryTabs } from "./ExpiryTabs";
 import { OptionChain } from "./OptionChain";
-import { OIProfile } from "./OIProfile";
 import { ScripView } from "./ScripView";
 import { TrendingOI } from "./TrendingOI";
 import { ScannerView } from "./ScannerView";
@@ -158,7 +157,6 @@ const BOTTOM_NAV: NavItem[] = [
 const TOP_NAV: NavItem[] = [
   { v: "chart", icon: "📈", label: "Chart" },
   { v: "scrip", icon: "▤", label: "OI" },
-  { v: "oiprofile", icon: "📊", label: "OI Profile" },
   { v: "scanner", icon: "📡", label: "Scan" },
   { v: "trendingoi", icon: "🔥", label: "Trend OI" },
   { v: "auto", icon: "🤖", label: "Auto" },
@@ -181,8 +179,6 @@ function MobileBody({ view }: { view: View }) {
           <Watchlist />
         </div>
       );
-    case "oiprofile":
-      return <OIProfile />;
     case "scrip":
       return <ScripView />;
     case "trendingoi":
