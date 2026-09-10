@@ -88,7 +88,7 @@ function ViewToggle() {
           className={`rounded border px-2.5 py-1 font-semibold uppercase tracking-wide transition-colors ${
             view === v
               ? "border-term-accent bg-term-accent text-white"
-              : "border-transparent text-term-dim hover:bg-term-border hover:text-term-text"
+              : "border-term-border text-term-dim hover:bg-term-border hover:text-term-text"
           }`}
         >
           {label}

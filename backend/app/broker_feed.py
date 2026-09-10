@@ -27,7 +27,7 @@ _last_emit: dict[str, float] = {}
 # Ticks on these drive the live mark-to-market pushed as `positions` messages.
 _leg_tokens: set[str] = set()
 _last_pos_emit = 0.0
-_POS_EMIT_MIN_GAP = 0.5   # <=2 fan-outs/sec for the position MTM
+_POS_EMIT_MIN_GAP = 1.0   # 1 fan-out/sec for the position MTM — the header only needs that
 
 # min seconds between fan-outs per symbol. The frontend coalesces incoming ticks
 # at ~5 Hz and charts only need ~1/s, so there is no point broadcasting faster.

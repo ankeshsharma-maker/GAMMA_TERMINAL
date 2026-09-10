@@ -27,6 +27,12 @@ import type {
 const _tickBuf: Record<string, import("./types").LiveSpot> = {};
 let _tickFlushTimer: number | null = null;
 
+// same idea for the live-MTM `positions` push: the backend fans it out ~2/s,
+// but the header P&L only needs ~1/s. Coalescing stops the strip from
+// re-rendering (and micro-reflowing) twice a second.
+let _posLiveBuf: State["positionsLive"] = null;
+let _posLiveTimer: number | null = null;
+
 export type PendingOrder =
   | {
       kind: "single";
@@ -312,7 +318,13 @@ export const useStore = create<State>((set, get) => ({
         } else if (msg.type === "autobot") {
           set({ autobot: msg.data });
         } else if (msg.type === "positions") {
-          set({ positionsLive: msg.data });
+          _posLiveBuf = msg.data;
+          if (_posLiveTimer == null) {
+            _posLiveTimer = window.setTimeout(() => {
+              _posLiveTimer = null;
+              if (_posLiveBuf) set({ positionsLive: _posLiveBuf });
+            }, 1000);
+          }
         } else if (msg.type === "tick") {
           const d = msg.data;
           _tickBuf[d.symbol] = { ltp: d.ltp, chgPct: d.chgPct, ts: d.ts };
