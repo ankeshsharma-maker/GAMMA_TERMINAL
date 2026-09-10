@@ -4,6 +4,7 @@ import { api, type BrokerBracket } from "../lib/api";
 import { nf, signColor, hhmm, sk } from "../lib/format";
 import { StopEditor } from "./StopEditor";
 import { useLiveMtm } from "../lib/useLiveMtm";
+import { useIsMobile } from "../lib/useIsMobile";
 
 type Tab = "broker" | "holdings" | "orders";
 const TABS: [Tab, string][] = [
@@ -461,7 +462,7 @@ function HoldingsTab() {
 }
 
 // ---------------- Orders ----------------
-function OrdersTab() {
+export function OrdersTab() {
   const broker = useStore((s) => s.broker);
   const paper = useStore((s) => s.paper);
   const orderMode = useStore((s) => s.orderMode);
@@ -538,7 +539,7 @@ function OrdersTab() {
           ))}
         </div>
         <span className="text-[10px] font-semibold uppercase text-term-dim">
-          {src === "live" ? "Live" : "Paper"} order history
+          {src === "live" ? "Live" : "Paper"} orders · placed &amp; status
         </span>
         <div className="seg ml-auto text-[10px]">
           {(["all", "open", "executed", "cancelled"] as const).map((f) => (
@@ -634,11 +635,16 @@ function OrdersTab() {
 }
 
 export function PositionsView({ initialTab }: { initialTab?: Tab } = {}) {
-  const [tab, setTab] = useState<Tab>(initialTab ?? "broker");
+  const isMobile = useIsMobile();
+  // the mobile app has a dedicated Orders bottom-tab, so drop the sub-tab here
+  const tabs = isMobile ? TABS.filter(([k]) => k !== "orders") : TABS;
+  const [tab, setTab] = useState<Tab>(
+    initialTab && (initialTab !== "orders" || !isMobile) ? initialTab : "broker"
+  );
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs">
-        {TABS.map(([k, label]) => (
+        {tabs.map(([k, label]) => (
           <button
             key={k}
             onClick={() => setTab(k)}

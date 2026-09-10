@@ -162,7 +162,7 @@ import { TrendingOI } from "./TrendingOI";
 import { ScannerView } from "./ScannerView";
 import { Chart } from "./Chart";
 import { StrategyBuilder } from "./StrategyBuilder";
-import { PositionsView } from "./PositionsView";
+import { PositionsView, OrdersTab } from "./PositionsView";
 import { ScalpPanel } from "./ScalpPanel";
 import { ScalpCharts } from "./ScalpCharts";
 import { AutoBotView } from "./AutoBot";
@@ -239,8 +239,7 @@ function MobileBody({ view }: { view: View }) {
     case "orders":
       return (
         <div className="flex min-h-0 flex-1 flex-col">
-          <MobileReturnCard />
-          <PositionsView initialTab="orders" />
+          <OrdersTab />
         </div>
       );
     case "auto":
