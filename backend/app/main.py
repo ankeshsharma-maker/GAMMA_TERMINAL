@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .auth import auth_middleware, auth_required, expected_token, token_ok, app_password
-from .broker_feed import run_broker_feed
+from .broker_feed import run_broker_feed, run_position_feed
 from .brokers import get_broker
 from .upstox_feed import run_upstox_feed
 from .hub import hub
@@ -45,6 +45,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(run_poller(stop)),
         asyncio.create_task(run_universe_scan(stop)),
         asyncio.create_task(run_broker_feed(stop)),
+        asyncio.create_task(run_position_feed(stop)),
         asyncio.create_task(run_upstox_feed(stop)),
         asyncio.create_task(_load_lot_sizes()),
     ]

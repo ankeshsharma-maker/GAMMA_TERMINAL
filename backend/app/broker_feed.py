@@ -23,6 +23,12 @@ _tok2sym: dict[str, str] = {}
 _token_cache: dict[str, tuple[str, str]] = {}
 _last_emit: dict[str, float] = {}
 
+# feed tokens of the currently-open broker positions (option / future legs).
+# Ticks on these drive the live mark-to-market pushed as `positions` messages.
+_leg_tokens: set[str] = set()
+_last_pos_emit = 0.0
+_POS_EMIT_MIN_GAP = 0.5   # <=2 fan-outs/sec for the position MTM
+
 # min seconds between fan-outs per symbol. The frontend coalesces incoming ticks
 # at ~5 Hz and charts only need ~1/s, so there is no point broadcasting faster.
 _EMIT_MIN_GAP = 1.0
@@ -35,11 +41,29 @@ def _num(v):
         return None
 
 
+async def _emit_positions() -> None:
+    global _last_pos_emit
+    now = time.time()
+    if now - _last_pos_emit < _POS_EMIT_MIN_GAP:
+        return
+    _last_pos_emit = now
+    try:
+        await hub.broadcast_all({"type": "positions", "data": store.live_positions()})
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def _on_tick(token: str, msg: dict) -> None:
+    ltp = _num(msg.get("lp"))
+
+    # open-position leg -> live mark-to-market
+    if token in _leg_tokens and ltp is not None:
+        store.set_leg_ltp(token, ltp)
+        await _emit_positions()
+
     sym = _tok2sym.get(token)
     if not sym:
         return
-    ltp = _num(msg.get("lp"))
     if ltp is None:
         return
     chg = _num(msg.get("pc"))
@@ -199,3 +223,49 @@ async def run_broker_feed(stop: asyncio.Event) -> None:
 
     await broker.stop_ws()
     log.info("broker feed stopped")
+
+
+async def run_position_feed(stop: asyncio.Event) -> None:
+    """Poll the broker PositionBook a few times a minute, keep the open legs
+    subscribed on the live socket, and fan out a `positions` message. Between
+    polls the per-leg ticks (see `_on_tick`) re-mark the MTM tick-by-tick."""
+    broker = get_broker()
+    if not broker.configured:
+        return
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=4)
+        except asyncio.TimeoutError:
+            pass
+        if stop.is_set():
+            break
+        if not broker.authed:
+            continue
+        try:
+            rows = await broker.positions()
+        except Exception as exc:  # noqa: BLE001
+            log.debug("position poll failed: %s", exc)
+            continue
+        store.set_broker_positions(rows)
+
+        # keep the open legs on the live socket
+        keys: set[str] = set()
+        toks: set[str] = set()
+        for r in rows:
+            tok = r.get("token")
+            if not tok or (_num(r.get("netqty")) or 0.0) == 0.0:
+                continue
+            toks.add(str(tok))
+            keys.add(f"{r.get('exch') or 'NFO'}|{tok}")
+        _leg_tokens.clear()
+        _leg_tokens.update(toks)
+        if keys:
+            try:
+                await broker.subscribe(keys)
+            except Exception as exc:  # noqa: BLE001
+                log.debug("leg subscribe failed: %s", exc)
+
+        # re-anchor push even when no tick has landed yet
+        global _last_pos_emit
+        _last_pos_emit = 0.0
+        await _emit_positions()

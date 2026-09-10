@@ -3,6 +3,7 @@ import { compact, nf, ago, sk, signColor, px } from "../lib/format";
 import { ivRegime } from "../lib/iv";
 import { api } from "../lib/api";
 import { lockNow } from "../lib/auth";
+import { useLiveMtm } from "../lib/useLiveMtm";
 import { ConnBadge } from "./ConnBadge";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
@@ -404,6 +405,7 @@ export function useBookPnl():
   | null {
   const paper = useStore((s) => s.paper);
   const broker = useStore((s) => s.broker);
+  const { mark } = useLiveMtm();
   const [bpos, setBpos] = useState<any[] | null>(null);
 
   useEffect(() => {
@@ -423,7 +425,8 @@ export function useBookPnl():
   }, [broker?.authed]);
 
   if (broker?.authed && bpos) {
-    const mtm = bpos.reduce((s, r) => s + (_num(r.urmtom) || _num(r.mtm)), 0);
+    // live socket MTM (re-marked tick-by-tick) when available, else the 5s poll
+    const mtm = bpos.reduce((s, r) => s + (mark(r) ?? (_num(r.urmtom) || _num(r.mtm))), 0);
     const realized = bpos.reduce((s, r) => s + _num(r.rpnl), 0);
     return { source: "broker", mtm, realized, today: mtm + realized };
   }

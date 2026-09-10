@@ -32,6 +32,7 @@ class Hub:
                 "data": store.get_universe(),
                 "progress": store.universe_progress,
             },
+            lambda: {"type": "positions", "data": store.live_positions()},
         ):
             try:
                 await self.send(ws, msg())

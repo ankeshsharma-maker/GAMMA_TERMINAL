@@ -3,6 +3,7 @@ import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
 import { useIsMobile } from "../lib/useIsMobile";
+import { useLiveMtm } from "../lib/useLiveMtm";
 import { RuleOrder } from "./RuleOrder";
 
 const n = (v: unknown): number | null => {
@@ -22,6 +23,7 @@ export function ScalpPanel() {
   } = useStore();
   const broker = useStore((s) => s.broker);
   const isMobile = useIsMobile();
+  const { mark } = useLiveMtm();
 
   const wq = watch.find((w) => w.symbol === symbol);
   const atm = chain?.atmStrike ?? wq?.atmStrike;
@@ -89,7 +91,7 @@ export function ScalpPanel() {
     };
   }, [broker?.authed]);
 
-  const mtmOf = (r: any) => n(r.urmtom) ?? n(r.mtm) ?? 0;
+  const mtmOf = (r: any) => mark(r) ?? n(r.urmtom) ?? n(r.mtm) ?? 0;
   const rpnlOf = (r: any) => n(r.rpnl) ?? 0;
   const open = brokerRows.filter((r) => (n(r.netqty) ?? 0) !== 0 || rpnlOf(r) !== 0);
   const sameSym = (r: any) =>

@@ -3,6 +3,7 @@ import { useStore } from "../store";
 import { api, type BrokerBracket } from "../lib/api";
 import { nf, signColor, hhmm, sk } from "../lib/format";
 import { StopEditor } from "./StopEditor";
+import { useLiveMtm } from "../lib/useLiveMtm";
 
 type Tab = "broker" | "holdings" | "orders";
 const TABS: [Tab, string][] = [
@@ -38,6 +39,7 @@ function TD({ children, cls = "" }: { children: React.ReactNode; cls?: string })
 // ---------------- Broker positions ----------------
 function BrokerTab() {
   const broker = useStore((s) => s.broker);
+  const { mark } = useLiveMtm();
   const [rows, setRows] = useState<any[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -76,7 +78,7 @@ function BrokerTab() {
   let totalMtm = 0;
   let totalRealized = 0;
   const withPnl = rows.map((r) => {
-    const mtm = n(r.urmtom) ?? n(r.mtm) ?? 0;
+    const mtm = mark(r) ?? n(r.urmtom) ?? n(r.mtm) ?? 0;
     const rpnl = n(r.rpnl) ?? 0;
     totalMtm += mtm;
     totalRealized += rpnl;

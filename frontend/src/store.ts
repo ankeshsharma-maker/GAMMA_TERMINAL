@@ -71,6 +71,14 @@ interface State {
   screenerPresets: Record<string, Record<string, unknown>>;
   broker: BrokerStatus | null;
   liveSpots: Record<string, LiveSpot>;
+  /** tick-by-tick broker MTM pushed over the socket (re-marked from live leg ticks) */
+  positionsLive: {
+    rows: any[];
+    total: number;
+    realized: number;
+    ts: number;
+    feedTs: number;
+  } | null;
   orderMode: "paper" | "live";
   pending: PendingOrder | null;
   autobot: import("./types").AutoBotState | null;
@@ -189,6 +197,7 @@ export const useStore = create<State>((set, get) => ({
   screenerPresets: {},
   broker: null,
   liveSpots: {},
+  positionsLive: null,
   orderMode: "paper",
   pending: null,
   autobot: null,
@@ -302,6 +311,8 @@ export const useStore = create<State>((set, get) => ({
           set({ screener: msg.data, screenerProgress: msg.progress ?? get().screenerProgress });
         } else if (msg.type === "autobot") {
           set({ autobot: msg.data });
+        } else if (msg.type === "positions") {
+          set({ positionsLive: msg.data });
         } else if (msg.type === "tick") {
           const d = msg.data;
           _tickBuf[d.symbol] = { ltp: d.ltp, chgPct: d.chgPct, ts: d.ts };

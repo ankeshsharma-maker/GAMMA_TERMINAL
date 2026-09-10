@@ -47,6 +47,13 @@ def _save(path, obj):
     path.write_text(json.dumps(obj, indent=2, default=str), "utf-8")
 
 
+def _fnum(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 class Store:
     def __init__(self) -> None:
         self.raw: dict[tuple[str, str], dict] = {}     # (symbol, expiry) -> raw v3 payload
@@ -80,6 +87,9 @@ class Store:
         )
         self.settings: dict = _load(_SETTINGS_FILE, {"orderMode": "paper"})
         self.live_orders: deque = deque(maxlen=100)  # log of routed live orders
+        self.broker_positions: list[dict] = []       # last raw PositionBook snapshot
+        self.broker_positions_ts: float = 0.0
+        self.leg_ltp: dict[str, dict] = {}           # feed token -> {ltp, ts} for open legs
 
     # ---- symbol / expiry helpers ------------------------------------------
     def all_symbols(self, extra: Optional[set[str]] = None) -> list[str]:
@@ -584,6 +594,67 @@ class Store:
     def get_live_spot(self, symbol: str) -> dict | None:
         with _lock:
             return self.live_spot.get(symbol.upper())
+
+    # ---- live position MTM (tick-by-tick) -----------------------
+    def set_broker_positions(self, rows: list[dict]) -> None:
+        """Store a fresh raw PositionBook snapshot; it anchors the live MTM."""
+        with _lock:
+            self.broker_positions = list(rows or [])
+            self.broker_positions_ts = time.time()
+            live = {str(r.get("token")) for r in self.broker_positions}
+            for tok in list(self.leg_ltp):
+                if tok not in live:
+                    self.leg_ltp.pop(tok, None)
+
+    def position_tokens(self) -> set[str]:
+        with _lock:
+            return {
+                str(r.get("token"))
+                for r in self.broker_positions
+                if r.get("token") and (_fnum(r.get("netqty")) or 0.0) != 0.0
+            }
+
+    def set_leg_ltp(self, token: str, ltp: float, ts: float | None = None) -> None:
+        with _lock:
+            self.leg_ltp[str(token)] = {"ltp": float(ltp), "ts": ts or time.time()}
+
+    def live_positions(self) -> dict:
+        """PositionBook rows with ``urmtom`` re-marked from live leg ticks.
+
+        Noren's unrealised MTM moves linearly with the last traded price at a
+        rate of ``netqty * prcftr * mult``, so we anchor to the broker's own
+        ``urmtom`` (and the ``lp`` in the same snapshot) and add only the
+        tick-by-tick delta since then. When the next snapshot lands we re-anchor.
+        """
+        now = time.time()
+        with _lock:
+            rows = [dict(r) for r in self.broker_positions]
+            legs = dict(self.leg_ltp)
+            snap_ts = self.broker_positions_ts
+        total = 0.0
+        realized = 0.0
+        for r in rows:
+            realized += _fnum(r.get("rpnl")) or 0.0
+            anchor_mtm = _fnum(r.get("urmtom"))
+            if anchor_mtm is None:
+                anchor_mtm = _fnum(r.get("mtm"))
+            netqty = _fnum(r.get("netqty")) or 0.0
+            anchor_lp = _fnum(r.get("lp"))
+            live = legs.get(str(r.get("token")))
+            if live and netqty and anchor_mtm is not None and anchor_lp and now - live["ts"] < 30:
+                pf = _fnum(r.get("prcftr")) or 1.0
+                mult = _fnum(r.get("mult")) or 1.0
+                r["urmtom"] = round(anchor_mtm + netqty * (live["ltp"] - anchor_lp) * pf * mult, 2)
+                r["lp"] = live["ltp"]
+                r["_liveMtm"] = True
+            total += _fnum(r.get("urmtom")) or 0.0
+        return {
+            "rows": rows,
+            "total": round(total, 2),
+            "realized": round(realized, 2),
+            "ts": snap_ts,
+            "feedTs": now,
+        }
 
     # ---- cross-symbol screener ------------------------------------
     def session_open(self, symbol: str, spot: float) -> float:
