@@ -27,6 +27,7 @@ _last_emit: dict[str, float] = {}
 # Ticks on these drive the live mark-to-market pushed as `positions` messages.
 _leg_tokens: set[str] = set()
 _last_pos_emit = 0.0
+_last_pos_dbg = 0.0
 _POS_EMIT_MIN_GAP = 1.0   # 1 fan-out/sec for the position MTM — the header only needs that
 
 # min seconds between fan-outs per symbol. The frontend coalesces incoming ticks
@@ -247,6 +248,26 @@ async def run_position_feed(stop: asyncio.Event) -> None:
             log.debug("position poll failed: %s", exc)
             continue
         store.set_broker_positions(rows)
+
+        # --- TEMP P&L diagnostic (throttled) ---
+        global _last_pos_dbg
+        _now_dbg = time.time()
+        if rows and _now_dbg - _last_pos_dbg > 30:
+            _last_pos_dbg = _now_dbg
+            s_ur = sum(_num(r.get("urmtom")) or 0.0 for r in rows)
+            s_rp = sum(_num(r.get("rpnl")) or 0.0 for r in rows)
+            s_mt = sum(_num(r.get("mtm")) or 0.0 for r in rows)
+            log.info(
+                "POSDBG n=%d SUM urmtom=%.2f rpnl=%.2f mtm=%.2f (urmtom+rpnl=%.2f)",
+                len(rows), s_ur, s_rp, s_mt, s_ur + s_rp,
+            )
+            for r in rows:
+                log.info(
+                    "POSDBG %s netqty=%s avg=%s lp=%s urmtom=%s rpnl=%s mtm=%s prcftr=%s mult=%s",
+                    r.get("tsym"), r.get("netqty"), r.get("netavgprc"), r.get("lp"),
+                    r.get("urmtom"), r.get("rpnl"), r.get("mtm"),
+                    r.get("prcftr"), r.get("mult"),
+                )
 
         # keep the open legs on the live socket
         keys: set[str] = set()
