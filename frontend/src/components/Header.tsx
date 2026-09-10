@@ -835,28 +835,15 @@ function IvBadge() {
 
 export function Header() {
   const chain = useStore((s) => s.chain);
-  // subscribe only to the charted symbol's tick, not the whole liveSpots map,
-  // so a tick for some other watchlist symbol doesn't re-render the header
-  const live = useStore((s) => (s.chain ? s.liveSpots[s.chain.symbol] : undefined));
   const [, force] = useState(0);
   useEffect(() => {
+    // keep the "…ago" timestamp fresh
     const t = setInterval(() => force((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, []);
 
   const gexPos = (chain?.netGex ?? 0) >= 0;
   const orderMode = useStore((s) => s.orderMode);
-  const liveFresh = live && Date.now() / 1000 - live.ts < 12;
-  // hold the last live tick so the spot number doesn't flip back to the (often
-  // slightly different) chain.spot every time a tick goes momentarily stale
-  const lastLiveRef = useRef<number | null>(null);
-  const symRef = useRef<string | undefined>(undefined);
-  if (chain?.symbol !== symRef.current) {
-    symRef.current = chain?.symbol;
-    lastLiveRef.current = null; // new instrument — drop the stale tick
-  }
-  if (live?.ltp != null) lastLiveRef.current = live.ltp;
-  const shownSpot = lastLiveRef.current ?? chain?.spot ?? 0;
 
   return (
     <div
@@ -896,27 +883,6 @@ export function Header() {
       <HeaderIndices />
       {chain ? (
         <>
-          <div className="flex items-baseline gap-2">
-            <span className="num inline-block min-w-[4rem] text-right text-lg font-semibold">
-              {px(shownSpot, shownSpot < 100 ? 2 : 0)}
-            </span>
-            {/* always mounted, hidden when stale — toggling it was reflowing the strip */}
-            <span
-              className={`num inline-block w-[3.5rem] text-2xs ${
-                !liveFresh
-                  ? "invisible"
-                  : (live!.chgPct ?? 0) >= 0
-                    ? "text-up"
-                    : "text-down"
-              }`}
-              title="Flattrade live tick"
-            >
-              {liveFresh && live!.chgPct != null
-                ? `${live!.chgPct > 0 ? "+" : ""}${nf(live!.chgPct, 2)}% ●`
-                : "0.00% ●"}
-            </span>
-          </div>
-          <Stat label="ATM" value={sk(chain.atmStrike)} />
           <Stat label="ATM IV" value={chain.atmIV ? `${nf(chain.atmIV)}%` : "–"} />
           <IvBadge />
           <Stat

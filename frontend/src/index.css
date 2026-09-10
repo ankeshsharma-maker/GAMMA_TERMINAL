@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* terminal palette — space-separated RGB channels so Tailwind's `/opacity`
+   modifiers keep working. Settings (lib/theme.ts) overrides these on :root. */
+:root {
+  --term-bg: 15 20 29;
+  --term-panel: 27 36 49;
+  --term-panel2: 21 29 41;
+  --term-border: 38 48 63;
+  --term-text: 200 211 224;
+  --term-dim: 122 134 153;
+  --term-accent: 59 130 246;
+}
+
 html,
 body,
 #root {
@@ -28,8 +40,8 @@ html {
 
 body {
   margin: 0;
-  background: #0f141d;
-  color: #c8d3e0;
+  background: rgb(var(--term-bg));
+  color: rgb(var(--term-text));
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
