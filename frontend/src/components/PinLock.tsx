@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
+import { getAutolockMin } from "../lib/prefs";
 
 // Device-local PIN — protects the app (and the stored login token) if someone
 // picks up the phone. Independent of the backend password. The PIN never
@@ -6,10 +8,24 @@ import { useEffect, useRef, useState } from "react";
 
 const HASH_KEY = "gt.pinHash";
 const SEEN_KEY = "gt.pinPrompted";
-const RELOCK_AFTER_MS = 60_000;
 
-/** open the device-PIN setup screen — the PIN is opt-in, never auto-prompted */
+/** open the device-PIN setup screen */
 export const openPinSetup = () => window.dispatchEvent(new Event("gt-set-pin"));
+export const hasPin = () => {
+  try {
+    return !!localStorage.getItem(HASH_KEY);
+  } catch {
+    return false;
+  }
+};
+export const clearPin = () => {
+  try {
+    localStorage.removeItem(HASH_KEY);
+    localStorage.setItem(SEEN_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+};
 
 async function sha(s: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
@@ -24,11 +40,20 @@ const readHash = () => {
 };
 
 export function PinLock({ children }: { children: React.ReactNode }) {
-  const hasPin = !!readHash();
-  // locked at start only if the user has deliberately set a PIN
-  const [locked, setLocked] = useState(hasPin);
-  // PIN setup is opt-in — shown only when openPinSetup() fires, never on load
-  const [setup, setSetup] = useState(false);
+  const already = !!readHash();
+  const [locked, setLocked] = useState(already);
+  const [setup, setSetup] = useState(() => {
+    // installed app, first run, no PIN yet, not asked before → offer to set one
+    try {
+      return (
+        Capacitor.isNativePlatform() &&
+        !already &&
+        !localStorage.getItem(SEEN_KEY)
+      );
+    } catch {
+      return false;
+    }
+  });
   const hiddenAt = useRef<number | null>(null);
 
   useEffect(() => {
@@ -37,15 +62,17 @@ export function PinLock({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("gt-set-pin", h);
   }, []);
 
-  // re-lock when the app has been in the background for a while
+  // re-lock when the app has been in the background past the auto-lock delay
   useEffect(() => {
     const onVis = () => {
+      const ms = getAutolockMin() * 60_000;
       if (document.hidden) {
         hiddenAt.current = Date.now();
       } else if (
+        ms > 0 &&
         readHash() &&
         hiddenAt.current &&
-        Date.now() - hiddenAt.current > RELOCK_AFTER_MS
+        Date.now() - hiddenAt.current > ms
       ) {
         setLocked(true);
       }

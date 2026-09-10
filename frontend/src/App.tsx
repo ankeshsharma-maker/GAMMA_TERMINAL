@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "./store";
-import { Header, FontScale, applyFontScale } from "./components/Header";
+import { Header } from "./components/Header";
+import { FontScale, applyFontScale } from "./components/FontScale";
 import { Watchlist } from "./components/Watchlist";
 import { ExpiryTabs } from "./components/ExpiryTabs";
 import { OptionChain } from "./components/OptionChain";

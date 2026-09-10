@@ -12,6 +12,7 @@ import { useStore } from "../store";
 import { api } from "../lib/api";
 import { MiniChart } from "./MiniChart";
 import { SelectMenu } from "./SelectMenu";
+import { getDataSrc, getIntervalS } from "../lib/prefs";
 import {
   bollinger,
   ema,
@@ -181,7 +182,7 @@ export function Chart() {
     [symbol, symChoices, symClass]
   );
   const [data, setData] = useState<ChartData | null>(null);
-  const [intervalS, setIntervalS] = useState(300); // 5-minute candles
+  const [intervalS, setIntervalS] = useState(getIntervalS); // default from Settings
   const [rangeD, setRangeD] = useState(1); // visible-history window in days (1 = intraday / 1D); 0 = all
   const [split, setSplit] = useState(false);
   const [cmpInstrument, setCmpInstrument] = useState<string>("STRADDLE");
@@ -496,7 +497,7 @@ export function Chart() {
     chartRef.current?.applyOptions({ timeScale: { secondsVisible: intervalS < 60 } });
   }, [intervalS]);
 
-  const [dataSrc, setDataSrc] = useState<"auto" | "broker" | "upstox">("auto");
+  const [dataSrc, setDataSrc] = useState<"auto" | "broker" | "upstox">(getDataSrc);
 
   // Refresh cadence: normally 15s (chart motion between refreshes comes from the
   // live nudge below). Only when the broker feed is *expected but down* — so the

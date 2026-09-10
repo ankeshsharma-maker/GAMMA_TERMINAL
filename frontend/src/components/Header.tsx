@@ -6,6 +6,7 @@ import { lockNow } from "../lib/auth";
 import { useLiveMtm } from "../lib/useLiveMtm";
 import { ConnBadge } from "./ConnBadge";
 import { LogoWordmark } from "./Logo";
+import { Settings } from "./Settings";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 function Stat({ label, value, cls = "" }: { label: string; value: ReactNode; cls?: string }) {
@@ -717,62 +718,7 @@ export function OrderModePill() {
   );
 }
 
-/* ---- user text-size control (A- / A+), persisted, applied to <html> ---- */
-const FONT_LS = "ui.fontScale";
-const FONT_MIN = 0.8;
-const FONT_MAX = 1.4;
-export function applyFontScale() {
-  let v = 1;
-  try {
-    v = parseFloat(localStorage.getItem(FONT_LS) || "1") || 1;
-  } catch {
-    /* ignore */
-  }
-  v = Math.min(FONT_MAX, Math.max(FONT_MIN, v));
-  document.documentElement.style.setProperty("--ui-font-scale", String(v));
-  return v;
-}
-export function FontScale() {
-  const [scale, setScale] = useState(applyFontScale);
-  useEffect(() => {
-    try {
-      localStorage.setItem(FONT_LS, String(scale));
-    } catch {
-      /* ignore */
-    }
-    document.documentElement.style.setProperty("--ui-font-scale", String(scale));
-  }, [scale]);
-  const step = (d: number) =>
-    setScale((p) => Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round((p + d) * 100) / 100)));
-  return (
-    <div
-      className="flex items-center overflow-hidden rounded border border-term-border text-2xs"
-      title="Text size"
-    >
-      <button
-        onClick={() => step(-0.1)}
-        disabled={scale <= FONT_MIN + 1e-6}
-        className="px-1.5 py-1 text-term-dim hover:bg-term-border hover:text-term-text disabled:opacity-30"
-      >
-        A−
-      </button>
-      <button
-        onClick={() => setScale(1)}
-        title="Reset text size"
-        className="border-x border-term-border px-1.5 py-1 text-[10px] text-term-dim hover:bg-term-border hover:text-term-text"
-      >
-        {Math.round(scale * 100)}%
-      </button>
-      <button
-        onClick={() => step(0.1)}
-        disabled={scale >= FONT_MAX - 1e-6}
-        className="px-1.5 py-1 font-semibold text-term-dim hover:bg-term-border hover:text-term-text disabled:opacity-30"
-      >
-        A+
-      </button>
-    </div>
-  );
-}
+export { FontScale, applyFontScale } from "./FontScale";
 
 export function AlertBell() {
   const { alerts, alertsSeen, unusual, unusualSeen, notifOpen, openNotif, closeNotif } = useStore();
@@ -836,6 +782,7 @@ function IvBadge() {
 
 export function Header() {
   const chain = useStore((s) => s.chain);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [, force] = useState(0);
   useEffect(() => {
     // keep the "…ago" timestamp fresh
@@ -868,6 +815,13 @@ export function Header() {
           <UpstoxPill />
           <BrokerPill />
           <AlertBell />
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:text-term-text"
+            title="Settings"
+          >
+            ⚙
+          </button>
           <button
             onClick={lockNow}
             className="rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:text-term-text"
@@ -903,6 +857,7 @@ export function Header() {
       <MarginStats />
       <PnlStrip />
       </div>
+      {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

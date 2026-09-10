@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api } from "./lib/api";
 import { TerminalSocket } from "./lib/ws";
+import { getDefaultLots } from "./lib/prefs";
 import type {
   Alert,
   BrokerStatus,
@@ -179,7 +180,7 @@ export const useStore = create<State>((set, get) => ({
   chainError: null,
   watch: [],
   watchlists: null,
-  scalpLots: 1,
+  scalpLots: getDefaultLots(),
   chartInstrument: "",
   paper: null,
   brokerFunds: null,

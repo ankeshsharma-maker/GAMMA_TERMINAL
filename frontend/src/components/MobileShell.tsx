@@ -163,7 +163,7 @@ function MobileReturnCard() {
   );
 }
 import { lockNow } from "../lib/auth";
-import { openPinSetup } from "./PinLock";
+import { Settings } from "./Settings";
 import { NotificationPanel } from "./NotificationPanel";
 import { OrderConfirm } from "./OrderConfirm";
 import { Watchlist } from "./Watchlist";
@@ -277,6 +277,7 @@ export function MobileShell() {
       Math.max(0, s.unusual.length - s.unusualSeen)
   );
   const [brokerOpen, setBrokerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <div
@@ -339,11 +340,14 @@ export function MobileShell() {
             Alerts{alertsUnseen > 0 ? ` (${alertsUnseen})` : ""}
           </button>
           <button
-            onClick={openPinSetup}
+            onClick={() => {
+              setBrokerOpen(false);
+              setSettingsOpen(true);
+            }}
             className="rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:text-term-text"
-            title="Set / change a device PIN (optional, stays on this device)"
+            title="Settings"
           >
-            🔢 PIN
+            ⚙ Settings
           </button>
           <button
             onClick={lockNow}
@@ -354,6 +358,7 @@ export function MobileShell() {
           </button>
         </div>
       )}
+      {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
 
       <NotificationPanel />
       {/* ── top strip: analysis views (same layout as the bottom bar) ── */}
