@@ -426,7 +426,7 @@ function HoldingsTab() {
 
   return (
     <div className="min-h-0 flex-1 overflow-auto p-3">
-      <table className="w-full border-separate border-spacing-0 border border-term-border text-xs">
+      <table className="grid-table text-xs">
         <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
           <tr>
             <TH>Symbol</TH>
@@ -559,7 +559,7 @@ function OrdersTab() {
             : `No ${filter} paper orders.`}
         </Empty>
       ) : (
-        <table className="w-full border-separate border-spacing-0 border border-term-border text-xs">
+        <table className="grid-table text-xs">
           <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
             <tr>
               <TH>Time</TH>
@@ -600,7 +600,7 @@ function OrdersTab() {
           {shownBook.length === 0 ? (
             <Empty>{filter === "all" ? "Order book empty." : `No ${filter} orders.`}</Empty>
           ) : (
-            <table className="w-full border-separate border-spacing-0 border border-term-border text-xs">
+            <table className="grid-table text-xs">
               <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
                 <tr>
                   <TH>Symbol</TH>

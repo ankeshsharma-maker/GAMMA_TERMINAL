@@ -635,7 +635,7 @@ export function StrategyBuilder() {
       <div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-term-dim">
         Legs P&amp;L @ {nf(tgtPrice, 0)} · {tDays === 0 ? "now" : tDateLbl}
       </div>
-      <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/50 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
+      <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
         <thead className="text-[10px] uppercase text-term-dim">
           <tr>
             <th className="px-2 py-1 text-left font-medium">Instrument</th>
@@ -709,7 +709,7 @@ export function StrategyBuilder() {
           </button>
         </div>
       </div>
-      <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/50 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
+      <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
         <thead className="text-[10px] uppercase text-term-dim">
           <tr>
             <th className="px-2 py-1 text-left font-medium">Instrument</th>
@@ -1491,7 +1491,7 @@ export function StrategyBuilder() {
         <div className="border-b border-term-border bg-term-panel">
           {analysis ? (
             <div className="overflow-x-auto">
-              <table className="w-full border-separate border-spacing-0 text-xs">
+              <table className="grid-table text-xs">
                 <tbody>
                   <tr className="border-b border-term-border/60">
                     <StatCol
@@ -1743,7 +1743,7 @@ export function StrategyBuilder() {
                       </button>
                     </div>
                   </div>
-                  <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/50 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
+                  <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
                     <thead className="text-[10px] uppercase text-term-dim">
                       <tr>
                         <th className="border-b border-term-border px-2 py-1 text-right font-medium">
@@ -1838,7 +1838,7 @@ export function StrategyBuilder() {
                       ))}
                     </div>
                   </div>
-                  <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/50 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
+                  <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
                     <thead className="text-[10px] uppercase text-term-dim">
                       <tr>
                         <th className="border-b border-term-border px-2 py-1 text-left font-medium">

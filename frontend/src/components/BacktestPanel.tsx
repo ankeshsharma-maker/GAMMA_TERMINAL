@@ -156,7 +156,7 @@ export function BacktestPanel({
           </div>
           <div className="mt-2">{chart}</div>
           <div className="mt-1 max-h-40 overflow-y-auto">
-            <table className="w-full text-[10px]">
+            <table className="grid-table text-[10px]">
               <thead className="text-term-dim">
                 <tr>
                   <th className="py-0.5 text-left font-medium">Date</th>

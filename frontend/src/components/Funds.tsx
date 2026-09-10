@@ -152,7 +152,7 @@ export function Funds() {
           <div className="mb-1.5 text-[11px] uppercase tracking-wide text-term-dim">
             Paper account
           </div>
-          <table className="w-full max-w-md border border-term-border text-xs">
+          <table className="grid-table max-w-md text-xs">
             <tbody>
               {(
                 [
@@ -191,7 +191,7 @@ export function Funds() {
           <div className="mb-1.5 text-[11px] uppercase tracking-wide text-term-dim">
             Flattrade limits (raw)
           </div>
-          <table className="w-full max-w-md border border-term-border text-xs">
+          <table className="grid-table max-w-md text-xs">
             <tbody>
               {rawEntries.map(([k, v]) => (
                 <tr key={k} className="border-b border-term-border/50 last:border-0">

@@ -228,7 +228,7 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
           <div className="mt-1.5">{curve}</div>
           {res.trades.length > 0 && (
             <div className="mt-1.5 max-h-40 overflow-y-auto">
-              <table className="w-full">
+              <table className="grid-table">
                 <thead className="text-term-dim">
                   <tr>
                     <th className="py-0.5 text-left font-medium">In → Out</th>

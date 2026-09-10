@@ -364,7 +364,7 @@ export function ScalpPanel() {
           </div>
         )}
         {broker?.authed && !feedErr && myRows.length > 0 && (
-          <table className="w-full min-w-[480px] border-separate border-spacing-0 overflow-hidden rounded border border-term-border text-2xs [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/40 [&_td]:px-1.5 [&_td]:py-1 [&_td:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border [&_th]:px-1.5 [&_th]:py-1 [&_th:last-child]:border-r-0 [&_tr:last-child_td]:border-b-0">
+          <table className="w-full min-w-[480px] border-separate border-spacing-0 overflow-hidden rounded border border-term-border text-2xs [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_td]:px-1.5 [&_td]:py-1 [&_td:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border [&_th]:px-1.5 [&_th]:py-1 [&_th:last-child]:border-r-0 [&_tr:last-child_td]:border-b-0">
             <thead className="sticky top-0 z-10 bg-term-panel2 text-[9px] uppercase tracking-wide text-term-dim">
               <tr>
                 <th className="text-left font-semibold">Instrument</th>

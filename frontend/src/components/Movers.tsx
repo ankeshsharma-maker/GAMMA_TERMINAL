@@ -91,7 +91,7 @@ export function Movers() {
             {rows.length === 0 ? "waiting for screener…" : "none"}
           </div>
         ) : (
-          <table className="w-full border-separate border-spacing-0 text-2xs">
+          <table className="grid-table text-2xs">
             <tbody>
               {list.map((r, i) => (
                 <tr key={r.symbol}>

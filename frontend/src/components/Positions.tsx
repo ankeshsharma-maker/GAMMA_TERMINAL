@@ -40,7 +40,7 @@ function LiveOrderLog() {
         Live Orders
       </div>
       <div className="max-h-40 overflow-y-auto">
-        <table className="w-full border-separate border-spacing-0 text-[10px]">
+        <table className="grid-table text-[10px]">
           <thead className="sticky top-0 bg-term-panel2 text-term-dim">
             <tr>
               <th className="px-2 py-1 text-left font-medium">Side / qty</th>
@@ -116,7 +116,7 @@ export function Positions() {
           </div>
         )}
         {paper && paper.positions.length > 0 && (
-          <table className="w-full border-separate border-spacing-0 text-[10px]">
+          <table className="grid-table text-[10px]">
             <thead className="sticky top-0 bg-term-panel2 text-term-dim">
               <tr>
                 <th className="px-2 py-1 text-left font-medium">Contract</th>

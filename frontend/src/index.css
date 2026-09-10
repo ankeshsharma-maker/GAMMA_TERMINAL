@@ -73,13 +73,23 @@ select:focus-visible {
   }
   /* dense option-chain grid — hairline separators, no heavy outer frame */
   .oc-grid {
-    @apply w-full border-separate border-spacing-0 border border-term-border/70;
+    @apply w-full border-separate border-spacing-0 border border-term-border;
   }
   .oc-grid thead th {
-    @apply border-b border-r border-term-border/60 px-1 py-1 text-[10px] uppercase font-medium;
+    @apply border-b border-r border-term-border px-1 py-1 text-[10px] uppercase font-medium;
   }
   .oc-grid tbody td {
-    @apply border-b border-r border-term-border/40;
+    @apply border-b border-r border-term-border/60;
+  }
+  /* shared bordered data-grid — every cell framed, like the Trending OI Live table */
+  .grid-table {
+    @apply w-full border-separate border-spacing-0 border border-term-border;
+  }
+  .grid-table th {
+    @apply border-b border-r border-term-border last:border-r-0;
+  }
+  .grid-table td {
+    @apply border-b border-r border-term-border/60 last:border-r-0;
   }
   .seg {
     @apply flex overflow-hidden rounded border border-term-border/60 text-2xs;

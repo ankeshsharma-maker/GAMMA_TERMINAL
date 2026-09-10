@@ -128,7 +128,7 @@ export function IndicatorScan() {
             {busy ? "computing indicators from Upstox candles…" : "Pick a date and Scan your watchlist."}
           </div>
         ) : (
-          <table className="w-full border-separate border-spacing-0 text-2xs">
+          <table className="grid-table text-2xs">
             <thead className="sticky top-0 bg-term-panel text-[10px] uppercase text-term-dim">
               <tr>
                 {["Symbol", "Spot", "RSI", "EMA9", "EMA21", "EMA50", "MACD h", "Signals", "Trend"].map((h) => (

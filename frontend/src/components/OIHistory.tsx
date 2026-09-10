@@ -272,7 +272,7 @@ export function OIHistory() {
 
       {rows.length > 0 && (
         <div className="min-h-0 flex-1 overflow-auto border-t border-term-border">
-          <table className="w-full border-separate border-spacing-0 text-2xs">
+          <table className="grid-table text-2xs">
             <thead className="sticky top-0 bg-term-panel text-[10px] uppercase text-term-dim">
               <tr>
                 {["Date", "Spot", "ΔSpot", "Call OI", "Put OI", "PCR", "Max Pain", "OI State"].map((h) => (

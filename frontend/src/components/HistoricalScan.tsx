@@ -163,7 +163,7 @@ export function HistoricalScan() {
             {busy ? "pulling history from Upstox…" : "Pick a date range and Scan your watchlist."}
           </div>
         ) : (
-          <table className="w-full border-separate border-spacing-0 text-2xs">
+          <table className="grid-table text-2xs">
             <thead className="sticky top-0 bg-term-panel text-[10px] uppercase text-term-dim">
               <tr>
                 {["Symbol", "Spot", "Range move", "Net OI", "PCR", "Max Pain", "OI trail", "State", "Smart"].map(
