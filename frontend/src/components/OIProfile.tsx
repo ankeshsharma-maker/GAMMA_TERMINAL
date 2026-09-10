@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RefreshChainBtn } from "./RefreshChainBtn";
 import { ClassFilter } from "./Header";
 import { useStore } from "../store";
@@ -20,7 +20,7 @@ const OI_CUT = "#ef4444";
 
 const zClamp = (z: number) => Math.min(3, Math.max(0.5, z));
 
-export function OIProfile() {
+export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const chain = useStore((s) => s.chain);
   const chainError = useStore((s) => s.chainError);
   const symbol = useStore((s) => s.symbol);
@@ -1188,7 +1188,9 @@ export function OIProfile() {
       <div className="border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
         {/* row 1 — always visible: symbol / expiry / view switch / readout */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span className="font-semibold uppercase tracking-wide">OI Profile</span>
+          {paneNav ?? (
+            <span className="font-semibold uppercase tracking-wide">OI Profile</span>
+          )}
 
           <RefreshChainBtn />
 
