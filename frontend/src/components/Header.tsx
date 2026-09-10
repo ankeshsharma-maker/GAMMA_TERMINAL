@@ -799,9 +799,10 @@ export function Header() {
         orderMode === "live" ? "border-down" : "border-term-border"
       }`}
     >
-      {/* row 1 — app chrome: view switch, filters, session pills */}
+      {/* row 1 — logo, index ticker, view switch, filters, session pills */}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <LogoWordmark />
+        <HeaderIndices />
         <ViewToggle />
         <ClassFilter />
         <OrderModePill />
@@ -833,9 +834,8 @@ export function Header() {
         </div>
       </div>
 
-      {/* row 2 — market data: index ticker + live spot + chain stats + margin + P&L */}
+      {/* row 2 — market data: chain stats + margin + P&L */}
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-      <HeaderIndices />
       {chain ? (
         <>
           <Stat label="ATM IV" value={chain.atmIV ? `${nf(chain.atmIV)}%` : "–"} />
