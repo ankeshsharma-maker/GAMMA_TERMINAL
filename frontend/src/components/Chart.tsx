@@ -783,14 +783,22 @@ export function Chart() {
       });
     }
 
-    applyRange();
+    applyRange(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [priceCandles, ctype, data, eff, mtf, indHidden, intervalS]);
 
-  // clamp the visible window to the chosen lookback (1D / 3M / 6M / 1Y / All)
-  const applyRange = () => {
+  // clamp the visible window to the chosen lookback (1D / 3M / 6M / 1Y / All).
+  // `force` = a deliberate re-frame (window / instrument / interval change or the
+  // reset button). On a plain data refresh we DON'T re-frame if the user has
+  // scrolled back to study an earlier stretch — that was snapping their view
+  // back to "now" on every poll.
+  const applyRange = (force: boolean) => {
     const ts = chartRef.current?.timeScale();
     if (!ts || priceCandles.length === 0) return;
+    if (!force) {
+      const vr = ts.getVisibleLogicalRange();
+      if (vr && vr.to < priceCandles.length - 2) return; // scrolled away from live edge
+    }
     if (rangeD <= 0) {
       ts.fitContent();
       return;
@@ -804,7 +812,9 @@ export function Chart() {
       ts.fitContent();
     }
   };
-  useEffect(applyRange, [rangeD]); // eslint-disable-line react-hooks/exhaustive-deps
+  // deliberate re-frames: window change, or instrument / interval switch
+  useEffect(() => applyRange(true), [rangeD]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => applyRange(true), [symbol, instrument, intervalS]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     chartRef.current?.timeScale().applyOptions({ visible: showTime });
@@ -1145,9 +1155,9 @@ export function Chart() {
           </button>
         )}
         <button
-          onClick={() => chartRef.current?.timeScale().fitContent()}
+          onClick={() => applyRange(true)}
           className="rounded border border-term-border px-1.5 py-0.5 text-term-dim hover:text-term-text"
-          title="Reset zoom"
+          title="Reset view to the selected window"
         >
           ⤢
         </button>
