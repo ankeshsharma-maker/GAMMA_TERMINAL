@@ -1103,6 +1103,83 @@ export function OIProfile() {
     );
   })();
 
+  // View / Strikes / ΔOI-over / Zoom — on the web portal these ride the "Show"
+  // row (one row saved); on mobile they stay a separate ⚙-collapsible row.
+  const chartControls = (
+    <>
+      <span className="ml-1">View</span>
+      <div className="seg">
+        <button onClick={() => setMetric("oi")} className={metric === "oi" ? "on" : ""}>
+          OI
+        </button>
+        <button onClick={() => setMetric("chg")} className={metric === "chg" ? "on" : ""}>
+          ΔOI bars
+        </button>
+        <button
+          onClick={() => setMetric("combined")}
+          className={metric === "combined" ? "on" : ""}
+        >
+          OI + Δ caps
+        </button>
+      </div>
+
+      <span className="ml-1">Strikes ±</span>
+      <div className="seg">
+        {[5, 10, 15, 20, 25, 0].map((n) => (
+          <button key={n} onClick={() => setCount(n)} className={count === n ? "on" : ""}>
+            {n === 0 ? "All" : n}
+          </button>
+        ))}
+      </div>
+
+      <span className="ml-1">ΔOI over</span>
+      <SelectMenu
+        value={tf}
+        options={
+          [
+            ["Full day", 0],
+            ["1m", 1],
+            ["2m", 2],
+            ["3m", 3],
+            ["5m", 5],
+            ["15m", 15],
+            ["30m", 30],
+            ["1h", 60],
+            ["2h", 120],
+            ["3h", 180],
+          ] as const
+        }
+        onChange={setTf}
+        title="ΔOI window"
+      />
+      {tf > 0 && winCov > 0 && winCov < tf - 0.5 && (
+        <span className="text-amber-400">
+          history {winCov}m / {tf}m — still filling
+        </span>
+      )}
+      {tf > 0 && winCov === 0 && (
+        <span className="text-amber-400">collecting OI history…</span>
+      )}
+
+      {layout === "chart" && (
+        <>
+          <span className="ml-1">Zoom</span>
+          <div className="seg">
+            {[100, 95, 90, 85, 80].map((p) => (
+              <button
+                key={p}
+                onClick={() => setZoom(p / 100)}
+                className={Math.round(zoom * 100) === p ? "on" : ""}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  );
+
   return (
     <div
       className={`flex min-h-0 flex-1 flex-col ${isMobile ? "overflow-y-auto" : ""}`}
@@ -1166,83 +1243,10 @@ export function OIProfile() {
             </button>
           )}
 
-          {/* chart controls — same row as "Show" to save a layout row */}
-          <div
-            className={`flex flex-wrap items-center gap-x-3 gap-y-1 ${
-              isMobile && !tools ? "hidden" : ""
-            }`}
-          >
-            <span className="ml-1">View</span>
-            <div className="seg">
-              <button onClick={() => setMetric("oi")} className={metric === "oi" ? "on" : ""}>
-                OI
-              </button>
-              <button onClick={() => setMetric("chg")} className={metric === "chg" ? "on" : ""}>
-                ΔOI bars
-              </button>
-              <button
-                onClick={() => setMetric("combined")}
-                className={metric === "combined" ? "on" : ""}
-              >
-                OI + Δ caps
-              </button>
-            </div>
-
-            <span className="ml-1">Strikes ±</span>
-            <div className="seg">
-              {[5, 10, 15, 20, 25, 0].map((n) => (
-                <button key={n} onClick={() => setCount(n)} className={count === n ? "on" : ""}>
-                  {n === 0 ? "All" : n}
-                </button>
-              ))}
-            </div>
-
-            <span className="ml-1">ΔOI over</span>
-            <SelectMenu
-              value={tf}
-              options={
-                [
-                  ["Full day", 0],
-                  ["1m", 1],
-                  ["2m", 2],
-                  ["3m", 3],
-                  ["5m", 5],
-                  ["15m", 15],
-                  ["30m", 30],
-                  ["1h", 60],
-                  ["2h", 120],
-                  ["3h", 180],
-                ] as const
-              }
-              onChange={setTf}
-              title="ΔOI window"
-            />
-            {tf > 0 && winCov > 0 && winCov < tf - 0.5 && (
-              <span className="text-amber-400">
-                history {winCov}m / {tf}m — still filling
-              </span>
-            )}
-            {tf > 0 && winCov === 0 && (
-              <span className="text-amber-400">collecting OI history…</span>
-            )}
-
-            {layout === "chart" && (
-              <>
-                <span className="ml-1">Zoom</span>
-                <div className="seg">
-                  {[100, 95, 90, 85, 80].map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => setZoom(p / 100)}
-                      className={Math.round(zoom * 100) === p ? "on" : ""}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+          {/* web portal: chart controls ride the "Show" row (saves a row) */}
+          {!isMobile && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">{chartControls}</div>
+          )}
 
           <div className="num ml-auto flex flex-wrap items-center gap-1.5 text-[10px]">
             <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
@@ -1268,6 +1272,17 @@ export function OIProfile() {
             )}
           </div>
         </div>
+
+        {/* mobile: chart controls stay a separate ⚙-collapsible row */}
+        {isMobile && (
+          <div
+            className={`mt-1 w-full flex-wrap items-center gap-x-3 gap-y-1 ${
+              tools ? "flex" : "hidden"
+            }`}
+          >
+            {chartControls}
+          </div>
+        )}
       </div>
 
       {/* legend / totals */}
