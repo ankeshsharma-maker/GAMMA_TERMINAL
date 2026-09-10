@@ -179,6 +179,7 @@ import { ScalpPanel } from "./ScalpPanel";
 import { ScalpCharts } from "./ScalpCharts";
 import { AutoBotView } from "./AutoBot";
 import { Funds } from "./Funds";
+import { LogoMark } from "./Logo";
 
 type NavItem = { v: View; icon: string; label: string };
 
@@ -295,7 +296,7 @@ export function MobileShell() {
           orderMode === "live" ? "border-down" : "border-term-border"
         }`}
       >
-        <span className="shrink-0 text-[13px] font-bold tracking-tight">GT</span>
+        <LogoMark size={22} />
         <TopIndices />
         <button
           onClick={() => setBrokerOpen((o) => !o)}

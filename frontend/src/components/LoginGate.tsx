@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { auth } from "../lib/api";
 import { getToken, setToken, onAuthChange } from "../lib/auth";
+import { LogoWordmark } from "./Logo";
 
 type Phase = "checking" | "login" | "ok";
 
@@ -62,7 +63,9 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
           onSubmit={submit}
           className="w-full max-w-sm rounded-xl border border-term-border bg-term-panel p-7"
         >
-          <div className="mb-1.5 text-2xl font-bold tracking-tight">GammaTerminal</div>
+          <div className="mb-4 scale-125 origin-left">
+            <LogoWordmark mark={30} />
+          </div>
           <div className="mb-6 text-sm text-term-dim">Enter the app password to continue.</div>
           <input
             type="password"

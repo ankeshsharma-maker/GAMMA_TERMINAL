@@ -163,7 +163,7 @@ export function TrendingOI() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 border-b border-term-border bg-term-panel2 px-3 py-1 text-[10px] uppercase tracking-wide text-term-dim">
+      <div className="flex items-center gap-2 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs uppercase tracking-wide text-term-dim">
         <span>Trending OI view</span>
         <div className="seg">
           <button className={view === "live" ? "on" : ""} onClick={() => pick("live")}>
@@ -334,7 +334,16 @@ function TrendingOILive() {
     );
   }, [showChart, pts, daily]);
 
-  const spot = live?.ltp ?? chain?.spot ?? 0;
+  // hold the last live tick so the readout doesn't flip between live.ltp and
+  // the slightly-different chain.spot on every store update (that's the flicker)
+  const lastSpotRef = useRef(0);
+  const spotSymRef = useRef(symbol);
+  if (symbol !== spotSymRef.current) {
+    spotSymRef.current = symbol;
+    lastSpotRef.current = 0;
+  }
+  if (live?.ltp != null) lastSpotRef.current = live.ltp;
+  const spot = lastSpotRef.current || chain?.spot || 0;
   const spotChg = live?.chgPct ?? null;
 
   const Card = ({
@@ -386,20 +395,6 @@ function TrendingOILive() {
             width={130}
           />
         ) : null}
-        <span className="num text-term-dim">
-          Spot <span className="text-term-text">{nf(spot, 1)}</span>
-          {spotChg != null && (
-            <span className={spotChg >= 0 ? "text-up" : "text-down"}>
-              {" "}
-              ({spotChg >= 0 ? "+" : ""}
-              {nf(spotChg, 2)}%)
-            </span>
-          )}
-        </span>
-        <span className="ml-auto text-term-dim">
-          Refreshed{" "}
-          {new Date(now).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
-        </span>
         <button
           onClick={() => setShowChart((v) => !v)}
           className={`rounded border px-2 py-0.5 font-semibold ${
@@ -410,6 +405,21 @@ function TrendingOILive() {
         >
           {showChart ? "Hide chart" : "Show chart"}
         </button>
+        <span className="num text-term-dim">
+          Spot{" "}
+          <span className="num inline-block min-w-[3.5rem] text-right text-term-text">
+            {nf(spot, 1)}
+          </span>
+          <span className={spotChg == null ? "invisible" : spotChg >= 0 ? "text-up" : "text-down"}>
+            {" "}
+            ({(spotChg ?? 0) >= 0 ? "+" : ""}
+            {nf(spotChg ?? 0, 2)}%)
+          </span>
+        </span>
+        <span className="ml-auto text-term-dim">
+          Refreshed{" "}
+          {new Date(now).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+        </span>
       </div>
 
       {/* summary band */}

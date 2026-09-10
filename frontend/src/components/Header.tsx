@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { lockNow } from "../lib/auth";
 import { useLiveMtm } from "../lib/useLiveMtm";
 import { ConnBadge } from "./ConnBadge";
+import { LogoWordmark } from "./Logo";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 function Stat({ label, value, cls = "" }: { label: string; value: ReactNode; cls?: string }) {
@@ -853,7 +854,7 @@ export function Header() {
     >
       {/* row 1 — app chrome: view switch, filters, session pills */}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="text-sm font-semibold tracking-tight">GammaTerminal</span>
+        <LogoWordmark />
         <ViewToggle />
         <ClassFilter />
         <OrderModePill />
