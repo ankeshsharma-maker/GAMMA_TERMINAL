@@ -964,18 +964,13 @@ export function Chart() {
             ))}
           </div>
         )}
-        <select
+        <SelectMenu
           value={symbol}
-          onChange={(e) => selectSymbol(e.target.value, true)}
-          className="rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs font-bold text-term-text outline-none focus:border-term-accent"
+          options={symOptions.map((s) => [s, s] as [string, string])}
+          onChange={(v) => selectSymbol(v, true)}
           title="Index / stock to chart"
-        >
-          {symOptions.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
+          width={150}
+        />
         <select
           value={instrument}
           onChange={(e) => setInstrument(e.target.value)}

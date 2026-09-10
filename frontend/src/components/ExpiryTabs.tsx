@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
+import { SelectMenu } from "./SelectMenu";
 
 /** "08-Sep-2026" -> "Sep-2026" (month bucket key) */
 const monthKey = (e: string) => {
@@ -28,18 +29,15 @@ export function ExpiryTabs() {
   );
 
   const symSelect = (
-    <select
-      value={symbol}
-      onChange={(e) => selectSymbol(e.target.value, true)}
-      title="Underlying"
-      className="shrink-0 rounded border border-term-border bg-term-bg px-1.5 py-1 text-2xs font-bold text-term-text outline-none focus:border-term-accent"
-    >
-      {symOptions.map((s) => (
-        <option key={s} value={s}>
-          {s}
-        </option>
-      ))}
-    </select>
+    <span className="shrink-0">
+      <SelectMenu
+        value={symbol}
+        options={symOptions.map((s) => [s, s] as [string, string])}
+        onChange={(v) => selectSymbol(v, true)}
+        title="Underlying"
+        width={150}
+      />
+    </span>
   );
 
   if (!chain) {

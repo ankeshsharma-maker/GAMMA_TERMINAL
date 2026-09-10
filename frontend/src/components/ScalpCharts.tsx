@@ -3,6 +3,7 @@ import { useStore } from "../store";
 import { api } from "../lib/api";
 import { Chart } from "./Chart";
 import { MiniChart, MINI_IND_DEFAULT, type MiniInd } from "./MiniChart";
+import { SelectMenu } from "./SelectMenu";
 
 const TF: [string, number][] = [
   ["1m", 60],
@@ -180,20 +181,18 @@ export function ScalpCharts() {
                 className="flex flex-wrap items-center gap-1.5 border-b border-term-border/60 px-2 py-1 text-[10px]"
                 style={paneBars ? undefined : { display: "none" }}
               >
-                <select
+                <SelectMenu
                   value={p.sym}
-                  onChange={(e) => {
-                    setPane(i, { sym: e.target.value, instr: "" });
-                    selectSymbol(e.target.value, true);
+                  options={[...new Set([p.sym, ...symOptions])].map(
+                    (s) => [s, s] as [string, string]
+                  )}
+                  onChange={(v) => {
+                    setPane(i, { sym: v, instr: "" });
+                    selectSymbol(v, true);
                   }}
-                  className="rounded border border-term-border bg-term-bg px-1 py-0.5 font-semibold text-term-text outline-none focus:border-term-accent"
-                >
-                  {[...new Set([p.sym, ...symOptions])].map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
+                  title="Index / stock"
+                  width={140}
+                />
 
                 {/* derivative / instrument picker */}
                 <select

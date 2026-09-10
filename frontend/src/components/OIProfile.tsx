@@ -1116,18 +1116,13 @@ export function OIProfile() {
           <RefreshChainBtn />
 
           <ClassFilter />
-          <select
+          <SelectMenu
             value={symbol}
-            onChange={(e) => selectSymbol(e.target.value, true)}
-            className="rounded border border-term-border bg-term-bg px-1 py-0.5 font-semibold text-term-text outline-none focus:border-term-accent"
+            options={symOptions.map((s) => [s, s] as [string, string])}
+            onChange={(v) => selectSymbol(v, true)}
             title="Underlying (list filtered by the All / Indices / Stocks toggle)"
-          >
-            {symOptions.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+            width={150}
+          />
 
           {chain.expiries.length > 0 && (
             <select
