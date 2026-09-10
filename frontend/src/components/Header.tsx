@@ -5,7 +5,7 @@ import { api } from "../lib/api";
 import { lockNow } from "../lib/auth";
 import { useLiveMtm } from "../lib/useLiveMtm";
 import { ConnBadge } from "./ConnBadge";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 function Stat({ label, value, cls = "" }: { label: string; value: ReactNode; cls?: string }) {
   return (
@@ -218,12 +218,17 @@ export function HeaderIndices({ max = 12 }: { max?: number } = {}) {
     return m;
   }, [rows]);
 
+  // remember the last real spot per symbol so a poll that briefly returns null
+  // doesn't blank the chip to "–" (reads as a flicker)
+  const lastSpot = useRef<Record<string, number>>({});
+
   return (
     <div className="relative flex items-center gap-1.5">
       {symbols.map((sym) => {
         const r = byBackend[sym];
         const w = wlChg[sym];
-        const spot = r?.spot ?? null;
+        if (r?.spot != null) lastSpot.current[sym] = r.spot;
+        const spot = r?.spot ?? lastSpot.current[sym] ?? null;
         let pct = r?.chgPct ?? w?.pct ?? null;
         let pts = r?.chgPts ?? w?.pts ?? null;
         if (pts == null && pct != null && spot != null)
@@ -242,17 +247,19 @@ export function HeaderIndices({ max = 12 }: { max?: number } = {}) {
             <span className="num text-sm font-semibold">
               {spot != null ? px(spot, spot < 100 ? 2 : 0) : "–"}
             </span>
-            {(pts != null || pct != null) && (
-              <span
-                className={`num text-xs ${
-                  (pct ?? pts ?? 0) >= 0 ? "text-up" : "text-down"
-                }`}
-              >
-                {(pct ?? pts ?? 0) >= 0 ? "▲" : "▼"}
-                {pts != null ? px(Math.abs(pts), Math.abs(pts) < 100 ? 2 : 0) : "–"}
-                {pct != null && ` (${px(Math.abs(pct), 2)}%)`}
-              </span>
-            )}
+            <span
+              className={`num text-xs ${
+                pts == null && pct == null
+                  ? "invisible"
+                  : (pct ?? pts ?? 0) >= 0
+                    ? "text-up"
+                    : "text-down"
+              }`}
+            >
+              {(pct ?? pts ?? 0) >= 0 ? "▲" : "▼"}
+              {pts != null ? px(Math.abs(pts), Math.abs(pts) < 100 ? 2 : 0) : "0"}
+              {pct != null ? ` (${px(Math.abs(pct), 2)}%)` : ""}
+            </span>
           </div>
         );
       })}
@@ -840,6 +847,16 @@ export function Header() {
   const gexPos = (chain?.netGex ?? 0) >= 0;
   const orderMode = useStore((s) => s.orderMode);
   const liveFresh = live && Date.now() / 1000 - live.ts < 12;
+  // hold the last live tick so the spot number doesn't flip back to the (often
+  // slightly different) chain.spot every time a tick goes momentarily stale
+  const lastLiveRef = useRef<number | null>(null);
+  const symRef = useRef<string | undefined>(undefined);
+  if (chain?.symbol !== symRef.current) {
+    symRef.current = chain?.symbol;
+    lastLiveRef.current = null; // new instrument — drop the stale tick
+  }
+  if (live?.ltp != null) lastLiveRef.current = live.ltp;
+  const shownSpot = lastLiveRef.current ?? chain?.spot ?? 0;
 
   return (
     <div
@@ -881,10 +898,7 @@ export function Header() {
         <>
           <div className="flex items-baseline gap-2">
             <span className="num inline-block min-w-[4rem] text-right text-lg font-semibold">
-              {(() => {
-                const s = liveFresh ? live!.ltp : chain.spot;
-                return px(s, s < 100 ? 2 : 0);
-              })()}
+              {px(shownSpot, shownSpot < 100 ? 2 : 0)}
             </span>
             {/* always mounted, hidden when stale — toggling it was reflowing the strip */}
             <span

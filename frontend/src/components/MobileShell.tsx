@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, sk, compact, signColor, px } from "../lib/format";
@@ -19,6 +19,9 @@ function TopIndices() {
   const [rows, setRows] = useState<
     { symbol: string; spot: number | null; chgPct: number | null }[]
   >([]);
+  // last real value per symbol — a poll that returns null must not blank the
+  // chip (that flicker between "–" and the price is what users notice)
+  const lastRef = useRef<Record<string, { spot: number; chgPct: number | null }>>({});
   useEffect(() => {
     let alive = true;
     const load = () =>
@@ -36,7 +39,11 @@ function TopIndices() {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
       {rows.slice(0, 2).map((r) => {
-        const up = (r.chgPct ?? 0) >= 0;
+        if (r.spot != null) lastRef.current[r.symbol] = { spot: r.spot, chgPct: r.chgPct };
+        const last = lastRef.current[r.symbol];
+        const spot = r.spot ?? last?.spot ?? null;
+        const chgPct = r.chgPct ?? last?.chgPct ?? null;
+        const up = (chgPct ?? 0) >= 0;
         return (
           <span
             key={r.symbol}
@@ -46,14 +53,16 @@ function TopIndices() {
               {r.symbol}
             </span>
             <span className="num text-[11px] font-semibold leading-none">
-              {r.spot != null ? nf(r.spot, 0) : "–"}
+              {spot != null ? nf(spot, 0) : "–"}
             </span>
-            {r.chgPct != null && (
-              <span className={`num text-[8px] leading-none ${up ? "text-up" : "text-down"}`}>
-                {up ? "▲" : "▼"}
-                {nf(Math.abs(r.chgPct), 2)}%
-              </span>
-            )}
+            <span
+              className={`num text-[8px] leading-none ${
+                chgPct == null ? "invisible" : up ? "text-up" : "text-down"
+              }`}
+            >
+              {up ? "▲" : "▼"}
+              {nf(Math.abs(chgPct ?? 0), 2)}%
+            </span>
           </span>
         );
       })}
