@@ -102,6 +102,8 @@ const HDR_LABEL: Record<string, string> = { NIFTY: "NIFTY50", BANKNIFTY: "BANKNI
 const HDR_DEFAULT = ["NIFTY", "BANKNIFTY", "INDIA VIX"];
 const HDR_LS_KEY = "hdrIndices";
 const HDR_MAX = 6;
+// indices kept out of the header ticker even if pinned or on a watchlist
+const HDR_TICKER_HIDE = new Set(["BANKEX", "MIDCPNIFTY"]);
 
 function loadHdrSymbols(): string[] {
   try {
@@ -142,7 +144,10 @@ export function HeaderIndices({ max = 12 }: { max?: number } = {}) {
     [watch, isIndex]
   );
   const symbols = useMemo(
-    () => [...new Set([...pinned.filter(isIndex), ...wlSyms])].slice(0, max),
+    () =>
+      [...new Set([...pinned.filter(isIndex), ...wlSyms])]
+        .filter((s) => !HDR_TICKER_HIDE.has(s.toUpperCase()))
+        .slice(0, max),
     [pinned, wlSyms, isIndex, max]
   );
   // per-symbol change straight off the watchlist store, as a fallback for
@@ -161,7 +166,12 @@ export function HeaderIndices({ max = 12 }: { max?: number } = {}) {
   }, [watch]);
 
   useEffect(() => {
-    api.indicesHeaderOptions().then((d) => setOptions(d.options), () => {});
+    api
+      .indicesHeaderOptions()
+      .then(
+        (d) => setOptions(d.options.filter((o) => !HDR_TICKER_HIDE.has(o.toUpperCase()))),
+        () => {}
+      );
   }, []);
 
   useEffect(() => {
