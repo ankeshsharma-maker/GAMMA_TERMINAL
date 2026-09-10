@@ -818,7 +818,7 @@ export function Header() {
 
   return (
     <div
-      className={`flex flex-wrap items-center gap-x-2 gap-y-1 border-b bg-term-panel px-4 py-1.5 ${
+      className={`flex items-center gap-2 overflow-x-auto border-b bg-term-panel px-4 py-1.5 [&>*]:shrink-0 ${
         orderMode === "live" ? "border-down" : "border-term-border"
       }`}
     >
@@ -831,22 +831,27 @@ export function Header() {
       {chain ? (
         <>
           <div className="flex items-baseline gap-2">
-            <span className="num text-lg font-semibold">
+            <span className="num inline-block min-w-[4rem] text-right text-lg font-semibold">
               {(() => {
                 const s = liveFresh ? live!.ltp : chain.spot;
                 return px(s, s < 100 ? 2 : 0);
               })()}
             </span>
-            {liveFresh && (
-              <span
-                className={`num text-2xs ${
-                  (live!.chgPct ?? 0) >= 0 ? "text-up" : "text-down"
-                }`}
-                title="Flattrade live tick"
-              >
-                {live!.chgPct != null ? `${live!.chgPct > 0 ? "+" : ""}${nf(live!.chgPct, 2)}%` : ""} ●
-              </span>
-            )}
+            {/* always mounted, hidden when stale — toggling it was reflowing the strip */}
+            <span
+              className={`num inline-block w-[3.5rem] text-2xs ${
+                !liveFresh
+                  ? "invisible"
+                  : (live!.chgPct ?? 0) >= 0
+                    ? "text-up"
+                    : "text-down"
+              }`}
+              title="Flattrade live tick"
+            >
+              {liveFresh && live!.chgPct != null
+                ? `${live!.chgPct > 0 ? "+" : ""}${nf(live!.chgPct, 2)}% ●`
+                : "0.00% ●"}
+            </span>
           </div>
           <Stat label="ATM" value={sk(chain.atmStrike)} />
           <Stat label="ATM IV" value={chain.atmIV ? `${nf(chain.atmIV)}%` : "–"} />
@@ -871,7 +876,8 @@ export function Header() {
       <div className="ml-auto flex items-center gap-3">
         {chain && (
           <span className="text-2xs text-term-dim">
-            NSE {chain.nseTimestamp?.split(" ")[1] ?? "–"} · {ago(chain.fetchedAt)}
+            NSE {chain.nseTimestamp?.split(" ")[1] ?? "–"} ·{" "}
+            <span className="inline-block w-[2.5rem]">{ago(chain.fetchedAt)}</span>
           </span>
         )}
         <UpstoxPill />
