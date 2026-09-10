@@ -8,3 +8,6 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+/** injected at build time (vite.config define) */
+declare const __APP_BUILD__: string;

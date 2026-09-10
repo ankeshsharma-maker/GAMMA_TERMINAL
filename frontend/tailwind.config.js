@@ -6,13 +6,13 @@ export default {
     extend: {
       colors: {
         term: {
-          bg: "#0f141d",
-          panel: "#1b2431",
-          panel2: "#151d29",
-          border: "#26303f",
-          text: "#c8d3e0",
-          dim: "#7a8699",
-          accent: "#3b82f6",
+          bg: "rgb(var(--term-bg) / <alpha-value>)",
+          panel: "rgb(var(--term-panel) / <alpha-value>)",
+          panel2: "rgb(var(--term-panel2) / <alpha-value>)",
+          border: "rgb(var(--term-border) / <alpha-value>)",
+          text: "rgb(var(--term-text) / <alpha-value>)",
+          dim: "rgb(var(--term-dim) / <alpha-value>)",
+          accent: "rgb(var(--term-accent) / <alpha-value>)",
         },
         up: "#16a34a",
         down: "#dc2626",
