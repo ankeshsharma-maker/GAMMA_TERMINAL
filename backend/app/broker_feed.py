@@ -261,17 +261,29 @@ async def run_position_feed(stop: asyncio.Event) -> None:
                 "POSDBG n=%d SUM urmtom=%.2f rpnl=%.2f mtm=%.2f (urmtom+rpnl=%.2f)",
                 len(rows), s_ur, s_rp, s_mt, s_ur + s_rp,
             )
-            import json as _json
-            for r in rows[:2]:
-                log.info("POSDBG RAW %s", _json.dumps(r, default=str))
+            def _f(v):
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    return 0.0
+
+            s_day = 0.0
             for r in rows:
-                log.info(
-                    "POSDBG %s cfb=%s cfs=%s dayb=%s days=%s dbavg=%s dsavg=%s rpnl=%s urmtom=%s",
-                    r.get("tsym"), r.get("cfbuyqty"), r.get("cfsellqty"),
-                    r.get("daybuyqty"), r.get("daysellqty"),
-                    r.get("daybuyavgprc"), r.get("daysellavgprc"),
-                    r.get("rpnl"), r.get("urmtom"),
+                upld = _f(r.get("upldprc"))
+                # Noren "day M2M" = rpnl restated from previous close for the CF legs
+                dp = (
+                    _f(r.get("rpnl"))
+                    + _f(r.get("cfbuyqty")) * (_f(r.get("cfbuyavgprc")) - upld)
+                    - _f(r.get("cfsellqty")) * (_f(r.get("cfsellavgprc")) - upld)
                 )
+                s_day += dp
+                log.info(
+                    "POSDBG %s cfb=%s@%s cfs=%s@%s upld=%s rpnl=%s dayM2M=%.2f",
+                    r.get("tsym"), r.get("cfbuyqty"), r.get("cfbuyavgprc"),
+                    r.get("cfsellqty"), r.get("cfsellavgprc"), r.get("upldprc"),
+                    r.get("rpnl"), dp,
+                )
+            log.info("POSDBG SUM dayM2M(from prev close)=%.2f", s_day)
 
         # keep the open legs on the live socket
         keys: set[str] = set()
