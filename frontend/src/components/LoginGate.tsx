@@ -58,23 +58,23 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
       ) : (
         <form
           onSubmit={submit}
-          className="w-full max-w-xs rounded-lg border border-term-border bg-term-panel p-5"
+          className="w-full max-w-sm rounded-xl border border-term-border bg-term-panel p-7"
         >
-          <div className="mb-1 text-lg font-bold tracking-tight">GammaTerminal</div>
-          <div className="mb-4 text-xs text-term-dim">Enter the app password to continue.</div>
+          <div className="mb-1.5 text-2xl font-bold tracking-tight">GammaTerminal</div>
+          <div className="mb-6 text-sm text-term-dim">Enter the app password to continue.</div>
           <input
             type="password"
             autoFocus
             value={pwd}
             onChange={(e) => setPwd(e.target.value)}
             placeholder="password"
-            className="w-full rounded border border-term-border bg-term-bg px-3 py-2 text-sm outline-none focus:border-term-accent"
+            className="w-full rounded-lg border border-term-border bg-term-bg px-4 py-3 text-base outline-none focus:border-term-accent"
           />
-          {err && <div className="mt-2 text-xs text-down">{err}</div>}
+          {err && <div className="mt-2 text-sm text-down">{err}</div>}
           <button
             type="submit"
             disabled={busy || !pwd}
-            className="btn btn-buy mt-3 w-full py-2 font-semibold disabled:opacity-40"
+            className="btn btn-buy mt-4 w-full py-3 text-base font-semibold disabled:opacity-40"
           >
             {busy ? "…" : "Unlock"}
           </button>

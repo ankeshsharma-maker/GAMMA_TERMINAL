@@ -58,18 +58,18 @@ export function PinLock({ children }: { children: React.ReactNode }) {
 
 function Keypad({ value, onKey }: { value: string; onKey: (k: string) => void }) {
   return (
-    <div className="mt-4">
-      <div className="mb-4 flex justify-center gap-2">
+    <div className="mt-6">
+      <div className="mb-6 flex justify-center gap-2.5">
         {[0, 1, 2, 3, 4, 5].map((i) => (
           <span
             key={i}
-            className={`h-3 w-3 rounded-full border ${
+            className={`h-3.5 w-3.5 rounded-full border ${
               i < value.length ? "border-term-accent bg-term-accent" : "border-term-border"
             }`}
           />
         ))}
       </div>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-3 gap-2.5">
         {["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"].map((k, i) =>
           k === "" ? (
             <span key={i} />
@@ -77,7 +77,7 @@ function Keypad({ value, onKey }: { value: string; onKey: (k: string) => void })
             <button
               key={i}
               onClick={() => onKey(k)}
-              className="rounded-lg border border-term-border bg-term-bg py-3 text-lg font-semibold hover:bg-term-border"
+              className="rounded-lg border border-term-border bg-term-bg py-4 text-2xl font-semibold hover:bg-term-border"
             >
               {k}
             </button>
@@ -230,9 +230,9 @@ function Shell({
 }) {
   return (
     <div className="flex h-full items-center justify-center bg-term-bg p-6 text-term-text">
-      <div className="w-full max-w-[260px] rounded-lg border border-term-border bg-term-panel p-5">
-        <div className="text-base font-bold tracking-tight">{title}</div>
-        <div className="text-xs text-term-dim">{sub}</div>
+      <div className="w-full max-w-[340px] rounded-xl border border-term-border bg-term-panel p-6">
+        <div className="text-xl font-bold tracking-tight">{title}</div>
+        <div className="mt-0.5 text-sm text-term-dim">{sub}</div>
         {children}
       </div>
     </div>
