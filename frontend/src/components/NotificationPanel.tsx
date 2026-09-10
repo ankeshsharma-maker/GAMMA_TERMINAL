@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 import { hhmm } from "../lib/format";
 import type { UnusualKind } from "../types";
@@ -35,6 +35,8 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
     selectSymbol,
   } = useStore();
   const ref = useRef<HTMLDivElement>(null);
+  // sub-filter for the Unusual tab — "different windows" for spike / collapse / jump
+  const [uKind, setUKind] = useState<"all" | UnusualKind>("all");
 
   // popover mode: close on outside click / Esc. docked mode: never auto-close.
   useEffect(() => {
@@ -60,6 +62,13 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
 
   const aNew = Math.max(0, alerts.length - alertsSeen);
   const uNew = Math.max(0, unusual.length - unusualSeen);
+  const uCounts: Record<"all" | UnusualKind, number> = {
+    all: unusual.length,
+    GAMMA_SPIKE: unusual.filter((e) => e.kind === "GAMMA_SPIKE").length,
+    GAMMA_COLLAPSE: unusual.filter((e) => e.kind === "GAMMA_COLLAPSE").length,
+    DELTA_JUMP: unusual.filter((e) => e.kind === "DELTA_JUMP").length,
+  };
+  const uShown = uKind === "all" ? unusual : unusual.filter((e) => e.kind === uKind);
 
   return (
     <div
@@ -67,7 +76,7 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
       className={
         docked
           ? "flex h-full w-full flex-col bg-term-panel"
-          : "absolute right-3 top-12 z-[70] flex max-h-[75vh] w-[400px] flex-col rounded-lg border border-term-border bg-term-panel shadow-2xl"
+          : "absolute right-3 top-12 z-[70] flex max-h-[75vh] w-[calc(100vw-1.5rem)] max-w-[400px] flex-col rounded-lg border border-term-border bg-term-panel shadow-2xl"
       }
     >
       <div className="flex items-center border-b border-term-border text-2xs">
@@ -118,15 +127,42 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
         )}
       </div>
 
+      {notifTab === "unusual" && (
+        <div className="flex flex-wrap items-center gap-1 border-b border-term-border/60 px-2 py-1.5 text-[10px]">
+          {(
+            [
+              ["all", "All"],
+              ["GAMMA_SPIKE", "Γ Spike"],
+              ["GAMMA_COLLAPSE", "Γ Collapse"],
+              ["DELTA_JUMP", "Δ Jump"],
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => setUKind(k)}
+              className={`flex items-center gap-1 rounded border px-1.5 py-0.5 ${
+                uKind === k
+                  ? "border-term-accent bg-term-accent/15 text-term-text"
+                  : "border-term-border text-term-dim hover:text-term-text"
+              }`}
+            >
+              {label}
+              <span className="num text-term-dim">{uCounts[k]}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="min-h-0 flex-1 overflow-y-auto">
         {notifTab === "unusual" ? (
-          unusual.length === 0 ? (
+          uShown.length === 0 ? (
             <div className="p-4 text-2xs text-term-dim">
-              No unusual Greeks activity. Fires when a near-ATM strike's delta or gamma moves
-              sharply between polls.
+              {unusual.length === 0
+                ? "No unusual Greeks activity. Fires when a near-ATM strike's delta or gamma moves sharply between polls."
+                : "Nothing in this category right now."}
             </div>
           ) : (
-            unusual.map((e, i) => (
+            uShown.map((e, i) => (
               <button
                 key={e.ts + e.strike + e.optionType + i}
                 onClick={() => {

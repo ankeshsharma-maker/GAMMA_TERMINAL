@@ -14,6 +14,53 @@ import {
   useBookPnl,
 } from "./Header";
 
+/** NIFTY + SENSEX, ultra-compact — sits next to the GT mark, fits a folded Fold 6 */
+function TopIndices() {
+  const [rows, setRows] = useState<
+    { symbol: string; spot: number | null; chgPct: number | null }[]
+  >([]);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      api
+        .indicesHeader(["NIFTY", "SENSEX"])
+        .then((d) => alive && setRows(d.indices), () => {});
+    load();
+    const t = window.setInterval(load, 10000);
+    return () => {
+      alive = false;
+      window.clearInterval(t);
+    };
+  }, []);
+  if (rows.length === 0) return null;
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+      {rows.slice(0, 2).map((r) => {
+        const up = (r.chgPct ?? 0) >= 0;
+        return (
+          <span
+            key={r.symbol}
+            className="flex shrink-0 items-baseline gap-1 rounded border border-term-border bg-term-bg/60 px-1.5 py-0.5"
+          >
+            <span className="text-[8px] font-semibold uppercase tracking-tight text-term-dim">
+              {r.symbol}
+            </span>
+            <span className="num text-[11px] font-semibold leading-none">
+              {r.spot != null ? nf(r.spot, 0) : "–"}
+            </span>
+            {r.chgPct != null && (
+              <span className={`num text-[8px] leading-none ${up ? "text-up" : "text-down"}`}>
+                {up ? "▲" : "▼"}
+                {nf(Math.abs(r.chgPct), 2)}%
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 /** two big index quotes across the top of the mobile watchlist */
 function MobileIndexBand() {
   const [rows, setRows] = useState<
@@ -40,18 +87,18 @@ function MobileIndexBand() {
           r.chgPts ??
           (r.chgPct != null && r.spot != null ? r.spot - r.spot / (1 + r.chgPct / 100) : null);
         return (
-          <div key={r.symbol} className="flex flex-col items-center gap-0.5 py-2">
-            <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-term-dim">
+          <div key={r.symbol} className="flex flex-col items-center py-1 leading-tight">
+            <span className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wide text-term-dim">
               {label[r.symbol] ?? r.symbol}
               {r.chgPct != null && (
                 <span className={up ? "text-up" : "text-down"}>{up ? "↑" : "↓"}</span>
               )}
             </span>
-            <span className={`num text-base font-bold ${up ? "text-up" : "text-down"}`}>
+            <span className={`num text-xs font-bold ${up ? "text-up" : "text-down"}`}>
               {r.spot != null ? nf(r.spot, r.spot < 100 ? 2 : 0) : "–"}
             </span>
             {(pts != null || r.chgPct != null) && (
-              <span className={`num text-[11px] ${up ? "text-up" : "text-down"}`}>
+              <span className={`num text-[9px] ${up ? "text-up" : "text-down"}`}>
                 {pts != null ? `${up ? "+" : "−"}${nf(Math.abs(pts), 2)} ` : ""}
                 {r.chgPct != null ? `(${nf(Math.abs(r.chgPct), 2)}%)` : ""}
               </span>
@@ -238,6 +285,7 @@ export function MobileShell() {
         }`}
       >
         <span className="shrink-0 text-[13px] font-bold tracking-tight">GT</span>
+        <TopIndices />
         <button
           onClick={() => setBrokerOpen((o) => !o)}
           className={`relative ml-auto shrink-0 rounded border px-1.5 py-1 text-[11px] ${
@@ -295,8 +343,10 @@ export function MobileShell() {
           <button
             key={n.v}
             onClick={() => setView(n.v)}
-            className={`flex flex-1 flex-col items-center gap-0.5 py-1.5 ${
-              view === n.v ? "text-term-accent" : "text-term-dim active:bg-term-border"
+            className={`flex flex-1 flex-col items-center gap-0.5 border-b-2 py-1.5 ${
+              view === n.v
+                ? "border-term-accent bg-term-accent/15 font-semibold text-term-accent"
+                : "border-transparent text-term-dim active:bg-term-border"
             }`}
           >
             <span className="text-[17px] leading-none">{n.icon}</span>
@@ -316,8 +366,10 @@ export function MobileShell() {
           <button
             key={n.v}
             onClick={() => setView(n.v)}
-            className={`flex flex-1 flex-col items-center gap-0.5 py-1.5 ${
-              view === n.v ? "text-term-accent" : "text-term-dim active:bg-term-border"
+            className={`flex flex-1 flex-col items-center gap-0.5 border-t-2 py-1.5 ${
+              view === n.v
+                ? "border-term-accent bg-term-accent/15 font-semibold text-term-accent"
+                : "border-transparent text-term-dim active:bg-term-border"
             }`}
           >
             <span className="text-[17px] leading-none">{n.icon}</span>
