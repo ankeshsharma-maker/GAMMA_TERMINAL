@@ -112,7 +112,7 @@ function loadHdrSymbols(): string[] {
   }
 }
 
-export function HeaderIndices() {
+export function HeaderIndices({ max = 12 }: { max?: number } = {}) {
   const [pinned, setPinned] = useState<string[]>(loadHdrSymbols);
   const watch = useStore((s) => s.watch);
   const indexSet = useStore((s) => s.indexSet);
@@ -142,8 +142,8 @@ export function HeaderIndices() {
     [watch, isIndex]
   );
   const symbols = useMemo(
-    () => [...new Set([...pinned.filter(isIndex), ...wlSyms])].slice(0, 12),
-    [pinned, wlSyms, isIndex]
+    () => [...new Set([...pinned.filter(isIndex), ...wlSyms])].slice(0, max),
+    [pinned, wlSyms, isIndex, max]
   );
   // per-symbol change straight off the watchlist store, as a fallback for
   // anything the header endpoint can't price a change for (stocks when the

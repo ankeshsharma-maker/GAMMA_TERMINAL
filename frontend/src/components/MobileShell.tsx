@@ -8,7 +8,6 @@ import type { View } from "../types";
 import {
   HeaderIndices,
   OrderModePill,
-  AlertBell,
   BrokerPill,
   UpstoxPill,
   ClassFilter,
@@ -230,6 +229,14 @@ export function MobileShell() {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
   const orderMode = useStore((s) => s.orderMode);
+  const notifOpen = useStore((s) => s.notifOpen);
+  const openNotif = useStore((s) => s.openNotif);
+  const closeNotif = useStore((s) => s.closeNotif);
+  const alertsUnseen = useStore(
+    (s) =>
+      Math.max(0, s.alerts.length - s.alertsSeen) +
+      Math.max(0, s.unusual.length - s.unusualSeen)
+  );
   const [brokerOpen, setBrokerOpen] = useState(false);
 
   return (
@@ -252,19 +259,22 @@ export function MobileShell() {
       >
         <span className="shrink-0 text-[13px] font-bold tracking-tight">GT</span>
         <div className="min-w-0 flex-1 overflow-x-auto">
-          <HeaderIndices />
+          <HeaderIndices max={2} />
         </div>
-        <OrderModePill />
         <button
           onClick={() => setBrokerOpen((o) => !o)}
-          className={`shrink-0 rounded border px-1.5 py-1 text-[11px] ${
+          className={`relative shrink-0 rounded border px-1.5 py-1 text-[11px] ${
             brokerOpen ? "border-term-accent text-term-accent" : "border-term-border text-term-dim"
           }`}
-          title="Broker"
+          title="Broker · mode · alerts"
         >
           ⚿
+          {alertsUnseen > 0 && !brokerOpen && (
+            <span className="absolute -right-1.5 -top-1.5 min-w-[15px] rounded-full bg-down px-1 text-[9px] font-bold leading-4 text-white">
+              {alertsUnseen}
+            </span>
+          )}
         </button>
-        <AlertBell />
       </div>
 
       <div className="flex items-center border-b border-term-border bg-term-panel2 px-2 py-0.5">
@@ -274,6 +284,9 @@ export function MobileShell() {
       {brokerOpen && (
         <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-2 py-1.5">
           <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
+            Mode <OrderModePill />
+          </span>
+          <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
             Show <ClassFilter />
           </span>
           <BrokerPill />
@@ -282,8 +295,19 @@ export function MobileShell() {
             Text <FontScale />
           </span>
           <button
+            onClick={() => (notifOpen ? closeNotif() : openNotif())}
+            className={`ml-auto rounded border px-2 py-1 text-2xs ${
+              notifOpen
+                ? "border-term-accent text-term-accent"
+                : "border-term-border text-term-dim hover:text-term-text"
+            }`}
+            title="Alerts & unusual activity"
+          >
+            Alerts{alertsUnseen > 0 ? ` (${alertsUnseen})` : ""}
+          </button>
+          <button
             onClick={lockNow}
-            className="ml-auto rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:text-term-text"
+            className="rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:text-term-text"
             title="Lock the app — require the password / PIN again"
           >
             🔒 Lock

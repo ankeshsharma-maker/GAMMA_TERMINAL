@@ -1198,24 +1198,21 @@ export function Chart() {
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-term-dim">Indicator</span>
-                  <select
+                  <SelectMenu
                     value={mtf?.ind ?? ""}
-                    onChange={(e) =>
+                    options={[
+                      ["off", ""],
+                      ...MTF_INDS.map(([v, l]) => [l, v] as [string, string]),
+                    ]}
+                    onChange={(v) =>
                       setMtf(
-                        e.target.value
-                          ? { ind: e.target.value, len: mtf?.len ?? 21, tf: mtf?.tf ?? 900 }
-                          : null
+                        v ? { ind: v, len: mtf?.len ?? 21, tf: mtf?.tf ?? 900 } : null
                       )
                     }
-                    className="num rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
-                  >
-                    <option value="">off</option>
-                    {MTF_INDS.map(([v, l]) => (
-                      <option key={v} value={v}>
-                        {l}
-                      </option>
-                    ))}
-                  </select>
+                    title="MTF indicator"
+                    align="right"
+                    width={150}
+                  />
                 </div>
                 {mtf && mtf.ind !== "vwap" && (
                   <div className="flex items-center justify-between gap-2">
@@ -1235,17 +1232,14 @@ export function Chart() {
                 {mtf && (
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-term-dim">On timeframe</span>
-                    <select
+                    <SelectMenu
                       value={mtf.tf}
-                      onChange={(e) => setMtf({ ...mtf, tf: Number(e.target.value) })}
-                      className="num rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
-                    >
-                      {TIMEFRAMES.map(([l, v]) => (
-                        <option key={v} value={v}>
-                          @ {l}
-                        </option>
-                      ))}
-                    </select>
+                      options={TIMEFRAMES.map(([l, v]) => ["@ " + l, v] as [string, number])}
+                      onChange={(v) => setMtf({ ...mtf, tf: v })}
+                      title="MTF source timeframe"
+                      align="right"
+                      width={110}
+                    />
                   </div>
                 )}
               </div>
