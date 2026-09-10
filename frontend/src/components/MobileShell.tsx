@@ -14,25 +14,6 @@ import {
   useBookPnl,
 } from "./Header";
 
-/** compact P&L for the mobile top strip — broker book when linked */
-function MobilePnl() {
-  const p = useBookPnl();
-  if (!p) return null;
-  const overall = p.realized + p.mtm;
-  return (
-    <div className="ml-auto flex shrink-0 items-center gap-3 border-l border-term-border pl-2">
-      <span className="flex flex-col items-end leading-none">
-        <span className="text-[8px] uppercase text-term-dim">P&amp;L</span>
-        <span className={`num text-xs font-bold ${signColor(overall)}`}>₹{nf(overall, 0)}</span>
-      </span>
-      <span className="flex flex-col items-end leading-none">
-        <span className="text-[8px] uppercase text-term-dim">Today</span>
-        <span className={`num text-xs font-semibold ${signColor(p.today)}`}>₹{nf(p.today, 0)}</span>
-      </span>
-    </div>
-  );
-}
-
 /** two big index quotes across the top of the mobile watchlist */
 function MobileIndexBand() {
   const [rows, setRows] = useState<
@@ -257,7 +238,6 @@ export function MobileShell() {
         }`}
       >
         <span className="shrink-0 text-[13px] font-bold tracking-tight">GT</span>
-        <MobilePnl />
         <button
           onClick={() => setBrokerOpen((o) => !o)}
           className={`relative ml-auto shrink-0 rounded border px-1.5 py-1 text-[11px] ${
