@@ -261,12 +261,16 @@ async def run_position_feed(stop: asyncio.Event) -> None:
                 "POSDBG n=%d SUM urmtom=%.2f rpnl=%.2f mtm=%.2f (urmtom+rpnl=%.2f)",
                 len(rows), s_ur, s_rp, s_mt, s_ur + s_rp,
             )
+            import json as _json
+            for r in rows[:2]:
+                log.info("POSDBG RAW %s", _json.dumps(r, default=str))
             for r in rows:
                 log.info(
-                    "POSDBG %s netqty=%s avg=%s lp=%s urmtom=%s rpnl=%s mtm=%s prcftr=%s mult=%s",
-                    r.get("tsym"), r.get("netqty"), r.get("netavgprc"), r.get("lp"),
-                    r.get("urmtom"), r.get("rpnl"), r.get("mtm"),
-                    r.get("prcftr"), r.get("mult"),
+                    "POSDBG %s cfb=%s cfs=%s dayb=%s days=%s dbavg=%s dsavg=%s rpnl=%s urmtom=%s",
+                    r.get("tsym"), r.get("cfbuyqty"), r.get("cfsellqty"),
+                    r.get("daybuyqty"), r.get("daysellqty"),
+                    r.get("daybuyavgprc"), r.get("daysellavgprc"),
+                    r.get("rpnl"), r.get("urmtom"),
                 )
 
         # keep the open legs on the live socket
