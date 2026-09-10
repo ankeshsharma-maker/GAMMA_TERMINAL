@@ -1,14 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <g transform="translate(512,512) scale(0.62) translate(-512,-512)" stroke-linecap="round">
-    <line x1="250" y1="330" x2="250" y2="790" stroke="#93a3bd" stroke-width="30"/>
-    <rect x="192" y="470" width="116" height="240" rx="20" fill="#93a3bd"/>
-    <line x1="440" y1="410" x2="440" y2="860" stroke="#93a3bd" stroke-width="30"/>
-    <rect x="382" y="520" width="116" height="250" rx="20" fill="#93a3bd"/>
-    <line x1="630" y1="260" x2="630" y2="720" stroke="#93a3bd" stroke-width="30"/>
-    <rect x="572" y="340" width="116" height="270" rx="20" fill="#93a3bd"/>
-    <line x1="820" y1="190" x2="820" y2="640" stroke="#93a3bd" stroke-width="30"/>
-    <rect x="762" y="250" width="116" height="250" rx="20" fill="#93a3bd"/>
-    <polyline points="176,745 378,608 560,466 822,266" fill="none" stroke="#f59e0b" stroke-width="46" stroke-linejoin="round"/>
-    <circle cx="822" cy="266" r="52" fill="#f59e0b"/>
-  </g>
+  <g transform="translate(512 512) scale(0.58) translate(-512 -593)">
+  <path d="M276 307 L512 635 L512 880 M748 307 L512 635"
+    fill="none" stroke="#3b82f6" stroke-width="150"
+    stroke-linecap="round" stroke-linejoin="round"/></g>
 </svg>

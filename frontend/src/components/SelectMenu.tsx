@@ -68,9 +68,9 @@ export function SelectMenu<T extends string | number>({
       {open &&
         createPortal(
           <>
-            <div className="fixed inset-0 z-[80]" onClick={() => setOpen(false)} />
+            <div className="fixed inset-0 z-[199]" onClick={() => setOpen(false)} />
             <div
-              className="fixed z-[81] max-h-[60vh] overflow-y-auto rounded-lg border border-term-border bg-term-panel p-1 text-2xs shadow-2xl"
+              className="fixed z-[200] max-h-[60vh] overflow-y-auto rounded-lg border border-term-border bg-term-panel p-1 text-2xs shadow-2xl"
               style={{ top: pos.top, left: pos.left, width }}
             >
               {options.map(([lbl, v]) => (

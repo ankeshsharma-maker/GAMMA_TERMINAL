@@ -4,13 +4,17 @@ import { lockNow } from "../lib/auth";
 import { FontScale } from "./FontScale";
 import { SelectMenu } from "./SelectMenu";
 import { openPinSetup, clearPin, hasPin } from "./PinLock";
+import { useIsMobile } from "../lib/useIsMobile";
 import {
   ACCENTS,
   GROUNDS,
+  UI_ZOOMS,
   getAccent,
   getGround,
+  getUiZoom,
   setAccent,
   setGround,
+  setUiZoom,
 } from "../lib/theme";
 import {
   getDefaultLots,
@@ -53,8 +57,12 @@ const SEG =
 const on = "border-term-accent bg-term-accent/15 text-term-text";
 const off = "border-term-border text-term-dim hover:text-term-text";
 
+/** let a mounted Chart adopt a changed default immediately */
+const notifyPrefs = () => window.dispatchEvent(new Event("gt-prefs"));
+
 export function Settings({ onClose }: { onClose: () => void }) {
   const orderMode = useStore((s) => s.orderMode);
+  const isMobile = useIsMobile();
   const [, force] = useState(0);
   const redraw = () => force((n) => n + 1);
 
@@ -62,6 +70,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const [product, setProduct] = useState(getDefaultProduct());
   const [src, setSrc] = useState(getDataSrc());
   const [ivl, setIvl] = useState(getIntervalS());
+  const [zoom, setZoom] = useState(getUiZoom());
   const [autolock, setAutolock] = useState(getAutolockMin());
   const accent = getAccent();
   const ground = getGround();
@@ -85,8 +94,24 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <Row label="Text size" hint="Scales the whole interface">
             <FontScale />
           </Row>
+          {!isMobile && (
+            <Row label="Interface scale" hint="Shrink the whole desktop layout to fit more on screen">
+              {UI_ZOOMS.map((z) => (
+                <button
+                  key={z}
+                  onClick={() => {
+                    setUiZoom(z);
+                    setZoom(z);
+                  }}
+                  className={`${SEG} ${zoom === z ? on : off}`}
+                >
+                  {z}%
+                </button>
+              ))}
+            </Row>
+          )}
           <Row label="Accent colour">
-            <div className="flex gap-1.5">
+            <div className="flex max-w-[220px] flex-wrap justify-end gap-1.5">
               {ACCENTS.map((a) => (
                 <button
                   key={a.id}
@@ -104,18 +129,20 @@ export function Settings({ onClose }: { onClose: () => void }) {
             </div>
           </Row>
           <Row label="Background">
-            {GROUNDS.map((g) => (
-              <button
-                key={g.id}
-                onClick={() => {
-                  setGround(g.id);
-                  redraw();
-                }}
-                className={`${SEG} ${ground === g.id ? on : off}`}
-              >
-                {g.label}
-              </button>
-            ))}
+            <div className="flex max-w-[240px] flex-wrap justify-end gap-1.5">
+              {GROUNDS.map((g) => (
+                <button
+                  key={g.id}
+                  onClick={() => {
+                    setGround(g.id);
+                    redraw();
+                  }}
+                  className={`${SEG} ${ground === g.id ? on : off}`}
+                >
+                  {g.label}
+                </button>
+              ))}
+            </div>
           </Row>
         </Section>
 
@@ -238,6 +265,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
               onChange={(v) => {
                 setDataSrc(v);
                 setSrc(v);
+                notifyPrefs();
               }}
               width={120}
               align="right"
@@ -260,6 +288,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
               onChange={(v) => {
                 setIntervalS(v);
                 setIvl(v);
+                notifyPrefs();
               }}
               width={90}
               align="right"

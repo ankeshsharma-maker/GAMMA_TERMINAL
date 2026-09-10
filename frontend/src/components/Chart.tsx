@@ -499,6 +499,16 @@ export function Chart() {
 
   const [dataSrc, setDataSrc] = useState<"auto" | "broker" | "upstox">(getDataSrc);
 
+  // adopt a default changed in Settings without a reload
+  useEffect(() => {
+    const h = () => {
+      setDataSrc(getDataSrc());
+      setIntervalS(getIntervalS());
+    };
+    window.addEventListener("gt-prefs", h);
+    return () => window.removeEventListener("gt-prefs", h);
+  }, []);
+
   // Refresh cadence: normally 15s (chart motion between refreshes comes from the
   // live nudge below). Only when the broker feed is *expected but down* — so the
   // backend is serving ~3s REST quotes and there are no WS ticks — drop to 4s so
