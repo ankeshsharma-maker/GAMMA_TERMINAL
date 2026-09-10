@@ -6,7 +6,6 @@ import { ivRegime } from "../lib/iv";
 import type { View } from "../types";
 
 import {
-  HeaderIndices,
   OrderModePill,
   BrokerPill,
   UpstoxPill,
@@ -258,12 +257,10 @@ export function MobileShell() {
         }`}
       >
         <span className="shrink-0 text-[13px] font-bold tracking-tight">GT</span>
-        <div className="min-w-0 flex-1 overflow-x-auto">
-          <HeaderIndices max={2} />
-        </div>
+        <MobilePnl />
         <button
           onClick={() => setBrokerOpen((o) => !o)}
-          className={`relative shrink-0 rounded border px-1.5 py-1 text-[11px] ${
+          className={`relative ml-auto shrink-0 rounded border px-1.5 py-1 text-[11px] ${
             brokerOpen ? "border-term-accent text-term-accent" : "border-term-border text-term-dim"
           }`}
           title="Broker · mode · alerts"
@@ -275,10 +272,6 @@ export function MobileShell() {
             </span>
           )}
         </button>
-      </div>
-
-      <div className="flex items-center border-b border-term-border bg-term-panel2 px-2 py-0.5">
-        <MobilePnl />
       </div>
 
       {brokerOpen && (
@@ -316,20 +309,18 @@ export function MobileShell() {
       )}
 
       <NotificationPanel />
-      {/* ── top strip: analysis views ───────────────────────── */}
-      <div className="flex items-center gap-1 overflow-x-auto border-b border-term-border bg-term-panel2 px-1.5 py-1">
+      {/* ── top strip: analysis views (same layout as the bottom bar) ── */}
+      <div className="flex border-b border-term-border bg-term-panel2">
         {TOP_NAV.map((n) => (
           <button
             key={n.v}
             onClick={() => setView(n.v)}
-            className={`flex shrink-0 items-center gap-1 rounded px-2 py-1 text-[11px] ${
-              view === n.v
-                ? "bg-term-accent text-white"
-                : "text-term-dim active:bg-term-border"
+            className={`flex flex-1 flex-col items-center gap-0.5 py-1.5 ${
+              view === n.v ? "text-term-accent" : "text-term-dim active:bg-term-border"
             }`}
           >
-            <span className="text-[13px] leading-none">{n.icon}</span>
-            {n.label}
+            <span className="text-[17px] leading-none">{n.icon}</span>
+            <span className="text-[8px] uppercase tracking-wide">{n.label}</span>
           </button>
         ))}
       </div>
