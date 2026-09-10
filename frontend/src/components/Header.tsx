@@ -450,12 +450,11 @@ function PnlStrip() {
       title={broker ? "Broker book P&L (Flattrade)" : "Paper book P&L (broker not linked)"}
     >
       <Stat
-        label={broker ? "Broker MTM" : "Paper P&L (MTM)"}
+        label={broker ? "Broker MTM" : "Paper MTM"}
         value={`₹${nf(p.mtm, 0)}`}
         cls={signColor(p.mtm)}
       />
-      <Stat label={broker ? "Today's P&L" : "Total"} value={`₹${nf(p.today, 0)}`} cls={signColor(p.today)} />
-      <Stat label="Realized" value={`₹${nf(p.realized, 0)}`} cls={signColor(p.realized)} />
+      <Stat label={broker ? "Today" : "Total"} value={`₹${nf(p.today, 0)}`} cls={signColor(p.today)} />
     </div>
   );
 }
@@ -822,17 +821,36 @@ export function Header() {
         orderMode === "live" ? "border-down" : "border-term-border"
       }`}
     >
-      {/* row 1 — branding, indices, view switch */}
+      {/* row 1 — app chrome: view switch, filters, session pills */}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="text-sm font-semibold tracking-tight">GammaTerminal</span>
-        <HeaderIndices />
         <ViewToggle />
         <ClassFilter />
         <OrderModePill />
+        <div className="ml-auto flex items-center gap-3">
+          {chain && (
+            <span className="text-2xs text-term-dim">
+              NSE {chain.nseTimestamp?.split(" ")[1]?.slice(0, 5) ?? "–"} ·{" "}
+              <span className="inline-block w-[2.5rem]">{ago(chain.fetchedAt)}</span>
+            </span>
+          )}
+          <UpstoxPill />
+          <BrokerPill />
+          <AlertBell />
+          <button
+            onClick={lockNow}
+            className="rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:text-term-text"
+            title="Lock the app — require the password / PIN again"
+          >
+            🔒
+          </button>
+          <ConnBadge />
+        </div>
       </div>
 
-      {/* row 2 — live spot + chain stats + margin + P&L */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      {/* row 2 — market data: index ticker + live spot + chain stats + margin + P&L */}
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+      <HeaderIndices />
       {chain ? (
         <>
           <div className="flex items-baseline gap-2">
@@ -877,26 +895,6 @@ export function Header() {
 
       <MarginStats />
       <PnlStrip />
-
-      <div className="ml-auto flex items-center gap-3">
-        {chain && (
-          <span className="text-2xs text-term-dim">
-            NSE {chain.nseTimestamp?.split(" ")[1] ?? "–"} ·{" "}
-            <span className="inline-block w-[2.5rem]">{ago(chain.fetchedAt)}</span>
-          </span>
-        )}
-        <UpstoxPill />
-        <BrokerPill />
-        <AlertBell />
-        <button
-          onClick={lockNow}
-          className="rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:text-term-text"
-          title="Lock the app — require the password / PIN again"
-        >
-          🔒
-        </button>
-        <ConnBadge />
-      </div>
       </div>
     </div>
   );
