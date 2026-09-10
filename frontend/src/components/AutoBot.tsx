@@ -1058,20 +1058,20 @@ export function AutoBotView() {
                       onClick={() => setBtId(btId === r.id ? null : r.id)}
                       title="Backtest this rule on Upstox daily history"
                     >
-                      ⏱ backtest
+                      ⏱ Backtest
                     </button>
                     <button
                       className="btn px-1.5 py-0.5 text-2xs"
                       onClick={() => setEditing(r)}
                       disabled={!!editing}
                     >
-                      edit
+                      Edit
                     </button>
                     <button
                       className="btn px-1.5 py-0.5 text-2xs hover:text-down"
                       onClick={() => window.confirm(`Delete rule "${r.name}"?`) && deleteRule(r.id)}
                     >
-                      delete
+                      Delete
                     </button>
                   </div>
                 </div>
