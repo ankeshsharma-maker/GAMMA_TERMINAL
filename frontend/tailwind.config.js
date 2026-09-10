@@ -6,10 +6,10 @@ export default {
     extend: {
       colors: {
         term: {
-          bg: "#080b11",
-          panel: "#151c28",
-          panel2: "#0e1520",
-          border: "#1a2331",
+          bg: "#0f141d",
+          panel: "#1b2431",
+          panel2: "#151d29",
+          border: "#26303f",
           text: "#c8d3e0",
           dim: "#7a8699",
           accent: "#3b82f6",

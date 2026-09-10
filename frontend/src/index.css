@@ -28,7 +28,7 @@ html {
 
 body {
   margin: 0;
-  background: #080b11;
+  background: #0f141d;
   color: #c8d3e0;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -65,7 +65,7 @@ select:focus-visible {
   height: 9px;
 }
 ::-webkit-scrollbar-track {
-  background: #0d131c;
+  background: #151d29;
 }
 ::-webkit-scrollbar-thumb {
   background: #263140;
