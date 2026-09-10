@@ -8,6 +8,9 @@ const HASH_KEY = "gt.pinHash";
 const SEEN_KEY = "gt.pinPrompted";
 const RELOCK_AFTER_MS = 60_000;
 
+/** open the device-PIN setup screen — the PIN is opt-in, never auto-prompted */
+export const openPinSetup = () => window.dispatchEvent(new Event("gt-set-pin"));
+
 async function sha(s: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -22,17 +25,17 @@ const readHash = () => {
 
 export function PinLock({ children }: { children: React.ReactNode }) {
   const hasPin = !!readHash();
-  // locked at start only if a PIN exists
+  // locked at start only if the user has deliberately set a PIN
   const [locked, setLocked] = useState(hasPin);
-  // show the one-time "set a PIN?" offer if none is set and we haven't asked
-  const [offer, setOffer] = useState(() => {
-    try {
-      return !hasPin && !localStorage.getItem(SEEN_KEY);
-    } catch {
-      return false;
-    }
-  });
+  // PIN setup is opt-in — shown only when openPinSetup() fires, never on load
+  const [setup, setSetup] = useState(false);
   const hiddenAt = useRef<number | null>(null);
+
+  useEffect(() => {
+    const h = () => setSetup(true);
+    window.addEventListener("gt-set-pin", h);
+    return () => window.removeEventListener("gt-set-pin", h);
+  }, []);
 
   // re-lock when the app has been in the background for a while
   useEffect(() => {
@@ -51,7 +54,7 @@ export function PinLock({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
-  if (offer) return <SetPin onDone={() => setOffer(false)} skippable />;
+  if (setup) return <SetPin onDone={() => setSetup(false)} skippable />;
   if (locked) return <EnterPin onOk={() => setLocked(false)} />;
   return <>{children}</>;
 }

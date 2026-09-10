@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { ago, nf } from "../lib/format";
+import { SelectMenu } from "./SelectMenu";
 import type { ScreenerRow } from "../types";
 
 const BUILDUP_LABEL: Record<string, string> = {
@@ -135,17 +136,13 @@ export function Movers() {
         <span className="font-semibold uppercase tracking-wide">Top movers · today</span>
         <label className="flex items-center gap-1">
           show
-          <select
+          <SelectMenu
             value={n}
-            onChange={(e) => setN(Number(e.target.value))}
-            className="rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text"
-          >
-            {[10, 15, 20, 30].map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
+            options={[10, 15, 20, 30].map((v) => [String(v), v] as [string, number])}
+            onChange={setN}
+            title="Rows per side"
+            width={80}
+          />
           each
         </label>
         {progress && progress.total > 0 && progress.done < progress.total && (

@@ -18,8 +18,10 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
       if (!s.required || s.ok) setPhase("ok");
       else setPhase("login");
     } catch {
-      // backend unreachable — let the app load; its own error states show
-      setPhase("ok");
+      // can't verify the gate — fail CLOSED. Only let through someone who
+      // already holds a session token (returning user during a backend blip);
+      // a fresh visitor sees the password screen.
+      setPhase(getToken() ? "ok" : "login");
     }
   };
 

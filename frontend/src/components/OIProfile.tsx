@@ -1204,17 +1204,13 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           />
 
           {chain.expiries.length > 0 && (
-            <select
+            <SelectMenu
               value={expiry}
-              onChange={(e) => selectExpiry(e.target.value)}
-              className="num rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
-            >
-              {chain.expiries.map((e) => (
-                <option key={e} value={e}>
-                  {e}
-                </option>
-              ))}
-            </select>
+              options={chain.expiries.map((e) => [e, e] as [string, string])}
+              onChange={selectExpiry}
+              title="Expiry"
+              width={130}
+            />
           )}
 
           <span className="ml-1">Show</span>

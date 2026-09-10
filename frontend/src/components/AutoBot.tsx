@@ -3,6 +3,7 @@ import { useStore } from "../store";
 import { api } from "../lib/api";
 import type { AutoCondition, AutoRule } from "../types";
 import { RuleBacktest } from "./RuleBacktest";
+import { SelectMenu } from "./SelectMenu";
 
 /* ------------------------------------------------------------------ */
 /* condition catalogue                                                 */
@@ -415,17 +416,13 @@ function CondRow({
               className="num w-16 rounded border border-term-border bg-term-panel px-1 py-0.5 text-2xs text-term-text"
             />
           ) : (
-            <select
+            <SelectMenu
               value={String(cond[f.key] ?? f.def)}
-              onChange={(e) => onChange({ ...cond, [f.key]: e.target.value })}
-              className="rounded border border-term-border bg-term-panel px-1 py-0.5 text-2xs text-term-text"
-            >
-              {f.opts.map((o) => (
-                <option key={o} value={o}>
-                  {o}
-                </option>
-              ))}
-            </select>
+              options={f.opts.map((o: string) => [o, o] as [string, string])}
+              onChange={(o) => onChange({ ...cond, [f.key]: o })}
+              title={f.label}
+              width={120}
+            />
           )}
         </label>
       ))}
@@ -529,16 +526,20 @@ function EntryFilterEditor({
       <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
         <label className="flex flex-col text-[9px] text-term-dim">
           premium
-          <select
+          <SelectMenu
             value={ef.premOp ?? ""}
-            onChange={(e) => set({ premOp: e.target.value as EF["premOp"] })}
-            className="rounded border border-term-border bg-term-panel px-1 py-0.5 text-2xs text-term-text"
-          >
-            <option value="">off</option>
-            <option value="gt">greater than</option>
-            <option value="lt">less than</option>
-            <option value="near">near</option>
-          </select>
+            options={
+              [
+                ["off", ""],
+                ["greater than", "gt"],
+                ["less than", "lt"],
+                ["near", "near"],
+              ] as const
+            }
+            onChange={(v) => set({ premOp: (v || undefined) as EF["premOp"] })}
+            title="Premium filter"
+            width={130}
+          />
         </label>
         {ef.premOp && <Num k="premVal" label="₹ value" />}
         {ef.premOp === "near" && <Num k="premTol" label="± tol" />}
@@ -652,42 +653,33 @@ function RuleEditor({
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col text-[10px] text-term-dim">
           symbol
-          <select
+          <SelectMenu
             value={r.symbol}
-            onChange={(e) => set({ symbol: e.target.value })}
-            className="w-32 rounded border border-term-border bg-term-bg px-1 py-1 text-xs text-term-text"
-          >
-            {symbols.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+            options={symbols.map((s) => [s, s] as [string, string])}
+            onChange={(v) => set({ symbol: v })}
+            title="Symbol"
+            width={130}
+          />
         </label>
         <label className="flex flex-col text-[10px] text-term-dim">
           instrument
-          <select
+          <SelectMenu
             value={r.instrument}
-            onChange={(e) => set({ instrument: e.target.value })}
-            className="w-28 rounded border border-term-border bg-term-bg px-1 py-1 text-xs text-term-text"
-          >
-            {INSTRUMENTS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+            options={INSTRUMENTS.map((s) => [s, s] as [string, string])}
+            onChange={(v) => set({ instrument: v })}
+            title="Instrument"
+            width={120}
+          />
         </label>
         <label className="flex flex-col text-[10px] text-term-dim">
           side
-          <select
+          <SelectMenu
             value={r.side}
-            onChange={(e) => set({ side: e.target.value as "BUY" | "SELL" })}
-            className="w-20 rounded border border-term-border bg-term-bg px-1 py-1 text-xs text-term-text"
-          >
-            <option value="BUY">BUY</option>
-            <option value="SELL">SELL</option>
-          </select>
+            options={[["BUY", "BUY"], ["SELL", "SELL"]] as const}
+            onChange={(v) => set({ side: v as "BUY" | "SELL" })}
+            title="Side"
+            width={90}
+          />
         </label>
         <label className="flex flex-col text-[10px] text-term-dim">
           lots
@@ -701,29 +693,23 @@ function RuleEditor({
         </label>
         <label className="flex flex-col text-[10px] text-term-dim">
           product
-          <select
+          <SelectMenu
             value={r.product}
-            onChange={(e) => set({ product: e.target.value as "NRML" | "MIS" })}
-            className="w-20 rounded border border-term-border bg-term-bg px-1 py-1 text-xs text-term-text"
-          >
-            <option value="NRML">NRML</option>
-            <option value="MIS">MIS</option>
-          </select>
+            options={[["NRML", "NRML"], ["MIS", "MIS"]] as const}
+            onChange={(v) => set({ product: v as "NRML" | "MIS" })}
+            title="Product"
+            width={90}
+          />
         </label>
         <label className="flex flex-col text-[10px] text-term-dim">
           mode
-          <select
+          <SelectMenu
             value={r.mode}
-            onChange={(e) => set({ mode: e.target.value as "paper" | "live" })}
-            className={`w-20 rounded border px-1 py-1 text-xs ${
-              r.mode === "live"
-                ? "border-down text-down"
-                : "border-term-border text-term-text"
-            } bg-term-bg`}
-          >
-            <option value="paper">paper</option>
-            <option value="live">live</option>
-          </select>
+            options={[["paper", "paper"], ["live", "live"]] as const}
+            onChange={(v) => set({ mode: v as "paper" | "live" })}
+            title="Order mode"
+            width={90}
+          />
         </label>
       </div>
 
@@ -1193,17 +1179,15 @@ function AutoBacktestTab({
     <div className="min-h-0 flex-1 overflow-auto p-3">
       <div className="mb-2 flex flex-wrap items-center gap-2 text-2xs">
         <span className="uppercase tracking-wide text-term-dim">Rule</span>
-        <select
-          value={id || rule?.id}
-          onChange={(e) => setId(e.target.value)}
-          className="rounded border border-term-border bg-term-bg px-2 py-1 text-xs text-term-text"
-        >
-          {rules.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name} · {r.symbol} · {r.instrument} {r.side}
-            </option>
-          ))}
-        </select>
+        <SelectMenu
+          value={id || rule?.id || ""}
+          options={rules.map(
+            (r) => [`${r.name} · ${r.symbol} · ${r.instrument} ${r.side}`, r.id] as [string, string]
+          )}
+          onChange={setId}
+          title="Rule"
+          width={220}
+        />
         <span className="text-term-dim">
           entry {(rule?.entry ?? []).length} · exit {(rule?.exit ?? []).length} · SL{" "}
           {rule?.slPct ?? "–"}% · tgt {rule?.targetPct ?? "–"}%

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, sk } from "../lib/format";
+import { SelectMenu } from "./SelectMenu";
 
 const STAT: Record<string, string> = {
   waiting: "text-amber-400",
@@ -162,21 +163,18 @@ export function RuleOrder({
             >
               −
             </button>
-            <select
-              value={k || ""}
-              onChange={(e) => setK(Number(e.target.value))}
-              className={`num flex-1 rounded border bg-term-bg px-1.5 py-0.5 font-semibold text-term-text outline-none ${
-                bull ? "border-up/50 focus:border-up" : "border-down/50 focus:border-down"
-              }`}
-            >
-              {!list.includes(k) && k ? <option value={k}>{sk(k)}</option> : null}
-              {list.map((s) => (
-                <option key={s} value={s}>
-                  {sk(s)}
-                  {s === atm ? "  (ATM)" : ""}
-                </option>
-              ))}
-            </select>
+            <SelectMenu
+              value={k || 0}
+              options={[
+                ...(!list.includes(k) && k ? [[sk(k), k] as [string, number]] : []),
+                ...list.map(
+                  (s) => [`${sk(s)}${s === atm ? "  (ATM)" : ""}`, s] as [string, number]
+                ),
+              ]}
+              onChange={(s) => setK(Number(s))}
+              title="Strike"
+              width={120}
+            />
             <button
               className="btn px-2 py-0.5"
               disabled={!step}

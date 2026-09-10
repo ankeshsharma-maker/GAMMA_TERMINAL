@@ -981,21 +981,19 @@ export function Chart() {
           title="Index / stock to chart"
           width={150}
         />
-        <select
+        <SelectMenu
           value={instrument}
-          onChange={(e) => setInstrument(e.target.value)}
-          className="rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs font-semibold text-term-text outline-none focus:border-term-accent"
+          options={[
+            [`${symbol} spot`, ""],
+            [`${symbol} ATM straddle`, "STRADDLE"],
+            ...instrOptions.map(
+              (w) => [`${w.symbol} ${w.strike} ${w.optionType}`, w.key] as [string, string]
+            ),
+          ]}
+          onChange={setInstrument}
           title="Instrument to chart"
-        >
-          <option value="">{symbol} spot</option>
-          <option value="STRADDLE">{symbol} ATM straddle</option>
-          {instrOptions.length > 0 && <option disabled>── watchlist options ──</option>}
-          {instrOptions.map((w) => (
-            <option key={w.key} value={w.key}>
-              {w.symbol} {w.strike} {w.optionType}
-            </option>
-          ))}
-        </select>
+          width={170}
+        />
 
         <button
           onClick={() =>
@@ -1013,20 +1011,19 @@ export function Chart() {
           ⊞ Split
         </button>
         {split && (
-          <select
+          <SelectMenu
             value={cmpInstrument}
-            onChange={(e) => setCmpInstrument(e.target.value)}
-            className="rounded border border-term-accent/40 bg-term-bg px-1.5 py-0.5 text-2xs font-semibold text-term-text outline-none"
+            options={[
+              [`${symbol} spot`, ""],
+              [`${symbol} ATM straddle`, "STRADDLE"],
+              ...instrOptions.map(
+                (w) => [`${w.symbol} ${w.strike} ${w.optionType}`, w.key] as [string, string]
+              ),
+            ]}
+            onChange={setCmpInstrument}
             title="Second pane instrument"
-          >
-            <option value="">{symbol} spot</option>
-            <option value="STRADDLE">{symbol} ATM straddle</option>
-            {instrOptions.map((w) => (
-              <option key={w.key} value={w.key}>
-                {w.symbol} {w.strike} {w.optionType}
-              </option>
-            ))}
-          </select>
+            width={170}
+          />
         )}
 
         {/* pick any strike's CE / PE */}
@@ -1045,19 +1042,16 @@ export function Chart() {
               </button>
             ))}
             <span className="mx-0.5 h-3 w-px bg-term-border" />
-            <select
+            <SelectMenu
               value={pickStrike}
-              onChange={(e) => setPickStrike(Number(e.target.value))}
-              className="bg-transparent py-0.5 text-2xs num outline-none"
+              options={shownStrikes.map(
+                (k) =>
+                  [`${k}${k === chain?.atmStrike ? " (ATM)" : ""}`, k] as [string, number]
+              )}
+              onChange={(k) => setPickStrike(Number(k))}
               title="Strike to chart"
-            >
-              {shownStrikes.map((k) => (
-                <option key={k} value={k} className="bg-term-panel">
-                  {k}
-                  {k === chain?.atmStrike ? " (ATM)" : ""}
-                </option>
-              ))}
-            </select>
+              width={100}
+            />
             <button
               onClick={() => chartLeg("CE")}
               className={`rounded px-1 text-[10px] font-bold ${
@@ -1104,29 +1098,35 @@ export function Chart() {
           width={100}
         />
 
-        <select
+        <SelectMenu
           value={dataSrc}
-          onChange={(e) => setDataSrc(e.target.value as any)}
-          className="rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs outline-none focus:border-term-accent"
+          options={
+            [
+              ["Src: Auto", "auto"],
+              ["Src: Flattrade", "broker"],
+              ["Src: Upstox", "upstox"],
+            ] as const
+          }
+          onChange={(v) => setDataSrc(v as any)}
           title="Candle data source"
-        >
-          <option value="auto">Src: Auto</option>
-          <option value="broker">Src: Flattrade</option>
-          <option value="upstox">Src: Upstox</option>
-        </select>
+          width={120}
+        />
 
-        <select
+        <SelectMenu
           value={ctype}
-          onChange={(e) => setCtype(e.target.value as any)}
-          className="rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs outline-none focus:border-term-accent"
+          options={
+            [
+              ["Candles", "candle"],
+              ["Heikin-Ashi", "heikin"],
+              ["Bars", "bar"],
+              ["Line", "line"],
+              ["Area", "area"],
+            ] as const
+          }
+          onChange={(v) => setCtype(v as any)}
           title="Chart type"
-        >
-          <option value="candle">Candles</option>
-          <option value="heikin">Heikin-Ashi</option>
-          <option value="bar">Bars</option>
-          <option value="line">Line</option>
-          <option value="area">Area</option>
-        </select>
+          width={120}
+        />
         <button
           onClick={() => setLogScale((v) => !v)}
           className={`rounded border px-1.5 py-0.5 ${

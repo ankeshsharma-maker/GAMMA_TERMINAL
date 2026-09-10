@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useLiveMtm } from "../lib/useLiveMtm";
+import { SelectMenu } from "./SelectMenu";
 import { RuleOrder } from "./RuleOrder";
 
 const n = (v: unknown): number | null => {
@@ -270,18 +271,15 @@ export function ScalpPanel() {
             >
               −
             </button>
-            <select
-              value={pick || ""}
-              onChange={(e) => { setPick(Number(e.target.value)); setSideHint(null); }}
-              className="num rounded border border-term-border bg-term-bg px-1.5 py-0.5 font-semibold text-term-text"
-            >
-              {strikes.map((k) => (
-                <option key={k} value={k}>
-                  {sk(k)}
-                  {k === atm ? "  (ATM)" : ""}
-                </option>
-              ))}
-            </select>
+            <SelectMenu
+              value={pick || 0}
+              options={strikes.map(
+                (k) => [`${sk(k)}${k === atm ? "  (ATM)" : ""}`, k] as [string, number]
+              )}
+              onChange={(k) => { setPick(Number(k)); setSideHint(null); }}
+              title="Strike"
+              width={110}
+            />
             <button
               className="btn px-2 py-0.5"
               onClick={() => { if (step) { setPick((k) => k + step); setSideHint(null); } }}

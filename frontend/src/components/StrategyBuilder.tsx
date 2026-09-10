@@ -19,6 +19,7 @@ import type {
 } from "../types";
 import { PayoffChart } from "./PayoffChart";
 import { BacktestPanel } from "./BacktestPanel";
+import { SelectMenu } from "./SelectMenu";
 
 /** compact labelled number input for the hedge finder's advanced targets */
 function AdvNum({
@@ -747,48 +748,37 @@ export function StrategyBuilder() {
       <div className="flex flex-col border-r border-term-border bg-term-panel2 lg:min-h-0 lg:overflow-y-auto">
         <div className="flex items-center gap-2 border-b border-term-border px-3 py-2 text-2xs font-semibold uppercase tracking-wide text-term-dim">
           <span>Builder</span>
-          <select
+          <SelectMenu
             value={symbol}
-            onChange={(e) => selectSymbol(e.target.value, true)}
-            className="rounded border border-term-border bg-term-bg px-1 py-0.5 text-2xs font-semibold normal-case text-term-text outline-none focus:border-term-accent"
+            options={symOptions.map((s) => [s, s] as [string, string])}
+            onChange={(v) => selectSymbol(v, true)}
             title="Underlying for this strategy"
-          >
-            {symOptions.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+            width={130}
+          />
           {expiries.length > 0 && (
-            <select
-              value={expiry ?? ""}
-              onChange={(e) => selectExpiry(e.target.value)}
-              className="num ml-auto rounded border border-term-border bg-term-bg px-1 py-0.5 text-2xs font-normal normal-case text-term-text outline-none focus:border-term-accent"
-            >
-              {expiries.map((e) => (
-                <option key={e} value={e}>
-                  {e}
-                </option>
-              ))}
-            </select>
+            <span className="ml-auto">
+              <SelectMenu
+                value={expiry ?? ""}
+                options={expiries.map((e) => [e, e] as [string, string])}
+                onChange={selectExpiry}
+                title="Expiry"
+                width={130}
+              />
+            </span>
           )}
         </div>
 
         <div className="flex flex-col gap-2 border-b border-term-border p-2">
-          <select
-            onChange={(e) => {
-              loadTemplate(e.target.value);
-              e.currentTarget.selectedIndex = 0;
-            }}
-            className="rounded border border-term-border bg-term-bg px-2 py-1 text-xs outline-none focus:border-term-accent"
-          >
-            <option value="">Load a template…</option>
-            {Object.keys(templates).map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
+          <SelectMenu
+            value=""
+            options={[
+              ["Load a template…", ""],
+              ...Object.keys(templates).map((t) => [t, t] as [string, string]),
+            ]}
+            onChange={(t) => t && loadTemplate(t)}
+            title="Load a template"
+            width={180}
+          />
           <div className="flex gap-1">
             <button className="btn flex-1 text-2xs" onClick={loadFromPaper}>
               From paper positions
@@ -884,18 +874,15 @@ export function StrategyBuilder() {
                   {leg.optionType}
                 </button>
                 {leg.optionType !== "FUT" && (
-                  <select
+                  <SelectMenu
                     value={leg.strike}
-                    onChange={(e) => setLeg(i, { strike: Number(e.target.value) })}
-                    className="num flex-1 rounded border border-term-border bg-term-bg px-1 py-1"
-                  >
-                    {(strikes.includes(leg.strike) ? strikes : [leg.strike, ...strikes]).map((k) => (
-                      <option key={k} value={k}>
-                        {sk(k)}
-                        {k === atm ? "  (ATM)" : ""}
-                      </option>
-                    ))}
-                  </select>
+                    options={(strikes.includes(leg.strike) ? strikes : [leg.strike, ...strikes]).map(
+                      (k) => [`${sk(k)}${k === atm ? "  (ATM)" : ""}`, k] as [string, number]
+                    )}
+                    onChange={(k) => setLeg(i, { strike: Number(k) })}
+                    title="Strike"
+                    width={110}
+                  />
                 )}
                 <button
                   onClick={() => setLeg(i, { side: leg.side === "BUY" ? "SELL" : "BUY" })}
@@ -1005,18 +992,15 @@ export function StrategyBuilder() {
                 {newLegOT !== "FUT" && strikes.length > 0 && (
                   <label className="flex flex-col gap-0.5">
                     <span className="text-[9px] uppercase text-term-dim">Strike</span>
-                    <select
+                    <SelectMenu
                       value={newLegStrike || atm}
-                      onChange={(e) => setNewLegStrike(Number(e.target.value))}
-                      className="num rounded border border-term-border bg-term-bg px-2 py-1"
-                    >
-                      {strikes.map((k) => (
-                        <option key={k} value={k}>
-                          {sk(k)}
-                          {k === atm ? "  (ATM)" : ""}
-                        </option>
-                      ))}
-                    </select>
+                      options={strikes.map(
+                        (k) => [`${sk(k)}${k === atm ? "  (ATM)" : ""}`, k] as [string, number]
+                      )}
+                      onChange={(k) => setNewLegStrike(Number(k))}
+                      title="Strike"
+                      width={110}
+                    />
                   </label>
                 )}
                 <label className="flex flex-col gap-0.5">

@@ -195,28 +195,25 @@ export function ScalpCharts() {
                 />
 
                 {/* derivative / instrument picker */}
-                <select
+                <SelectMenu
                   value={p.instr}
-                  onChange={(e) => setPane(i, { instr: e.target.value })}
-                  className="rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+                  options={[
+                    [`${p.sym} spot`, ""],
+                    ["ATM straddle", "STRADDLE"],
+                    ...(p.sym === storeSym && chain
+                      ? strikes.flatMap((k) => [
+                          [`${k} CE`, `${p.sym}|${chain.expiry}|${k}|CE`] as [string, string],
+                          [`${k} PE`, `${p.sym}|${chain.expiry}|${k}|PE`] as [string, string],
+                        ])
+                      : []),
+                    ...legOptions(p.sym).map(
+                      (w) => [`${w.strike} ${w.optionType} (watch)`, w.key] as [string, string]
+                    ),
+                  ]}
+                  onChange={(v) => setPane(i, { instr: v })}
                   title="Instrument to chart"
-                >
-                  <option value="">{p.sym} spot</option>
-                  <option value="STRADDLE">ATM straddle</option>
-                  {p.sym === storeSym &&
-                    chain &&
-                    strikes.map((k) => (
-                      <optgroup key={k} label={`${k}`}>
-                        <option value={`${p.sym}|${chain.expiry}|${k}|CE`}>{k} CE</option>
-                        <option value={`${p.sym}|${chain.expiry}|${k}|PE`}>{k} PE</option>
-                      </optgroup>
-                    ))}
-                  {legOptions(p.sym).map((w) => (
-                    <option key={w.key} value={w.key}>
-                      {w.strike} {w.optionType} (watch)
-                    </option>
-                  ))}
-                </select>
+                  width={150}
+                />
 
                 <div className="seg">
                   {TF.map(([l, v]) => (

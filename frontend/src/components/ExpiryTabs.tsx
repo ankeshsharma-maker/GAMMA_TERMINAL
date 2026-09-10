@@ -83,23 +83,15 @@ export function ExpiryTabs() {
         ))}
 
         {rest.length > 0 && (
-          <select
-            value={restSelected ? cur : ""}
-            onChange={(e) => e.target.value && selectExpiry(e.target.value)}
-            className={`shrink-0 rounded border px-1.5 py-1 text-2xs num outline-none ${
-              restSelected
-                ? "border-term-accent bg-term-accent text-white"
-                : "border-term-border bg-term-panel text-term-dim"
-            }`}
-            title="Later monthly expiries"
-          >
-            <option value="">Later ▾</option>
-            {rest.map((e) => (
-              <option key={e} value={e}>
-                {e}
-              </option>
-            ))}
-          </select>
+          <span className="shrink-0">
+            <SelectMenu
+              value={restSelected ? cur : ""}
+              options={[["Later ▾", ""], ...rest.map((e) => [e, e] as [string, string])]}
+              onChange={(v) => v && selectExpiry(v)}
+              title="Later monthly expiries"
+              width={120}
+            />
+          </span>
         )}
       </div>
     </div>

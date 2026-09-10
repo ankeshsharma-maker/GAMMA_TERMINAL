@@ -370,29 +370,21 @@ function TrendingOILive() {
       {/* header */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-2 text-2xs">
         <span className="text-sm font-semibold">{symbol} Trending OI Live</span>
-        <select
+        <SelectMenu
           value={symbol}
-          onChange={(e) => selectSymbol(e.target.value, true)}
-          className="rounded border border-term-border bg-term-bg px-1 py-0.5 font-semibold text-term-text outline-none focus:border-term-accent"
-        >
-          {symOptions.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
+          options={symOptions.map((s) => [s, s] as [string, string])}
+          onChange={(v) => selectSymbol(v, true)}
+          title="Underlying"
+          width={140}
+        />
         {chain?.expiries?.length ? (
-          <select
+          <SelectMenu
             value={expiry}
-            onChange={(e) => selectExpiry(e.target.value)}
-            className="num rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
-          >
-            {chain.expiries.map((e) => (
-              <option key={e} value={e}>
-                {e}
-              </option>
-            ))}
-          </select>
+            options={chain.expiries.map((e) => [e, e] as [string, string])}
+            onChange={selectExpiry}
+            title="Expiry"
+            width={130}
+          />
         ) : null}
         <span className="num text-term-dim">
           Spot <span className="text-term-text">{nf(spot, 1)}</span>
@@ -945,17 +937,13 @@ function TrendingOIClassic() {
       {/* toolbar */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
         <span className="font-semibold uppercase tracking-wide">Trending OI</span>
-        <select
+        <SelectMenu
           value={symbol}
-          onChange={(e) => selectSymbol(e.target.value, true)}
-          className="rounded border border-term-border bg-term-bg px-1 py-0.5 font-semibold text-term-text outline-none focus:border-term-accent"
-        >
-          {symOptions.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
+          options={symOptions.map((s) => [s, s] as [string, string])}
+          onChange={(v) => selectSymbol(v, true)}
+          title="Underlying"
+          width={140}
+        />
         {chain?.expiry && <span className="num">{chain.expiry}</span>}
         <span className="ml-1">Interval</span>
         <SelectMenu

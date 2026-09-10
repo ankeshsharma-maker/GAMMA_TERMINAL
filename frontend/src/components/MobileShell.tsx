@@ -154,6 +154,7 @@ function MobileReturnCard() {
   );
 }
 import { lockNow } from "../lib/auth";
+import { openPinSetup } from "./PinLock";
 import { NotificationPanel } from "./NotificationPanel";
 import { OrderConfirm } from "./OrderConfirm";
 import { Watchlist } from "./Watchlist";
@@ -326,6 +327,13 @@ export function MobileShell() {
             title="Alerts & unusual activity"
           >
             Alerts{alertsUnseen > 0 ? ` (${alertsUnseen})` : ""}
+          </button>
+          <button
+            onClick={openPinSetup}
+            className="rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:text-term-text"
+            title="Set / change a device PIN (optional, stays on this device)"
+          >
+            🔢 PIN
           </button>
           <button
             onClick={lockNow}

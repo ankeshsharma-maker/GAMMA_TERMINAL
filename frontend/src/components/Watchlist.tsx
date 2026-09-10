@@ -3,6 +3,7 @@ import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
 import { useIsMobile } from "../lib/useIsMobile";
+import { SelectMenu } from "./SelectMenu";
 import type { WatchQuote } from "../types";
 
 type WlView = "list" | "grid";
@@ -566,23 +567,23 @@ export function Watchlist() {
             </button>
           )}
         </div>
-        <select
-          value=""
-          disabled={presetBusy}
-          onChange={(e) => {
-            const p = WL_PRESETS.find((x) => x.name === e.target.value);
-            if (p) loadPreset(p);
-          }}
-          title="Load a ready-made watchlist into a new list"
-          className="mt-1.5 w-full rounded border border-term-border bg-term-bg py-1 text-[10px] text-term-dim outline-none transition hover:border-term-accent focus:border-term-accent disabled:opacity-50"
-        >
-          <option value="">{presetBusy ? "loading preset…" : "＋ Load a preset watchlist…"}</option>
-          {WL_PRESETS.map((p) => (
-            <option key={p.name} value={p.name}>
-              {p.name} · {p.syms.length}
-            </option>
-          ))}
-        </select>
+        <div className="mt-1.5">
+          <SelectMenu
+            value=""
+            options={[
+              [presetBusy ? "loading preset…" : "＋ Load a preset watchlist…", ""],
+              ...WL_PRESETS.map(
+                (p) => [`${p.name} · ${p.syms.length}`, p.name] as [string, string]
+              ),
+            ]}
+            onChange={(name) => {
+              const p = WL_PRESETS.find((x) => x.name === name);
+              if (p && !presetBusy) loadPreset(p);
+            }}
+            title="Load a ready-made watchlist into a new list"
+            width={200}
+          />
+        </div>
 
         {openSearch && results.length > 0 && (
           <div className="absolute left-3 right-3 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-md border border-term-border bg-term-panel shadow-xl">

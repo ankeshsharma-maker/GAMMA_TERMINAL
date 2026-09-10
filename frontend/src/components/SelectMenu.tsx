@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 /** ƒx-style single-select: a button showing the current label that opens a
- *  click-to-pick list (✓ on the active row). Closes on outside-click or pick. */
+ *  click-to-pick list (✓ on the active row). The list is portalled to <body>
+ *  with fixed positioning so it never gets clipped by a scrolling panel.
+ *  Closes on outside-click, pick, scroll or resize. */
 export function SelectMenu<T extends string | number>({
   value,
   options,
@@ -10,7 +13,7 @@ export function SelectMenu<T extends string | number>({
   align = "left",
   width = 130,
 }: {
-  value: T;
+  value: T | undefined | null;
   options: readonly (readonly [string, T])[];
   onChange: (v: T) => void;
   title?: string;
@@ -18,10 +21,36 @@ export function SelectMenu<T extends string | number>({
   width?: number;
 }) {
   const [open, setOpen] = useState(false);
-  const cur = options.find(([, v]) => v === value)?.[0] ?? String(value);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const cur =
+    options.find(([, v]) => v === value)?.[0] ?? (value == null ? "" : String(value));
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const r = btnRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const left = align === "right" ? r.right - width : r.left;
+      setPos({
+        top: Math.round(r.bottom + 4),
+        left: Math.round(Math.max(4, Math.min(left, window.innerWidth - width - 4))),
+      });
+    };
+    place();
+    const close = () => setOpen(false);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open, align, width]);
+
   return (
     <span className="relative inline-flex">
       <button
+        ref={btnRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         title={title}
@@ -31,39 +60,41 @@ export function SelectMenu<T extends string | number>({
             : "border-term-border text-term-dim hover:bg-term-border hover:text-term-text"
         }`}
       >
-        {cur}
+        <span className="truncate" style={{ maxWidth: width }}>
+          {cur}
+        </span>
         <span className="text-[8px] opacity-70">▾</span>
       </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div
-            className={`absolute ${
-              align === "right" ? "right-0" : "left-0"
-            } top-full z-50 mt-1 max-h-[60vh] overflow-y-auto rounded-lg border border-term-border bg-term-panel p-1 text-2xs shadow-2xl`}
-            style={{ width }}
-          >
-            {options.map(([lbl, v]) => (
-              <button
-                key={String(v)}
-                type="button"
-                onClick={() => {
-                  onChange(v);
-                  setOpen(false);
-                }}
-                className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left ${
-                  v === value
-                    ? "bg-term-accent/15 text-term-text"
-                    : "text-term-dim hover:bg-term-border hover:text-term-text"
-                }`}
-              >
-                <span>{lbl}</span>
-                {v === value && <span className="text-term-accent">✓</span>}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      {open &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[80]" onClick={() => setOpen(false)} />
+            <div
+              className="fixed z-[81] max-h-[60vh] overflow-y-auto rounded-lg border border-term-border bg-term-panel p-1 text-2xs shadow-2xl"
+              style={{ top: pos.top, left: pos.left, width }}
+            >
+              {options.map(([lbl, v]) => (
+                <button
+                  key={String(v)}
+                  type="button"
+                  onClick={() => {
+                    onChange(v);
+                    setOpen(false);
+                  }}
+                  className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left ${
+                    v === value
+                      ? "bg-term-accent/15 text-term-text"
+                      : "text-term-dim hover:bg-term-border hover:text-term-text"
+                  }`}
+                >
+                  <span>{lbl}</span>
+                  {v === value && <span className="text-term-accent">✓</span>}
+                </button>
+              ))}
+            </div>
+          </>,
+          document.body
+        )}
     </span>
   );
 }

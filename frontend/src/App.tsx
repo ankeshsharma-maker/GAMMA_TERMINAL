@@ -74,11 +74,13 @@ function VSplit({ onDrag }: { onDrag: (dx: number) => void }) {
 
 export default function App() {
   return (
-    <PinLock>
-      <LoginGate>
+    // password gate FIRST — nothing (not even the device-PIN screen) renders
+    // until the shared app password has been entered.
+    <LoginGate>
+      <PinLock>
         <Shell />
-      </LoginGate>
-    </PinLock>
+      </PinLock>
+    </LoginGate>
   );
 }
 
