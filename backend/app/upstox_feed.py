@@ -56,9 +56,11 @@ async def _poll_once(fast: bool) -> None:
     ux = get_upstox()
     if not ux.authed:
         return
-    want = _want()
+    # SENSEX / BANKEX have no Flattrade feed at all, so poll them in *both*
+    # modes — fast mode used to skip them unless they were on the watchlist.
+    want = _want() | _BSE
     if not fast:
-        want = {s for s in want if s in _BSE}  # slow mode: only what Flattrade can't feed
+        want = set(_BSE)  # slow mode: only what Flattrade can't feed
     # match on every shape Upstox might echo back: the raw "EXCH|Name" key, the
     # "EXCH:Name" response-dict key, and the bare instrument name.
     keymap: dict[str, str] = {}  # any-form key -> our symbol

@@ -126,7 +126,7 @@ function MobileReturnCard() {
           Overall Return {p.source === "paper" && <span className="text-[9px]">· paper</span>}
         </span>
         <span className="flex items-center gap-2">
-          <span className={`num text-xl font-bold ${signColor(overall)}`}>₹{nf(overall, 2)}</span>
+          <span className={`num text-base font-bold ${signColor(overall)}`}>₹{nf(overall, 2)}</span>
           <span className="text-term-dim">{open ? "▴" : "▾"}</span>
         </span>
       </button>

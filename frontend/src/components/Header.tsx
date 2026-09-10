@@ -818,16 +818,21 @@ export function Header() {
 
   return (
     <div
-      className={`flex items-center gap-2 overflow-x-auto border-b bg-term-panel px-4 py-1.5 [&>*]:shrink-0 ${
+      className={`flex flex-col gap-1 border-b bg-term-panel px-4 py-1.5 ${
         orderMode === "live" ? "border-down" : "border-term-border"
       }`}
     >
-      <span className="text-sm font-semibold tracking-tight">GammaTerminal</span>
-      <HeaderIndices />
-      <ViewToggle />
-      <ClassFilter />
-      <OrderModePill />
+      {/* row 1 — branding, indices, view switch */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-sm font-semibold tracking-tight">GammaTerminal</span>
+        <HeaderIndices />
+        <ViewToggle />
+        <ClassFilter />
+        <OrderModePill />
+      </div>
 
+      {/* row 2 — live spot + chain stats + margin + P&L */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
       {chain ? (
         <>
           <div className="flex items-baseline gap-2">
@@ -891,6 +896,7 @@ export function Header() {
           🔒
         </button>
         <ConnBadge />
+      </div>
       </div>
     </div>
   );
