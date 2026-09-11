@@ -176,8 +176,17 @@ async def run_broker_feed(stop: asyncio.Event) -> None:
                 except Exception:  # noqa: BLE001
                     pass
                 warned = True
-            # try to heal a stuck socket: re-validate the token + bounce the WS
-            if outage > 45 and time.time() - last_reauth > 120:
+            # try to heal a stuck socket: re-validate the token + bounce the WS.
+            # Skip this when the socket is being actively refused with 1008
+            # (another session holds Flattrade's one-socket-per-login slot) --
+            # _ws_loop already backs off 90s on its own for exactly that case,
+            # specifically so retries don't keep the slot contested. Bouncing
+            # it here on a shorter cycle cancels that wait early and forces an
+            # immediate reconnect attempt, which just trades one 1008 for the
+            # next one -- this was producing a near-continuous drop/retry loop
+            # in production instead of one clean 90s-spaced retry.
+            is_1008 = "1008" in (st.get("wsError") or "")
+            if outage > 45 and time.time() - last_reauth > 120 and not is_1008:
                 last_reauth = time.time()
                 try:
                     log.info("live feed down %.0fs — attempting broker.refresh()", outage)

@@ -694,13 +694,15 @@ class FlattradeBroker:
                     self._ws_error = f"feed dropped: {reason}"
                 log.warning(
                     "Flattrade WS dropped: code=%s reason=%s; retrying in %ss",
-                    code, reason, backoff,
+                    code, reason, 90 if code == 1008 else backoff,
                 )
             self._ws_connected = False
             self._ws = None
             # 1008 is a policy rejection (another live socket holds the single
-            # per-login slot), not a transient drop — retrying every few seconds
-            # just keeps the slot contested. Wait it out longer.
+            # per-login slot), not a transient drop — retrying every few
+            # seconds just keeps the slot contested. Wait it out longer than
+            # the normal backoff (code is None here on a clean close, which
+            # falls through to the normal backoff below).
             wait = 90 if code == 1008 else backoff
             try:
                 await asyncio.sleep(wait)
