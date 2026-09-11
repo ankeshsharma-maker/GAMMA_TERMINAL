@@ -820,8 +820,8 @@ export function Header({ children }: { children?: ReactNode }) {
         <ClassFilter />
         <div className="ml-auto flex items-center gap-1.5">
           <OrderModePill />
-          <BrokerPill />
           <UpstoxPill />
+          <BrokerPill />
           <AlertBell />
           <button
             onClick={() => setSettingsOpen(true)}
