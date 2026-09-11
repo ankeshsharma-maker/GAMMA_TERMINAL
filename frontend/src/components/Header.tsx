@@ -79,6 +79,7 @@ function ViewToggle() {
           ["chart", "Chart"],
           ["builder", "Build"],
           ["positions", "Positions"],
+          ["journal", "Journal"],
           ["scalper", "Scalp"],
           ["auto", "Auto"],
           ["funds", "Funds"],

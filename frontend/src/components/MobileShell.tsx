@@ -179,6 +179,7 @@ import { ScalpPanel } from "./ScalpPanel";
 import { ScalpCharts } from "./ScalpCharts";
 import { AutoBotView } from "./AutoBot";
 import { Funds } from "./Funds";
+import { TradeJournal } from "./TradeJournal";
 import { LogoMark } from "./Logo";
 
 type NavItem = { v: View; icon: string; label: string };
@@ -198,6 +199,7 @@ const TOP_NAV: NavItem[] = [
   { v: "scrip", icon: "▤", label: "OI" },
   { v: "scanner", icon: "📡", label: "Scan" },
   { v: "trendingoi", icon: "🔥", label: "Trend OI" },
+  { v: "journal", icon: "📓", label: "Journal" },
   { v: "auto", icon: "🤖", label: "Auto" },
   { v: "funds", icon: "💰", label: "Funds" },
 ];
@@ -259,6 +261,8 @@ function MobileBody({ view }: { view: View }) {
       return <AutoBotView />;
     case "funds":
       return <Funds />;
+    case "journal":
+      return <TradeJournal />;
     default:
       return null;
   }

@@ -11,6 +11,7 @@ import { ScripView } from "./components/ScripView";
 import { Positions } from "./components/Positions";
 import { ScannerView } from "./components/ScannerView";
 import { TrendingOI } from "./components/TrendingOI";
+import { TradeJournal } from "./components/TradeJournal";
 import { Chart } from "./components/Chart";
 import { StrategyBuilder } from "./components/StrategyBuilder";
 import { PositionsView } from "./components/PositionsView";
@@ -107,7 +108,8 @@ function DesktopShell() {
     view === "trendingoi" ||
     view === "scanner" ||
     view === "auto" ||
-    view === "funds";
+    view === "funds" ||
+    view === "journal";
   const [leftW, setLeftW] = useState(() => readNum(LS.left, 190));
   const [rightW, setRightW] = useState(() => readNum(LS.right, view === "scalper" ? 360 : 300));
   const [notifW, setNotifW] = useState(() => readNum(LS.notifW, 320));
@@ -228,6 +230,7 @@ function DesktopShell() {
           {view === "orders" && <PositionsView initialTab="orders" />}
           {view === "auto" && <AutoBotView />}
           {view === "funds" && <Funds />}
+          {view === "journal" && <TradeJournal />}
         </main>
 
         {showRight && <VSplit onDrag={bumpRight} />}

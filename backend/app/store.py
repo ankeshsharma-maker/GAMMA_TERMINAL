@@ -34,6 +34,8 @@ _SETTINGS_FILE = DATA_DIR / "settings.json"
 _HIST_DIR = DATA_DIR / "history"
 _HIST_DIR.mkdir(parents=True, exist_ok=True)
 _IVHIST_FILE = DATA_DIR / "iv_history.json"
+_JOURNAL_FILE = DATA_DIR / "journal.json"
+_JOURNAL_MAXLEN = 5000
 _lock = threading.RLock()
 
 
@@ -88,6 +90,7 @@ class Store:
         self.paper: dict = _load(
             _PAPER_FILE, {"positions": [], "orders": [], "realized": 0.0}
         )
+        self.journal: deque = deque(_load(_JOURNAL_FILE, []), maxlen=_JOURNAL_MAXLEN)
         self.settings: dict = _load(_SETTINGS_FILE, {"orderMode": "paper"})
         self.live_orders: deque = deque(maxlen=100)  # log of routed live orders
         self.broker_positions: list[dict] = []       # last raw PositionBook snapshot
@@ -1108,7 +1111,9 @@ class Store:
                 else:
                     closed = min(abs(pos["qty"]), order["qty"])
                     direction = 1 if pos["qty"] > 0 else -1
-                    self.paper["realized"] += direction * (order["price"] - pos["avgPrice"]) * closed
+                    pnl = direction * (order["price"] - pos["avgPrice"]) * closed
+                    self.paper["realized"] += pnl
+                    self._record_trade_close(pos, order, closed, pnl)
                     if new_qty * direction < 0:
                         pos["avgPrice"] = order["price"]
                 pos["qty"] = new_qty
@@ -1128,6 +1133,98 @@ class Store:
                 "openedTs": order["ts"],
             }
         )
+
+    def _record_trade_close(self, pos: dict, order: dict, closed: float, pnl: float) -> None:
+        """Append a closed-trade record to the journal. Called from inside
+        `_apply_fill` for every fill that reduces/closes/flips a position --
+        the single choke point every paper close (manual, "Close" button, or
+        auto SL/target via check_stops) already funnels through."""
+        entry = {
+            "id": uuid.uuid4().hex[:10],
+            "mode": "paper",
+            "symbol": pos["symbol"],
+            "expiry": pos["expiry"],
+            "strike": pos["strike"],
+            "optionType": pos["optionType"],
+            "side": "BUY" if pos["qty"] > 0 else "SELL",
+            "qty": closed,
+            "lotSize": pos["lotSize"],
+            "entryPrice": round(pos["avgPrice"], 2),
+            "exitPrice": round(order["price"], 2),
+            "pnl": round(pnl, 2),
+            "openedTs": pos.get("openedTs"),
+            "closedTs": order["ts"],
+            "note": order.get("note", ""),
+        }
+        self.journal.appendleft(entry)
+        _save(_JOURNAL_FILE, list(self.journal))
+
+    def get_journal(self, limit: int = 200, symbol: str | None = None) -> list[dict]:
+        with _lock:
+            rows = list(self.journal)
+        if symbol:
+            rows = [r for r in rows if r["symbol"] == symbol.upper()]
+        return rows[: max(1, min(limit, _JOURNAL_MAXLEN))]
+
+    def journal_stats(self) -> dict:
+        from datetime import datetime
+
+        from .processing import IST
+
+        with _lock:
+            rows_chrono = list(reversed(self.journal))
+
+        n = len(rows_chrono)
+        wins = [r for r in rows_chrono if r["pnl"] > 0]
+        losses = [r for r in rows_chrono if r["pnl"] < 0]
+        gross_win = sum(r["pnl"] for r in wins)
+        gross_loss = sum(r["pnl"] for r in losses)
+
+        equity_curve: list[dict] = []
+        day_map: dict[str, dict] = {}
+        sym_map: dict[str, dict] = {}
+        cum = 0.0
+        for r in rows_chrono:
+            cum += r["pnl"]
+            equity_curve.append({"ts": r["closedTs"], "cum": round(cum, 2)})
+            day = datetime.fromtimestamp(r["closedTs"], IST).strftime("%Y-%m-%d")
+            d = day_map.setdefault(day, {"date": day, "pnl": 0.0, "trades": 0})
+            d["pnl"] += r["pnl"]
+            d["trades"] += 1
+            s = sym_map.setdefault(
+                r["symbol"], {"symbol": r["symbol"], "pnl": 0.0, "trades": 0, "wins": 0}
+            )
+            s["pnl"] += r["pnl"]
+            s["trades"] += 1
+            if r["pnl"] > 0:
+                s["wins"] += 1
+
+        by_day = sorted(day_map.values(), key=lambda d: d["date"])
+        for d in by_day:
+            d["pnl"] = round(d["pnl"], 2)
+        by_symbol = sorted(sym_map.values(), key=lambda s: -abs(s["pnl"]))
+        for s in by_symbol:
+            s["pnl"] = round(s["pnl"], 2)
+            s["winRate"] = round(100 * s["wins"] / s["trades"], 1) if s["trades"] else 0.0
+
+        hold_secs = [r["closedTs"] - r["openedTs"] for r in rows_chrono if r.get("openedTs")]
+
+        return {
+            "totalTrades": n,
+            "wins": len(wins),
+            "losses": len(losses),
+            "winRate": round(100 * len(wins) / n, 1) if n else 0.0,
+            "totalPnl": round(gross_win + gross_loss, 2),
+            "avgWin": round(gross_win / len(wins), 2) if wins else 0.0,
+            "avgLoss": round(gross_loss / len(losses), 2) if losses else 0.0,
+            "bestTrade": round(max((r["pnl"] for r in rows_chrono), default=0.0), 2),
+            "worstTrade": round(min((r["pnl"] for r in rows_chrono), default=0.0), 2),
+            "profitFactor": round(gross_win / abs(gross_loss), 2) if gross_loss < 0 else None,
+            "avgHoldMin": round(sum(hold_secs) / len(hold_secs) / 60, 1) if hold_secs else 0.0,
+            "equityCurve": equity_curve,
+            "byDay": by_day,
+            "bySymbol": by_symbol,
+        }
 
     def paper_state(self) -> dict:
         with _lock:

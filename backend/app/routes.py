@@ -461,6 +461,16 @@ def paper_clear_stop(position_id: str):
     return store.clear_stop(position_id)
 
 
+@router.get("/journal")
+def journal_list(limit: int = 200, symbol: str | None = None):
+    return store.get_journal(limit=limit, symbol=symbol)
+
+
+@router.get("/journal/stats")
+def journal_stats():
+    return store.journal_stats()
+
+
 # ---- unified order routing (paper | live) --------------------------
 @router.get("/order/mode")
 def order_mode():

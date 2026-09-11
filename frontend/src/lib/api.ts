@@ -3,6 +3,8 @@ import type {
   Analysis,
   BrokerStatus,
   Chain,
+  JournalStats,
+  JournalTrade,
   PaperState,
   SavedStrategy,
   ScanRow,
@@ -362,6 +364,15 @@ export const api = {
     }),
   oiAlertDel: (id: string) =>
     j<{ rules: any[] }>(`/api/oi-alerts/${id}`, { method: "DELETE" }),
+
+  journal: (params: { limit?: number; symbol?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (params.limit) q.set("limit", String(params.limit));
+    if (params.symbol) q.set("symbol", params.symbol);
+    const qs = q.toString();
+    return j<JournalTrade[]>(`/api/journal${qs ? `?${qs}` : ""}`);
+  },
+  journalStats: () => j<JournalStats>("/api/journal/stats"),
 
   portfolioGreeks: () =>
     j<{

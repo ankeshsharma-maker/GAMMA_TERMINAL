@@ -230,7 +230,8 @@ export type View =
   | "funds"
   | "watchlist"
   | "orders"
-  | "trendingoi";
+  | "trendingoi"
+  | "journal";
 
 export type AutoCondition = Record<string, unknown> & { kind: string };
 
@@ -457,4 +458,39 @@ export interface LiveSpot {
   ltp: number;
   chgPct: number | null;
   ts: number;
+}
+
+export interface JournalTrade {
+  id: string;
+  mode: "paper" | "live";
+  symbol: string;
+  expiry: string;
+  strike: number;
+  optionType: "CE" | "PE";
+  side: "BUY" | "SELL";
+  qty: number;
+  lotSize: number;
+  entryPrice: number;
+  exitPrice: number;
+  pnl: number;
+  openedTs: number | null;
+  closedTs: number;
+  note: string;
+}
+
+export interface JournalStats {
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  totalPnl: number;
+  avgWin: number;
+  avgLoss: number;
+  bestTrade: number;
+  worstTrade: number;
+  profitFactor: number | null;
+  avgHoldMin: number;
+  equityCurve: { ts: number; cum: number }[];
+  byDay: { date: string; pnl: number; trades: number }[];
+  bySymbol: { symbol: string; pnl: number; trades: number; winRate: number }[];
 }
