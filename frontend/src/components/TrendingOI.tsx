@@ -545,7 +545,7 @@ function TrendingOILive() {
               ].map((h, i) => (
                 <th
                   key={h}
-                  className={`px-2 py-1.5 font-medium last:border-r-0 ${
+                  className={`bg-term-panel px-2 py-1.5 font-medium last:border-r-0 ${
                     i === 0 || i === 11 ? "text-left" : "text-right"
                   } ${LIVE_HIDE_SM.has(i) ? "hidden sm:table-cell" : ""}`}
                 >
@@ -1073,12 +1073,14 @@ function TrendingOIClassic() {
           <table className="w-full min-w-[480px] border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
             <thead className="sticky top-0 bg-term-panel text-[10px] uppercase text-term-dim">
               <tr>
-                <th className="px-3 py-1 text-left font-medium">{daily ? "Date" : "Time"}</th>
-                <th className="px-3 py-1 text-right font-medium">Call OI Δ</th>
-                <th className="px-3 py-1 text-right font-medium">Put OI Δ</th>
-                <th className="px-3 py-1 text-right font-medium">Spot Δ</th>
-                <th className="px-3 py-1 text-left font-medium">Leader</th>
-                <th className="px-3 py-1 text-left font-medium">Sentiment</th>
+                <th className="bg-term-panel px-3 py-1 text-left font-medium">
+                  {daily ? "Date" : "Time"}
+                </th>
+                <th className="bg-term-panel px-3 py-1 text-right font-medium">Call OI Δ</th>
+                <th className="bg-term-panel px-3 py-1 text-right font-medium">Put OI Δ</th>
+                <th className="bg-term-panel px-3 py-1 text-right font-medium">Spot Δ</th>
+                <th className="bg-term-panel px-3 py-1 text-left font-medium">Leader</th>
+                <th className="bg-term-panel px-3 py-1 text-left font-medium">Sentiment</th>
               </tr>
             </thead>
             <tbody>
