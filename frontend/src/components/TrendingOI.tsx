@@ -412,6 +412,8 @@ function TrendingOILive() {
         >
           {showChart ? "Hide chart" : "Show chart"}
         </button>
+        <span className="uppercase tracking-wide text-term-dim">Timeframe</span>
+        <SelectMenu value={tf} options={TF} onChange={setTf} title="Bucket timeframe" />
         <span className="num text-term-dim">
           Spot{" "}
           <span className="num inline-block min-w-[3.5rem] text-right text-term-text">
@@ -423,9 +425,15 @@ function TrendingOILive() {
             {nf(spotChg ?? 0, 2)}%)
           </span>
         </span>
-        <span className="ml-auto text-term-dim">
-          Refreshed{" "}
-          {new Date(now).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+        <span className="ml-auto flex items-center gap-3 text-term-dim">
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-full bg-up" /> auto-refresh{" "}
+            {daily ? "60s" : "15s"}
+          </span>
+          <span>
+            Refreshed{" "}
+            {new Date(now).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+          </span>
         </span>
       </div>
 
@@ -506,17 +514,6 @@ function TrendingOILive() {
               : `collecting OI history for ${symbol}… (needs a few snapshots)`}
           </div>
         )}
-      </div>
-
-      {/* timeframe controls */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
-        <span className="uppercase tracking-wide">Timeframe</span>
-        <SelectMenu value={tf} options={TF} onChange={setTf} title="Bucket timeframe" />
-
-        <span className="ml-auto flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-full bg-up" /> auto-refresh{" "}
-          {daily ? "60s" : "15s"}
-        </span>
       </div>
 
       {showChart && (
