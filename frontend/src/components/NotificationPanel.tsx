@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
+import { api } from "../lib/api";
 import { hhmm } from "../lib/format";
 import type { UnusualKind } from "../types";
 
@@ -84,6 +85,7 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
           [
             ["unusual", "Unusual Activity", uNew],
             ["alerts", "Alerts", aNew],
+            ["oiwatch", "OI Watch", 0],
           ] as const
         ).map(([k, label, n]) => (
           <button
@@ -190,27 +192,203 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
               </button>
             ))
           )
-        ) : alerts.length === 0 ? (
-          <div className="p-4 text-2xs text-term-dim">
-            No alerts. Fires on IV pops, straddle expansion, and rising gamma-blast scores.
-          </div>
-        ) : (
-          alerts.map((a, i) => (
-            <div
-              key={a.ts + a.kind + i}
-              className={`border-b border-term-border/40 border-l-2 px-3 py-2 text-2xs ${
-                sevStyle[a.severity] ?? ""
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-semibold">{a.symbol}</span>
-                <span className="num text-term-dim">{hhmm(a.ts)}</span>
-              </div>
-              <div className="text-term-text/90">{a.message}</div>
+        ) : notifTab === "alerts" ? (
+          alerts.length === 0 ? (
+            <div className="p-4 text-2xs text-term-dim">
+              No alerts. Fires on IV pops, straddle expansion, and rising gamma-blast scores.
             </div>
-          ))
+          ) : (
+            alerts.map((a, i) => (
+              <div
+                key={a.ts + a.kind + i}
+                className={`border-b border-term-border/40 border-l-2 px-3 py-2 text-2xs ${
+                  sevStyle[a.severity] ?? ""
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">{a.symbol}</span>
+                  <span className="num text-term-dim">{hhmm(a.ts)}</span>
+                </div>
+                <div className="text-term-text/90">{a.message}</div>
+              </div>
+            ))
+          )
+        ) : (
+          <OiWatchTab />
         )}
       </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------- *
+ *  OI Watch — user-defined "alert me when this strike's OI crosses X"  *
+ * -------------------------------------------------------------------- */
+type OiAlertRule = {
+  id: string;
+  symbol: string;
+  expiry: string;
+  strike: number;
+  optionType: "CE" | "PE";
+  metric: "oi" | "oiChg";
+  op: ">" | "<";
+  value: number;
+  enabled: boolean;
+  firedAt: number | null;
+  lastValue: number | null;
+};
+
+function OiWatchTab() {
+  const chain = useStore((s) => s.chain);
+  const [rules, setRules] = useState<OiAlertRule[]>([]);
+  const [strike, setStrike] = useState("");
+  const [optionType, setOptionType] = useState<"CE" | "PE">("CE");
+  const [metric, setMetric] = useState<"oi" | "oiChg">("oi");
+  const [op, setOp] = useState<">" | "<">(">");
+  const [value, setValue] = useState("");
+  const [repeat, setRepeat] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    api.oiAlerts().then((d) => setRules((d.rules || []) as OiAlertRule[]), () => {});
+  };
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    if (chain?.atmStrike && !strike) setStrike(String(chain.atmStrike));
+  }, [chain?.atmStrike]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const create = async () => {
+    if (!chain?.symbol || !chain?.expiry) return alert("Open a symbol's chain first");
+    const k = Number(strike);
+    const v = Number(value);
+    if (!k || !v) return alert("Set a strike and a threshold value");
+    setBusy(true);
+    try {
+      await api.oiAlertAdd({
+        symbol: chain.symbol,
+        expiry: chain.expiry,
+        strike: k,
+        optionType,
+        metric,
+        op,
+        value: v,
+        repeat,
+      });
+      setValue("");
+      load();
+    } catch (e: any) {
+      alert(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const del = async (id: string) => {
+    await api.oiAlertDel(id);
+    load();
+  };
+
+  const SEG = "px-1.5 py-0.5 text-[10px]";
+  const on = "bg-term-accent text-white";
+  const off = "text-term-dim";
+
+  return (
+    <div className="flex flex-col">
+      <div className="space-y-1.5 border-b border-term-border/60 p-2 text-[10px]">
+        <div className="text-term-dim">
+          {chain ? (
+            <>
+              on <span className="text-term-text">{chain.symbol}</span> ·{" "}
+              <span className="text-term-text">{chain.expiry}</span>
+            </>
+          ) : (
+            "open a symbol's chain to add a watch"
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          <input
+            value={strike}
+            onChange={(e) => setStrike(e.target.value.replace(/[^\d.]/g, ""))}
+            placeholder="strike"
+            className="num w-16 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+          />
+          <div className="flex overflow-hidden rounded border border-term-border">
+            {(["CE", "PE"] as const).map((o) => (
+              <button key={o} onClick={() => setOptionType(o)} className={`${SEG} ${optionType === o ? on : off}`}>
+                {o}
+              </button>
+            ))}
+          </div>
+          <div className="flex overflow-hidden rounded border border-term-border">
+            {(["oi", "oiChg"] as const).map((m) => (
+              <button key={m} onClick={() => setMetric(m)} className={`${SEG} ${metric === m ? on : off}`}>
+                {m === "oi" ? "OI" : "ΔOI"}
+              </button>
+            ))}
+          </div>
+          <div className="flex overflow-hidden rounded border border-term-border">
+            {([">", "<"] as const).map((o) => (
+              <button key={o} onClick={() => setOp(o)} className={`${SEG} ${op === o ? on : off}`}>
+                {o}
+              </button>
+            ))}
+          </div>
+          <input
+            value={value}
+            onChange={(e) => setValue(e.target.value.replace(/[^\d.]/g, ""))}
+            placeholder="value"
+            className="num w-20 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+          />
+          <button
+            onClick={() => setRepeat((v) => !v)}
+            className={`${SEG} rounded border border-term-border ${repeat ? "text-term-accent" : off}`}
+            title="Keep re-arming after it fires (default: fires once)"
+          >
+            repeat
+          </button>
+          <button
+            disabled={busy}
+            onClick={create}
+            className="ml-auto rounded bg-term-accent px-2 py-0.5 text-[10px] font-semibold text-white disabled:opacity-40"
+          >
+            {busy ? "…" : "+ Watch"}
+          </button>
+        </div>
+      </div>
+
+      {rules.length === 0 ? (
+        <div className="p-4 text-2xs text-term-dim">
+          No OI watches yet. Set a strike/OI threshold above — fires into this Alerts feed when crossed.
+        </div>
+      ) : (
+        rules.map((r) => (
+          <div
+            key={r.id}
+            className={`flex items-center justify-between border-b border-term-border/40 px-3 py-2 text-2xs ${
+              !r.enabled ? "opacity-50" : ""
+            }`}
+          >
+            <div className="min-w-0">
+              <div className="font-semibold">
+                {r.symbol} {r.strike.toFixed(0)}
+                {r.optionType}
+              </div>
+              <div className="text-term-dim">
+                {r.metric === "oi" ? "OI" : "ΔOI"} {r.op} {r.value.toLocaleString("en-IN")}
+                {r.lastValue != null && <> · now {r.lastValue.toLocaleString("en-IN")}</>}
+                {r.firedAt && <span className="text-up"> · fired</span>}
+              </div>
+            </div>
+            <button onClick={() => del(r.id)} className="shrink-0 px-1 text-term-dim hover:text-down" title="Remove">
+              ✕
+            </button>
+          </div>
+        ))
+      )}
     </div>
   );
 }

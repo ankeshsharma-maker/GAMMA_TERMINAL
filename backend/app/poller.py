@@ -323,6 +323,27 @@ async def run_poller(stop: asyncio.Event) -> None:
         except Exception as exc:  # noqa: BLE001
             log.warning("leg-rule tick failed: %s", exc)
 
+        try:
+            from . import oi_alerts
+
+            oev = await oi_alerts.tick()
+            for e in oev:
+                store.add_alert(
+                    {
+                        "ts": time.time(), "symbol": e.get("symbol", ""),
+                        "kind": "OI_ALERT", "severity": "info",
+                        "message": e["message"], "score": 0,
+                    }
+                )
+                log.info("OI-ALERT %s", e["message"])
+            if oev:
+                await hub.broadcast_all({"type": "alerts", "data": store.get_alerts(50)})
+                await hub.broadcast_all(
+                    {"type": "oiAlerts", "data": oi_alerts.list_rules()}
+                )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("oi-alert tick failed: %s", exc)
+
         interval = POLL_INTERVAL if _in_market_hours() else OFFHOURS_POLL_INTERVAL
         try:
             await asyncio.wait_for(stop.wait(), timeout=interval)

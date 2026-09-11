@@ -72,7 +72,7 @@ interface State {
   unusualSeen: number;
   notifOpen: boolean;
   notifDock: boolean;
-  notifTab: "alerts" | "unusual";
+  notifTab: "alerts" | "unusual" | "oiwatch";
   screener: ScreenerRow[];
   screenerProgress: ScreenerProgress | null;
   screenerPresets: Record<string, Record<string, unknown>>;
@@ -113,10 +113,10 @@ interface State {
   refreshChain: () => Promise<void>;
   setView: (v: View) => void;
   markAlertsSeen: () => void;
-  openNotif: (tab?: "alerts" | "unusual") => void;
+  openNotif: (tab?: "alerts" | "unusual" | "oiwatch") => void;
   closeNotif: () => void;
   setNotifDock: (v: boolean) => void;
-  setNotifTab: (t: "alerts" | "unusual") => void;
+  setNotifTab: (t: "alerts" | "unusual" | "oiwatch") => void;
   addWatch: (s: string) => Promise<void>;
   removeWatch: (s: string) => Promise<void>;
   loadWatchlists: () => Promise<void>;
@@ -484,7 +484,9 @@ export const useStore = create<State>((set, get) => ({
       notifTab: t,
       ...(t === "alerts"
         ? { alertsSeen: get().alerts.length }
-        : { unusualSeen: get().unusual.length }),
+        : t === "unusual"
+          ? { unusualSeen: get().unusual.length }
+          : {}),
     });
   },
   closeNotif: () => set({ notifOpen: false }),
@@ -504,7 +506,9 @@ export const useStore = create<State>((set, get) => ({
       notifTab: t,
       ...(t === "alerts"
         ? { alertsSeen: get().alerts.length }
-        : { unusualSeen: get().unusual.length }),
+        : t === "unusual"
+          ? { unusualSeen: get().unusual.length }
+          : {}),
     }),
 
   addWatch: async (s) => {

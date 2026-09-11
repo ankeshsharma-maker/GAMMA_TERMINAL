@@ -788,6 +788,35 @@ def leg_rules_attach(body: dict):
     return {"rule": row, "rules": leg_rules.list_rules()}
 
 
+# ---- strike-level OI threshold alerts ----
+@router.get("/oi-alerts")
+def oi_alerts_list():
+    from . import oi_alerts
+
+    return {"rules": oi_alerts.list_rules()}
+
+
+@router.post("/oi-alerts")
+def oi_alerts_add(body: dict):
+    from . import oi_alerts
+
+    for k in ("symbol", "expiry", "strike", "optionType", "value"):
+        if body.get(k) in (None, ""):
+            raise HTTPException(status_code=422, detail=f"{k} is required")
+    try:
+        row = oi_alerts.add_rule(body)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"rule": row, "rules": oi_alerts.list_rules()}
+
+
+@router.delete("/oi-alerts/{rid}")
+def oi_alerts_del(rid: str):
+    from . import oi_alerts
+
+    return {"rules": oi_alerts.cancel(rid)}
+
+
 @router.delete("/leg-rules/{rid}")
 def leg_rules_del(rid: str):
     from . import leg_rules

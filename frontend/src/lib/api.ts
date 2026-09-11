@@ -354,6 +354,15 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  oiAlerts: () => j<{ rules: any[] }>("/api/oi-alerts"),
+  oiAlertAdd: (body: Record<string, unknown>) =>
+    j<{ rule: any; rules: any[] }>("/api/oi-alerts", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  oiAlertDel: (id: string) =>
+    j<{ rules: any[] }>(`/api/oi-alerts/${id}`, { method: "DELETE" }),
+
   orderModeGet: () =>
     j<{ mode: "paper" | "live"; brokerAuthed: boolean }>("/api/order/mode"),
   orderModeSet: (mode: "paper" | "live") =>
