@@ -79,16 +79,17 @@ export function bsGreeks(
 
 const _sgn = (side: string) => (side === "BUY" ? 1 : -1);
 
-/** theoretical price of one leg at (S, tYears). */
-export function legPriceAt(leg: ResolvedLeg, S: number, tYears: number): number {
+/** theoretical price of one leg at (S, tYears), optionally with IV shifted by `ivShiftPct` (%). */
+export function legPriceAt(leg: ResolvedLeg, S: number, tYears: number, ivShiftPct = 0): number {
   if (leg.optionType === "FUT") return S;
-  return bsPrice(leg.optionType, S, leg.strike, Math.max(tYears, 0), R, Q, (leg.iv || 0) / 100);
+  const iv = ivShiftPct ? Math.max(0.5, (leg.iv || 0) * (1 + ivShiftPct / 100)) : leg.iv || 0;
+  return bsPrice(leg.optionType, S, leg.strike, Math.max(tYears, 0), R, Q, iv / 100);
 }
 
-/** rupee P&L of one leg at (S, tYears). */
-export function legPnlAt(leg: ResolvedLeg, S: number, tYears: number): number {
+/** rupee P&L of one leg at (S, tYears), optionally with IV shifted by `ivShiftPct` (%). */
+export function legPnlAt(leg: ResolvedLeg, S: number, tYears: number, ivShiftPct = 0): number {
   if (leg.optionType === "FUT") return _sgn(leg.side) * (S - leg.entry) * leg.qty;
-  return _sgn(leg.side) * (legPriceAt(leg, S, tYears) - leg.entry) * leg.qty;
+  return _sgn(leg.side) * (legPriceAt(leg, S, tYears, ivShiftPct) - leg.entry) * leg.qty;
 }
 
 /** intrinsic value of one option at S. */
@@ -113,11 +114,13 @@ export function positionValue(legs: ResolvedLeg[], spot: number, tRemYears: numb
 }
 
 /** Portfolio P&L across a price grid with `tRemYears` left to expiry.
- *  tRemYears = 0 -> expiry (intrinsic); = full DTE/365 -> "now (T+0)". */
+ *  tRemYears = 0 -> expiry (intrinsic); = full DTE/365 -> "now (T+0)".
+ *  `ivShiftPct` optionally shifts every leg's IV by that % (e.g. -20 = IV crush). */
 export function strategyPnlCurve(
   legs: ResolvedLeg[],
   xs: number[],
-  tRemYears: number
+  tRemYears: number,
+  ivShiftPct = 0
 ): number[] {
   const t = Math.max(tRemYears, 0);
   return xs.map((S) => {
@@ -127,7 +130,8 @@ export function strategyPnlCurve(
       if (leg.optionType === "FUT") {
         total += sgn * (S - leg.entry) * leg.qty;
       } else {
-        const px = bsPrice(leg.optionType, S, leg.strike, t, R, Q, (leg.iv || 0) / 100);
+        const iv = ivShiftPct ? Math.max(0.5, (leg.iv || 0) * (1 + ivShiftPct / 100)) : leg.iv || 0;
+        const px = bsPrice(leg.optionType, S, leg.strike, t, R, Q, iv / 100);
         total += sgn * (px - leg.entry) * leg.qty;
       }
     }

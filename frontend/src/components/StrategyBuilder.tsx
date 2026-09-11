@@ -21,6 +21,8 @@ import { PayoffChart } from "./PayoffChart";
 import { BacktestPanel } from "./BacktestPanel";
 import { SelectMenu } from "./SelectMenu";
 
+const IV_SHIFT_CHIPS = [-30, -20, -10, 0, 10, 20, 30];
+
 /** compact labelled number input for the hedge finder's advanced targets */
 function AdvNum({
   label,
@@ -164,6 +166,8 @@ export function StrategyBuilder() {
   const [ivSeries, setIvSeries] = useState<number[]>([]);
   // "time to expiry" payoff: days from today (0 = now / T+0, dte = expiry)
   const [tDays, setTDays] = useState(0);
+  // "what-if IV shift" payoff: % change applied to every leg's IV (0 = current IV)
+  const [ivShift, setIvShift] = useState(0);
   // "target price" — the underlying level the leg tables / stats project to
   const [tPrice, setTPrice] = useState(0);
   // customise "+ Add leg": pick type / strike / side / lots for the next leg
@@ -436,15 +440,31 @@ export function StrategyBuilder() {
     setTDays((d) => Math.min(d, dte));
   }, [dte, analysis?.symbol, analysis?.expiry, legs.length]);
 
-  // intermediate payoff curve at (dte - tDays) days left, computed client-side
+  // intermediate payoff curve at (dte - tDays) days left / ivShift% IV, computed client-side
   const tPnl = useMemo(() => {
-    if (!analysis || tDays <= 0) return null;
+    if (!analysis || (tDays <= 0 && !ivShift)) return null;
     const remYears = Math.max((dte - tDays) / 365, 0);
-    return strategyPnlCurve(analysis.legs, analysis.x, remYears);
-  }, [analysis, tDays, dte]);
+    return strategyPnlCurve(analysis.legs, analysis.x, remYears, ivShift);
+  }, [analysis, tDays, dte, ivShift]);
   const tDate = new Date(Date.now() + tDays * 86400000);
   const tDateLbl = tDate.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
   const remYears = Math.max((dte - tDays) / 365, 0);
+  // combined what-if label for the chart legend, e.g. "T+7d (18 Sep) · +20% IV" or "now · -15% IV"
+  const tLineLabel = tPnl
+    ? [tDays > 0 ? `T+${tDays}d (${tDateLbl})` : "now", ivShift ? `${ivShift > 0 ? "+" : ""}${ivShift}% IV` : ""]
+        .filter(Boolean)
+        .join(" · ")
+    : undefined;
+  // short column-header variant for the strikewise payoff table
+  const tvColLabel =
+    tDays > 0 && ivShift
+      ? `${tDateLbl} · IV ${ivShift > 0 ? "+" : ""}${ivShift}%`
+      : tDays > 0
+      ? `On ${tDateLbl}`
+      : `IV ${ivShift > 0 ? "+" : ""}${ivShift}%`;
+  // "@ date" label for the Legs P&L / Greeks tab headers
+  const tLegLabel =
+    (tDays === 0 ? "now" : tDateLbl) + (ivShift ? ` · IV ${ivShift > 0 ? "+" : ""}${ivShift}%` : "");
 
   // reset the target price to spot when the position / symbol changes
   useEffect(() => {
@@ -469,20 +489,21 @@ export function StrategyBuilder() {
       }`,
       entry: leg.entry,
       ltp: legPriceAt(leg, analysis.spot, nowY),
-      tgtPx: legPriceAt(leg, tgtPrice, remYears),
-      tgtPnl: legPnlAt(leg, tgtPrice, remYears),
+      tgtPx: legPriceAt(leg, tgtPrice, remYears, ivShift),
+      tgtPnl: legPnlAt(leg, tgtPrice, remYears, ivShift),
     }));
-  }, [analysis, tgtPrice, remYears, dte]);
+  }, [analysis, tgtPrice, remYears, dte, ivShift]);
 
   // per-leg greeks at the target (price, date)
   const greekRows = useMemo(() => {
     if (!analysis) return [];
     const lot = analysis.lotSize || 1;
     return analysis.legs.map((leg) => {
+      const ivEff = ivShift ? Math.max(0.5, (leg.iv || 0) * (1 + ivShift / 100)) : leg.iv || 0;
       const g =
         leg.optionType === "FUT"
           ? { delta: 1, gamma: 0, theta: 0, vega: 0 }
-          : bsGreeks(leg.optionType, tgtPrice, leg.strike, remYears, (leg.iv || 0) / 100);
+          : bsGreeks(leg.optionType, tgtPrice, leg.strike, remYears, ivEff / 100);
       const sgn = leg.side === "BUY" ? 1 : -1;
       const mul = sgn * (gMulLot ? lot : 1) * (gMulQty ? leg.lots : 1);
       return {
@@ -496,7 +517,7 @@ export function StrategyBuilder() {
         vega: g.vega * mul,
       };
     });
-  }, [analysis, tgtPrice, remYears, gMulLot, gMulQty]);
+  }, [analysis, tgtPrice, remYears, gMulLot, gMulQty, ivShift]);
   const greekTot = greekRows.reduce(
     (a, r) => ({
       delta: a.delta + r.delta,
@@ -549,7 +570,7 @@ export function StrategyBuilder() {
 
     const exp = strategyPnlCurve(analysis.legs, strikes, 0);
     const remYears = Math.max((dte - tDays) / 365, 0);
-    const tv = tDays > 0 ? strategyPnlCurve(analysis.legs, strikes, remYears) : null;
+    const tv = tDays > 0 || ivShift ? strategyPnlCurve(analysis.legs, strikes, remYears, ivShift) : null;
 
     return strikes
       .map((k, i) => ({
@@ -562,7 +583,7 @@ export function StrategyBuilder() {
         isFloor: k === floor.k && floor.v > 0,
       }))
       .reverse(); // high strike on top, like the chain ladder
-  }, [analysis, tDays, dte, strikeSpan, tableInterval, chain]);
+  }, [analysis, tDays, dte, strikeSpan, tableInterval, chain, ivShift]);
 
   // ---- day-by-day P&L at spot and ±dayPct% (theta decay to expiry) ----
   const dayRows = useMemo(() => {
@@ -634,7 +655,7 @@ export function StrategyBuilder() {
   const legsEl = analysis && (
     <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-0 lg:flex-1 lg:overflow-auto">
       <div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-term-dim">
-        Legs P&amp;L @ {nf(tgtPrice, 0)} · {tDays === 0 ? "now" : tDateLbl}
+        Legs P&amp;L @ {nf(tgtPrice, 0)} · {tLegLabel}
       </div>
       <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
         <thead className="text-[10px] uppercase text-term-dim">
@@ -693,7 +714,7 @@ export function StrategyBuilder() {
     <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-0 lg:flex-1 lg:overflow-auto">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
         <span className="text-2xs font-semibold uppercase tracking-wide text-term-dim">
-          Greeks @ {nf(tgtPrice, 0)} · {tDays === 0 ? "now" : tDateLbl}
+          Greeks @ {nf(tgtPrice, 0)} · {tLegLabel}
         </span>
         <div className="flex gap-1 text-[10px]">
           <button
@@ -1611,6 +1632,46 @@ export function StrategyBuilder() {
                 </button>
               ))}
             </div>
+            {/* what-if IV shift — applied to every leg's IV for the T+n curve/table/greeks */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-term-border/50 pt-1.5">
+              <span className="font-semibold uppercase tracking-wide text-term-dim">IV shift</span>
+              <input
+                type="range"
+                min={-50}
+                max={100}
+                step={1}
+                value={ivShift}
+                onChange={(e) => setIvShift(Number(e.target.value))}
+                className="h-1 flex-1 min-w-[140px] cursor-pointer accent-fuchsia-500"
+              />
+              <span className="num w-[188px] shrink-0 text-right text-term-text">
+                {ivShift === 0 ? (
+                  "unchanged"
+                ) : (
+                  <span className={ivShift > 0 ? "text-up" : "text-down"}>
+                    {ivShift > 0 ? "+" : ""}
+                    {ivShift}% IV
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              <span className="text-term-dim">IV</span>
+              {IV_SHIFT_CHIPS.map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setIvShift(v)}
+                  title={v === 0 ? "current IV" : `IV ${v > 0 ? "+" : ""}${v}%`}
+                  className={`num rounded px-1.5 py-0.5 ${
+                    ivShift === v
+                      ? "bg-fuchsia-500 text-black"
+                      : "bg-term-border text-term-dim hover:text-term-text"
+                  }`}
+                >
+                  {v === 0 ? "0" : `${v > 0 ? "+" : ""}${v}%`}
+                </button>
+              ))}
+            </div>
             {/* target price — drives Legs P&L, Greeks and the T+n column */}
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-term-border/50 pt-1.5">
               <span className="font-semibold uppercase tracking-wide text-term-dim">
@@ -1667,14 +1728,14 @@ export function StrategyBuilder() {
                 breakevens={analysis.breakevens}
                 tPnl={tPnl}
                 symbol={analysis.symbol}
-                tLabel={tPnl ? `T+${tDays}d` : undefined}
+                tLabel={tLineLabel}
                 offset={manualPnl}
               />
             )}
             {analysis && (
               <div className="pointer-events-none absolute bottom-4 right-5 flex gap-3 text-[10px] text-term-dim">
                 <span className="text-term-text">─ at expiry</span>
-                {tPnl && <span className="text-[#f59e0b]">─ T+{tDays}d ({tDateLbl})</span>}
+                {tPnl && <span className="text-[#f59e0b]">─ {tLineLabel}</span>}
                 <span className="text-[#a855f7]">╌ now (T+0)</span>
                 <span className="text-[#3b82f6]">┆ spot</span>
                 <span className="text-[#eab308]">● breakeven</span>
@@ -1741,9 +1802,9 @@ export function StrategyBuilder() {
                         <th className="border-b border-term-border px-2 py-1 text-right font-medium">
                           On expiry
                         </th>
-                        {tDays > 0 && (
+                        {(tDays > 0 || ivShift) && (
                           <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                            On {tDateLbl}
+                            {tvColLabel}
                           </th>
                         )}
                       </tr>
@@ -1789,7 +1850,7 @@ export function StrategyBuilder() {
                           >
                             {pnlTxt(r.exp + manualPnl)}
                           </td>
-                          {tDays > 0 && (
+                          {(tDays > 0 || ivShift) && (
                             <td
                               className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
                                 (r.tv ?? 0) + manualPnl
