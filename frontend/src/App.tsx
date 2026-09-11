@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "./store";
 import { Header } from "./components/Header";
-import { FontScale, applyFontScale } from "./components/FontScale";
+import { applyFontScale } from "./components/FontScale";
 import { Watchlist } from "./components/Watchlist";
 import { ExpiryTabs } from "./components/ExpiryTabs";
 import { OptionChain } from "./components/OptionChain";
@@ -194,20 +194,12 @@ function DesktopShell() {
           {notifDock ? "▸" : "◂"} Alerts
         </button>
         <span className="mx-1 h-3 w-px bg-term-border" />
-        <button className="btn px-1.5 py-0" onClick={() => setZoom((z) => clamp(z - 5, 70, 160))} title="Zoom out">
-          −
-        </button>
-        <span className="num w-8 text-center text-term-text">{zoom}%</span>
-        <button className="btn px-1.5 py-0" onClick={() => setZoom((z) => clamp(z + 5, 70, 160))} title="Zoom in">
-          +
-        </button>
-        <span className="mx-1 h-3 w-px bg-term-border" />
-        <span className="text-term-dim">Text</span>
-        <FontScale />
         <button className="btn px-2 py-0" onClick={resetLayout} title="Reset panels & zoom">
           Reset
         </button>
-        <span className="ml-auto hidden text-term-dim/60 sm:inline">drag dividers to resize</span>
+        <span className="ml-auto hidden text-term-dim/60 sm:inline">
+          zoom &amp; text size are in ⚙ Settings · drag dividers to resize
+        </span>
       </Header>
       <NotificationPanel />
 
