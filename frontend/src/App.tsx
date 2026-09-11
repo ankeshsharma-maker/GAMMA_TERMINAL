@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "./store";
 import { Header } from "./components/Header";
+import { HeaderMenu, MenuRow } from "./components/HeaderMenu";
 import { applyFontScale } from "./components/FontScale";
 import { Watchlist } from "./components/Watchlist";
 import { ExpiryTabs } from "./components/ExpiryTabs";
@@ -170,36 +171,27 @@ function DesktopShell() {
   return (
     <div className="relative flex h-full flex-col bg-term-bg text-term-text">
       <Header>
-        <button
-          className={`btn px-2 py-0 ${hideLeft ? "" : "text-term-text"}`}
-          onClick={() => setHideLeft((v) => !v)}
-          title="Show / hide the watchlist panel"
-        >
-          {hideLeft ? "▸" : "◂"} Watchlist
-        </button>
-        {!wide && (
-          <button
-            className={`btn px-2 py-0 ${hideRight ? "" : "text-term-text"}`}
-            onClick={() => setHideRight((v) => !v)}
-            title="Show / hide the right panel"
-          >
-            {hideRight ? "◂" : "▸"} Right
-          </button>
-        )}
-        <button
-          className={`btn px-2 py-0 ${notifDock ? "text-term-accent" : ""}`}
-          onClick={() => setNotifDock(!notifDock)}
-          title="Dock the alerts / unusual-activity feed as a fixed right column"
-        >
-          {notifDock ? "▸" : "◂"} Alerts
-        </button>
-        <span className="mx-1 h-3 w-px bg-term-border" />
-        <button className="btn px-2 py-0" onClick={resetLayout} title="Reset panels & zoom">
-          Reset
-        </button>
-        <span className="ml-auto hidden text-term-dim/60 sm:inline">
-          zoom &amp; text size are in ⚙ Settings · drag dividers to resize
-        </span>
+        <HeaderMenu icon="☰" title="Layout — panels & reset">
+          <MenuRow onClick={() => setHideLeft((v) => !v)} active={!hideLeft}>
+            <span>Watchlist panel</span>
+            <span className="text-[10px] opacity-70">{hideLeft ? "Hidden" : "Shown"}</span>
+          </MenuRow>
+          {!wide && (
+            <MenuRow onClick={() => setHideRight((v) => !v)} active={!hideRight}>
+              <span>Right panel</span>
+              <span className="text-[10px] opacity-70">{hideRight ? "Hidden" : "Shown"}</span>
+            </MenuRow>
+          )}
+          <MenuRow onClick={() => setNotifDock(!notifDock)} active={notifDock}>
+            <span>Alerts as right column</span>
+            <span className="text-[10px] opacity-70">{notifDock ? "On" : "Off"}</span>
+          </MenuRow>
+          <div className="my-0.5 h-px bg-term-border" />
+          <MenuRow onClick={resetLayout}>
+            <span>Reset panels &amp; zoom</span>
+            <span className="text-[10px] opacity-70">↺</span>
+          </MenuRow>
+        </HeaderMenu>
       </Header>
       <NotificationPanel />
 

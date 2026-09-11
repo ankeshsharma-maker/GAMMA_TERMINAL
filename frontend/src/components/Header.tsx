@@ -87,7 +87,7 @@ function ViewToggle() {
         <button
           key={v}
           onClick={() => setView(v)}
-          className={`rounded border px-2.5 py-1 font-semibold uppercase tracking-wide transition-colors ${
+          className={`rounded border px-2 py-1 font-semibold uppercase tracking-wide transition-colors ${
             view === v
               ? "border-term-accent bg-term-accent text-white"
               : "border-term-border text-term-dim hover:bg-term-border hover:text-term-text"
@@ -812,7 +812,7 @@ export function Header({ children }: { children?: ReactNode }) {
         <ViewToggle />
         <ClassFilter />
         <OrderModePill />
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-2">
           <BrokerPill />
           <AlertBell />
           <button
@@ -856,14 +856,8 @@ export function Header({ children }: { children?: ReactNode }) {
 
       <MarginStats />
       <PnlStrip />
+      <div className="ml-auto flex items-center">{children}</div>
       </div>
-
-      {/* row 3 — panel toggles + zoom + text size (from App) */}
-      {children && (
-        <div className="flex flex-wrap items-center gap-1 text-[10px] text-term-dim">
-          {children}
-        </div>
-      )}
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
     </div>
   );
