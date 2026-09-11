@@ -348,6 +348,11 @@ export const api = {
   legRuleDel: (id: string) =>
     j<{ rules: any[] }>(`/api/leg-rules/${id}`, { method: "DELETE" }),
   legRulesClear: () => j<{ rules: any[] }>("/api/leg-rules/clear", { method: "POST" }),
+  legRuleAttach: (body: Record<string, unknown>) =>
+    j<{ rule: any; rules: any[] }>("/api/leg-rules/attach", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   orderModeGet: () =>
     j<{ mode: "paper" | "live"; brokerAuthed: boolean }>("/api/order/mode"),

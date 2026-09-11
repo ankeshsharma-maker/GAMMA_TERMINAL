@@ -84,6 +84,59 @@ def add_rule(d: dict) -> dict:
     return row
 
 
+def attach_to_position(d: dict) -> dict:
+    """Bracket an *already-open* position (manually 1-clicked, scalped, or
+    opened outside AutoBot/leg_rules entirely) with SL / trail / target.
+    Skips the "wait for a trigger price" phase `add_rule` uses -- this rule
+    starts directly in `active`, anchored to the position's real entry
+    price, so `tick()` manages the exit exactly like a normal leg rule from
+    the very next poll."""
+    rows = _load()
+
+    def _f(k):
+        v = d.get(k)
+        try:
+            return float(v) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    entry_px = _f("entryPx")
+    if entry_px is None:
+        raise ValueError("entryPx is required")
+    sl, target, trail = _f("sl"), _f("target"), _f("trail")
+    if sl is None and target is None and trail is None:
+        raise ValueError("set at least one of sl / target / trail")
+
+    row = {
+        "id": uuid.uuid4().hex[:12],
+        "createdAt": time.time(),
+        "symbol": str(d["symbol"]).upper(),
+        "expiry": d["expiry"],
+        "strike": float(d["strike"]),
+        "optionType": str(d["optionType"]).upper(),
+        "side": str(d.get("side") or "BUY").upper(),
+        "lots": max(1, int(d.get("lots") or 1)),
+        "mode": d.get("mode") or "live",
+        "product": d.get("product") or "NRML",
+        "triggerPx": entry_px,
+        "triggerDir": "gte",
+        "sl": sl,
+        "target": target,
+        "trail": trail,
+        "unit": d.get("unit") or "pts",
+        "note": (d.get("note") or "position bracket").strip()[:80],
+        "status": "active",
+        "entryPx": entry_px,
+        "peakPx": entry_px,
+        "exitPx": None,
+        "exitReason": None,
+        "log": [{"ts": time.time(), "msg": f"bracket attached @ entry {entry_px:.2f}"}],
+    }
+    rows.append(row)
+    _save(rows)
+    return row
+
+
 def cancel(rid: str) -> list[dict]:
     rows = _load()
     for r in rows:

@@ -733,6 +733,61 @@ def leg_rules_add(body: dict):
     return {"rule": row, "rules": leg_rules.list_rules()}
 
 
+@router.post("/leg-rules/attach")
+def leg_rules_attach(body: dict):
+    """Bracket an already-open broker position (manual 1-click / scalp /
+    anything not opened by AutoBot or a leg rule) with SL / trail / target.
+    Takes the position's own tsym + PositionBook fields, same shape the
+    Positions panel already has on hand -- no separate lookup needed."""
+    from .brokers.flattrade import parse_noren_tsym
+    from . import leg_rules
+
+    tsym = body.get("tsym")
+    parsed = parse_noren_tsym(tsym) if tsym else None
+    if not parsed:
+        raise HTTPException(status_code=422, detail="tsym missing or not a recognised option symbol")
+    if body.get("entryPx") in (None, ""):
+        raise HTTPException(status_code=422, detail="entryPx is required")
+    if not any(body.get(k) not in (None, "") for k in ("sl", "target", "trail")):
+        raise HTTPException(status_code=422, detail="set a stop-loss, target or trail")
+    try:
+        net_qty = float(body.get("netqty") or 0)
+    except (TypeError, ValueError):
+        net_qty = 0.0
+    if not net_qty:
+        raise HTTPException(status_code=422, detail="netqty is required (position must be open)")
+    # lot size comes from our own authoritative lookup, never the client --
+    # get this wrong and the eventual auto square-off order is sized wrong.
+    from .leg_rules import _lot_size as _authoritative_lot_size
+
+    lot_sz = _authoritative_lot_size(store, parsed["symbol"])
+    lots = max(1, round(abs(net_qty) / lot_sz))
+    if abs(lots * lot_sz - abs(net_qty)) > 0.01:
+        raise HTTPException(
+            status_code=422,
+            detail=f"position qty {net_qty:.0f} isn't a whole multiple of the "
+                   f"{parsed['symbol']} lot size ({lot_sz}) -- refusing to guess the lot count",
+        )
+    payload = {
+        **parsed,
+        "side": "BUY" if net_qty > 0 else "SELL",
+        "lots": lots,
+        "mode": "live",
+        "product": body.get("prd") or "NRML",
+        "entryPx": body.get("entryPx"),
+        "sl": body.get("sl"),
+        "target": body.get("target"),
+        "trail": body.get("trail"),
+        "unit": body.get("unit") or "pts",
+        "note": "position bracket",
+    }
+    try:
+        row = leg_rules.attach_to_position(payload)
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"rule": row, "rules": leg_rules.list_rules()}
+
+
 @router.delete("/leg-rules/{rid}")
 def leg_rules_del(rid: str):
     from . import leg_rules

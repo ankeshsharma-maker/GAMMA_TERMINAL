@@ -5,6 +5,7 @@ import { nf, signColor, hhmm, sk } from "../lib/format";
 import { StopEditor } from "./StopEditor";
 import { useLiveMtm } from "../lib/useLiveMtm";
 import { useIsMobile } from "../lib/useIsMobile";
+import { LegBracketBadge, findBracket, type LegRule } from "./LegBracketBadge";
 
 type Tab = "broker" | "holdings" | "orders";
 const TABS: [Tab, string][] = [
@@ -54,6 +55,11 @@ function BrokerTab() {
   const [tgtAmt, setTgtAmt] = useState("");
   const [bBasis, setBBasis] = useState<"today" | "mtm">("today");
 
+  // per-position target/SL brackets (leg rules attached to an already-open position)
+  const [legRules, setLegRules] = useState<LegRule[]>([]);
+  const loadLegRules = () =>
+    api.legRules().then((d) => setLegRules((d.rules || []) as LegRule[]), () => {});
+
   useEffect(() => {
     if (!broker?.authed) return;
     let alive = true;
@@ -63,6 +69,7 @@ function BrokerTab() {
         (e) => alive && setErr(String(e.message || e))
       );
       api.brokerBracket().then((b) => alive && setBracket(b), () => {});
+      loadLegRules();
     };
     loadRef.current = load;
     load();
@@ -355,6 +362,16 @@ function BrokerTab() {
                   LTP <span className="text-term-text">{nf(n(r.lp), 2)}</span>
                 </span>
               </div>
+
+              {!!qty && (
+                <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+                  <LegBracketBadge
+                    r={r}
+                    bracket={findBracket(r, legRules)}
+                    onChanged={loadLegRules}
+                  />
+                </div>
+              )}
 
               <div
                 className="mt-1.5 flex items-center gap-1.5"
