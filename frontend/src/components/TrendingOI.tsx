@@ -208,11 +208,18 @@ function TrendingOILive() {
     let key = -1;
     for (const p of pts) {
       const k = Math.floor(p.t / w);
+      // stamp every bucket with its own aligned boundary time, not the raw
+      // snapshot's own timestamp -- the in-progress (latest) bucket gets a
+      // new snapshot every ~15s poll, and without this its .t (and so its
+      // React key below) would drift on every refresh, forcing React to
+      // tear down and recreate that row's DOM node instead of patching it
+      // in place. That churn is what showed up as a "ghost" row flashing
+      // near the sticky header.
       if (k !== key) {
-        buckets.push(p);
+        buckets.push({ ...p, t: k * w });
         key = k;
       } else {
-        buckets[buckets.length - 1] = p;
+        buckets[buckets.length - 1] = { ...p, t: k * w };
       }
     }
     const out: {
