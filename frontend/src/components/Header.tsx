@@ -243,14 +243,14 @@ export function HeaderIndices({ max = 12 }: { max?: number } = {}) {
             className="flex shrink-0 items-baseline gap-1.5 rounded border border-term-border bg-term-bg/60 px-2 py-1"
             title={sym}
           >
-            <span className="text-[10px] font-semibold uppercase text-term-dim">
+            <span className="text-sm font-semibold uppercase text-term-dim">
               {HDR_LABEL[sym] ?? sym}
             </span>
             <span className="num text-sm font-semibold">
               {spot != null ? px(spot, spot < 100 ? 2 : 0) : "–"}
             </span>
             <span
-              className={`num text-xs ${
+              className={`num text-sm ${
                 pts == null && pct == null
                   ? "invisible"
                   : (pct ?? pts ?? 0) >= 0
@@ -811,8 +811,8 @@ export function Header({ children }: { children?: ReactNode }) {
         )}
         <ViewToggle />
         <ClassFilter />
-        <OrderModePill />
         <div className="ml-auto flex items-center gap-2">
+          <OrderModePill />
           <BrokerPill />
           <AlertBell />
           <button
