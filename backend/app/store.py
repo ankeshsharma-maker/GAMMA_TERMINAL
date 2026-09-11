@@ -751,6 +751,12 @@ class Store:
     def add_alert(self, alert: dict) -> None:
         with _lock:
             self.alerts.appendleft(alert)
+        try:
+            from .alert_delivery import deliver
+
+            deliver(alert)
+        except Exception:  # noqa: BLE001
+            pass
 
     def get_alerts(self, limit: int = 100) -> list[dict]:
         with _lock:

@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "../store";
+import { api } from "../lib/api";
 import { lockNow } from "../lib/auth";
 import { FontScale } from "./FontScale";
 import { SelectMenu } from "./SelectMenu";
@@ -56,6 +57,185 @@ const SEG =
   "rounded border px-2 py-1 text-2xs font-semibold transition-colors";
 const on = "border-term-accent bg-term-accent/15 text-term-text";
 const off = "border-term-border text-term-dim hover:text-term-text";
+
+/** Webhook / Telegram delivery for fired alerts -- everything that already
+ *  lands in the in-app Alerts feed (broker-bracket hits, leg-rule fills, OI
+ *  watches, unusual Greeks, schedules) goes out here too once enabled,
+ *  no per-source setup needed. */
+function AlertDeliverySection() {
+  const [enabled, setEnabled] = useState(false);
+  const [minSeverity, setMinSeverity] = useState<"info" | "warning" | "critical">("warning");
+  const [webhookSet, setWebhookSet] = useState(false);
+  const [telegramSet, setTelegramSet] = useState(false);
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [botToken, setBotToken] = useState("");
+  const [chatId, setChatId] = useState("");
+  const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () =>
+    api.alertDeliveryGet().then((d) => {
+      setEnabled(d.enabled);
+      setMinSeverity(d.minSeverity);
+      setWebhookSet(d.webhookUrlSet);
+      setTelegramSet(d.telegramSet);
+    }, () => {});
+  useEffect(() => {
+    load();
+  }, []);
+
+  const save = async (patch: Record<string, unknown>) => {
+    setBusy(true);
+    try {
+      const d = await api.alertDeliverySet(patch);
+      setEnabled(d.enabled);
+      setWebhookSet(d.webhookUrlSet);
+      setTelegramSet(d.telegramSet);
+    } catch (e: any) {
+      setTestMsg(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const test = async () => {
+    setTestMsg(null);
+    setBusy(true);
+    try {
+      const d = await api.alertDeliveryTest();
+      setTestMsg(
+        `Sent to ${[d.webhook && "webhook", d.telegram && "Telegram"].filter(Boolean).join(" + ")}`
+      );
+    } catch (e: any) {
+      setTestMsg(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clear = async (field: "webhookUrl" | "telegramBotToken" | "telegramChatId") => {
+    const d = await api.alertDeliveryClear(field);
+    setWebhookSet(d.webhookUrlSet);
+    setTelegramSet(d.telegramSet);
+  };
+
+  return (
+    <Section title="Alert delivery">
+      <Row label="Send alerts out" hint="Webhook and/or Telegram, on top of the in-app feed">
+        <button
+          onClick={() => save({ enabled: !enabled })}
+          className={`h-4 w-8 shrink-0 rounded-full transition-colors ${enabled ? "bg-up" : "bg-term-border"} relative`}
+        >
+          <span
+            className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${enabled ? "left-4" : "left-0.5"}`}
+          />
+        </button>
+      </Row>
+      <Row label="Minimum severity">
+        {(["info", "warning", "critical"] as const).map((s) => (
+          <button
+            key={s}
+            onClick={() => {
+              setMinSeverity(s);
+              save({ minSeverity: s });
+            }}
+            className={`${SEG} ${minSeverity === s ? on : off}`}
+          >
+            {s}
+          </button>
+        ))}
+      </Row>
+
+      <div className="flex flex-col gap-1">
+        <div className="text-xs text-term-text">Webhook URL</div>
+        {webhookSet ? (
+          <div className="flex items-center gap-1.5">
+            <span className="flex-1 truncate rounded border border-term-border bg-term-bg px-2 py-1 text-2xs text-term-dim">
+              configured — ●●●●●●●●
+            </span>
+            <button onClick={() => clear("webhookUrl")} className={`${SEG} ${off}`}>
+              Remove
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <input
+              value={webhookUrl}
+              onChange={(e) => setWebhookUrl(e.target.value)}
+              placeholder="https://your-endpoint.example.com/hook"
+              className="w-full min-w-0 flex-1 rounded border border-term-border bg-term-bg px-2 py-1 text-2xs text-term-text outline-none focus:border-term-accent"
+            />
+            <button
+              disabled={!webhookUrl.trim() || busy}
+              onClick={() => {
+                save({ webhookUrl });
+                setWebhookUrl("");
+              }}
+              className={`${SEG} ${off} disabled:opacity-40`}
+            >
+              Save
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <div className="text-xs text-term-text">Telegram bot</div>
+        <div className="text-[10px] leading-snug text-term-dim">
+          Message <span className="text-term-text">@BotFather</span> on Telegram → /newbot for a
+          token; message your new bot once, then open{" "}
+          <span className="text-term-text">api.telegram.org/bot&lt;token&gt;/getUpdates</span> to
+          find your chat id.
+        </div>
+        {telegramSet ? (
+          <div className="flex items-center gap-1.5">
+            <span className="flex-1 truncate rounded border border-term-border bg-term-bg px-2 py-1 text-2xs text-term-dim">
+              configured — ●●●●●●●●
+            </span>
+            <button onClick={() => clear("telegramBotToken")} className={`${SEG} ${off}`}>
+              Remove
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            <input
+              value={botToken}
+              onChange={(e) => setBotToken(e.target.value)}
+              placeholder="bot token (from @BotFather)"
+              className="w-full rounded border border-term-border bg-term-bg px-2 py-1 text-2xs text-term-text outline-none focus:border-term-accent"
+            />
+            <div className="flex items-center gap-1.5">
+              <input
+                value={chatId}
+                onChange={(e) => setChatId(e.target.value)}
+                placeholder="chat id"
+                className="w-full min-w-0 flex-1 rounded border border-term-border bg-term-bg px-2 py-1 text-2xs text-term-text outline-none focus:border-term-accent"
+              />
+              <button
+                disabled={!botToken.trim() || !chatId.trim() || busy}
+                onClick={() => {
+                  save({ telegramBotToken: botToken, telegramChatId: chatId });
+                  setBotToken("");
+                  setChatId("");
+                }}
+                className={`${SEG} ${off} disabled:opacity-40`}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <Row label="Send a test alert">
+        <button disabled={busy || (!webhookSet && !telegramSet)} onClick={test} className={`${SEG} ${off} disabled:opacity-40`}>
+          {busy ? "…" : "Test"}
+        </button>
+      </Row>
+      {testMsg && <div className="text-[10px] text-term-dim">{testMsg}</div>}
+    </Section>
+  );
+}
 
 /** let a mounted Chart adopt a changed default immediately */
 const notifyPrefs = () => window.dispatchEvent(new Event("gt-prefs"));
@@ -295,6 +475,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
             />
           </Row>
         </Section>
+
+        <AlertDeliverySection />
 
         {/* ---- About ---- */}
         <Section title="About">

@@ -869,6 +869,41 @@ async def portfolio_greeks():
     return {"paper": paper, "live": live}
 
 
+# ---- alert delivery (webhook / Telegram) ----
+@router.get("/alert-delivery")
+def alert_delivery_get():
+    from . import alert_delivery
+
+    return alert_delivery.get_config()
+
+
+@router.post("/alert-delivery")
+def alert_delivery_set(body: dict):
+    from . import alert_delivery
+
+    return alert_delivery.set_config(body or {})
+
+
+@router.delete("/alert-delivery/{field}")
+def alert_delivery_clear(field: str):
+    from . import alert_delivery
+
+    try:
+        return alert_delivery.clear_field(field)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/alert-delivery/test")
+async def alert_delivery_test():
+    from . import alert_delivery
+
+    res = await alert_delivery.send_test()
+    if not res.get("ok"):
+        raise HTTPException(status_code=422, detail=res.get("error") or "nothing configured")
+    return res
+
+
 @router.delete("/leg-rules/{rid}")
 def leg_rules_del(rid: str):
     from . import leg_rules

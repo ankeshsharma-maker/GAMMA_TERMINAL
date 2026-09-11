@@ -369,6 +369,27 @@ export const api = {
       live: { delta: number; gamma: number; theta: number; vega: number; positions: number };
     }>("/api/portfolio-greeks"),
 
+  alertDeliveryGet: () =>
+    j<{
+      enabled: boolean;
+      minSeverity: "info" | "warning" | "critical";
+      webhookUrlSet: boolean;
+      telegramSet: boolean;
+    }>("/api/alert-delivery"),
+  alertDeliverySet: (body: Record<string, unknown>) =>
+    j<{ enabled: boolean; minSeverity: string; webhookUrlSet: boolean; telegramSet: boolean }>(
+      "/api/alert-delivery",
+      { method: "POST", body: JSON.stringify(body) }
+    ),
+  alertDeliveryClear: (field: "webhookUrl" | "telegramBotToken" | "telegramChatId") =>
+    j<{ webhookUrlSet: boolean; telegramSet: boolean }>(`/api/alert-delivery/${field}`, {
+      method: "DELETE",
+    }),
+  alertDeliveryTest: () =>
+    j<{ ok: boolean; webhook?: boolean; telegram?: boolean }>("/api/alert-delivery/test", {
+      method: "POST",
+    }),
+
   orderModeGet: () =>
     j<{ mode: "paper" | "live"; brokerAuthed: boolean }>("/api/order/mode"),
   orderModeSet: (mode: "paper" | "live") =>
