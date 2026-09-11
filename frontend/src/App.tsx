@@ -169,11 +169,7 @@ function DesktopShell() {
 
   return (
     <div className="relative flex h-full flex-col bg-term-bg text-term-text">
-      <Header />
-      <NotificationPanel />
-
-      {/* layout utility strip — thin, icon-first */}
-      <div className="flex items-center gap-1 border-b border-term-border bg-term-bg px-3 py-0.5 text-[10px] text-term-dim">
+      <Header>
         <button
           className={`btn px-2 py-0 ${hideLeft ? "" : "text-term-text"}`}
           onClick={() => setHideLeft((v) => !v)}
@@ -212,7 +208,8 @@ function DesktopShell() {
           Reset
         </button>
         <span className="ml-auto hidden text-term-dim/60 sm:inline">drag dividers to resize</span>
-      </div>
+      </Header>
+      <NotificationPanel />
 
       <div
         className="grid min-h-0 flex-1"

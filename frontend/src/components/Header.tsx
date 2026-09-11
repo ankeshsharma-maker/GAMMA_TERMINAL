@@ -780,7 +780,7 @@ function IvBadge() {
   );
 }
 
-export function Header() {
+export function Header({ children }: { children?: ReactNode }) {
   const chain = useStore((s) => s.chain);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [, force] = useState(0);
@@ -857,6 +857,13 @@ export function Header() {
       <MarginStats />
       <PnlStrip />
       </div>
+
+      {/* row 3 — panel toggles + zoom + text size (from App) */}
+      {children && (
+        <div className="flex flex-wrap items-center gap-1 text-[10px] text-term-dim">
+          {children}
+        </div>
+      )}
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
     </div>
   );
