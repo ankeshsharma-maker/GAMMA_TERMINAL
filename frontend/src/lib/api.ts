@@ -602,6 +602,16 @@ export const api = {
   brokerPositions: () => j<{ positions: any[] }>("/api/broker/positions"),
   brokerHoldings: () => j<{ holdings: any[] }>("/api/broker/holdings"),
   brokerOrders: () => j<{ orders: any[] }>("/api/broker/orders"),
+  brokerOrderCancel: (orderId: string) =>
+    j<{ ok: boolean }>(`/api/broker/orders/${orderId}/cancel`, { method: "POST" }),
+  brokerOrderModify: (
+    orderId: string,
+    body: { price?: number; qty?: number; priceType?: "LMT" | "MKT"; triggerPrice?: number }
+  ) =>
+    j<{ ok: boolean }>(`/api/broker/orders/${orderId}/modify`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   brokerSquareOff: (body: { tsym: string; exch?: string; qty: number; prd?: string }) =>
     j<{ ok: boolean; orderId?: string; raw?: any }>("/api/broker/square-off", {
       method: "POST",

@@ -514,6 +514,96 @@ function HoldingsTab() {
 }
 
 // ---------------- Orders ----------------
+/** Cancel / modify a still-resting (open) broker order in place. The
+ *  Flattrade order-book poll (every 5s in OrdersTab) picks up the result
+ *  on its own -- no separate reload plumbing needed here. */
+function OrderRowActions({ order }: { order: any }) {
+  const [open, setOpen] = useState(false);
+  const [price, setPrice] = useState(String(order.prc ?? ""));
+  const [qty, setQty] = useState(String(order.qty ?? ""));
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<"cancelled" | "modified" | null>(null);
+
+  const cancel = async () => {
+    if (!window.confirm(`Cancel order ${order.norenordno} — ${order.tsym}?`)) return;
+    setBusy(true);
+    try {
+      await api.brokerOrderCancel(order.norenordno);
+      setDone("cancelled");
+    } catch (e: any) {
+      alert(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const modify = async () => {
+    const p = price ? Number(price) : undefined;
+    const q = qty ? Number(qty) : undefined;
+    if (p == null && q == null) return alert("Change price or qty first");
+    setBusy(true);
+    try {
+      await api.brokerOrderModify(order.norenordno, { price: p, qty: q });
+      setDone("modified");
+      setOpen(false);
+    } catch (e: any) {
+      alert(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (done) return <span className="text-[10px] text-term-dim">{done}…</span>;
+
+  if (!open) {
+    return (
+      <span className="flex items-center gap-1">
+        <button
+          disabled={busy}
+          onClick={() => setOpen(true)}
+          className="rounded border border-term-border px-1.5 py-0.5 text-[10px] text-term-dim hover:text-term-text disabled:opacity-40"
+        >
+          Modify
+        </button>
+        <button
+          disabled={busy}
+          onClick={cancel}
+          className="rounded border border-down/50 px-1.5 py-0.5 text-[10px] text-down hover:bg-down/10 disabled:opacity-40"
+        >
+          {busy ? "…" : "Cancel"}
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <span className="flex items-center gap-1">
+      <input
+        value={price}
+        onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ""))}
+        placeholder="price"
+        className="num w-14 rounded border border-term-border bg-term-bg px-1 py-0.5 text-[10px] text-term-text outline-none focus:border-term-accent"
+      />
+      <input
+        value={qty}
+        onChange={(e) => setQty(e.target.value.replace(/[^\d]/g, ""))}
+        placeholder="qty"
+        className="num w-12 rounded border border-term-border bg-term-bg px-1 py-0.5 text-[10px] text-term-text outline-none focus:border-term-accent"
+      />
+      <button
+        disabled={busy}
+        onClick={modify}
+        className="rounded bg-term-accent px-1.5 py-0.5 text-[10px] font-semibold text-white disabled:opacity-40"
+      >
+        {busy ? "…" : "Update"}
+      </button>
+      <button onClick={() => setOpen(false)} className="px-1 text-[10px] text-term-dim hover:text-term-text">
+        ✕
+      </button>
+    </span>
+  );
+}
+
 export function OrdersTab() {
   const broker = useStore((s) => s.broker);
   const paper = useStore((s) => s.paper);
@@ -662,6 +752,7 @@ export function OrdersTab() {
                   <TH>Price</TH>
                   <TH>Status</TH>
                   <TH>Reason</TH>
+                  <TH>Action</TH>
                 </tr>
               </thead>
               <tbody>
@@ -675,6 +766,13 @@ export function OrdersTab() {
                     <TD cls="num">{nf(n(o.prc))}</TD>
                     <TD cls={stCls(o.status || "")}>{o.status}</TD>
                     <TD cls="text-[10px] text-term-dim">{o.rejreason || ""}</TD>
+                    <TD>
+                      {stBucket(o.status || "") === "open" && o.norenordno ? (
+                        <OrderRowActions order={o} />
+                      ) : (
+                        <span className="text-term-dim">—</span>
+                      )}
+                    </TD>
                   </tr>
                 ))}
               </tbody>

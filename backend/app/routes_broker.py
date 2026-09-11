@@ -365,6 +365,55 @@ async def orders():
         raise HTTPException(status_code=502, detail=str(exc))
 
 
+@router.post("/orders/{order_id}/cancel")
+async def cancel_order(order_id: str):
+    """Pull a resting (not yet filled) order."""
+    b = _require_auth()
+    try:
+        res = await b.cancel_order(order_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+    if isinstance(res, dict) and res.get("stat") != "Ok":
+        raise HTTPException(status_code=502, detail=res.get("emsg") or "cancel rejected")
+    store.log_live_order({
+        "mode": "live", "status": "CANCELLED", "orderId": order_id, "note": "order cancel",
+    })
+    return {"ok": True, "raw": res}
+
+
+@router.post("/orders/{order_id}/modify")
+async def modify_order(order_id: str, body: dict):
+    """Change price and/or qty on a resting order. Body: {price?, qty?,
+    priceType? (LMT/MKT), triggerPrice?} -- anything omitted keeps its
+    current value on the broker's side."""
+    b = _require_auth()
+    kw: dict = {}
+    if body.get("price") not in (None, ""):
+        kw["prc"] = str(body["price"])
+    if body.get("qty") not in (None, ""):
+        try:
+            kw["qty"] = str(int(body["qty"]))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="qty must be a whole number")
+    if body.get("priceType"):
+        kw["prctyp"] = "MKT" if body["priceType"] == "MKT" else "LMT"
+    if body.get("triggerPrice") not in (None, ""):
+        kw["trgprc"] = str(body["triggerPrice"])
+    if not kw:
+        raise HTTPException(status_code=422, detail="nothing to modify -- set price, qty, priceType or triggerPrice")
+    try:
+        res = await b.modify_order(order_id, **kw)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+    if isinstance(res, dict) and res.get("stat") != "Ok":
+        raise HTTPException(status_code=502, detail=res.get("emsg") or "modify rejected")
+    store.log_live_order({
+        "mode": "live", "status": "MODIFIED", "orderId": order_id,
+        "note": f"order modify {kw}",
+    })
+    return {"ok": True, "raw": res}
+
+
 @router.get("/holdings")
 async def holdings():
     b = _require_auth()
