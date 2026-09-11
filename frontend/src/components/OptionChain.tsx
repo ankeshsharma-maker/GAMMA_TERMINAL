@@ -323,7 +323,7 @@ function ActivityCell({
   );
 }
 
-export function OptionChain() {
+export function OptionChain({ paneNav }: { paneNav?: ReactNode } = {}) {
   const { chain, chainError } = useStore();
   const [tab, setTab] = useState<TabKey>("ltp");
   const [count, setCount] = useState<number>(20);
@@ -643,6 +643,7 @@ export function OptionChain() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
+        {paneNav ?? <span className="font-semibold uppercase tracking-wide">Option Chain</span>}
         <RefreshChainBtn />
         <div className="seg">
           {TABS.map((t) => (

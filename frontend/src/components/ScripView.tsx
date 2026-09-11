@@ -31,10 +31,11 @@ export function ScripView() {
     </div>
   );
 
-  // On the web portal the OI-pane switcher rides the OI Profile toolbar (one row
-  // saved). Keep the standalone bar for the other panes, on mobile, and while
-  // the chain is still loading (OIProfile shows only a spinner then, no toolbar).
-  const showOwnBar = isMobile || pane !== "oi" || !chain;
+  // On the web portal the pane switcher rides the OI Profile / Option Chain
+  // toolbar row (one row saved). Keep the standalone bar for History, on
+  // mobile, and while the chain is still loading (those panes show only a
+  // spinner then, no toolbar to ride on).
+  const showOwnBar = isMobile || pane === "history" || !chain;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -55,7 +56,7 @@ export function ScripView() {
       {pane === "chain" && (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <ExpiryTabs />
-          <OptionChain />
+          <OptionChain paneNav={isMobile ? undefined : paneSeg} />
         </div>
       )}
       {pane === "history" && (
