@@ -1802,7 +1802,7 @@ export function StrategyBuilder() {
                         <th className="border-b border-term-border px-2 py-1 text-right font-medium">
                           On expiry
                         </th>
-                        {(tDays > 0 || ivShift) && (
+                        {(tDays > 0 || ivShift !== 0) && (
                           <th className="border-b border-term-border px-2 py-1 text-right font-medium">
                             {tvColLabel}
                           </th>
@@ -1850,7 +1850,7 @@ export function StrategyBuilder() {
                           >
                             {pnlTxt(r.exp + manualPnl)}
                           </td>
-                          {(tDays > 0 || ivShift) && (
+                          {(tDays > 0 || ivShift !== 0) && (
                             <td
                               className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
                                 (r.tv ?? 0) + manualPnl
