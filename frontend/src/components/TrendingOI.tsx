@@ -527,7 +527,7 @@ function TrendingOILive() {
           the page. */}
       <div className="max-w-full overflow-x-auto p-2 lg:min-h-0 lg:flex-1 lg:overflow-auto">
         <table className="w-full min-w-[560px] border-separate border-spacing-0 border border-term-border text-2xs sm:min-w-[820px] [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
-          <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
+          <thead className="sticky top-0 z-10 isolate will-change-transform bg-term-panel text-[10px] uppercase text-term-dim">
             <tr>
               {[
                 "Time",
@@ -556,7 +556,7 @@ function TrendingOILive() {
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={i} className={i === 0 ? "bg-term-accent/[0.06]" : ""}>
+              <tr key={r.t} className={i === 0 ? "bg-term-accent/[0.06]" : ""}>
                 <td className="num px-2 py-1 text-term-dim">
                   {fmtTime(r.t)}
                 </td>
@@ -1071,7 +1071,7 @@ function TrendingOIClassic() {
       {intervals.length > 0 && (
         <div className="max-h-[34%] max-w-full shrink-0 overflow-auto border-t border-term-border p-2">
           <table className="w-full min-w-[480px] border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
-            <thead className="sticky top-0 bg-term-panel text-[10px] uppercase text-term-dim">
+            <thead className="sticky top-0 z-10 isolate will-change-transform bg-term-panel text-[10px] uppercase text-term-dim">
               <tr>
                 <th className="bg-term-panel px-3 py-1 text-left font-medium">
                   {daily ? "Date" : "Time"}
@@ -1087,7 +1087,7 @@ function TrendingOIClassic() {
               {intervals.map((r, i) => {
                 const putLed = r.dpe > r.dce;
                 return (
-                  <tr key={i}>
+                  <tr key={r.t}>
                     <td className="num px-3 py-1 text-term-dim">
                       {daily
                         ? new Date(r.t * 1000).toLocaleDateString("en-IN", {
