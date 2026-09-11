@@ -390,7 +390,19 @@ function BrokerTab() {
         })}
         {withPnl.length > 0 && (
           <div className="flex items-center justify-between bg-term-panel2 px-3 py-2 text-2xs font-semibold">
-            <span className="uppercase text-term-dim">Total</span>
+            <span className="flex items-center gap-1.5 uppercase text-term-dim">
+              Total
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  broker?.wsConnected ? "bg-up" : "bg-amber-500 animate-pulse"
+                }`}
+                title={
+                  broker?.wsConnected
+                    ? "Live tick feed connected — MTM re-marks on every tick"
+                    : "Live tick feed down — MTM is on the ~4s REST poll instead of tick-by-tick (Flattrade WS disconnected, e.g. another session using the same login)"
+                }
+              />
+            </span>
             <span className="num flex gap-3">
               <span className={signColor(totalMtm)}>MTM ₹{nf(totalMtm, 0)}</span>
               <span className={signColor(totalRealized)}>Rlz ₹{nf(totalRealized, 0)}</span>
