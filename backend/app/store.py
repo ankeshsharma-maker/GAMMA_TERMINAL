@@ -33,6 +33,7 @@ _PAPER_FILE = DATA_DIR / "paper.json"
 _SETTINGS_FILE = DATA_DIR / "settings.json"
 _HIST_DIR = DATA_DIR / "history"
 _HIST_DIR.mkdir(parents=True, exist_ok=True)
+_IVHIST_FILE = DATA_DIR / "iv_history.json"
 _lock = threading.RLock()
 
 
@@ -81,6 +82,8 @@ class Store:
         self.oi_series: dict[tuple, deque] = {}       # (symbol,expiry) -> deque[{t, oi:{strike:(ceOi,peOi)}}]
         self._hist_writes = 0
         self._load_history()
+        self._load_iv_history()
+        self._iv_hist_last_save = 0.0
         self.watchlists: dict = self._load_watchlists()
         self.paper: dict = _load(
             _PAPER_FILE, {"positions": [], "orders": [], "realized": 0.0}
@@ -243,6 +246,29 @@ class Store:
         dq = self.history.get(symbol)
         if dq:
             _save(_HIST_DIR / f"{symbol}.json", list(dq))
+
+    # ---- IV history (screener's IV Rank / Percentile) -----------------
+    # A single small file for every symbol at once (unlike the per-symbol
+    # OHLC history above, these deques are just floats and stay tiny even
+    # for the whole F&O universe). Without this, iv_history was in-memory
+    # only -- every backend restart silently reset every symbol's IV Rank
+    # back to "collecting history" with zero samples.
+    def _load_iv_history(self) -> None:
+        doc = _load(_IVHIST_FILE, {})
+        if not isinstance(doc, dict):
+            return
+        for sym, vals in doc.items():
+            if isinstance(vals, list) and vals:
+                self.iv_history[sym.upper()] = deque(
+                    vals[-SCREENER_IV_HISTORY_MAXLEN:], maxlen=SCREENER_IV_HISTORY_MAXLEN
+                )
+
+    def _persist_iv_history(self, *, force: bool = False) -> None:
+        now = time.time()
+        if not force and now - self._iv_hist_last_save < 30:
+            return
+        self._iv_hist_last_save = now
+        _save(_IVHIST_FILE, {sym: list(dq) for sym, dq in self.iv_history.items()})
 
     def _record_history(self, symbol: str, expiry: str, now: float, chain: dict) -> None:
         if self.nearest_expiry(symbol) not in (None, expiry):
@@ -690,6 +716,7 @@ class Store:
             )
             if atm_iv:
                 dq.append(atm_iv)
+                self._persist_iv_history()
             return list(dq)
 
     def set_universe_row(self, symbol: str, row: dict) -> None:
