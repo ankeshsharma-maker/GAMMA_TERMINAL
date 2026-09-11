@@ -87,7 +87,7 @@ function ViewToggle() {
         <button
           key={v}
           onClick={() => setView(v)}
-          className={`rounded border px-2 py-1 font-semibold uppercase tracking-wide transition-colors ${
+          className={`rounded border px-1.5 py-1 font-semibold uppercase tracking-normal transition-colors ${
             view === v
               ? "border-term-accent bg-term-accent text-white"
               : "border-term-border text-term-dim hover:bg-term-border hover:text-term-text"
@@ -225,7 +225,7 @@ export function HeaderIndices({ max = 12 }: { max?: number } = {}) {
   const lastSpot = useRef<Record<string, number>>({});
 
   return (
-    <div className="relative flex items-center gap-1.5">
+    <div className="relative flex items-center gap-1">
       {symbols.map((sym) => {
         const r = byBackend[sym];
         const w = wlChg[sym];
@@ -240,17 +240,21 @@ export function HeaderIndices({ max = 12 }: { max?: number } = {}) {
         return (
           <div
             key={sym}
-            className="flex shrink-0 items-baseline gap-1.5 rounded border border-term-border bg-term-bg/60 px-2 py-1"
-            title={sym}
+            className="flex shrink-0 items-baseline gap-1 rounded border border-term-border bg-term-bg/60 px-1.5 py-0.5"
+            title={
+              pts != null
+                ? `${sym} · ${pts >= 0 ? "+" : ""}${px(pts, Math.abs(pts) < 100 ? 2 : 0)} pts`
+                : sym
+            }
           >
-            <span className="text-sm font-semibold uppercase text-term-dim">
+            <span className="text-xs font-semibold uppercase text-term-dim">
               {HDR_LABEL[sym] ?? sym}
             </span>
-            <span className="num text-sm font-semibold">
+            <span className="num text-xs font-semibold">
               {spot != null ? px(spot, spot < 100 ? 2 : 0) : "–"}
             </span>
             <span
-              className={`num text-sm ${
+              className={`num text-xs ${
                 pts == null && pct == null
                   ? "invisible"
                   : (pct ?? pts ?? 0) >= 0
@@ -259,8 +263,11 @@ export function HeaderIndices({ max = 12 }: { max?: number } = {}) {
               }`}
             >
               {(pct ?? pts ?? 0) >= 0 ? "▲" : "▼"}
-              {pts != null ? px(Math.abs(pts), Math.abs(pts) < 100 ? 2 : 0) : "0"}
-              {pct != null ? ` (${px(Math.abs(pct), 2)}%)` : ""}
+              {pct != null
+                ? `${px(Math.abs(pct), 2)}%`
+                : pts != null
+                  ? px(Math.abs(pts), Math.abs(pts) < 100 ? 2 : 0)
+                  : "0"}
             </span>
           </div>
         );
@@ -371,7 +378,7 @@ export function ClassFilter() {
         <button
           key={v}
           onClick={() => setSymClass(v)}
-          className={`px-2 py-1 ${
+          className={`px-1.5 py-1 ${
             symClass === v ? "bg-term-accent text-white" : "bg-term-panel text-term-dim hover:bg-term-border"
           }`}
         >
@@ -704,13 +711,13 @@ export function OrderModePill() {
     <div className="flex overflow-hidden rounded border border-term-border text-2xs">
       <button
         onClick={() => setOrderMode("paper")}
-        className={`px-2 py-1 ${orderMode === "paper" ? "bg-term-accent text-white" : "text-term-dim hover:bg-term-border"}`}
+        className={`px-1.5 py-1 ${orderMode === "paper" ? "bg-term-accent text-white" : "text-term-dim hover:bg-term-border"}`}
       >
         PAPER
       </button>
       <button
         onClick={toLive}
-        className={`px-2 py-1 font-semibold ${orderMode === "live" ? "bg-down text-white" : "text-term-dim hover:bg-term-border"}`}
+        className={`px-1.5 py-1 font-semibold ${orderMode === "live" ? "bg-down text-white" : "text-term-dim hover:bg-term-border"}`}
       >
         LIVE
       </button>
@@ -795,12 +802,12 @@ export function Header({ children }: { children?: ReactNode }) {
 
   return (
     <div
-      className={`flex flex-col gap-1 border-b bg-term-panel px-4 py-1.5 ${
+      className={`flex flex-col gap-1 border-b bg-term-panel px-3 py-1 ${
         orderMode === "live" ? "border-down" : "border-term-border"
       }`}
     >
       {/* row 1 — logo, index ticker, view switch, filters, session pills */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
         <LogoWordmark />
         <HeaderIndices />
         {chain && (
@@ -811,20 +818,20 @@ export function Header({ children }: { children?: ReactNode }) {
         )}
         <ViewToggle />
         <ClassFilter />
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5">
           <OrderModePill />
           <BrokerPill />
           <AlertBell />
           <button
             onClick={() => setSettingsOpen(true)}
-            className="rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:text-term-text"
+            className="rounded border border-term-border px-1.5 py-1 text-2xs text-term-dim hover:text-term-text"
             title="Settings"
           >
             ⚙
           </button>
           <button
             onClick={lockNow}
-            className="rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:text-term-text"
+            className="rounded border border-term-border px-1.5 py-1 text-2xs text-term-dim hover:text-term-text"
             title="Lock the app — require the password / PIN again"
           >
             🔒
