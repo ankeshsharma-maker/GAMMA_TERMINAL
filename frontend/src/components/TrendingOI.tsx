@@ -375,7 +375,7 @@ function TrendingOILive() {
   ];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
+    <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto lg:overflow-y-hidden">
       {/* header */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-2 text-2xs">
         <span className="text-sm font-semibold">{symbol} Trending OI Live</span>

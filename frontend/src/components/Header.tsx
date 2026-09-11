@@ -263,11 +263,8 @@ export function HeaderIndices({ max = 12 }: { max?: number } = {}) {
               }`}
             >
               {(pct ?? pts ?? 0) >= 0 ? "▲" : "▼"}
-              {pct != null
-                ? `${px(Math.abs(pct), 2)}%`
-                : pts != null
-                  ? px(Math.abs(pts), Math.abs(pts) < 100 ? 2 : 0)
-                  : "0"}
+              {pts != null ? px(Math.abs(pts), Math.abs(pts) < 100 ? 2 : 0) : "0"}
+              {pct != null ? ` (${px(Math.abs(pct), 2)}%)` : ""}
             </span>
           </div>
         );
