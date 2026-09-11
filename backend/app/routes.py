@@ -817,6 +817,58 @@ def oi_alerts_del(rid: str):
     return {"rules": oi_alerts.cancel(rid)}
 
 
+# ---- portfolio-level Greeks (net across every open position) ----
+def _fnum(v) -> float:
+    try:
+        x = float(v)
+        return x if x == x else 0.0  # drop NaN
+    except (TypeError, ValueError):
+        return 0.0
+
+
+@router.get("/portfolio-greeks")
+async def portfolio_greeks():
+    from .oi_alerts import _leg as _chain_leg
+
+    def _empty() -> dict:
+        return {"delta": 0.0, "gamma": 0.0, "theta": 0.0, "vega": 0.0, "positions": 0}
+
+    def _accumulate(bucket: dict, symbol: str, expiry: str, strike: float, ot: str, qty: float) -> None:
+        if not qty:
+            return
+        leg = _chain_leg(store, symbol, expiry, strike, ot)
+        if not leg:
+            return
+        bucket["positions"] += 1
+        for k in ("delta", "gamma", "theta", "vega"):
+            bucket[k] += _fnum(leg.get(k)) * qty
+
+    paper = _empty()
+    for p in store.paper["positions"]:
+        _accumulate(paper, p["symbol"], p["expiry"], p["strike"], p["optionType"], _fnum(p.get("qty")))
+
+    live = _empty()
+    from .brokers import get_broker
+    from .brokers.flattrade import parse_noren_tsym
+
+    broker = get_broker()
+    if broker.configured and broker.authed:
+        try:
+            rows = await broker.positions()
+        except Exception:  # noqa: BLE001
+            rows = []
+        for r in rows or []:
+            netqty = _fnum(r.get("netqty"))
+            parsed = parse_noren_tsym(r.get("tsym") or "") if netqty else None
+            if parsed:
+                _accumulate(live, parsed["symbol"], parsed["expiry"], parsed["strike"], parsed["optionType"], netqty)
+
+    for bucket in (paper, live):
+        for k in ("delta", "gamma", "theta", "vega"):
+            bucket[k] = round(bucket[k], 4)
+    return {"paper": paper, "live": live}
+
+
 @router.delete("/leg-rules/{rid}")
 def leg_rules_del(rid: str):
     from . import leg_rules

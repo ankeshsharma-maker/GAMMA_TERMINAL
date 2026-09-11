@@ -60,6 +60,11 @@ function BrokerTab() {
   const loadLegRules = () =>
     api.legRules().then((d) => setLegRules((d.rules || []) as LegRule[]), () => {});
 
+  // portfolio-level net Greeks across every open live position
+  const [greeks, setGreeks] = useState<{ delta: number; gamma: number; theta: number; vega: number } | null>(
+    null
+  );
+
   useEffect(() => {
     if (!broker?.authed) return;
     let alive = true;
@@ -69,6 +74,7 @@ function BrokerTab() {
         (e) => alive && setErr(String(e.message || e))
       );
       api.brokerBracket().then((b) => alive && setBracket(b), () => {});
+      api.portfolioGreeks().then((d) => alive && setGreeks(d.live), () => {});
       loadLegRules();
     };
     loadRef.current = load;
@@ -424,6 +430,20 @@ function BrokerTab() {
               <span className={signColor(totalMtm)}>MTM ₹{nf(totalMtm, 0)}</span>
               <span className={signColor(totalRealized)}>Rlz ₹{nf(totalRealized, 0)}</span>
               <span className={signColor(totalToday)}>P&amp;L ₹{nf(totalToday, 0)}</span>
+            </span>
+          </div>
+        )}
+        {withPnl.length > 0 && greeks && (
+          <div
+            className="flex items-center justify-between bg-term-panel2 px-3 py-1.5 text-2xs"
+            title="Net Greeks summed across every open live position, from each leg's current per-unit Greek × its signed quantity"
+          >
+            <span className="uppercase text-term-dim">Net Greeks</span>
+            <span className="num flex gap-3">
+              <span className={signColor(greeks.delta)}>Δ {nf(greeks.delta, 1)}</span>
+              <span className={signColor(greeks.gamma)}>Γ {nf(greeks.gamma, 3)}</span>
+              <span className={signColor(greeks.theta)}>Θ {nf(greeks.theta, 1)}</span>
+              <span className={signColor(greeks.vega)}>V {nf(greeks.vega, 1)}</span>
             </span>
           </div>
         )}

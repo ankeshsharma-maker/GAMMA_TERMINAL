@@ -363,6 +363,12 @@ export const api = {
   oiAlertDel: (id: string) =>
     j<{ rules: any[] }>(`/api/oi-alerts/${id}`, { method: "DELETE" }),
 
+  portfolioGreeks: () =>
+    j<{
+      paper: { delta: number; gamma: number; theta: number; vega: number; positions: number };
+      live: { delta: number; gamma: number; theta: number; vega: number; positions: number };
+    }>("/api/portfolio-greeks"),
+
   orderModeGet: () =>
     j<{ mode: "paper" | "live"; brokerAuthed: boolean }>("/api/order/mode"),
   orderModeSet: (mode: "paper" | "live") =>
