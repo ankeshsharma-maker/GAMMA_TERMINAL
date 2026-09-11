@@ -803,16 +803,16 @@ export function Header() {
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <LogoWordmark />
         <HeaderIndices />
+        {chain && (
+          <span className="text-2xs text-term-dim">
+            NSE {chain.nseTimestamp?.split(" ")[1]?.slice(0, 5) ?? "–"} ·{" "}
+            <span className="inline-block w-[2.5rem]">{ago(chain.fetchedAt)}</span>
+          </span>
+        )}
         <ViewToggle />
         <ClassFilter />
         <OrderModePill />
         <div className="ml-auto flex items-center gap-3">
-          {chain && (
-            <span className="text-2xs text-term-dim">
-              NSE {chain.nseTimestamp?.split(" ")[1]?.slice(0, 5) ?? "–"} ·{" "}
-              <span className="inline-block w-[2.5rem]">{ago(chain.fetchedAt)}</span>
-            </span>
-          )}
           <UpstoxPill />
           <BrokerPill />
           <AlertBell />
