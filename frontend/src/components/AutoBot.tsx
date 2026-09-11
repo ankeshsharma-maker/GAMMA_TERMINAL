@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
+import { nf } from "../lib/format";
 import type { AutoCondition, AutoRule } from "../types";
 import { RuleBacktest } from "./RuleBacktest";
 import { SelectMenu } from "./SelectMenu";
@@ -9,8 +10,8 @@ import { SelectMenu } from "./SelectMenu";
 /* condition catalogue                                                 */
 /* ------------------------------------------------------------------ */
 type Field =
-  | { key: string; label: string; type: "num"; def: number }
-  | { key: string; label: string; type: "sel"; def: string; opts: string[] };
+  | { key: string; label: string; type: "num"; def: number; hint?: string }
+  | { key: string; label: string; type: "sel"; def: string; opts: string[]; hint?: string };
 
 type CondGroup = "indicator" | "oi" | "smart" | "trend" | "greeks";
 
@@ -269,6 +270,37 @@ const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field
       { key: "unit", label: "unit", type: "sel", def: "pts", opts: ["pts", "pct"] },
     ],
   },
+  prev_candle: {
+    label: "Previous candle (breakout)",
+    group: "trend",
+    fields: [
+      {
+        key: "lookback",
+        label: "candles back",
+        type: "num",
+        def: 1,
+        hint: "1 = the previous candle. >1 = a rolling window of that many closed candles.",
+      },
+      {
+        key: "field",
+        label: "field",
+        type: "sel",
+        def: "high",
+        opts: ["open", "high", "low", "close"],
+        hint:
+          "For >1 candles back: high/low = the window's highest-high / lowest-low; " +
+          "open/close = the oldest candle's open / the most recent closed candle's close.",
+      },
+      {
+        key: "op",
+        label: "op",
+        type: "sel",
+        def: "cross_up",
+        opts: [">", "<", "cross_up", "cross_down"],
+        hint: "Compares the current spot price against that reference.",
+      },
+    ],
+  },
   pivot: {
     label: "Pivot point (prev-day)",
     group: "trend",
@@ -405,7 +437,11 @@ function CondRow({
       </select>
 
       {def?.fields.map((f) => (
-        <label key={f.key} className="flex items-center gap-1 text-[10px] text-term-dim">
+        <label
+          key={f.key}
+          title={f.hint}
+          className="flex items-center gap-1 text-[10px] text-term-dim"
+        >
           {f.label}
           {f.type === "num" ? (
             <input
@@ -623,7 +659,7 @@ function RuleEditor({
             />
           </label>
           <span className="text-[9px] normal-case text-term-dim/70">
-            RSI / EMA / MACD / Supertrend / Candles / ATR evaluate on this timeframe
+            RSI / EMA / MACD / Supertrend / Candles / Prev-candle / ATR evaluate on this timeframe
           </span>
         </div>
         <CondList
@@ -992,6 +1028,14 @@ export function AutoBotView() {
 
           {rules.map((r) => {
             const open = r._state?.open;
+            // the live prev_candle readout reflects whichever condition list
+            // the engine just evaluated: exit while in a trade, entry while flat
+            const entryLiveIdx = !open
+              ? (r.entry ?? []).findIndex((c) => c.kind === "prev_candle")
+              : -1;
+            const exitLiveIdx = open
+              ? (r.exit ?? []).findIndex((c) => c.kind === "prev_candle")
+              : -1;
             return (
               <div
                 key={r.id}
@@ -1079,6 +1123,9 @@ export function AutoBotView() {
                       {(r.entry ?? []).map((c, i) => (
                         <li key={i} className="text-term-text">
                           • {describe(c)}
+                          {i === entryLiveIdx && r._live && (
+                            <span className="ml-1 text-term-accent">{fmtLive(r._live)}</span>
+                          )}
                         </li>
                       ))}
                       {(r.entry ?? []).length === 0 && <li className="text-term-dim">—</li>}
@@ -1106,6 +1153,9 @@ export function AutoBotView() {
                       {(r.exit ?? []).map((c, i) => (
                         <li key={i} className="text-term-text">
                           • {describe(c)}
+                          {i === exitLiveIdx && r._live && (
+                            <span className="ml-1 text-term-accent">{fmtLive(r._live)}</span>
+                          )}
                         </li>
                       ))}
                       {(r.exit ?? []).length === 0 && (
@@ -1253,7 +1303,25 @@ function describe(c: AutoCondition): string {
       return `Δdelta ${g("leg")} ${g("op")} ${g("value")} over ${g("bars")} bars`;
     case "gamma_change":
       return `Δgamma ${g("leg")} ${g("op")} ${g("value")} over ${g("bars")} bars`;
+    case "prev_candle": {
+      const n = Number(g("lookback")) || 1;
+      return `spot ${g("op")} prev ${n > 1 ? `${n}-candle ` : ""}${g("field")}`;
+    }
     default:
       return c.kind;
   }
+}
+
+/** "Prev high 24,530 (5m) · spot 24,545 (+15.0)" -- the live prev_candle
+ *  readout shown next to its condition on the rule card. */
+function fmtLive(live: NonNullable<AutoRule["_live"]>): string {
+  const tf = live.tf
+    ? live.tf < 3600
+      ? `${live.tf / 60}m`
+      : `${live.tf / 3600}h`
+    : "tick";
+  const diff = live.spot - live.ref;
+  return `— ${live.field} ${nf(live.ref, 2)} (${tf}) · spot ${nf(live.spot, 2)} (${
+    diff >= 0 ? "+" : ""
+  }${nf(diff, 1)})`;
 }

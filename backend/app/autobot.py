@@ -38,6 +38,19 @@ OI / chain:
     {"kind":"oi_change","leg":"call"|"put","action":"build"|"unwind","minOi":0}
     {"kind":"spot_vs_maxpain","op":"above"|"below","bufferPct":0}
     {"kind":"net_gex","op":"pos"|"neg"|"cross_up"|"cross_down"}
+
+Trend / price action (candles built from store.history on the rule's own
+``entryTf`` seconds, same candles the "candle"/"supertrend"/"atr" conditions
+already use):
+    {"kind":"prev_candle","lookback":1,"field":"open"|"high"|"low"|"close",
+     "op":">"|"<"|"cross_up"|"cross_down"}
+    # lookback=1 -> that one closed candle's O/H/L/C.
+    # lookback=N>1 -> a window of the last N closed candles: "high"/"low"
+    # become the window's highest-high / lowest-low (Donchian-style range),
+    # "open"/"close" are the oldest candle's open / newest candle's close.
+    # Classic use: spot crosses above the previous 5m candle's high (breakout).
+    # AutoBot.snapshot() exposes the live reference + spot as rule["_live"]
+    # for the first prev_candle condition in a rule's active (entry/exit) list.
 """
 from __future__ import annotations
 
@@ -522,6 +535,72 @@ class _Ctx:
             return (not bull) and upper / rng < 0.06 and lower / rng < 0.06
         return False
 
+    def _prev_candle_ref(self, c) -> tuple[float, float] | None:
+        """(reference price, current spot) for a prev_candle condition, or
+        None if there isn't enough candle history yet.
+
+        `lookback` N candles back, on this rule's own timeframe (self.tf):
+        N=1 -> that single closed candle's open/high/low/close.
+        N>1 -> a window of the last N closed candles; "high"/"low" become the
+        window's highest-high / lowest-low (Donchian-style range), "open" is
+        the oldest candle's open, "close" is the most-recently-closed candle's
+        close. The formulas below reduce to the N=1 case automatically."""
+        cs = self.candles
+        n = max(1, int(c.get("lookback", 1)))
+        if len(cs) < n + 2 or len(self.spot) < 2:
+            return None
+        window = cs[-1 - n : -1]  # last n CLOSED candles, oldest -> newest
+        if len(window) < n:
+            return None
+        field = str(c.get("field", "high")).lower()
+        if field == "open":
+            ref = window[0]["o"]
+        elif field == "close":
+            ref = window[-1]["c"]
+        elif field == "low":
+            ref = min(cd["l"] for cd in window)
+        else:
+            ref = max(cd["h"] for cd in window)
+        return float(ref), self.spot[-1]
+
+    def _prev_candle(self, c) -> bool:
+        """Current price vs. a previous candle (or N-candle range) on this
+        rule's candle timeframe -- classic breakout/breakdown condition."""
+        got = self._prev_candle_ref(c)
+        if got is None:
+            return False
+        ref, cur = got
+        prev = self.spot[-2]
+        op = c.get("op", "cross_up")
+        if op == ">":
+            return cur > ref
+        if op == "<":
+            return cur < ref
+        if op == "cross_up":
+            return prev <= ref < cur
+        if op == "cross_down":
+            return prev >= ref > cur
+        return False
+
+    def prev_candle_live(self, conds: list) -> dict | None:
+        """Live readout for the UI: the first prev_candle condition's current
+        reference price + spot, so a rule card can show what it's tracking."""
+        for c in conds or []:
+            if (c or {}).get("kind") != "prev_candle":
+                continue
+            got = self._prev_candle_ref(c)
+            if got is None:
+                return None
+            ref, cur = got
+            return {
+                "field": str(c.get("field", "high")).lower(),
+                "lookback": max(1, int(c.get("lookback", 1))),
+                "tf": self.tf,
+                "ref": round(ref, 2),
+                "spot": round(cur, 2),
+            }
+        return None
+
     def _day_ohlc(self, back: int = 1):
         """(high, low, close) of the session `back` days ago from spot snaps."""
         if not self.hist:
@@ -592,7 +671,7 @@ class _Ctx:
         "gamma_flip": _gamma_flip,
         "oi_state": _oi_state, "supertrend": _supertrend, "pivot": _pivot,
         "delta_change": _delta_change, "gamma_change": _gamma_change,
-        "candle": _candle, "atr": _atr,
+        "candle": _candle, "atr": _atr, "prev_candle": _prev_candle,
     }
 
     def eval_one(self, cond: dict) -> bool:
@@ -729,7 +808,7 @@ class AutoBot:
                 {**r, "_state": {
                     "open": self.state.get(r.get("id", ""), {}).get("open"),
                     "tradesToday": self.state.get(r.get("id", ""), {}).get("tradesToday", 0),
-                }}
+                }, "_live": self.state.get(r.get("id", ""), {}).get("live")}
                 for r in self.rules
             ],
             "log": list(self.log)[:100],
@@ -927,6 +1006,7 @@ class AutoBot:
                 else:
                     _tf = int(rule.get("entryTf") or 0)
                     cx = ctx_cache.get((sym, _tf)) or ctx_cache.setdefault((sym, _tf), _Ctx(sym, tf=_tf))
+                    st["live"] = cx.prev_candle_live(rule.get("exit", []))
                     if cx.eval_conds(rule.get("exit", []), rule.get("exitLogic", "any")):
                         reason = "exit signal"
                 if reason:
@@ -967,6 +1047,7 @@ class AutoBot:
             cx = ctx_cache.get((sym, _tf)) or ctx_cache.setdefault(
                 (sym, _tf), _Ctx(sym, tf=_tf)
             )
+            st["live"] = cx.prev_candle_live(rule.get("entry", []))
             if cx.n < 5 or not cx.eval_conds(rule.get("entry", []), rule.get("entryLogic", "all")):
                 continue
 

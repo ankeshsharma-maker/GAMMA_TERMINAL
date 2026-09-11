@@ -291,6 +291,15 @@ export interface AutoRule {
     };
     tradesToday: number;
   };
+  /** live readout for the first prev_candle condition in whichever
+   *  condition list (entry/exit) is currently active, or null/absent. */
+  _live?: {
+    field: "open" | "high" | "low" | "close";
+    lookback: number;
+    tf: number;
+    ref: number;
+    spot: number;
+  } | null;
 }
 
 export interface AutoLogEntry {
