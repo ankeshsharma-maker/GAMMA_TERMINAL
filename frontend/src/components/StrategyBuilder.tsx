@@ -653,7 +653,7 @@ export function StrategyBuilder() {
 
   // ---- Legs P&L tab: per-leg P&L at the (target price, target date) ----
   const legsEl = analysis && (
-    <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-0 lg:flex-1 lg:overflow-auto">
+    <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-[220px] lg:flex-1 lg:overflow-auto">
       <div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-term-dim">
         Legs P&amp;L @ {nf(tgtPrice, 0)} · {tLegLabel}
       </div>
@@ -711,7 +711,7 @@ export function StrategyBuilder() {
 
   // ---- Greeks tab: per-leg greeks at the (target price, target date) ----
   const greeksEl = analysis && (
-    <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-0 lg:flex-1 lg:overflow-auto">
+    <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-[220px] lg:flex-1 lg:overflow-auto">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
         <span className="text-2xs font-semibold uppercase tracking-wide text-term-dim">
           Greeks @ {nf(tgtPrice, 0)} · {tLegLabel}
@@ -1425,7 +1425,7 @@ export function StrategyBuilder() {
       </div>
 
       {/* ---- payoff / backtest ---- */}
-      <div className="flex min-h-0 flex-col lg:border-l lg:border-term-border">
+      <div className="flex min-h-0 flex-col overflow-y-auto lg:border-l lg:border-term-border">
         <div className="flex flex-wrap items-center gap-1 border-b border-term-border bg-term-panel2 px-2 py-1.5 text-2xs">
           {(
             [
@@ -1718,7 +1718,7 @@ export function StrategyBuilder() {
         )}
 
         {payoffTab === "chart" ? (
-          <div className="relative m-2 min-h-[320px] rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-0 lg:flex-1">
+          <div className="relative m-2 min-h-[320px] rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-[280px] lg:flex-1">
             {analysis && (
               <PayoffChart
                 x={analysis.x}
@@ -1743,7 +1743,7 @@ export function StrategyBuilder() {
             )}
           </div>
         ) : payoffTab === "table" ? (
-          <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-0 lg:flex-1 lg:overflow-auto">
+          <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-[220px] lg:flex-1 lg:overflow-auto">
             {analysis && (
               <div className="grid gap-5 lg:grid-cols-2">
                 {/* P&L by strike (ATM ± N from the chain ladder) */}
