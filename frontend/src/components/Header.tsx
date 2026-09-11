@@ -821,6 +821,7 @@ export function Header({ children }: { children?: ReactNode }) {
         <div className="ml-auto flex items-center gap-1.5">
           <OrderModePill />
           <BrokerPill />
+          <UpstoxPill />
           <AlertBell />
           <button
             onClick={() => setSettingsOpen(true)}
@@ -840,9 +841,8 @@ export function Header({ children }: { children?: ReactNode }) {
         </div>
       </div>
 
-      {/* row 2 — data source + chain stats + margin + P&L */}
+      {/* row 2 — chain stats + margin + P&L */}
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-      <UpstoxPill />
       {chain ? (
         <>
           <Stat label="ATM IV" value={chain.atmIV ? `${nf(chain.atmIV)}%` : "–"} />

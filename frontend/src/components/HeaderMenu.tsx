@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Children, cloneElement, isValidElement, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 /** One compact icon button in the header that opens a small portalled panel
@@ -41,6 +41,22 @@ export function HeaderMenu({
     };
   }, [open, width]);
 
+  // Wrap each row's own onClick so it runs first, then closes the menu —
+  // explicit composition instead of a capture-phase listener on the panel,
+  // so a row's action is never at the mercy of event-phase ordering.
+  const rows = Children.map(children, (child) => {
+    if (!isValidElement(child)) return child;
+    const el = child as ReactElement<{ onClick?: () => void }>;
+    if (typeof el.props.onClick !== "function") return child;
+    const orig = el.props.onClick;
+    return cloneElement(el, {
+      onClick: () => {
+        orig();
+        setOpen(false);
+      },
+    });
+  });
+
   return (
     <span className="relative inline-flex">
       <button
@@ -48,7 +64,7 @@ export function HeaderMenu({
         type="button"
         onClick={() => setOpen((o) => !o)}
         title={title}
-        className={`rounded border px-1.5 py-1 text-2xs ${
+        className={`rounded border px-2.5 py-1.5 text-xs ${
           open
             ? "border-term-accent/50 bg-term-accent/15 text-term-text"
             : "border-term-border text-term-dim hover:text-term-text"
@@ -63,9 +79,8 @@ export function HeaderMenu({
             <div
               className="fixed z-[200] flex flex-col gap-0.5 rounded-lg border border-term-border bg-term-panel p-1.5 text-2xs shadow-2xl"
               style={{ top: pos.top, left: pos.left, width }}
-              onClickCapture={() => setOpen(false)}
             >
-              {children}
+              {rows}
             </div>
           </>,
           document.body
