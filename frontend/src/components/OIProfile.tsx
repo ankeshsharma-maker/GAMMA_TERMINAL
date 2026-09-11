@@ -520,7 +520,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
               <div className="w-full pt-1">{content}</div>
               <div className="flex h-14 w-full items-center justify-center border-t border-term-border/60 bg-term-panel/40">
                 <div
-                  className={`num -rotate-90 whitespace-nowrap text-[10px] leading-none ${
+                  className={`num -rotate-90 whitespace-nowrap text-[9px] leading-none ${
                     isRes
                       ? "font-bold text-down"
                       : isFloor
