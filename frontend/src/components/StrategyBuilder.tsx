@@ -154,7 +154,9 @@ export function StrategyBuilder() {
   const [tgtVal, setTgtVal] = useState("");
   const [slTgtBasis, setSlTgtBasis] = useState<"amount" | "points">("amount");
   const [panel, setPanel] = useState<"payoff" | "backtest">("payoff");
-  const [payoffTab, setPayoffTab] = useState<"chart" | "table" | "legs" | "greeks">("chart");
+  const [payoffTab, setPayoffTab] = useState<"stats" | "chart" | "table" | "legs" | "greeks">(
+    "chart"
+  );
   const [strikeSpan, setStrikeSpan] = useState(10); // ATM ± N strikes in the P&L table
   const [dayPct, setDayPct] = useState(3); // ± move for the day-by-day P&L columns
   const [tableInterval, setTableInterval] = useState(0); // 0 = chain strikes; else ₹ step
@@ -1454,6 +1456,7 @@ export function StrategyBuilder() {
             <div className="ml-auto flex flex-wrap gap-1">
               {(
                 [
+                  ["stats", "Stats"],
                   ["chart", "Chart"],
                   ["table", "P&L table"],
                   ["legs", "Legs P&L"],
@@ -1493,93 +1496,11 @@ export function StrategyBuilder() {
           </div>
         ) : (
           <>
-        <div className="border-b border-term-border bg-term-panel">
-          {analysis ? (
-            <div className="overflow-x-auto">
-              <table className="grid-table text-xs">
-                <tbody>
-                  <tr className="border-b border-term-border/60">
-                    <StatCol
-                      label="Net Premium"
-                      value={`₹${nf(Math.abs(analysis.netPremium), 0)}`}
-                      cls={analysis.netPremiumType === "CREDIT" ? "text-up" : "text-down"}
-                    />
-                    <StatCol
-                      label="Total Profit (max)"
-                      value={
-                        analysis.maxProfitUnbounded
-                          ? "Unlimited"
-                          : `₹${nf(analysis.maxProfit + manualPnl, 0)}`
-                      }
-                      cls="text-up"
-                    />
-                    <StatCol
-                      label="Total Loss (max)"
-                      value={
-                        analysis.maxLossUnbounded
-                          ? "Unlimited"
-                          : `₹${nf(analysis.maxLoss + manualPnl, 0)}`
-                      }
-                      cls="text-down"
-                    />
-                    <StatCol
-                      label="Breakeven (% from spot)"
-                      value={
-                        analysis.breakevens
-                          .map(
-                            (b) =>
-                              `${nf(b, 0)} (${b >= analysis.spot ? "+" : ""}${nf(
-                                ((b - analysis.spot) / analysis.spot) * 100,
-                                1
-                              )}%)`
-                          )
-                          .join(" · ") || "–"
-                      }
-                    />
-                    <StatCol label="POP" value={analysis.pop != null ? `${nf(analysis.pop, 1)}%` : "–"} />
-                    <StatCol label="R : R" value={analysis.rr != null ? `1:${nf(analysis.rr, 2)}` : "–"} />
-                    <StatCol label="Margin est." value={`~₹${nf(analysis.margin.estimate, 0)}`} />
-                  </tr>
-                  <tr>
-                    <StatCol
-                      label="Δ Delta"
-                      value={nf(analysis.greeks.delta, 1)}
-                      cls={signColor(analysis.greeks.delta)}
-                    />
-                    <StatCol label="Γ Gamma" value={nf(analysis.greeks.gamma, 3)} />
-                    <StatCol
-                      label="Θ Theta / day"
-                      value={nf(analysis.greeks.theta, 0)}
-                      cls={signColor(analysis.greeks.theta)}
-                    />
-                    <StatCol
-                      label="V Vega"
-                      value={nf(analysis.greeks.vega, 0)}
-                      cls={signColor(analysis.greeks.vega)}
-                    />
-                    <StatCol
-                      label="Time value"
-                      value={posVal ? `₹${nf(posVal.timeValue, 0)}` : "–"}
-                      cls={posVal ? signColor(posVal.timeValue) : ""}
-                    />
-                    <StatCol
-                      label="Intrinsic value"
-                      value={posVal ? `₹${nf(posVal.intrinsic, 0)}` : "–"}
-                      cls={posVal ? signColor(posVal.intrinsic) : ""}
-                    />
-                    <StatCol label="Legs" value={legs.length} />
-                    <StatCol label="Spot" value={nf(analysis.spot, 1)} />
-                    <StatCol label="" value={busy ? "updating…" : ""} cls="text-term-dim" />
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="px-4 py-2 text-xs text-term-dim">
-              {err ? <span className="text-down">{err}</span> : "Pick a template or add legs to build a position."}
-            </div>
-          )}
-        </div>
+        {!analysis && (
+          <div className="border-b border-term-border bg-term-panel px-4 py-2 text-xs text-term-dim">
+            {err ? <span className="text-down">{err}</span> : "Pick a template or add legs to build a position."}
+          </div>
+        )}
 
         {analysis && (
           <div className="border-b border-term-border bg-term-panel px-3 py-1.5 text-[10px]">
@@ -1717,7 +1638,91 @@ export function StrategyBuilder() {
           </div>
         )}
 
-        {payoffTab === "chart" ? (
+        {payoffTab === "stats" ? (
+          <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-[220px] lg:flex-1 lg:overflow-auto">
+            {analysis && (
+              <div className="overflow-x-auto">
+                <table className="grid-table text-xs">
+                  <tbody>
+                    <tr className="border-b border-term-border/60">
+                      <StatCol
+                        label="Net Premium"
+                        value={`₹${nf(Math.abs(analysis.netPremium), 0)}`}
+                        cls={analysis.netPremiumType === "CREDIT" ? "text-up" : "text-down"}
+                      />
+                      <StatCol
+                        label="Total Profit (max)"
+                        value={
+                          analysis.maxProfitUnbounded
+                            ? "Unlimited"
+                            : `₹${nf(analysis.maxProfit + manualPnl, 0)}`
+                        }
+                        cls="text-up"
+                      />
+                      <StatCol
+                        label="Total Loss (max)"
+                        value={
+                          analysis.maxLossUnbounded
+                            ? "Unlimited"
+                            : `₹${nf(analysis.maxLoss + manualPnl, 0)}`
+                        }
+                        cls="text-down"
+                      />
+                      <StatCol
+                        label="Breakeven (% from spot)"
+                        value={
+                          analysis.breakevens
+                            .map(
+                              (b) =>
+                                `${nf(b, 0)} (${b >= analysis.spot ? "+" : ""}${nf(
+                                  ((b - analysis.spot) / analysis.spot) * 100,
+                                  1
+                                )}%)`
+                            )
+                            .join(" · ") || "–"
+                        }
+                      />
+                      <StatCol label="POP" value={analysis.pop != null ? `${nf(analysis.pop, 1)}%` : "–"} />
+                      <StatCol label="R : R" value={analysis.rr != null ? `1:${nf(analysis.rr, 2)}` : "–"} />
+                      <StatCol label="Margin est." value={`~₹${nf(analysis.margin.estimate, 0)}`} />
+                    </tr>
+                    <tr>
+                      <StatCol
+                        label="Δ Delta"
+                        value={nf(analysis.greeks.delta, 1)}
+                        cls={signColor(analysis.greeks.delta)}
+                      />
+                      <StatCol label="Γ Gamma" value={nf(analysis.greeks.gamma, 3)} />
+                      <StatCol
+                        label="Θ Theta / day"
+                        value={nf(analysis.greeks.theta, 0)}
+                        cls={signColor(analysis.greeks.theta)}
+                      />
+                      <StatCol
+                        label="V Vega"
+                        value={nf(analysis.greeks.vega, 0)}
+                        cls={signColor(analysis.greeks.vega)}
+                      />
+                      <StatCol
+                        label="Time value"
+                        value={posVal ? `₹${nf(posVal.timeValue, 0)}` : "–"}
+                        cls={posVal ? signColor(posVal.timeValue) : ""}
+                      />
+                      <StatCol
+                        label="Intrinsic value"
+                        value={posVal ? `₹${nf(posVal.intrinsic, 0)}` : "–"}
+                        cls={posVal ? signColor(posVal.intrinsic) : ""}
+                      />
+                      <StatCol label="Legs" value={legs.length} />
+                      <StatCol label="Spot" value={nf(analysis.spot, 1)} />
+                      <StatCol label="" value={busy ? "updating…" : ""} cls="text-term-dim" />
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : payoffTab === "chart" ? (
           <div className="relative m-2 min-h-[320px] rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-[280px] lg:flex-1">
             {analysis && (
               <PayoffChart
