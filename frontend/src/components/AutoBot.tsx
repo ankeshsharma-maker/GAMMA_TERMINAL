@@ -271,7 +271,7 @@ const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field
     ],
   },
   prev_candle: {
-    label: "Previous candle (breakout)",
+    label: "Candle breakout (current/previous)",
     group: "trend",
     fields: [
       {
@@ -279,7 +279,9 @@ const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field
         label: "candles back",
         type: "num",
         def: 1,
-        hint: "1 = the previous candle. >1 = a rolling window of that many closed candles.",
+        hint:
+          "0 = the current, still-forming candle. 1 = the previous (closed) candle. " +
+          ">1 = a rolling window of that many closed candles.",
       },
       {
         key: "field",
@@ -288,6 +290,8 @@ const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field
         def: "high",
         opts: ["open", "high", "low", "close"],
         hint:
+          "0 candles back: open/high/low are that candle's own (running) values -- " +
+          "close is just the current price, so it's not a useful choice at 0. " +
           "For >1 candles back: high/low = the window's highest-high / lowest-low; " +
           "open/close = the oldest candle's open / the most recent closed candle's close.",
       },
@@ -1304,8 +1308,10 @@ function describe(c: AutoCondition): string {
     case "gamma_change":
       return `Δgamma ${g("leg")} ${g("op")} ${g("value")} over ${g("bars")} bars`;
     case "prev_candle": {
-      const n = Number(g("lookback")) || 1;
-      return `spot ${g("op")} prev ${n > 1 ? `${n}-candle ` : ""}${g("field")}`;
+      const raw = g("lookback");
+      const n = Number.isFinite(Number(raw)) ? Number(raw) : 1;
+      const which = n === 0 ? "current" : n > 1 ? `prev ${n}-candle` : "prev";
+      return `spot ${g("op")} ${which} ${g("field")}`;
     }
     default:
       return c.kind;
@@ -1320,8 +1326,10 @@ function fmtLive(live: NonNullable<AutoRule["_live"]>): string {
       ? `${live.tf / 60}m`
       : `${live.tf / 3600}h`
     : "tick";
+  const which =
+    live.lookback === 0 ? "current" : live.lookback > 1 ? `prev ${live.lookback}-candle` : "prev";
   const diff = live.spot - live.ref;
-  return `— ${live.field} ${nf(live.ref, 2)} (${tf}) · spot ${nf(live.spot, 2)} (${
+  return `— ${which} ${live.field} ${nf(live.ref, 2)} (${tf}) · spot ${nf(live.spot, 2)} (${
     diff >= 0 ? "+" : ""
   }${nf(diff, 1)})`;
 }

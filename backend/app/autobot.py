@@ -42,9 +42,11 @@ OI / chain:
 Trend / price action (candles built from store.history on the rule's own
 ``entryTf`` seconds, same candles the "candle"/"supertrend"/"atr" conditions
 already use):
-    {"kind":"prev_candle","lookback":1,"field":"open"|"high"|"low"|"close",
+    {"kind":"prev_candle","lookback":0,"field":"open"|"high"|"low"|"close",
      "op":">"|"<"|"cross_up"|"cross_down"}
-    # lookback=1 -> that one closed candle's O/H/L/C.
+    # lookback=0 -> the CURRENT, still-forming candle: "open" is fixed for
+    # the candle's life, "high"/"low" are its running high/low so far.
+    # lookback=1 -> the previous CLOSED candle's O/H/L/C.
     # lookback=N>1 -> a window of the last N closed candles: "high"/"low"
     # become the window's highest-high / lowest-low (Donchian-style range),
     # "open"/"close" are the oldest candle's open / newest candle's close.
@@ -538,19 +540,36 @@ class _Ctx:
         None if there isn't enough candle history yet.
 
         `lookback` N candles back, on this rule's own timeframe (self.tf):
+        N=0 -> the CURRENT, still-forming candle: "open" is that candle's
+        (fixed) open, "high"/"low" are its running high/low so far, "close"
+        is just the current price (comparing spot to itself -- pick a
+        different field for a meaningful N=0 condition).
         N=1 -> that single closed candle's open/high/low/close.
         N>1 -> a window of the last N closed candles; "high"/"low" become the
         window's highest-high / lowest-low (Donchian-style range), "open" is
         the oldest candle's open, "close" is the most-recently-closed candle's
         close. The formulas below reduce to the N=1 case automatically."""
         cs = self.candles
-        n = max(1, int(c.get("lookback", 1)))
+        n = max(0, int(c.get("lookback", 1)))
+        field = str(c.get("field", "high")).lower()
+        if n == 0:
+            if not cs or len(self.spot) < 2:
+                return None
+            cur = cs[-1]
+            if field == "open":
+                ref = cur["o"]
+            elif field == "close":
+                ref = cur["c"]
+            elif field == "low":
+                ref = cur["l"]
+            else:
+                ref = cur["h"]
+            return float(ref), self.spot[-1]
         if len(cs) < n + 2 or len(self.spot) < 2:
             return None
         window = cs[-1 - n : -1]  # last n CLOSED candles, oldest -> newest
         if len(window) < n:
             return None
-        field = str(c.get("field", "high")).lower()
         if field == "open":
             ref = window[0]["o"]
         elif field == "close":
@@ -592,7 +611,7 @@ class _Ctx:
             ref, cur = got
             return {
                 "field": str(c.get("field", "high")).lower(),
-                "lookback": max(1, int(c.get("lookback", 1))),
+                "lookback": max(0, int(c.get("lookback", 1))),
                 "tf": self.tf,
                 "ref": round(ref, 2),
                 "spot": round(cur, 2),
