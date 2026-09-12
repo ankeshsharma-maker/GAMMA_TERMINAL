@@ -5,6 +5,12 @@ import { nf } from "../lib/format";
 import type { AutoRule } from "../types";
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
+/** "YYYY-MM-DD" -> "DD-MM-YYYY" for display; the API/date-math everywhere
+ *  else in this file keeps using ISO so string comparisons still sort right. */
+const ddmmyyyy = (d: string) => {
+  const [y, m, day] = d.split("-");
+  return `${day}-${m}-${y}`;
+};
 type Res = Awaited<ReturnType<typeof api.autobotBacktest>>;
 
 /** Backtest one AutoBot rule against Upstox daily history.
@@ -245,9 +251,9 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
                   {res.trades.map((t, i) => (
                     <tr key={i}>
                       <td className="num whitespace-nowrap py-0.5 text-term-dim">
-                        {t.entryDate}
+                        {ddmmyyyy(t.entryDate)}
                         {t.entryTime ? ` ${t.entryTime}` : ""}→
-                        {t.exitDate}
+                        {ddmmyyyy(t.exitDate)}
                         {t.exitTime ? ` ${t.exitTime}` : ""}
                       </td>
                       <td className="num py-0.5">
