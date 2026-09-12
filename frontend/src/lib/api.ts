@@ -549,6 +549,10 @@ export const api = {
       trades: {
         entryDate: string;
         exitDate: string;
+        /** "HH:MM" IST -- only present for intraday (interval<86400) runs;
+         *  daily-bar trades have no intraday time to show. */
+        entryTime?: string;
+        exitTime?: string;
         strike: number;
         ot: string;
         entryPx: number;

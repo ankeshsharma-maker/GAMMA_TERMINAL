@@ -243,7 +243,10 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
                   {res.trades.map((t, i) => (
                     <tr key={i}>
                       <td className="num py-0.5 text-term-dim">
-                        {t.entryDate.slice(5)}→{t.exitDate.slice(5)}
+                        {t.entryDate.slice(5)}
+                        {t.entryTime ? ` ${t.entryTime}` : ""}→
+                        {t.exitDate.slice(5)}
+                        {t.exitTime ? ` ${t.exitTime}` : ""}
                       </td>
                       <td className="num py-0.5">
                         {t.strike}

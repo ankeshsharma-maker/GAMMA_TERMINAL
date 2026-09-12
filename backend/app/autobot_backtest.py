@@ -444,6 +444,7 @@ async def _backtest_intraday(
                 spct = pts_move / ep * 100.0 if ep else 0.0
                 trades.append({
                     "entryDate": open_pos["d"], "exitDate": dkey, "strike": k, "ot": ot,
+                    "entryTime": open_pos["t"], "exitTime": clk.strftime("%H:%M"),
                     "side": side, "entryPx": round(ep, 2), "exitPx": round(px, 2),
                     "pnlPct": round(spct, 1),
                     "pnlRs": round(pts_move * qty, 0),
@@ -473,7 +474,10 @@ async def _backtest_intraday(
         ok, _ = _entry_filter_ok(rule.get("entryFilter") or {}, px, 0.5, 0.0, 0.0)
         if not ok:
             continue
-        open_pos = {"k": strike, "ot": ot, "entry": px, "d": dkey, "peak": 0.0, "i": i}
+        open_pos = {
+            "k": strike, "ot": ot, "entry": px, "d": dkey, "t": clk.strftime("%H:%M"),
+            "peak": 0.0, "i": i,
+        }
         day_count[dkey] = day_count.get(dkey, 0) + 1
 
     # a position opened on (or still held into) the very last bar never gets
@@ -488,6 +492,8 @@ async def _backtest_intraday(
         spct = pts_move / ep * 100.0 if ep else 0.0
         trades.append({
             "entryDate": open_pos["d"], "exitDate": _dstr(last["time"]), "strike": k, "ot": ot,
+            "entryTime": open_pos["t"],
+            "exitTime": datetime.fromtimestamp(last["time"], IST).strftime("%H:%M"),
             "side": side, "entryPx": round(ep, 2), "exitPx": round(px, 2),
             "pnlPct": round(spct, 1),
             "pnlRs": round(pts_move * qty, 0),
