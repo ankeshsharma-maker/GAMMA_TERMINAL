@@ -287,6 +287,24 @@ async def backtest_rule(
             continue
         open_pos = {"k": strike, "ot": ot, "entry": px, "date": d, "peak": 0.0, "i": i}
 
+    # a position opened on (or still held into) the very last day never gets
+    # a following iteration to trigger the "range end" exit inside the loop
+    # -- force-close it here so it isn't silently dropped from the results.
+    if open_pos:
+        k, ot, ep, edate, ei = (
+            open_pos["k"], open_pos["ot"], open_pos["entry"],
+            open_pos["date"], open_pos["i"],
+        )
+        d = dates[-1]
+        px = _premium(k, ot, d, by_date[d], len(dates) - 1 - ei)
+        spct = (px - ep) * sign / ep * 100.0 if ep else 0.0
+        pnl_rs = round((px - ep) * sign * int(rule.get("lots", 1)) * lot, 0)
+        trades.append({
+            "entryDate": edate, "exitDate": d, "strike": k, "ot": ot,
+            "side": side, "entryPx": round(ep, 2), "exitPx": round(px, 2),
+            "pnlPct": round(spct, 1), "pnlRs": pnl_rs, "reason": "range end",
+        })
+
     # 5. stats
     pnls = [t["pnlRs"] for t in trades]
     wins = [p for p in pnls if p > 0]
@@ -457,6 +475,24 @@ async def _backtest_intraday(
             continue
         open_pos = {"k": strike, "ot": ot, "entry": px, "d": dkey, "peak": 0.0, "i": i}
         day_count[dkey] = day_count.get(dkey, 0) + 1
+
+    # a position opened on (or still held into) the very last bar never gets
+    # a following iteration to trigger the "range end" exit inside the loop
+    # -- force-close it here so it isn't silently dropped from the results.
+    if open_pos:
+        k, ot, ep, ei = open_pos["k"], open_pos["ot"], open_pos["entry"], open_pos["i"]
+        last = series[-1]
+        held_days = (len(series) - 1 - ei) * interval / 86400.0
+        px = _syn_premium(ot, last["close"], k, held_days, syn_iv, syn_dte)
+        pts_move = (px - ep) * sign
+        spct = pts_move / ep * 100.0 if ep else 0.0
+        trades.append({
+            "entryDate": open_pos["d"], "exitDate": _dstr(last["time"]), "strike": k, "ot": ot,
+            "side": side, "entryPx": round(ep, 2), "exitPx": round(px, 2),
+            "pnlPct": round(spct, 1),
+            "pnlRs": round(pts_move * qty, 0),
+            "reason": "range end",
+        })
 
     pnls = [t["pnlRs"] for t in trades]
     wins = [p for p in pnls if p > 0]
