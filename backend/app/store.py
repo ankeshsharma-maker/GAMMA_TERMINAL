@@ -23,18 +23,14 @@ from .config import (
     SHORT_OPTION_MARGIN_PCT,
     SCREENER_IV_HISTORY_MAXLEN,
 )
+from . import db
 from .processing import build_chain, lot_size
 
-_WATCHLIST_FILE = DATA_DIR / "watchlist.json"
-_WATCHLISTS_FILE = DATA_DIR / "watchlists.json"
+_WATCHLIST_FILE = DATA_DIR / "watchlist.json"  # legacy pre-multi-list schema; read-only upgrade path
 _WL_DEFAULT = 3
 _WL_MAX = 8
-_PAPER_FILE = DATA_DIR / "paper.json"
-_SETTINGS_FILE = DATA_DIR / "settings.json"
 _HIST_DIR = DATA_DIR / "history"
 _HIST_DIR.mkdir(parents=True, exist_ok=True)
-_IVHIST_FILE = DATA_DIR / "iv_history.json"
-_JOURNAL_FILE = DATA_DIR / "journal.json"
 _JOURNAL_MAXLEN = 5000
 _lock = threading.RLock()
 
@@ -87,11 +83,11 @@ class Store:
         self._load_iv_history()
         self._iv_hist_last_save = 0.0
         self.watchlists: dict = self._load_watchlists()
-        self.paper: dict = _load(
-            _PAPER_FILE, {"positions": [], "orders": [], "realized": 0.0}
+        self.paper: dict = db.get_kv("paper") or {"positions": [], "orders": [], "realized": 0.0}
+        self.journal: deque = deque(
+            db.load_rows("journal", order="DESC")[:_JOURNAL_MAXLEN], maxlen=_JOURNAL_MAXLEN
         )
-        self.journal: deque = deque(_load(_JOURNAL_FILE, []), maxlen=_JOURNAL_MAXLEN)
-        self.settings: dict = _load(_SETTINGS_FILE, {"orderMode": "paper"})
+        self.settings: dict = db.get_kv("settings") or {"orderMode": "paper"}
         self.live_orders: deque = deque(maxlen=100)  # log of routed live orders
         self.broker_positions: list[dict] = []       # last raw PositionBook snapshot
         self.broker_positions_ts: float = 0.0
@@ -257,9 +253,7 @@ class Store:
     # only -- every backend restart silently reset every symbol's IV Rank
     # back to "collecting history" with zero samples.
     def _load_iv_history(self) -> None:
-        doc = _load(_IVHIST_FILE, {})
-        if not isinstance(doc, dict):
-            return
+        doc = db.get_kv("iv_history") or {}
         for sym, vals in doc.items():
             if isinstance(vals, list) and vals:
                 self.iv_history[sym.upper()] = deque(
@@ -271,7 +265,7 @@ class Store:
         if not force and now - self._iv_hist_last_save < 30:
             return
         self._iv_hist_last_save = now
-        _save(_IVHIST_FILE, {sym: list(dq) for sym, dq in self.iv_history.items()})
+        db.set_kv("iv_history", {sym: list(dq) for sym, dq in self.iv_history.items()})
 
     def _record_history(self, symbol: str, expiry: str, now: float, chain: dict) -> None:
         if self.nearest_expiry(symbol) not in (None, expiry):
@@ -483,7 +477,7 @@ class Store:
     def set_order_mode(self, mode: str) -> str:
         with _lock:
             self.settings["orderMode"] = "live" if mode == "live" else "paper"
-            _save(_SETTINGS_FILE, self.settings)
+            db.set_kv("settings", self.settings)
         return self.settings["orderMode"]
 
     # ---- market-data source ----------------------------------------
@@ -496,7 +490,7 @@ class Store:
     def set_data_source(self, src: str) -> str:
         with _lock:
             self.settings["dataSource"] = "upstox" if src == "upstox" else "nse"
-            _save(_SETTINGS_FILE, self.settings)
+            db.set_kv("settings", self.settings)
         return self.settings["dataSource"]
 
     def log_live_order(self, rec: dict) -> None:
@@ -775,7 +769,7 @@ class Store:
 
     # ---- watchlists (5 named lists) --------------------------------
     def _load_watchlists(self) -> dict:
-        data = _load(_WATCHLISTS_FILE, None)
+        data = db.get_kv("watchlists")
         if isinstance(data, dict) and isinstance(data.get("lists"), list) and data["lists"]:
             lists = [
                 {"name": str(l.get("name") or f"List {i + 1}"), "symbols": list(l.get("symbols") or [])}
@@ -794,7 +788,7 @@ class Store:
         return {"lists": lists, "active": active, "hiddenDefaults": hidden}
 
     def _save_watchlists(self) -> None:
-        _save(_WATCHLISTS_FILE, self.watchlists)
+        db.set_kv("watchlists", self.watchlists)
 
     def _wli(self, index) -> int:
         return min(max(int(index), 0), len(self.watchlists["lists"]) - 1)
@@ -1092,7 +1086,7 @@ class Store:
             }
             self.paper["orders"].insert(0, order)
             self._apply_fill(order)
-            _save(_PAPER_FILE, self.paper)
+            db.set_kv("paper", self.paper)
             return order
 
     def _apply_fill(self, order: dict) -> None:
@@ -1157,7 +1151,7 @@ class Store:
             "note": order.get("note", ""),
         }
         self.journal.appendleft(entry)
-        _save(_JOURNAL_FILE, list(self.journal))
+        db.save_row("journal", entry["id"], entry, ts=entry["closedTs"])
 
     def get_journal(self, limit: int = 200, symbol: str | None = None) -> list[dict]:
         with _lock:
@@ -1258,7 +1252,7 @@ class Store:
             if not anchor or anchor.get("date") != today:
                 anchor = {"date": today, "realized": realized}
                 self.paper["dayAnchor"] = anchor
-                _save(_PAPER_FILE, self.paper)
+                db.set_kv("paper", self.paper)
             today_realized = realized - anchor["realized"]
             today_pnl = today_realized + unrealized
 
@@ -1348,7 +1342,7 @@ class Store:
                 "peak": ltp,
                 "createdTs": time.time(),
             }
-            _save(_PAPER_FILE, self.paper)
+            db.set_kv("paper", self.paper)
             return self.paper_state()
 
     def clear_stop(self, position_id: str) -> dict:
@@ -1356,7 +1350,7 @@ class Store:
             for p in self.paper["positions"]:
                 if p["id"] == position_id:
                     p.pop("sl", None)
-            _save(_PAPER_FILE, self.paper)
+            db.set_kv("paper", self.paper)
             return self.paper_state()
 
     def check_stops(self) -> list[dict]:

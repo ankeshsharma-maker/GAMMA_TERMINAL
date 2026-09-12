@@ -5,16 +5,15 @@ read the broker PositionBook, add up the P&L, and if it breaches either
 threshold we flatten every open position with opposite-side MARKET orders,
 then disarm.  Runs server-side so it works even with the app closed.
 
-State: data/broker_bracket.json
+State: kv_store key "broker_bracket"
 """
 from __future__ import annotations
 
-import json
 import time
 
-from .config import DATA_DIR
+from . import db
 
-_FILE = DATA_DIR / "broker_bracket.json"
+_KV_KEY = "broker_bracket"
 
 _DEFAULT = {
     "enabled": False,
@@ -29,17 +28,11 @@ _DEFAULT = {
 
 
 def _load() -> dict:
-    try:
-        return {**_DEFAULT, **json.loads(_FILE.read_text())}
-    except Exception:  # noqa: BLE001
-        return dict(_DEFAULT)
+    return {**_DEFAULT, **(db.get_kv(_KV_KEY) or {})}
 
 
 def _save(cfg: dict) -> None:
-    try:
-        _FILE.write_text(json.dumps(cfg, indent=2))
-    except Exception:  # noqa: BLE001
-        pass
+    db.set_kv(_KV_KEY, cfg)
 
 
 def get() -> dict:

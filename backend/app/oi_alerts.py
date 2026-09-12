@@ -20,34 +20,24 @@ The poller calls `tick()` every loop. A fired rule goes through the normal
 `store.add_alert` feed -- the same "Alerts" tab everything else lands in, no
 separate UI needed to see it fire.
 
-State lives in data/oi_alerts.json.
+State lives in the "oi_alerts" table.
 """
 from __future__ import annotations
 
 import time
 import uuid
 
-from .config import DATA_DIR
+from . import db
 
-_FILE = DATA_DIR / "oi_alerts.json"
+_TABLE = "oi_alerts"
 
 
 def _load() -> list[dict]:
-    try:
-        import json
-
-        return json.loads(_FILE.read_text())
-    except Exception:  # noqa: BLE001
-        return []
+    return db.load_rows(_TABLE)
 
 
 def _save(rows: list[dict]) -> None:
-    try:
-        import json
-
-        _FILE.write_text(json.dumps(rows, indent=2))
-    except Exception:  # noqa: BLE001
-        pass
+    db.replace_all(_TABLE, rows, ts_key="createdAt")
 
 
 def list_rules() -> list[dict]:

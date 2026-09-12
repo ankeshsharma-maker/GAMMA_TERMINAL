@@ -6,16 +6,16 @@ not supplied. Everything is a heuristic aid, not broker-accurate (margin especia
 """
 from __future__ import annotations
 
-import json
 import math
 import time
 import uuid
 
-from .config import DATA_DIR, DIVIDEND_YIELD, RISK_FREE_RATE
+from . import db
+from .config import DIVIDEND_YIELD, RISK_FREE_RATE
 from .greeks import bs_price
 from .processing import year_fraction
 
-_FILE = DATA_DIR / "strategies.json"
+_TABLE = "saved_strategies"
 _SQRT2PI = math.sqrt(2 * math.pi)
 
 
@@ -537,14 +537,11 @@ def from_broker(positions: list[dict]) -> dict | None:
 # Persistence
 # --------------------------------------------------------------------------
 def _load() -> dict:
-    try:
-        return json.loads(_FILE.read_text("utf-8"))
-    except (FileNotFoundError, ValueError):
-        return {}
+    return {r["id"]: r for r in db.load_rows(_TABLE)}
 
 
 def _save(obj: dict) -> None:
-    _FILE.write_text(json.dumps(obj, indent=2, default=str), "utf-8")
+    db.replace_all(_TABLE, list(obj.values()), ts_key="savedAt")
 
 
 def list_saved() -> list[dict]:

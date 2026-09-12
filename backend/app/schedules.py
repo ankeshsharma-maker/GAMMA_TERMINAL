@@ -6,36 +6,29 @@ schedule's entry time it places the legs (paper or live, same path as the
 Execute button), and when it passes the exit time it squares them off.  With
 `repeat` the schedule re-arms for the next trading day.
 
-State lives in data/schedules.json so it survives a restart.
+State lives in the "schedules" table so it survives a restart.
 """
 from __future__ import annotations
 
-import json
 import time
 import uuid
 from datetime import datetime
 
-from .config import DATA_DIR
+from . import db
 from .processing import IST
 
-_FILE = DATA_DIR / "schedules.json"
+_TABLE = "schedules"
 
 _MKT_OPEN = "09:15"
 _MKT_CLOSE = "15:30"
 
 
 def _load() -> list[dict]:
-    try:
-        return json.loads(_FILE.read_text())
-    except Exception:  # noqa: BLE001
-        return []
+    return db.load_rows(_TABLE)
 
 
 def _save(rows: list[dict]) -> None:
-    try:
-        _FILE.write_text(json.dumps(rows, indent=2))
-    except Exception:  # noqa: BLE001
-        pass
+    db.replace_all(_TABLE, rows, ts_key="createdAt")
 
 
 def list_schedules() -> list[dict]:

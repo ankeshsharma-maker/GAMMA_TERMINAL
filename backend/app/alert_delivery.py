@@ -4,7 +4,7 @@ fills, OI watches, unusual Greeks activity, schedules -- anything that
 calls store.add_alert). Wired in at that single choke point, so every
 alert source gets delivery for free with no change to any of them.
 
-Config lives in data/alert_delivery.json:
+Config lives in the kv_store table (key "alert_delivery"), as one JSON blob:
     {
       "enabled": false,
       "webhookUrl": null,
@@ -17,16 +17,15 @@ Config lives in data/alert_delivery.json:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 
 import httpx
 
-from .config import DATA_DIR
+from . import db
 
 log = logging.getLogger("alert_delivery")
-_FILE = DATA_DIR / "alert_delivery.json"
+_KV_KEY = "alert_delivery"
 _SEV_ORDER = {"info": 0, "warning": 1, "critical": 2}
 _DEFAULT = {
     "enabled": False,
@@ -38,17 +37,11 @@ _DEFAULT = {
 
 
 def _load() -> dict:
-    try:
-        return {**_DEFAULT, **json.loads(_FILE.read_text())}
-    except Exception:  # noqa: BLE001
-        return dict(_DEFAULT)
+    return {**_DEFAULT, **(db.get_kv(_KV_KEY) or {})}
 
 
 def _save(cfg: dict) -> None:
-    try:
-        _FILE.write_text(json.dumps(cfg, indent=2))
-    except Exception:  # noqa: BLE001
-        pass
+    db.set_kv(_KV_KEY, cfg)
 
 
 def get_config() -> dict:

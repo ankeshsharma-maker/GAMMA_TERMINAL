@@ -60,14 +60,12 @@ from collections import deque
 from datetime import datetime, time as dtime
 from zoneinfo import ZoneInfo
 
-from .config import DATA_DIR
-from .store import _load, _save, store
+from . import db
+from .store import store
 
 log = logging.getLogger("autobot")
 IST = ZoneInfo("Asia/Kolkata")
 _MKT_OPEN, _MKT_CLOSE = dtime(9, 15), dtime(15, 30)
-_FILE = DATA_DIR / "autobot.json"
-_STATE_FILE = DATA_DIR / "autobot_state.json"
 
 
 def _in_market_hours(now: datetime | None = None) -> bool:
@@ -766,28 +764,26 @@ def _resolve_instrument(inst: str, atm: float, step: float) -> tuple[float, str]
 # --------------------------------------------------------------------------- #
 class AutoBot:
     def __init__(self) -> None:
-        doc = _load(_FILE, {})
+        doc = db.get_kv("autobot") or {}
         self.master: bool = bool(doc.get("master", False))
         self.max_loss_per_day: float = float(doc.get("maxLossPerDay", 0) or 0)
         self.rules: list[dict] = list(doc.get("rules", []))
-        self.state: dict[str, dict] = _load(_STATE_FILE, {}) or {}
-        self.log: deque = deque(
-            (_load(_STATE_FILE.with_name("autobot_log.json"), []) or [])[-200:], maxlen=200
-        )
+        self.state: dict[str, dict] = db.get_kv("autobot_state") or {}
+        self.log: deque = deque((db.get_kv("autobot_log") or [])[-200:], maxlen=200)
         self.daily_pnl: float = 0.0
         self._pnl_day: str = ""
 
     # -- persistence ------------------------------------------------------- #
     def _save_doc(self) -> None:
-        _save(_FILE, {
+        db.set_kv("autobot", {
             "master": self.master,
             "maxLossPerDay": self.max_loss_per_day,
             "rules": self.rules,
         })
 
     def _save_state(self) -> None:
-        _save(_STATE_FILE, self.state)
-        _save(_STATE_FILE.with_name("autobot_log.json"), list(self.log))
+        db.set_kv("autobot_state", self.state)
+        db.set_kv("autobot_log", list(self.log))
 
     def _emit(self, rule: dict, level: str, msg: str) -> None:
         rec = {

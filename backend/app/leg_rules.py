@@ -10,34 +10,27 @@ option chain, fires the entry via the same `_route_leg()` path the manual
 Buy/Sell buttons use, and once filled keeps checking SL / trail / target and
 squares the position off when one is hit.
 
-State lives in data/leg_rules.json so it survives a restart.
+State lives in the "leg_rules" table so it survives a restart.
 """
 from __future__ import annotations
 
-import json
 import time
 import uuid
 
-from .config import DATA_DIR
+from . import db
 from .processing import IST
 from datetime import datetime
 
-_FILE = DATA_DIR / "leg_rules.json"
+_TABLE = "leg_rules"
 _MKT_OPEN, _MKT_CLOSE = "09:15", "15:30"
 
 
 def _load() -> list[dict]:
-    try:
-        return json.loads(_FILE.read_text())
-    except Exception:  # noqa: BLE001
-        return []
+    return db.load_rows(_TABLE)
 
 
 def _save(rows: list[dict]) -> None:
-    try:
-        _FILE.write_text(json.dumps(rows, indent=2))
-    except Exception:  # noqa: BLE001
-        pass
+    db.replace_all(_TABLE, rows, ts_key="createdAt")
 
 
 def list_rules() -> list[dict]:
