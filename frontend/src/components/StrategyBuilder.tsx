@@ -1560,6 +1560,7 @@ export function StrategyBuilder() {
                       <StatCol label="POP" value={analysis.pop != null ? `${nf(analysis.pop, 1)}%` : "–"} />
                       <StatCol label="R : R" value={analysis.rr != null ? `1:${nf(analysis.rr, 2)}` : "–"} />
                       <StatCol label="Margin est." value={`~₹${nf(analysis.margin.estimate, 0)}`} />
+                      <StatCol label="Spot" value={nf(analysis.spot, 1)} />
                     </tr>
                     <tr>
                       <StatCol
@@ -1589,7 +1590,6 @@ export function StrategyBuilder() {
                         cls={posVal ? signColor(posVal.intrinsic) : ""}
                       />
                       <StatCol label="Legs" value={legs.length} />
-                      <StatCol label="Spot" value={nf(analysis.spot, 1)} />
                       <StatCol label="" value={busy ? "updating…" : ""} cls="text-term-dim" />
                     </tr>
                   </tbody>
@@ -1858,7 +1858,7 @@ export function StrategyBuilder() {
         )}
 
         {analysis && (
-          <div className="border-t border-term-border bg-term-panel px-3 py-1.5 text-[10px]">
+          <div className="m-2 mt-0 rounded border border-term-border bg-term-bg/20 p-3 text-[10px]">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <span className="font-semibold uppercase tracking-wide text-term-dim">
                 Time to expiry
