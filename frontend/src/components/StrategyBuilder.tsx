@@ -177,7 +177,7 @@ export function StrategyBuilder() {
     } catch {}
   }, [builderW]);
   const bumpBuilder = useCallback((dx: number) => setBuilderW((w) => clamp(w + dx, 260, 600)), []);
-  const [strikeSpan, setStrikeSpan] = useState(10); // ATM ± N strikes in the P&L table
+  const [strikeSpan, setStrikeSpan] = useState(5); // ATM ± N strikes in the P&L table
   const [tableInterval, setTableInterval] = useState(0); // 0 = chain strikes; else ₹ step
   const [showPct, setShowPct] = useState(true); // show the "Move %" column
   const [gMulLot, setGMulLot] = useState(true); // greeks × lot size
@@ -1631,7 +1631,7 @@ export function StrategyBuilder() {
                   </span>
                   <div className="flex flex-wrap items-center gap-1">
                     <div className="seg text-[10px]">
-                      {[10, 20, 30].map((n) => (
+                      {[5, 10, 15, 20].map((n) => (
                         <button
                           key={n}
                           onClick={() => setStrikeSpan(n)}
