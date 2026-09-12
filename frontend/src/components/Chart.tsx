@@ -1062,6 +1062,7 @@ export function Chart() {
               onChange={(k) => setPickStrike(Number(k))}
               title="Strike to chart"
               width={100}
+              highlightValue={chain?.atmStrike}
             />
             <button
               onClick={() => chartLeg("CE")}

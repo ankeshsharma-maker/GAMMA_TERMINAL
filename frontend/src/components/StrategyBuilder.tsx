@@ -912,6 +912,7 @@ export function StrategyBuilder() {
                     onChange={(k) => setLeg(i, { strike: Number(k) })}
                     title="Strike"
                     width={110}
+                    highlightValue={atm}
                   />
                 )}
                 <button
@@ -1030,6 +1031,7 @@ export function StrategyBuilder() {
                       onChange={(k) => setNewLegStrike(Number(k))}
                       title="Strike"
                       width={110}
+                      highlightValue={atm}
                     />
                   </label>
                 )}

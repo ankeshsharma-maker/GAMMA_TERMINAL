@@ -174,6 +174,7 @@ export function RuleOrder({
               onChange={(s) => setK(Number(s))}
               title="Strike"
               width={120}
+              highlightValue={atm}
             />
             <button
               className="btn px-2 py-0.5"

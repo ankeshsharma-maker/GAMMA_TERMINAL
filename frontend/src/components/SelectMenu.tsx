@@ -12,6 +12,7 @@ export function SelectMenu<T extends string | number>({
   title,
   align = "left",
   width = 130,
+  highlightValue,
 }: {
   value: T | undefined | null;
   options: readonly (readonly [string, T])[];
@@ -19,10 +20,13 @@ export function SelectMenu<T extends string | number>({
   title?: string;
   align?: "left" | "right";
   width?: number;
+  /** option to scroll into view and mark (e.g. the ATM strike) whenever the menu opens. */
+  highlightValue?: T | null;
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const highlightRef = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const cur =
     options.find(([, v]) => v === value)?.[0] ?? (value == null ? "" : String(value));
@@ -54,6 +58,16 @@ export function SelectMenu<T extends string | number>({
     };
   }, [open, align, width]);
 
+  // bring the highlighted option (e.g. ATM) into view by default instead of
+  // opening at the top of a long list
+  useLayoutEffect(() => {
+    if (!open || highlightValue == null) return;
+    const id = requestAnimationFrame(() => {
+      highlightRef.current?.scrollIntoView({ block: "center" });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [open, highlightValue]);
+
   return (
     <span className="relative inline-flex">
       <button
@@ -81,24 +95,30 @@ export function SelectMenu<T extends string | number>({
               className="fixed z-[200] max-h-[60vh] overflow-y-auto rounded-lg border border-term-border bg-term-panel p-1 text-2xs shadow-2xl"
               style={{ top: pos.top, left: pos.left, width }}
             >
-              {options.map(([lbl, v]) => (
-                <button
-                  key={String(v)}
-                  type="button"
-                  onClick={() => {
-                    onChange(v);
-                    setOpen(false);
-                  }}
-                  className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left ${
-                    v === value
-                      ? "bg-term-accent/15 text-term-text"
-                      : "text-term-dim hover:bg-term-border hover:text-term-text"
-                  }`}
-                >
-                  <span>{lbl}</span>
-                  {v === value && <span className="text-term-accent">✓</span>}
-                </button>
-              ))}
+              {options.map(([lbl, v]) => {
+                const isHighlight = highlightValue != null && v === highlightValue;
+                return (
+                  <button
+                    key={String(v)}
+                    ref={isHighlight ? highlightRef : undefined}
+                    type="button"
+                    onClick={() => {
+                      onChange(v);
+                      setOpen(false);
+                    }}
+                    className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left ${
+                      v === value
+                        ? "bg-term-accent/15 text-term-text"
+                        : isHighlight
+                        ? "bg-amber-500/10 text-term-text"
+                        : "text-term-dim hover:bg-term-border hover:text-term-text"
+                    }`}
+                  >
+                    <span>{lbl}</span>
+                    {v === value && <span className="text-term-accent">✓</span>}
+                  </button>
+                );
+              })}
             </div>
           </>,
           document.body

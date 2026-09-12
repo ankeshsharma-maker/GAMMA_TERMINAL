@@ -279,6 +279,7 @@ export function ScalpPanel() {
               onChange={(k) => { setPick(Number(k)); setSideHint(null); }}
               title="Strike"
               width={110}
+              highlightValue={atm}
             />
             <button
               className="btn px-2 py-0.5"
