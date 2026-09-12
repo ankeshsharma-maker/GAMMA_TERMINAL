@@ -229,7 +229,7 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
           </div>
           <div className="mt-1.5">{curve}</div>
           {res.trades.length > 0 && (
-            <div className="mt-1.5 max-h-40 overflow-y-auto">
+            <div className="mt-1.5 max-h-40 overflow-x-auto overflow-y-auto">
               <table className="grid-table">
                 <thead className="text-term-dim">
                   <tr>
@@ -244,10 +244,10 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
                 <tbody>
                   {res.trades.map((t, i) => (
                     <tr key={i}>
-                      <td className="num py-0.5 text-term-dim">
-                        {t.entryDate.slice(5)}
+                      <td className="num whitespace-nowrap py-0.5 text-term-dim">
+                        {t.entryDate}
                         {t.entryTime ? ` ${t.entryTime}` : ""}→
-                        {t.exitDate.slice(5)}
+                        {t.exitDate}
                         {t.exitTime ? ` ${t.exitTime}` : ""}
                       </td>
                       <td className="num py-0.5">
