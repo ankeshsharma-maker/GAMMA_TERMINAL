@@ -398,6 +398,7 @@ async def _backtest_intraday(
     tp = _f(rule.get("targetPct")) if rule.get("targetPct") not in (None, "") else None
     trl = _f(rule.get("trailPct") or 0)
     trl_arm = _f(rule.get("trailArmPct") or 0)
+    positional = str(rule.get("holdType", "intraday")).lower() == "positional"
     max_pd = int(rule.get("maxTradesPerDay", 3) or 3)
     cd_bars = max(0, math.ceil(_f(rule.get("cooldownMin") or 0) * 60 / interval))
     sq = _parse_hhmm(rule.get("squareOff"))
@@ -438,7 +439,7 @@ async def _backtest_intraday(
                 reason = f"trail ({open_pos['peak']:.0f}{unit}\u2192{fav:.0f}{unit})"
             elif exit_conds and ctx.eval_conds(exit_conds, rule.get("exitLogic", "any")):
                 reason = "exit signal"
-            elif sq and clk >= sq:
+            elif not positional and sq and clk >= sq:
                 reason = "square-off"
             elif i == len(series) - 1:
                 reason = "range end"

@@ -234,6 +234,14 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
                 indicators only
               </span>
             )}
+            {res.interval == null && (rule.holdType ?? "intraday") !== "positional" && (
+              <span
+                className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] text-amber-400"
+                title="Daily-bar backtests only see one price per day, so there's no way to simulate a same-day square-off — a trade can span multiple days here even though this rule is Intraday. Switch the timeframe above off 1D to test same-day behavior faithfully."
+              >
+                daily bars ignore square-off
+              </span>
+            )}
           </div>
           <div className="mt-1.5">{curve}</div>
           {res.trades.length > 0 && (
