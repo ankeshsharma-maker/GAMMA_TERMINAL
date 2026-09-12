@@ -305,6 +305,25 @@ const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field
       },
     ],
   },
+  gap: {
+    label: "Gap vs previous close",
+    group: "trend",
+    fields: [
+      {
+        key: "op",
+        label: "op",
+        type: "sel",
+        def: ">",
+        opts: [">", "<"],
+        hint:
+          "> = gap up: this candle's open is above the previous candle's close. " +
+          "< = gap down: open is below the previous close. Relative to this rule's " +
+          "own candle timeframe above, not necessarily the calendar day -- pick a " +
+          "long timeframe for a daily-style gap. Fixed once the candle opens, so " +
+          "there's no cross_up/cross_down here.",
+      },
+    ],
+  },
   pivot: {
     label: "Pivot point (prev-day)",
     group: "trend",
@@ -1313,6 +1332,8 @@ function describe(c: AutoCondition): string {
       const which = n === 0 ? "current" : n > 1 ? `prev ${n}-candle` : "prev";
       return `spot ${g("op")} ${which} ${g("field")}`;
     }
+    case "gap":
+      return `candle open ${g("op")} prev close (gap ${g("op") === "<" ? "down" : "up"})`;
     default:
       return c.kind;
   }

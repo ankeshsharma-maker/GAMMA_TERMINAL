@@ -53,6 +53,13 @@ already use):
     # Classic use: spot crosses above the previous 5m candle's high (breakout).
     # AutoBot.snapshot() exposes the live reference + spot as rule["_live"]
     # for the first prev_candle condition in a rule's active (entry/exit) list.
+    {"kind":"gap","op":">"|"<"}
+    # Gap check: this rule's CURRENT (forming) candle's open vs. the
+    # previous CLOSED candle's close -- e.g. "today's open above
+    # yesterday's close", but relative to entryTf, not the calendar day
+    # (pick a long entryTf for a daily-style gap). op ">" = gap up,
+    # "<" = gap down. Both endpoints are fixed once the candle opens, so
+    # unlike prev_candle there's no live-spot crossing / no cross_up/down.
 """
 from __future__ import annotations
 
@@ -599,6 +606,22 @@ class _Ctx:
             return prev >= ref > cur
         return False
 
+    def _gap(self, c) -> bool:
+        """This rule's current (forming) candle's open vs. the previous
+        CLOSED candle's close -- gap-up/gap-down. Fixed for the life of the
+        candle (both endpoints are static once it opens)."""
+        cs = self.candles
+        if len(cs) < 2:
+            return False
+        prev_close = cs[-2]["c"]
+        cur_open = cs[-1]["o"]
+        op = c.get("op", ">")
+        if op == ">":
+            return cur_open > prev_close
+        if op == "<":
+            return cur_open < prev_close
+        return False
+
     def prev_candle_live(self, conds: list) -> dict | None:
         """Live readout for the UI: the first prev_candle condition's current
         reference price + spot, so a rule card can show what it's tracking."""
@@ -688,7 +711,7 @@ class _Ctx:
         "gamma_flip": _gamma_flip,
         "oi_state": _oi_state, "supertrend": _supertrend, "pivot": _pivot,
         "delta_change": _delta_change, "gamma_change": _gamma_change,
-        "candle": _candle, "atr": _atr, "prev_candle": _prev_candle,
+        "candle": _candle, "atr": _atr, "prev_candle": _prev_candle, "gap": _gap,
     }
 
     def eval_one(self, cond: dict) -> bool:
