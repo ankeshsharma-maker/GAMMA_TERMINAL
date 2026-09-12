@@ -5,6 +5,7 @@ const PRESETS: [string, number][] = [
   ["7D", 7],
   ["15D", 15],
   ["1M", 30],
+  ["1Y", 365],
 ];
 
 /** Quick "last N days" chips that set a from/to date range. */

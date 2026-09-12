@@ -415,6 +415,7 @@ function blankRule(symbol: string): Partial<AutoRule> {
     lots: 1,
     product: "NRML",
     mode: "paper",
+    holdType: "intraday",
     entry: [mkCond("rsi")],
     exit: [],
     entryTf: 300,
@@ -771,6 +772,19 @@ function RuleEditor({
             width={90}
           />
         </label>
+        <label
+          className="flex flex-col text-[10px] text-term-dim"
+          title="Intraday = force-exit at square-off time / market close, same as always. Positional = ignore square-off and market close, hold across day boundaries until SL/target/an exit condition fires (or KILL)."
+        >
+          hold
+          <SelectMenu
+            value={r.holdType ?? "intraday"}
+            options={[["Intraday", "intraday"], ["Positional", "positional"]] as const}
+            onChange={(v) => set({ holdType: v as "intraday" | "positional" })}
+            title="Hold type"
+            width={100}
+          />
+        </label>
         <label className="flex flex-col text-[10px] text-term-dim">
           mode
           <SelectMenu
@@ -847,13 +861,17 @@ function RuleEditor({
             className="num w-16 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
           />
         </label>
-        <label className="flex flex-col text-[10px] text-term-dim">
+        <label
+          className="flex flex-col text-[10px] text-term-dim"
+          title={r.holdType === "positional" ? "Ignored while hold=Positional." : undefined}
+        >
           square-off
           <input
             value={r.squareOff ?? "15:20"}
             onChange={(e) => set({ squareOff: e.target.value })}
             placeholder="15:20"
-            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
+            disabled={r.holdType === "positional"}
+            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text disabled:opacity-40"
           />
         </label>
         <label className="flex flex-col text-[10px] text-term-dim" title="Earliest clock time an entry may fire (IST). Blank = from market open.">
@@ -1178,7 +1196,8 @@ export function AutoBotView() {
                                 r.trailArmPct ? `@+${r.trailArmPct}${u}` : ""
                               }`
                             : ""}
-                          {r.beArmPct ? ` · BE@+${r.beArmPct}${u}` : ""} · sq {r.squareOff}
+                          {r.beArmPct ? ` · BE@+${r.beArmPct}${u}` : ""}{" "}
+                          · {r.holdType === "positional" ? "positional" : `sq ${r.squareOff}`}
                           {r.noEntryBefore ? ` · from ${r.noEntryBefore}` : ""}
                         </span>
                       );

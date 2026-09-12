@@ -14,15 +14,24 @@ poller after ``store.check_stops``).  Every rule is a small JSON document:
       "lots": 1,
       "product": "NRML",            # NRML | MIS
       "mode": "paper",              # paper | live  (live also needs global LIVE + broker)
+      "holdType": "intraday",       # intraday (default) | positional
       "entry": [ {condition}, ... ], # ALL must be true to enter
       "exit":  [ {condition}, ... ], # ANY true -> exit
       "slPct": 30,                   # stop-loss % on option premium (signed by side)
       "targetPct": 60,              # take-profit % on option premium
       "maxTradesPerDay": 3,
       "cooldownMin": 5,
-      "squareOff": "15:20",         # force flat at/after this IST time
+      "squareOff": "15:20",         # force flat at/after this IST time (intraday only)
       "noEntryAfter": "15:00"       # optional: no new entries at/after this time
     }
+
+holdType "positional" skips the squareOff / market-close forced exit --
+the position rides across day boundaries until SL/target/an exit
+condition fires (or the KILL switch), same as a manual carry-forward
+trade. SL/target/exit conditions still apply every tick regardless of
+market hours, so risk stays bounded; only the automatic same-day
+square-off is what positional opts out of. "intraday" (default) is
+byte-for-byte the old behaviour.
 
 Condition kinds
 ---------------
@@ -969,8 +978,9 @@ class AutoBot:
                 continue
             st = self.state.setdefault(rid, {})
             if st.get("day") != day:
+                still_open = st.get("open")  # a positional trade can span days
                 st.clear()
-                st.update({"day": day, "tradesToday": 0, "open": None, "lastExitTs": 0})
+                st.update({"day": day, "tradesToday": 0, "open": still_open, "lastExitTs": 0})
 
             pos = st.get("open")
 
@@ -1042,8 +1052,9 @@ class AutoBot:
                     pos["stopPx"] = new_stop
                     changed = True
 
+                positional = str(rule.get("holdType", "intraday")).lower() == "positional"
                 reason = None
-                sq = _parse_hhmm(rule.get("squareOff"))
+                sq = None if positional else _parse_hhmm(rule.get("squareOff"))
                 stop_hit = stop_px is not None and (ltp <= stop_px if buy else ltp >= stop_px)
                 tp_v = rule.get("targetPct")
                 tp_hit = (
@@ -1059,7 +1070,7 @@ class AutoBot:
                     )
                 elif tp_hit:
                     reason = f"target {tp_v}{unit}"
-                elif not open_mkt or (sq and now.time() >= sq):
+                elif not positional and (not open_mkt or (sq and now.time() >= sq)):
                     reason = "square-off"
                 else:
                     _tf = int(rule.get("entryTf") or 0)

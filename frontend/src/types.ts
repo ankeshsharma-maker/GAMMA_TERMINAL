@@ -246,6 +246,10 @@ export interface AutoRule {
   lots: number;
   product: "NRML" | "MIS";
   mode: "paper" | "live";
+  /** intraday (default) = force-exit at squareOff / market close, same as
+   *  before. positional = ignore squareOff and market close, ride the
+   *  position across day boundaries until SL/target/an exit condition. */
+  holdType?: "intraday" | "positional";
   entry: AutoCondition[];
   exit: AutoCondition[];
   entryLogic?: "all" | "any";
