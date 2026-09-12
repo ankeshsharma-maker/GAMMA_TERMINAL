@@ -22,6 +22,7 @@ export function SelectMenu<T extends string | number>({
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const cur =
     options.find(([, v]) => v === value)?.[0] ?? (value == null ? "" : String(value));
@@ -38,7 +39,13 @@ export function SelectMenu<T extends string | number>({
       });
     };
     place();
-    const close = () => setOpen(false);
+    // scroll doesn't bubble, but a capture-phase listener on window still fires
+    // for a scroll inside the list itself -- ignore those, only close when
+    // something outside the list (e.g. a parent panel) scrolls under it.
+    const close = (e: Event) => {
+      if (listRef.current && e.target instanceof Node && listRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
     window.addEventListener("scroll", close, true);
     window.addEventListener("resize", close);
     return () => {
@@ -70,6 +77,7 @@ export function SelectMenu<T extends string | number>({
           <>
             <div className="fixed inset-0 z-[199]" onClick={() => setOpen(false)} />
             <div
+              ref={listRef}
               className="fixed z-[200] max-h-[60vh] overflow-y-auto rounded-lg border border-term-border bg-term-panel p-1 text-2xs shadow-2xl"
               style={{ top: pos.top, left: pos.left, width }}
             >
