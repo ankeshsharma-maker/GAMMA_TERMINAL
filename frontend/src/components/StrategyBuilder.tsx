@@ -50,11 +50,21 @@ function AdvNum({
 }
 
 /** one column of the strategy-details table: label on top, value below, bordered */
-function StatCol({ label, value, cls = "" }: { label: string; value: React.ReactNode; cls?: string }) {
+function StatCol({
+  label,
+  value,
+  cls = "",
+  title,
+}: {
+  label: string;
+  value: React.ReactNode;
+  cls?: string;
+  title?: string;
+}) {
   return (
-    <td className="border-r border-term-border/60 px-3 py-1.5 text-left last:border-r-0">
+    <td className="border-r border-term-border/60 px-3 py-1.5 text-left last:border-r-0" title={title}>
       <div className="text-[9px] uppercase tracking-wide text-term-dim">{label}</div>
-      <div className={`num text-sm font-semibold ${cls}`}>{value}</div>
+      <div className={`num whitespace-nowrap text-sm font-semibold ${cls}`}>{value}</div>
     </td>
   );
 }
@@ -1533,17 +1543,18 @@ export function StrategyBuilder() {
                         cls="text-down"
                       />
                       <StatCol
-                        label="Breakeven (% from spot)"
-                        value={
+                        label="Breakeven"
+                        value={analysis.breakevens.map((b) => nf(b, 0)).join(" · ") || "–"}
+                        title={
                           analysis.breakevens
                             .map(
                               (b) =>
                                 `${nf(b, 0)} (${b >= analysis.spot ? "+" : ""}${nf(
                                   ((b - analysis.spot) / analysis.spot) * 100,
                                   1
-                                )}%)`
+                                )}% from spot)`
                             )
-                            .join(" · ") || "–"
+                            .join(" · ") || undefined
                         }
                       />
                       <StatCol label="POP" value={analysis.pop != null ? `${nf(analysis.pop, 1)}%` : "–"} />
