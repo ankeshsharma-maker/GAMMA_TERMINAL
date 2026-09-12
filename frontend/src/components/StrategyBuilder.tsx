@@ -1502,142 +1502,6 @@ export function StrategyBuilder() {
           </div>
         )}
 
-        {analysis && (
-          <div className="border-b border-term-border bg-term-panel px-3 py-1.5 text-[10px]">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="font-semibold uppercase tracking-wide text-term-dim">
-                Time to expiry
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={dte}
-                step={1}
-                value={Math.min(tDays, dte)}
-                onChange={(e) => setTDays(Number(e.target.value))}
-                className="h-1 flex-1 min-w-[140px] cursor-pointer accent-amber-500"
-              />
-              <span className="num w-[188px] shrink-0 text-right text-term-text">
-                {tDays === 0 ? (
-                  <>now · T+0 · {dte}d left</>
-                ) : tDays >= dte ? (
-                  <>expiry day · 0d left</>
-                ) : (
-                  <>
-                    T+{tDays}d · {tDateLbl} · {dte - tDays}d left
-                  </>
-                )}
-              </span>
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-1">
-              <span className="text-term-dim">Day</span>
-              {dayChips.map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setTDays(d)}
-                  title={
-                    d === 0
-                      ? "today (T+0)"
-                      : `${new Date(Date.now() + d * 86400000).toLocaleDateString("en-IN", {
-                          day: "2-digit",
-                          month: "short",
-                        })} · ${dte - d}d left`
-                  }
-                  className={`num rounded px-1.5 py-0.5 ${
-                    tDays === d
-                      ? "bg-amber-500 text-black"
-                      : "bg-term-border text-term-dim hover:text-term-text"
-                  }`}
-                >
-                  {d === 0 ? "Now" : d === dte ? "Exp" : `+${d}`}
-                </button>
-              ))}
-            </div>
-            {/* what-if IV shift — applied to every leg's IV for the T+n curve/table/greeks */}
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-term-border/50 pt-1.5">
-              <span className="font-semibold uppercase tracking-wide text-term-dim">IV shift</span>
-              <input
-                type="range"
-                min={-50}
-                max={100}
-                step={1}
-                value={ivShift}
-                onChange={(e) => setIvShift(Number(e.target.value))}
-                className="h-1 flex-1 min-w-[140px] cursor-pointer accent-fuchsia-500"
-              />
-              <span className="num w-[188px] shrink-0 text-right text-term-text">
-                {ivShift === 0 ? (
-                  "unchanged"
-                ) : (
-                  <span className={ivShift > 0 ? "text-up" : "text-down"}>
-                    {ivShift > 0 ? "+" : ""}
-                    {ivShift}% IV
-                  </span>
-                )}
-              </span>
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-1">
-              <span className="text-term-dim">IV</span>
-              {IV_SHIFT_CHIPS.map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setIvShift(v)}
-                  title={v === 0 ? "current IV" : `IV ${v > 0 ? "+" : ""}${v}%`}
-                  className={`num rounded px-1.5 py-0.5 ${
-                    ivShift === v
-                      ? "bg-fuchsia-500 text-black"
-                      : "bg-term-border text-term-dim hover:text-term-text"
-                  }`}
-                >
-                  {v === 0 ? "0" : `${v > 0 ? "+" : ""}${v}%`}
-                </button>
-              ))}
-            </div>
-            {/* target price — drives Legs P&L, Greeks and the T+n column */}
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-term-border/50 pt-1.5">
-              <span className="font-semibold uppercase tracking-wide text-term-dim">
-                {symbol} target
-              </span>
-              <input
-                type="range"
-                min={Math.round(analysis.spot * 0.85)}
-                max={Math.round(analysis.spot * 1.15)}
-                step={chain?.strikeStep || 50}
-                value={Math.round(tgtPrice)}
-                onChange={(e) => setTPrice(Number(e.target.value))}
-                className="h-1 flex-1 min-w-[140px] cursor-pointer accent-sky-500"
-              />
-              <span className="num w-[188px] shrink-0 text-right text-term-text">
-                {nf(tgtPrice, 0)}{" "}
-                <span className={tgtPrice >= analysis.spot ? "text-up" : "text-down"}>
-                  ({tgtPrice >= analysis.spot ? "+" : ""}
-                  {nf(((tgtPrice - analysis.spot) / analysis.spot) * 100, 1)}%)
-                </span>
-              </span>
-              <button
-                onClick={() => setTPrice(Math.round(analysis.spot))}
-                className="rounded bg-term-border px-1.5 py-0.5 text-term-dim hover:text-term-text"
-              >
-                reset
-              </button>
-              <label className="flex items-center gap-1 text-term-dim">
-                Manual P&amp;L ₹
-                <input
-                  value={manualStr}
-                  onChange={(e) => {
-                    const s = e.target.value.replace(/[^\d.-]/g, "");
-                    setManualStr(s);
-                    setManualPnl(parseFloat(s) || 0);
-                  }}
-                  placeholder="0"
-                  title="Booked / adjustment P&L added to every P&L figure and the payoff curves"
-                  className="num w-24 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent"
-                />
-              </label>
-            </div>
-          </div>
-        )}
-
         {payoffTab === "stats" ? (
           <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-[220px] lg:flex-1 lg:overflow-auto">
             {analysis && (
@@ -1980,6 +1844,142 @@ export function StrategyBuilder() {
           legsEl
         ) : (
           greeksEl
+        )}
+
+        {analysis && (
+          <div className="border-t border-term-border bg-term-panel px-3 py-1.5 text-[10px]">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="font-semibold uppercase tracking-wide text-term-dim">
+                Time to expiry
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={dte}
+                step={1}
+                value={Math.min(tDays, dte)}
+                onChange={(e) => setTDays(Number(e.target.value))}
+                className="h-1 flex-1 min-w-[140px] cursor-pointer accent-amber-500"
+              />
+              <span className="num w-[188px] shrink-0 text-right text-term-text">
+                {tDays === 0 ? (
+                  <>now · T+0 · {dte}d left</>
+                ) : tDays >= dte ? (
+                  <>expiry day · 0d left</>
+                ) : (
+                  <>
+                    T+{tDays}d · {tDateLbl} · {dte - tDays}d left
+                  </>
+                )}
+              </span>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              <span className="text-term-dim">Day</span>
+              {dayChips.map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setTDays(d)}
+                  title={
+                    d === 0
+                      ? "today (T+0)"
+                      : `${new Date(Date.now() + d * 86400000).toLocaleDateString("en-IN", {
+                          day: "2-digit",
+                          month: "short",
+                        })} · ${dte - d}d left`
+                  }
+                  className={`num rounded px-1.5 py-0.5 ${
+                    tDays === d
+                      ? "bg-amber-500 text-black"
+                      : "bg-term-border text-term-dim hover:text-term-text"
+                  }`}
+                >
+                  {d === 0 ? "Now" : d === dte ? "Exp" : `+${d}`}
+                </button>
+              ))}
+            </div>
+            {/* what-if IV shift — applied to every leg's IV for the T+n curve/table/greeks */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-term-border/50 pt-1.5">
+              <span className="font-semibold uppercase tracking-wide text-term-dim">IV shift</span>
+              <input
+                type="range"
+                min={-50}
+                max={100}
+                step={1}
+                value={ivShift}
+                onChange={(e) => setIvShift(Number(e.target.value))}
+                className="h-1 flex-1 min-w-[140px] cursor-pointer accent-fuchsia-500"
+              />
+              <span className="num w-[188px] shrink-0 text-right text-term-text">
+                {ivShift === 0 ? (
+                  "unchanged"
+                ) : (
+                  <span className={ivShift > 0 ? "text-up" : "text-down"}>
+                    {ivShift > 0 ? "+" : ""}
+                    {ivShift}% IV
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              <span className="text-term-dim">IV</span>
+              {IV_SHIFT_CHIPS.map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setIvShift(v)}
+                  title={v === 0 ? "current IV" : `IV ${v > 0 ? "+" : ""}${v}%`}
+                  className={`num rounded px-1.5 py-0.5 ${
+                    ivShift === v
+                      ? "bg-fuchsia-500 text-black"
+                      : "bg-term-border text-term-dim hover:text-term-text"
+                  }`}
+                >
+                  {v === 0 ? "0" : `${v > 0 ? "+" : ""}${v}%`}
+                </button>
+              ))}
+            </div>
+            {/* target price — drives Legs P&L, Greeks and the T+n column */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-term-border/50 pt-1.5">
+              <span className="font-semibold uppercase tracking-wide text-term-dim">
+                {symbol} target
+              </span>
+              <input
+                type="range"
+                min={Math.round(analysis.spot * 0.85)}
+                max={Math.round(analysis.spot * 1.15)}
+                step={chain?.strikeStep || 50}
+                value={Math.round(tgtPrice)}
+                onChange={(e) => setTPrice(Number(e.target.value))}
+                className="h-1 flex-1 min-w-[140px] cursor-pointer accent-sky-500"
+              />
+              <span className="num w-[188px] shrink-0 text-right text-term-text">
+                {nf(tgtPrice, 0)}{" "}
+                <span className={tgtPrice >= analysis.spot ? "text-up" : "text-down"}>
+                  ({tgtPrice >= analysis.spot ? "+" : ""}
+                  {nf(((tgtPrice - analysis.spot) / analysis.spot) * 100, 1)}%)
+                </span>
+              </span>
+              <button
+                onClick={() => setTPrice(Math.round(analysis.spot))}
+                className="rounded bg-term-border px-1.5 py-0.5 text-term-dim hover:text-term-text"
+              >
+                reset
+              </button>
+              <label className="flex items-center gap-1 text-term-dim">
+                Manual P&amp;L ₹
+                <input
+                  value={manualStr}
+                  onChange={(e) => {
+                    const s = e.target.value.replace(/[^\d.-]/g, "");
+                    setManualStr(s);
+                    setManualPnl(parseFloat(s) || 0);
+                  }}
+                  placeholder="0"
+                  title="Booked / adjustment P&L added to every P&L figure and the payoff curves"
+                  className="num w-24 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent"
+                />
+              </label>
+            </div>
+          </div>
         )}
 
         {analysis && (
