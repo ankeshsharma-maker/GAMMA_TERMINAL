@@ -568,6 +568,8 @@ export const api = {
         wins: number;
         losses: number;
         winRate: number;
+        totalWin: number;
+        totalLoss: number;
         avgWin: number;
         avgLoss: number;
         profitFactor: number | null;

@@ -185,10 +185,12 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
 
       {res && s && (
         <>
-          <div className="grid grid-cols-3 gap-x-3 gap-y-1 sm:grid-cols-6">
+          <div className="grid grid-cols-4 gap-x-3 gap-y-1 sm:grid-cols-8">
             <K l="Total" v={`₹${nf(s.total, 0)}`} up={s.total >= 0} />
             <K l="Trades" v={`${s.count}`} />
             <K l="Win rate" v={`${s.winRate}%`} up={s.winRate >= 50} />
+            <K l="Total win" v={`₹${nf(s.totalWin, 0)}`} up />
+            <K l="Total loss" v={`₹${nf(s.totalLoss, 0)}`} up={false} />
             <K l="Avg win" v={`₹${nf(s.avgWin, 0)}`} up />
             <K l="Avg loss" v={`₹${nf(s.avgLoss, 0)}`} up={false} />
             <K l="Max DD" v={`₹${nf(s.maxDrawdown, 0)}`} up={false} />
