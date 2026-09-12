@@ -5,12 +5,14 @@ import { nf } from "../lib/format";
 import type { AutoRule } from "../types";
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
-/** "YYYY-MM-DD" -> "DD-MM-YYYY" for display; the API/date-math everywhere
- *  else in this file keeps using ISO so string comparisons still sort right. */
-const ddmmyyyy = (d: string) => {
+/** "YYYY-MM-DD" -> "DD-MM-YY" for display; the API/date-math everywhere else
+ *  in this file keeps using ISO so string comparisons still sort right. */
+const ddmmyy = (d: string) => {
   const [y, m, day] = d.split("-");
-  return `${day}-${m}-${y}`;
+  return `${day}-${m}-${y.slice(2)}`;
 };
+/** "HH:MM:SS" -> "HH-MM-SS" for display. */
+const hhmmss = (t: string) => t.replace(/:/g, "-");
 type Res = Awaited<ReturnType<typeof api.autobotBacktest>>;
 
 /** Backtest one AutoBot rule against Upstox daily history.
@@ -239,7 +241,9 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
               <table className="grid-table">
                 <thead className="text-term-dim">
                   <tr>
-                    <th className="py-0.5 text-left font-medium">In → Out</th>
+                    <th className="py-0.5 text-left font-medium">Date</th>
+                    <th className="py-0.5 text-left font-medium">Entry time</th>
+                    <th className="py-0.5 text-left font-medium">Exit time</th>
                     <th className="py-0.5 text-left font-medium">Strike</th>
                     <th className="py-0.5 text-right font-medium">Entry</th>
                     <th className="py-0.5 text-right font-medium">Exit</th>
@@ -251,10 +255,14 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
                   {res.trades.map((t, i) => (
                     <tr key={i}>
                       <td className="num whitespace-nowrap py-0.5 text-term-dim">
-                        {ddmmyyyy(t.entryDate)}
-                        {t.entryTime ? ` ${t.entryTime}` : ""}→
-                        {ddmmyyyy(t.exitDate)}
-                        {t.exitTime ? ` ${t.exitTime}` : ""}
+                        {ddmmyy(t.entryDate)}
+                        {t.exitDate !== t.entryDate ? `→${ddmmyy(t.exitDate)}` : ""}
+                      </td>
+                      <td className="num whitespace-nowrap py-0.5 text-term-dim">
+                        {t.entryTime ? hhmmss(t.entryTime) : "—"}
+                      </td>
+                      <td className="num whitespace-nowrap py-0.5 text-term-dim">
+                        {t.exitTime ? hhmmss(t.exitTime) : "—"}
                       </td>
                       <td className="num py-0.5">
                         {t.strike}
