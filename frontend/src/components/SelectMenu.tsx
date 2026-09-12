@@ -58,15 +58,18 @@ export function SelectMenu<T extends string | number>({
     };
   }, [open, align, width]);
 
-  // bring the highlighted option (e.g. ATM) into view by default instead of
-  // opening at the top of a long list
+  // bring the highlighted option (e.g. ATM) into view once, right when the
+  // menu opens -- deliberately NOT re-running on every highlightValue change
+  // (e.g. a live spot tick nudging ATM to the next strike), or it would keep
+  // yanking the list back to center and the user could never scroll it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
     if (!open || highlightValue == null) return;
     const id = requestAnimationFrame(() => {
       highlightRef.current?.scrollIntoView({ block: "center" });
     });
     return () => cancelAnimationFrame(id);
-  }, [open, highlightValue]);
+  }, [open]);
 
   return (
     <span className="relative inline-flex">
