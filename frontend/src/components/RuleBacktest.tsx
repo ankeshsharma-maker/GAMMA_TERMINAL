@@ -237,9 +237,9 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
             {res.interval == null && (rule.holdType ?? "intraday") !== "positional" && (
               <span
                 className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] text-amber-400"
-                title="Daily-bar backtests only see one price per day, so there's no way to simulate a same-day square-off — a trade can span multiple days here even though this rule is Intraday. Switch the timeframe above off 1D to test same-day behavior faithfully."
+                title="Daily bars only see one price per day, so entries here are force-closed same-day at ~0% P&L instead of carrying over — there's no way to simulate hitting SL/target/square-off intraday from one price a day. Good for checking WHEN entries fire, not for P&L. Switch the timeframe above off 1D for a realistic Intraday P&L simulation."
               >
-                daily bars ignore square-off
+                daily bars: entries only, no intraday P&L
               </span>
             )}
           </div>

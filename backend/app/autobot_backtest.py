@@ -220,6 +220,7 @@ async def backtest_rule(
     tp = _f(rule.get("targetPct")) if rule.get("targetPct") not in (None, "") else None
     trl = _f(rule.get("trailPct") or 0)
     trl_arm = _f(rule.get("trailArmPct") or 0)
+    positional = str(rule.get("holdType", "intraday")).lower() == "positional"
     max_pd = int(rule.get("maxTradesPerDay", 3) or 3)
     cooldown_d = 1 if _f(rule.get("cooldownMin") or 0) > 0 else 0
     entry_conds = rule.get("entry", [])
@@ -285,7 +286,20 @@ async def backtest_rule(
         ef_ok, _ = _entry_filter_ok(rule.get("entryFilter") or {}, px, 0.5, 0.0, 0.0)
         if not ef_ok:
             continue
-        open_pos = {"k": strike, "ot": ot, "entry": px, "date": d, "peak": 0.0, "i": i}
+        if positional:
+            open_pos = {"k": strike, "ot": ot, "entry": px, "date": d, "peak": 0.0, "i": i}
+        else:
+            # Intraday: a daily bar is a single end-of-day price, so there's no
+            # way to simulate an intraday square-off -- the position can never
+            # be allowed to carry into the next day's bar. Close it same-day
+            # at the same price (this validates WHEN the entry signal fires,
+            # not intraday P&L -- use an intraday timeframe above for that).
+            trades.append({
+                "entryDate": d, "exitDate": d, "strike": strike, "ot": ot,
+                "side": side, "entryPx": round(px, 2), "exitPx": round(px, 2),
+                "pnlPct": 0.0, "pnlRs": 0, "reason": "square-off (daily-bar)",
+            })
+            cooldown_until = i + cooldown_d
 
     # a position opened on (or still held into) the very last day never gets
     # a following iteration to trigger the "range end" exit inside the loop
