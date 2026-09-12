@@ -53,13 +53,18 @@ already use):
     # Classic use: spot crosses above the previous 5m candle's high (breakout).
     # AutoBot.snapshot() exposes the live reference + spot as rule["_live"]
     # for the first prev_candle condition in a rule's active (entry/exit) list.
-    {"kind":"gap","op":">"|"<"}
-    # Gap check: this rule's CURRENT (forming) candle's open vs. the
-    # previous CLOSED candle's close -- e.g. "today's open above
-    # yesterday's close", but relative to entryTf, not the calendar day
-    # (pick a long entryTf for a daily-style gap). op ">" = gap up,
-    # "<" = gap down. Both endpoints are fixed once the candle opens, so
-    # unlike prev_candle there's no live-spot crossing / no cross_up/down.
+    {"kind":"gap","aCandle":"current"|"previous","aField":"open"|"high"|"low"|"close",
+     "op":">"|"<","bCandle":"current"|"previous","bField":"open"|"high"|"low"|"close"}
+    # Compares one candle's O/H/L/C against another's. "current" = this
+    # rule's still-forming candle, "previous" = the last CLOSED candle.
+    # Defaults (aCandle=current, aField=open, bCandle=previous,
+    # bField=close) give the classic gap check: today's open vs the prior
+    # candle's close, relative to entryTf not the calendar day (pick a
+    # long entryTf for a daily-style gap). Same shape also covers e.g.
+    # bullish/bearish candle (aField=close, bCandle=current, bField=open)
+    # or higher-high (aField=high, bCandle=previous, bField=high). Both
+    # sides are fixed once the current candle opens, so unlike prev_candle
+    # there's no live-spot crossing / no cross_up/down.
 """
 from __future__ import annotations
 
@@ -606,20 +611,35 @@ class _Ctx:
             return prev >= ref > cur
         return False
 
+    def _gap_val(self, which, field) -> float:
+        cs = self.candles
+        cd = cs[-1] if str(which).lower() == "current" else cs[-2]
+        field = str(field).lower()
+        if field == "high":
+            return float(cd["h"])
+        if field == "low":
+            return float(cd["l"])
+        if field == "close":
+            return float(cd["c"])
+        return float(cd["o"])
+
     def _gap(self, c) -> bool:
-        """This rule's current (forming) candle's open vs. the previous
-        CLOSED candle's close -- gap-up/gap-down. Fixed for the life of the
-        candle (both endpoints are static once it opens)."""
+        """One candle's O/H/L/C vs. another's -- e.g. current open vs.
+        previous close (classic gap), current close vs. current open
+        (bullish/bearish candle), current high vs. previous high, etc.
+        "current" = this rule's still-forming candle, "previous" = the
+        last CLOSED candle. Fixed once the current candle opens (both
+        sides are static), so op is just >/< ."""
         cs = self.candles
         if len(cs) < 2:
             return False
-        prev_close = cs[-2]["c"]
-        cur_open = cs[-1]["o"]
+        a = self._gap_val(c.get("aCandle", "current"), c.get("aField", "open"))
+        b = self._gap_val(c.get("bCandle", "previous"), c.get("bField", "close"))
         op = c.get("op", ">")
         if op == ">":
-            return cur_open > prev_close
+            return a > b
         if op == "<":
-            return cur_open < prev_close
+            return a < b
         return False
 
     def prev_candle_live(self, conds: list) -> dict | None:

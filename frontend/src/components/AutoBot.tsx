@@ -306,9 +306,21 @@ const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field
     ],
   },
   gap: {
-    label: "Gap vs previous close",
+    label: "Candle compare (O/H/L/C)",
     group: "trend",
     fields: [
+      {
+        key: "aCandle",
+        label: "candle",
+        type: "sel",
+        def: "current",
+        opts: ["current", "previous"],
+        hint:
+          "current = this rule's still-forming candle so far. previous = the last " +
+          "CLOSED candle. Relative to this rule's own candle timeframe above, not " +
+          "necessarily the calendar day -- pick a long timeframe for a daily-style check.",
+      },
+      { key: "aField", label: "field", type: "sel", def: "open", opts: ["open", "high", "low", "close"] },
       {
         key: "op",
         label: "op",
@@ -316,12 +328,11 @@ const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field
         def: ">",
         opts: [">", "<"],
         hint:
-          "> = gap up: this candle's open is above the previous candle's close. " +
-          "< = gap down: open is below the previous close. Relative to this rule's " +
-          "own candle timeframe above, not necessarily the calendar day -- pick a " +
-          "long timeframe for a daily-style gap. Fixed once the candle opens, so " +
-          "there's no cross_up/cross_down here.",
+          "Both sides are fixed once the current candle opens -- no live-spot " +
+          "crossing here, just a static compare (so no cross_up/cross_down).",
       },
+      { key: "bCandle", label: "vs candle", type: "sel", def: "previous", opts: ["current", "previous"] },
+      { key: "bField", label: "vs field", type: "sel", def: "close", opts: ["open", "high", "low", "close"] },
     ],
   },
   pivot: {
@@ -1332,8 +1343,13 @@ function describe(c: AutoCondition): string {
       const which = n === 0 ? "current" : n > 1 ? `prev ${n}-candle` : "prev";
       return `spot ${g("op")} ${which} ${g("field")}`;
     }
-    case "gap":
-      return `candle open ${g("op")} prev close (gap ${g("op") === "<" ? "down" : "up"})`;
+    case "gap": {
+      const aC = String(g("aCandle") || "current");
+      const aF = String(g("aField") || "open");
+      const bC = String(g("bCandle") || "previous");
+      const bF = String(g("bField") || "close");
+      return `${aC} ${aF} ${g("op")} ${bC} ${bF}`;
+    }
     default:
       return c.kind;
   }
