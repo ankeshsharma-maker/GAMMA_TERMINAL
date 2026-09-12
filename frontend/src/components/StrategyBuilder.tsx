@@ -20,8 +20,10 @@ import type {
 import { PayoffChart } from "./PayoffChart";
 import { BacktestPanel } from "./BacktestPanel";
 import { SelectMenu } from "./SelectMenu";
+import { VSplit, clamp, readNum } from "./VSplit";
 
 const IV_SHIFT_CHIPS = [-30, -20, -10, 0, 10, 20, 30];
+const BUILDER_W_LS = "layout.builderW";
 
 /** compact labelled number input for the hedge finder's advanced targets */
 function AdvNum({
@@ -167,6 +169,14 @@ export function StrategyBuilder() {
   const [payoffTab, setPayoffTab] = useState<"stats" | "chart" | "table" | "legs" | "greeks">(
     "chart"
   );
+  // width of the leg-editor column vs. the payoff/chart column, drag-resizable like the watchlist panel
+  const [builderW, setBuilderW] = useState(() => readNum(BUILDER_W_LS, 330));
+  useEffect(() => {
+    try {
+      localStorage.setItem(BUILDER_W_LS, String(builderW));
+    } catch {}
+  }, [builderW]);
+  const bumpBuilder = useCallback((dx: number) => setBuilderW((w) => clamp(w + dx, 260, 600)), []);
   const [strikeSpan, setStrikeSpan] = useState(10); // ATM ± N strikes in the P&L table
   const [tableInterval, setTableInterval] = useState(0); // 0 = chain strikes; else ₹ step
   const [showPct, setShowPct] = useState(true); // show the "Move %" column
@@ -598,6 +608,16 @@ export function StrategyBuilder() {
       .reverse(); // high strike on top, like the chain ladder
   }, [analysis, tDays, dte, strikeSpan, tableInterval, chain, ivShift]);
 
+  // scroll the P&L table to the ATM row by default instead of the top of the ladder
+  const atmRowRef = useRef<HTMLTableRowElement | null>(null);
+  useEffect(() => {
+    if (payoffTab !== "table" || !levelRows.length) return;
+    const id = requestAnimationFrame(() => {
+      atmRowRef.current?.scrollIntoView({ block: "center" });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [payoffTab, analysis?.symbol, analysis?.expiry, strikeSpan, tableInterval]);
+
   const pnlCls = (v: number) => (v >= 0 ? "text-up" : "text-down");
   const mp = (v: number | null | undefined) => (v == null ? null : v + manualPnl);
   const pnlTxt = (v: number | null) => (v == null ? "–" : `${v >= 0 ? "+" : ""}${nf(v, 0)}`);
@@ -639,7 +659,7 @@ export function StrategyBuilder() {
 
   // ---- Legs P&L tab: per-leg P&L at the (target price, target date) ----
   const legsEl = analysis && (
-    <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-[220px] lg:flex-1 lg:overflow-auto">
+    <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3">
       <div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-term-dim">
         Legs P&amp;L @ {nf(tgtPrice, 0)} · {tLegLabel}
       </div>
@@ -697,7 +717,7 @@ export function StrategyBuilder() {
 
   // ---- Greeks tab: per-leg greeks at the (target price, target date) ----
   const greeksEl = analysis && (
-    <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-[220px] lg:flex-1 lg:overflow-auto">
+    <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
         <span className="text-2xs font-semibold uppercase tracking-wide text-term-dim">
           Greeks @ {nf(tgtPrice, 0)} · {tLegLabel}
@@ -750,7 +770,10 @@ export function StrategyBuilder() {
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-term-border lg:grid lg:grid-cols-[330px_minmax(0,1fr)] lg:overflow-hidden">
+    <div
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-term-border lg:grid lg:overflow-hidden"
+      style={{ gridTemplateColumns: `${builderW}px 4px minmax(0,1fr)` }}
+    >
       {/* ---- leg editor ---- */}
       <div className="flex flex-col border-r border-term-border bg-term-panel2 lg:min-h-0 lg:overflow-y-auto">
         <div className="flex items-center gap-2 border-b border-term-border px-3 py-2 text-2xs font-semibold uppercase tracking-wide text-term-dim">
@@ -1410,6 +1433,8 @@ export function StrategyBuilder() {
         </div>
       </div>
 
+      <VSplit onDrag={bumpBuilder} className="hidden lg:block" />
+
       {/* ---- payoff / backtest ---- */}
       <div className="flex min-h-0 flex-col overflow-y-auto lg:border-l lg:border-term-border">
         <div className="flex flex-wrap items-center gap-1 border-b border-term-border bg-term-panel2 px-2 py-1.5 text-2xs">
@@ -1487,7 +1512,7 @@ export function StrategyBuilder() {
         )}
 
         {payoffTab === "stats" ? (
-          <div className="m-2 overflow-x-auto rounded border border-term-border bg-term-bg/20 p-3">
+          <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3">
             {analysis && (
               <div className="overflow-x-auto">
                 <table className="grid-table text-xs">
@@ -1597,7 +1622,7 @@ export function StrategyBuilder() {
             )}
           </div>
         ) : payoffTab === "table" ? (
-          <div className="m-2 overflow-x-auto rounded border border-term-border bg-term-bg/20 p-3">
+          <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3">
             {analysis && (
               <>
                 <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
@@ -1666,7 +1691,11 @@ export function StrategyBuilder() {
                   </thead>
                   <tbody>
                     {levelRows.map((r, i) => (
-                      <tr key={i} className={r.isATM ? "bg-term-accent/10" : ""}>
+                      <tr
+                        key={i}
+                        ref={r.isATM ? atmRowRef : undefined}
+                        className={r.isATM ? "bg-term-accent/10" : ""}
+                      >
                         <td
                           className="num border-b border-term-border/40 px-2 py-1 text-right font-medium text-term-text"
                           style={{

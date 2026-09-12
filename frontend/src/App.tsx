@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useStore } from "./store";
 import { Header } from "./components/Header";
 import { HeaderMenu, MenuRow } from "./components/HeaderMenu";
@@ -26,6 +26,7 @@ import { MobileShell } from "./components/MobileShell";
 import { LoginGate } from "./components/LoginGate";
 import { PinLock } from "./components/PinLock";
 import { useIsMobile } from "./lib/useIsMobile";
+import { VSplit, clamp, readNum } from "./components/VSplit";
 
 const LS = {
   left: "layout.leftW",
@@ -35,45 +36,6 @@ const LS = {
   hideRight: "layout.hideRight",
   notifW: "layout.notifW",
 };
-const readNum = (k: string, d: number) => {
-  try {
-    const v = parseFloat(localStorage.getItem(k) || "");
-    return Number.isFinite(v) ? v : d;
-  } catch {
-    return d;
-  }
-};
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-
-/** vertical drag handle that resizes a neighbouring column */
-function VSplit({ onDrag }: { onDrag: (dx: number) => void }) {
-  const last = useRef<number | null>(null);
-  const down = (e: React.MouseEvent) => {
-    e.preventDefault();
-    last.current = e.clientX;
-    const move = (ev: MouseEvent) => {
-      if (last.current == null) return;
-      onDrag(ev.clientX - last.current);
-      last.current = ev.clientX;
-    };
-    const up = () => {
-      last.current = null;
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-      document.body.style.cursor = "";
-    };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-    document.body.style.cursor = "col-resize";
-  };
-  return (
-    <div
-      onMouseDown={down}
-      className="z-10 w-1 shrink-0 cursor-col-resize bg-term-border transition-colors hover:bg-term-accent"
-      title="Drag to resize panel"
-    />
-  );
-}
 
 export default function App() {
   return (
