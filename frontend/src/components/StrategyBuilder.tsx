@@ -1513,7 +1513,7 @@ export function StrategyBuilder() {
         )}
 
         {payoffTab === "stats" ? (
-          <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-[220px] lg:flex-1 lg:overflow-auto">
+          <div className="m-2 overflow-x-auto rounded border border-term-border bg-term-bg/20 p-3">
             {analysis && (
               <div className="overflow-x-auto">
                 <table className="grid-table text-xs">
