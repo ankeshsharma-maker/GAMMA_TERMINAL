@@ -168,7 +168,6 @@ export function StrategyBuilder() {
     "chart"
   );
   const [strikeSpan, setStrikeSpan] = useState(10); // ATM ± N strikes in the P&L table
-  const [dayPct, setDayPct] = useState(3); // ± move for the day-by-day P&L columns
   const [tableInterval, setTableInterval] = useState(0); // 0 = chain strikes; else ₹ step
   const [showPct, setShowPct] = useState(true); // show the "Move %" column
   const [gMulLot, setGMulLot] = useState(true); // greeks × lot size
@@ -581,6 +580,7 @@ export function StrategyBuilder() {
     }
 
     const exp = strategyPnlCurve(analysis.legs, strikes, 0);
+    const now = strategyPnlCurve(analysis.legs, strikes, dte / 365);
     const remYears = Math.max((dte - tDays) / 365, 0);
     const tv = tDays > 0 || ivShift ? strategyPnlCurve(analysis.legs, strikes, remYears, ivShift) : null;
 
@@ -588,6 +588,7 @@ export function StrategyBuilder() {
       .map((k, i) => ({
         K: k,
         pct: (k - spot) / spot,
+        now: now[i],
         exp: exp[i],
         tv: tv ? tv[i] : null,
         isATM: chain ? k === chain.atmStrike : Math.abs(k - spot) <= step / 2,
@@ -596,33 +597,6 @@ export function StrategyBuilder() {
       }))
       .reverse(); // high strike on top, like the chain ladder
   }, [analysis, tDays, dte, strikeSpan, tableInterval, chain, ivShift]);
-
-  // ---- day-by-day P&L at spot and ±dayPct% (theta decay to expiry) ----
-  const dayRows = useMemo(() => {
-    if (!analysis) return [];
-    const spot = analysis.spot;
-    const dn = spot * (1 - dayPct / 100);
-    const up = spot * (1 + dayPct / 100);
-    const step = Math.max(1, Math.ceil((dte + 1) / 16));
-    const mk = (d: number) => {
-      const [a, b, c] = strategyPnlCurve(analysis.legs, [dn, spot, up], Math.max((dte - d) / 365, 0));
-      return {
-        d,
-        date: new Date(Date.now() + d * 86400000).toLocaleDateString("en-IN", {
-          day: "2-digit",
-          month: "short",
-        }),
-        left: dte - d,
-        dn: a,
-        sp: b,
-        up: c,
-      };
-    };
-    const rows = [];
-    for (let d = 0; d <= dte; d += step) rows.push(mk(d));
-    if (!rows.length || rows[rows.length - 1].d !== dte) rows.push(mk(dte));
-    return rows;
-  }, [analysis, dte, dayPct]);
 
   const pnlCls = (v: number) => (v >= 0 ? "text-up" : "text-down");
   const mp = (v: number | null | undefined) => (v == null ? null : v + manualPnl);
@@ -1623,232 +1597,135 @@ export function StrategyBuilder() {
             )}
           </div>
         ) : payoffTab === "table" ? (
-          <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-[220px] lg:flex-1 lg:overflow-auto">
+          <div className="m-2 overflow-x-auto rounded border border-term-border bg-term-bg/20 p-3">
             {analysis && (
-              <div className="grid gap-5 lg:grid-cols-2">
-                {/* P&L by strike (ATM ± N from the chain ladder) */}
-                <div className="rounded border border-term-border p-2">
-                  <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
-                    <span className="text-2xs font-semibold uppercase tracking-wide text-term-dim">
-                      P&amp;L by {tableInterval > 0 ? "target" : "strike"} — spot {nf(analysis.spot, 0)}
-                    </span>
-                    <div className="flex flex-wrap items-center gap-1">
-                      <div className="seg text-[10px]">
-                        {[10, 20, 30].map((n) => (
-                          <button
-                            key={n}
-                            onClick={() => setStrikeSpan(n)}
-                            className={strikeSpan === n ? "on" : ""}
-                          >
-                            ±{n}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="seg text-[10px]">
-                        {([["strikes", 0], ["50", 50], ["100", 100], ["200", 200]] as const).map(
-                          ([lbl, v]) => (
-                            <button
-                              key={lbl}
-                              onClick={() => setTableInterval(v)}
-                              className={tableInterval === v ? "on" : ""}
-                              title="row interval"
-                            >
-                              {lbl}
-                            </button>
-                          )
-                        )}
-                      </div>
-                      <button
-                        onClick={() => setShowPct((v) => !v)}
-                        className={`rounded px-1.5 py-0.5 text-[10px] ${
-                          showPct ? "bg-term-accent text-white" : "bg-term-border text-term-dim"
-                        }`}
-                      >
-                        %
-                      </button>
-                    </div>
-                  </div>
-                  <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
-                    <thead className="text-[10px] uppercase text-term-dim">
-                      <tr>
-                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                          {tableInterval > 0 ? "Target" : "Strike"}
-                        </th>
-                        {showPct && (
-                          <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                            Move
-                          </th>
-                        )}
-                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                          On expiry
-                        </th>
-                        {(tDays > 0 || ivShift !== 0) && (
-                          <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                            {tvColLabel}
-                          </th>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {levelRows.map((r, i) => (
-                        <tr key={i} className={r.isATM ? "bg-term-accent/10" : ""}>
-                          <td
-                            className="num border-b border-term-border/40 px-2 py-1 text-right font-medium text-term-text"
-                            style={{
-                              boxShadow: r.isWall
-                                ? "inset 2px 0 0 #ef4444"
-                                : r.isFloor
-                                ? "inset 2px 0 0 #22c55e"
-                                : undefined,
-                            }}
-                            title={
-                              r.isWall
-                                ? "biggest Call OI (resistance)"
-                                : r.isFloor
-                                ? "biggest Put OI (support)"
-                                : undefined
-                            }
-                          >
-                            {sk(r.K)}
-                            {r.isWall && <sup className="ml-0.5 text-down">R</sup>}
-                            {r.isFloor && <sup className="ml-0.5 text-up">S</sup>}
-                          </td>
-                          {showPct && (
-                            <td
-                              className={`num border-b border-term-border/40 px-2 py-1 text-right ${
-                                r.pct >= 0 ? "text-up" : "text-down"
-                              }`}
-                            >
-                              {r.pct >= 0 ? "+" : ""}
-                              {nf(r.pct * 100, 1)}%
-                            </td>
-                          )}
-                          <td
-                            className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
-                              r.exp + manualPnl
-                            )}`}
-                          >
-                            {pnlTxt(r.exp + manualPnl)}
-                          </td>
-                          {(tDays > 0 || ivShift !== 0) && (
-                            <td
-                              className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
-                                (r.tv ?? 0) + manualPnl
-                              )}`}
-                            >
-                              {pnlTxt(mp(r.tv))}
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Day-by-day P&L (theta decay) */}
-                <div className="rounded border border-term-border p-2">
-                  <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
-                    <span className="text-2xs font-semibold uppercase tracking-wide text-term-dim">
-                      Day-by-day P&amp;L — spot &amp; ±{dayPct}%
-                    </span>
+              <>
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
+                  <span className="text-2xs font-semibold uppercase tracking-wide text-term-dim">
+                    P&amp;L by {tableInterval > 0 ? "target" : "strike"} — spot {nf(analysis.spot, 0)}
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1">
                     <div className="seg text-[10px]">
-                      {[0.5, 1, 1.5, 2, 2.5, 3].map((p) => (
+                      {[10, 20, 30].map((n) => (
                         <button
-                          key={p}
-                          onClick={() => setDayPct(p)}
-                          className={dayPct === p ? "on" : ""}
+                          key={n}
+                          onClick={() => setStrikeSpan(n)}
+                          className={strikeSpan === n ? "on" : ""}
                         >
-                          {p}%
+                          ±{n}
                         </button>
                       ))}
                     </div>
-                  </div>
-                  <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
-                    <thead className="text-[10px] uppercase text-term-dim">
-                      <tr>
-                        <th className="border-b border-term-border px-2 py-1 text-left font-medium">
-                          Day
-                        </th>
-                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                          Left
-                        </th>
-                        <th className="border-b border-term-border px-2 py-1 text-right font-medium text-down">
-                          −{dayPct}%
-                          <span className="block font-normal opacity-70">
-                            {sk(analysis.spot * (1 - dayPct / 100))}
-                          </span>
-                        </th>
-                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                          Spot
-                          <span className="block font-normal opacity-70">{sk(analysis.spot)}</span>
-                        </th>
-                        <th className="border-b border-term-border px-2 py-1 text-right font-medium text-up">
-                          +{dayPct}%
-                          <span className="block font-normal opacity-70">
-                            {sk(analysis.spot * (1 + dayPct / 100))}
-                          </span>
-                        </th>
-                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                          Δ vs today
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dayRows.map((r, i) => {
-                        const decay = r.sp - (dayRows[0]?.sp ?? r.sp);
-                        return (
-                          <tr
-                            key={i}
-                            className={
-                              r.d === tDays
-                                ? "bg-amber-500/10"
-                                : r.d === 0
-                                ? "bg-term-accent/10"
-                                : ""
-                            }
+                    <div className="seg text-[10px]">
+                      {([["strikes", 0], ["50", 50], ["100", 100], ["200", 200]] as const).map(
+                        ([lbl, v]) => (
+                          <button
+                            key={lbl}
+                            onClick={() => setTableInterval(v)}
+                            className={tableInterval === v ? "on" : ""}
+                            title="row interval"
                           >
-                            <td className="num border-b border-term-border/40 px-2 py-1 text-term-dim">
-                              {r.d === 0 ? "Today" : `T+${r.d}d`}{" "}
-                              <span className="opacity-60">{r.date}</span>
-                            </td>
-                            <td className="num border-b border-term-border/40 px-2 py-1 text-right text-term-dim">
-                              {r.left}d
-                            </td>
-                            <td
-                              className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
-                                r.dn + manualPnl
-                              )}`}
-                            >
-                              {pnlTxt(r.dn + manualPnl)}
-                            </td>
-                            <td
-                              className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
-                                r.sp + manualPnl
-                              )}`}
-                            >
-                              {pnlTxt(r.sp + manualPnl)}
-                            </td>
-                            <td
-                              className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
-                                r.up + manualPnl
-                              )}`}
-                            >
-                              {pnlTxt(r.up + manualPnl)}
-                            </td>
-                            <td
-                              className={`num border-b border-term-border/40 px-2 py-1 text-right ${
-                                i === 0 ? "text-term-dim" : pnlCls(decay)
-                              }`}
-                            >
-                              {i === 0 ? "—" : `${decay >= 0 ? "+" : ""}${nf(decay, 0)}`}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                            {lbl}
+                          </button>
+                        )
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setShowPct((v) => !v)}
+                      className={`rounded px-1.5 py-0.5 text-[10px] ${
+                        showPct ? "bg-term-accent text-white" : "bg-term-border text-term-dim"
+                      }`}
+                    >
+                      %
+                    </button>
+                  </div>
                 </div>
-              </div>
+                <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
+                  <thead className="text-[10px] uppercase text-term-dim">
+                    <tr>
+                      <th className="border-b border-term-border px-2 py-1 text-right font-medium">
+                        {tableInterval > 0 ? "Target" : "Strike"}
+                      </th>
+                      {showPct && (
+                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
+                          Move
+                        </th>
+                      )}
+                      <th className="border-b border-term-border px-2 py-1 text-right font-medium">
+                        Today
+                      </th>
+                      <th className="border-b border-term-border px-2 py-1 text-right font-medium">
+                        Expiry
+                      </th>
+                      {(tDays > 0 || ivShift !== 0) && (
+                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
+                          {tvColLabel}
+                        </th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {levelRows.map((r, i) => (
+                      <tr key={i} className={r.isATM ? "bg-term-accent/10" : ""}>
+                        <td
+                          className="num border-b border-term-border/40 px-2 py-1 text-right font-medium text-term-text"
+                          style={{
+                            boxShadow: r.isWall
+                              ? "inset 2px 0 0 #ef4444"
+                              : r.isFloor
+                              ? "inset 2px 0 0 #22c55e"
+                              : undefined,
+                          }}
+                          title={
+                            r.isWall
+                              ? "biggest Call OI (resistance)"
+                              : r.isFloor
+                              ? "biggest Put OI (support)"
+                              : undefined
+                          }
+                        >
+                          {sk(r.K)}
+                          {r.isWall && <sup className="ml-0.5 text-down">R</sup>}
+                          {r.isFloor && <sup className="ml-0.5 text-up">S</sup>}
+                        </td>
+                        {showPct && (
+                          <td
+                            className={`num border-b border-term-border/40 px-2 py-1 text-right ${
+                              r.pct >= 0 ? "text-up" : "text-down"
+                            }`}
+                          >
+                            {r.pct >= 0 ? "+" : ""}
+                            {nf(r.pct * 100, 1)}%
+                          </td>
+                        )}
+                        <td
+                          className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
+                            r.now + manualPnl
+                          )}`}
+                        >
+                          {pnlTxt(r.now + manualPnl)}
+                        </td>
+                        <td
+                          className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
+                            r.exp + manualPnl
+                          )}`}
+                        >
+                          {pnlTxt(r.exp + manualPnl)}
+                        </td>
+                        {(tDays > 0 || ivShift !== 0) && (
+                          <td
+                            className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
+                              (r.tv ?? 0) + manualPnl
+                            )}`}
+                          >
+                            {pnlTxt(mp(r.tv))}
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
             )}
           </div>
         ) : payoffTab === "legs" ? (
@@ -2012,7 +1889,7 @@ export function StrategyBuilder() {
 
         <div className="border-t border-term-border px-4 py-1 text-[10px] text-term-dim">
           {payoffTab === "table"
-            ? "P&L by underlying move and day-by-day (theta decay). T+n column follows the slider. Black-Scholes with per-leg IV — indicative."
+            ? "Today = now (T+0) at current IV. Expiry = intrinsic value. The extra column follows the sliders. Black-Scholes with per-leg IV — indicative."
             : analysis?.margin.basis
             ? `Margin basis: ${analysis.margin.basis}. Payoff / T+n curve use per-leg IV & Black-Scholes — indicative, not broker-accurate.`
             : "White = at expiry · amber = the T+n day on the slider · purple dashed = now (T+0)."}
