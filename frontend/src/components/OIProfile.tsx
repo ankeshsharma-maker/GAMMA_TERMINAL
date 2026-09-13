@@ -1129,12 +1129,24 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
 
     return (
       <div className={`p-3 ${isMobile ? "" : "min-h-0 flex-1 overflow-y-auto"}`}>
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-xs font-semibold text-term-text">{symbol} · Dealer Exposure</span>
-          <span className="num text-xs font-bold text-term-text">{nf(spot, 1)}</span>
-        </div>
+        <div
+          className={`rounded-lg border p-3 ${
+            shortGamma ? "border-down/25" : shortGamma == null ? "border-term-border" : "border-up/25"
+          }`}
+          style={{
+            background: shortGamma
+              ? "radial-gradient(120% 140% at 0% 0%, rgba(220,38,38,0.10), transparent 55%), linear-gradient(135deg, rgb(var(--term-panel2)), rgb(var(--term-bg)) 70%)"
+              : shortGamma === false
+              ? "radial-gradient(120% 140% at 0% 0%, rgba(22,163,74,0.10), transparent 55%), linear-gradient(135deg, rgb(var(--term-panel2)), rgb(var(--term-bg)) 70%)"
+              : "linear-gradient(135deg, rgb(var(--term-panel2)), rgb(var(--term-bg)) 70%)",
+          }}
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-semibold text-term-text">{symbol} · Dealer Exposure</span>
+            <span className="num text-xs font-bold text-term-text">{nf(spot, 1)}</span>
+          </div>
 
-        <div className={`flex gap-4 ${isMobile ? "flex-col" : "flex-row items-stretch"}`}>
+          <div className={`flex gap-4 ${isMobile ? "flex-col" : "flex-row items-stretch"}`}>
           {/* stats table */}
           <div className={isMobile ? "" : "w-[380px] shrink-0"}>
             {gammaFlip && (
@@ -1160,9 +1172,9 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
             <div className="mb-2 grid grid-cols-3 gap-2">
               <Tile label="PCR" value={nf(chain.pcr, 2)} />
               <Tile label="Max Pain" value={nf(chain.maxPain, 0)} />
-              <Tile label="ATM IV" value={chain.atmIV ? `${nf(chain.atmIV, 1)}%` : "–"} />
+              <Tile label="σ ATM IV" value={chain.atmIV ? `${nf(chain.atmIV, 1)}%` : "–"} />
               <Tile
-                label="Expected move"
+                label="± Expected move"
                 value={expMove ? `±${nf(expMove, 0)}` : "–"}
                 sub={expMove ? `${nf((expMove / spot) * 100, 2)}% · ${nf(chain.dte, 1)}d` : undefined}
               />
@@ -1205,6 +1217,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
                 <span><Sw c="#a855f7" /> OTM {itmTot ? nf((otmOI / itmTot) * 100, 0) : "–"}%</span>
               </div>
             </div>
+          </div>
           </div>
         </div>
       </div>
