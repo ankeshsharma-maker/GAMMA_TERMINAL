@@ -169,6 +169,11 @@ async def backtest_rule(
     have_greeks = False
     if expiry and _rule_uses_greeks(rule):
         try:
+            if have_chain:
+                # the pcr/maxPain fetch above just made ~120 historical-candle
+                # requests to the same Upstox endpoint this one uses -- give
+                # its rate limiter a moment before starting a second wave.
+                await asyncio.sleep(2)
             hg = await upstox_data.fetch_history_greeks(symbol, expiry, dates[0], to_date)
             rows_g = hg.get("series", [])
             for r in rows_g:

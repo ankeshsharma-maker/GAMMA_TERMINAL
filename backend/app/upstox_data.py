@@ -394,15 +394,28 @@ async def fetch_history_greeks(
 
     # 2. per-leg daily candles [ts,o,h,l,c,volume,oi] -- capture close AND oi
     # (fetch_history_chain keeps only oi; gamma/IV reconstruction needs price too)
+    # Retries with backoff: backtest_rule() calls fetch_history_chain (this
+    # same per-leg historical-candle endpoint, ~120 requests) immediately
+    # before this function -- back-to-back with no gap, that second wave
+    # reliably gets Upstox-rate-limited into all-empty candle lists without
+    # a retry (confirmed: every leg silently returns [] via the except below,
+    # so the whole day's reconstruction comes back empty with no exception
+    # raised anywhere to signal it).
     sem = asyncio.Semaphore(12)
 
     async def _one(strike: float, side: str, ik: str):
         async with sem:
-            try:
-                h = await ux.get(f"/historical-candle/{ik}/days/1/{to_date}/{from_date}", v3=True)
-                return strike, side, h.get("data", {}).get("candles", []) or []
-            except Exception:  # noqa: BLE001
-                return strike, side, []
+            for wait in (0, 2, 4):
+                if wait:
+                    await asyncio.sleep(wait)
+                try:
+                    h = await ux.get(f"/historical-candle/{ik}/days/1/{to_date}/{from_date}", v3=True)
+                    candles = h.get("data", {}).get("candles", []) or []
+                    if candles:
+                        return strike, side, candles
+                except Exception:  # noqa: BLE001
+                    pass
+            return strike, side, []
 
     results = await asyncio.gather(*[_one(s, sd, ik) for s, sd, ik in legs])
 
