@@ -154,6 +154,23 @@ async def history_chain(
         raise HTTPException(502, f"Upstox history failed: {exc}")
 
 
+@router.get("/history-greeks")
+async def history_greeks(
+    symbol: str = Query(...),
+    expiry: str = Query(...),
+    frm: str = Query(..., alias="from"),
+    to: str = Query(...),
+):
+    """Daily reconstructed netGex / gammaFlip / ATM CE+PE delta+gamma over a
+    date range ('YYYY-MM-DD'), via Black-Scholes off Upstox's per-strike
+    daily OHLC+OI candles (historical candles carry no exchange IV)."""
+    _need_auth()
+    try:
+        return await upstox_data.fetch_history_greeks(symbol.upper(), expiry, frm, to)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"Upstox history failed: {exc}")
+
+
 @router.get("/chain-preview")
 async def chain_preview(symbol: str = Query(...), expiry: str = Query(...)):
     """Run the Upstox -> NSE-shape -> build_chain() path and hand back the
@@ -168,6 +185,7 @@ async def chain_preview(symbol: str = Query(...), expiry: str = Query(...)):
         raise HTTPException(502, "no data from Upstox (check symbol / expiry)")
     chain = build_chain(payload, symbol.upper(), expiry)
     rows = chain.get("rows", [])
+    atm_row = next((r for r in rows if r.get("isATM")), None)
     return {
         "symbol": symbol.upper(),
         "expiry": expiry,
@@ -176,6 +194,12 @@ async def chain_preview(symbol: str = Query(...), expiry: str = Query(...)):
         "pcr": chain.get("pcr"),
         "maxPain": chain.get("maxPain"),
         "atmIV": chain.get("atmIV"),
+        "netGex": chain.get("netGex"),
+        "gammaFlip": chain.get("gammaFlip"),
+        "atmCEDelta": atm_row["call"]["delta"] if atm_row else None,
+        "atmCEGamma": atm_row["call"]["gamma"] if atm_row else None,
+        "atmPEDelta": atm_row["put"]["delta"] if atm_row else None,
+        "atmPEGamma": atm_row["put"]["gamma"] if atm_row else None,
         "strikes": len(rows),
         "sample": rows[len(rows) // 2 : len(rows) // 2 + 3],
     }

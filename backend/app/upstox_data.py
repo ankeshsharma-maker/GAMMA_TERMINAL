@@ -264,6 +264,175 @@ async def fetch_history_chain(
             "to": to_date, "series": series, "cached": False}
 
 
+# ------------------------------------------------------------- greeks history
+_HIST_GREEKS_CACHE: dict[tuple, list[dict]] = {}
+_GREEK_FALLBACK_IV = 0.15  # matches autobot_backtest.py's syn_iv default
+
+
+def _compute_greeks_series(
+    per_date: dict, spot_by_date: dict, strikes: list, step: float, expiry: str
+) -> list[dict]:
+    """Pure, synchronous (CPU-only) per-day netGex/gammaFlip/ATM-Greeks
+    reconstruction. Run via asyncio.to_thread -- implied-vol solving here can
+    take up to 260 iterations per strike/side/day, and this process's event
+    loop also runs the live poller/AutoBot tick/broker feed, so this must
+    never run inline on it."""
+    from .config import DIVIDEND_YIELD, RISK_FREE_RATE, STRIKE_WINDOW
+    from .greeks import greeks as bs_greeks
+    from .greeks import implied_vol
+    from .processing import IST, _MIN_T, year_fraction
+
+    out: list[dict] = []
+    for d in sorted(per_date):
+        spot = spot_by_date.get(d)
+        if not spot:
+            continue
+        pd = per_date[d]  # {strike: {"CE": {"close":.., "oi":..}, "PE": {...}}}
+        atm = min(strikes, key=lambda k: abs(k - spot))
+        lo, hi = atm - STRIKE_WINDOW * step, atm + STRIKE_WINDOW * step
+        window = sorted(k for k in strikes if lo <= k <= hi and k in pd)
+        if not window:
+            continue
+
+        now = datetime.strptime(d, "%Y-%m-%d").replace(hour=15, minute=30, tzinfo=IST)
+        t = max(year_fraction(expiry, now), _MIN_T)
+
+        # pass 1: solve IV per strike+side where the day's close allows it
+        iv: dict[tuple, float] = {}
+        for k in window:
+            for side, leg in pd[k].items():
+                px = leg.get("close", 0.0)
+                if px <= 0:
+                    continue
+                v = implied_vol(side, px, spot, k, t, RISK_FREE_RATE, DIVIDEND_YIELD)
+                if v is not None:
+                    iv[(k, side)] = v
+
+        def _fallback_iv(k: float, side: str) -> float:
+            same_side = [(abs(sk - k), v) for (sk, ss), v in iv.items() if ss == side]
+            if same_side:
+                return min(same_side)[1]
+            other_side = list(iv.values())
+            return other_side[0] if other_side else _GREEK_FALLBACK_IV
+
+        # pass 2: greeks + gex per strike+side, walking low->high for the
+        # gamma-flip cumulative sum (mirrors processing.build_chain exactly)
+        gammas: dict[tuple, float] = {}
+        deltas: dict[tuple, float] = {}
+        net_gex = 0.0
+        cum = 0.0
+        gamma_flip = atm
+        pts: list[tuple] = []
+        for k in window:
+            legs = pd[k]
+            ce_oi = legs.get("CE", {}).get("oi", 0.0)
+            pe_oi = legs.get("PE", {}).get("oi", 0.0)
+            sigma_ce = iv.get((k, "CE")) or _fallback_iv(k, "CE")
+            sigma_pe = iv.get((k, "PE")) or _fallback_iv(k, "PE")
+            g_ce = bs_greeks("CE", spot, k, t, RISK_FREE_RATE, DIVIDEND_YIELD, sigma_ce)
+            g_pe = bs_greeks("PE", spot, k, t, RISK_FREE_RATE, DIVIDEND_YIELD, sigma_pe)
+            gammas[(k, "CE")], gammas[(k, "PE")] = g_ce["gamma"], g_pe["gamma"]
+            deltas[(k, "CE")], deltas[(k, "PE")] = g_ce["delta"], g_pe["delta"]
+            net_gex += g_ce["gamma"] * ce_oi - g_pe["gamma"] * pe_oi
+            cum += g_pe["gamma"] * pe_oi - g_ce["gamma"] * ce_oi
+            pts.append((k, cum))
+
+        for (k0, v0), (k1, v1) in zip(pts, pts[1:]):
+            if (v0 <= 0 <= v1 or v0 >= 0 >= v1) and v0 != v1:
+                gamma_flip = round(k0 + (-v0) / (v1 - v0) * (k1 - k0), 2)
+                break
+
+        out.append({
+            "date": d,
+            "netGex": round(net_gex, 2),
+            "gammaFlip": gamma_flip,
+            "atmCEDelta": round(deltas.get((atm, "CE"), 0.0), 4),
+            "atmCEGamma": round(gammas.get((atm, "CE"), 0.0), 6),
+            "atmPEDelta": round(deltas.get((atm, "PE"), 0.0), 4),
+            "atmPEGamma": round(gammas.get((atm, "PE"), 0.0), 6),
+        })
+    return out
+
+
+async def fetch_history_greeks(
+    symbol: str, expiry: str, from_date: str, to_date: str
+) -> dict:
+    """Daily netGex / gammaFlip / ATM CE+PE delta+gamma, reconstructed from
+    Upstox per-leg daily OHLC+OI candles via Black-Scholes -- historical
+    candles carry no exchange-reported IV, unlike the live chain. Strikes are
+    windowed to config.STRIKE_WINDOW around each day's own ATM, mirroring
+    processing.build_chain() exactly so these line up with live values.
+    Cached like fetch_history_chain (past days don't change)."""
+    ux = get_upstox()
+    await ux.load_instruments()
+    key = ux.underlying_key(symbol)
+    if not key:
+        raise RuntimeError(f"no Upstox key for {symbol} (index or F&O stock)")
+
+    ck = (symbol.upper(), expiry, from_date, to_date)
+    if ck in _HIST_GREEKS_CACHE:
+        return {"symbol": symbol.upper(), "expiry": expiry, "from": from_date,
+                "to": to_date, "series": _HIST_GREEKS_CACHE[ck], "cached": True}
+
+    # 1. current chain -> per-strike CE/PE instrument keys (same bound as
+    # fetch_history_chain: reconstruction only covers strikes in TODAY's chain)
+    chain = await ux.get(
+        "/option/chain", {"instrument_key": key, "expiry_date": _nse_to_iso(expiry)}
+    )
+    legs: list[tuple[float, str, str]] = []
+    strikes_set: set[float] = set()
+    for r in chain.get("data", []) or []:
+        strike = _num(r.get("strike_price"))
+        strikes_set.add(strike)
+        for side, obj in (("CE", r.get("call_options")), ("PE", r.get("put_options"))):
+            ik = (obj or {}).get("instrument_key")
+            if ik:
+                legs.append((strike, side, ik))
+    strikes = sorted(strikes_set)
+    diffs = sorted({round(b - a, 2) for a, b in zip(strikes, strikes[1:]) if b > a})
+    step = diffs[0] if diffs else 50.0
+
+    # 2. per-leg daily candles [ts,o,h,l,c,volume,oi] -- capture close AND oi
+    # (fetch_history_chain keeps only oi; gamma/IV reconstruction needs price too)
+    sem = asyncio.Semaphore(12)
+
+    async def _one(strike: float, side: str, ik: str):
+        async with sem:
+            try:
+                h = await ux.get(f"/historical-candle/{ik}/days/1/{to_date}/{from_date}", v3=True)
+                return strike, side, h.get("data", {}).get("candles", []) or []
+            except Exception:  # noqa: BLE001
+                return strike, side, []
+
+    results = await asyncio.gather(*[_one(s, sd, ik) for s, sd, ik in legs])
+
+    # 3. underlying daily closes (spot)
+    spot_by_date: dict[str, float] = {}
+    try:
+        uh = await ux.get(f"/historical-candle/{key}/days/1/{to_date}/{from_date}", v3=True)
+        for c in uh.get("data", {}).get("candles", []) or []:
+            spot_by_date[c[0][:10]] = _num(c[4])
+    except Exception:  # noqa: BLE001
+        pass
+
+    # 4. per_date[date][strike][side] = {"close":.., "oi":..}
+    per_date: dict[str, dict] = {}
+    for strike, side, candles in results:
+        for c in candles:
+            d = c[0][:10]
+            close = _num(c[4]) if len(c) > 4 else 0.0
+            oi = _num(c[6]) if len(c) > 6 else 0.0
+            per_date.setdefault(d, {}).setdefault(strike, {})[side] = {"close": close, "oi": oi}
+
+    series = await asyncio.to_thread(
+        _compute_greeks_series, per_date, spot_by_date, strikes, step, expiry
+    )
+
+    _HIST_GREEKS_CACHE[ck] = series
+    return {"symbol": symbol.upper(), "expiry": expiry, "from": from_date,
+            "to": to_date, "series": series, "cached": False}
+
+
 # ------------------------------------------------------------------ backtest
 async def run_backtest(
     symbol: str, expiry: str, legs: list[dict], from_date: str, to_date: str

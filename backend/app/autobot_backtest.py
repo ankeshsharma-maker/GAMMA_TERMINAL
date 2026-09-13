@@ -44,6 +44,17 @@ _LOT = {
     "NIFTYNXT50": 25, "SENSEX": 20, "BANKEX": 30,
 }
 
+# condition kinds that need reconstructed historical Greeks/GEX (see
+# upstox_data.fetch_history_greeks) -- gated separately from the cheap
+# pcr/maxPain fetch below since this one does real IV-solving + a second
+# full round of Upstox calls, so only pay for it when a rule actually uses it.
+_GREEK_KINDS = {"gamma_flip", "net_gex", "delta_change", "gamma_change"}
+
+
+def _rule_uses_greeks(rule: dict) -> bool:
+    conds = list(rule.get("entry") or []) + list(rule.get("exit") or [])
+    return any((c or {}).get("kind") in _GREEK_KINDS for c in conds)
+
 
 def _f(v, d=0.0):
     try:
@@ -150,6 +161,24 @@ async def backtest_rule(
             have_chain = len(rows) >= 6
         except Exception:  # noqa: BLE001
             have_chain = False
+
+    # 2b. Greeks/GEX history (gamma_flip / net_gex / delta_change / gamma_change)
+    # -- only fetched when the rule actually uses one of these, since unlike
+    # the pcr/maxPain fetch above this does real Black-Scholes IV-solving plus
+    # a second full round of Upstox calls.
+    have_greeks = False
+    if expiry and _rule_uses_greeks(rule):
+        try:
+            hg = await upstox_data.fetch_history_greeks(symbol, expiry, dates[0], to_date)
+            rows_g = hg.get("series", [])
+            for r in rows_g:
+                chain_by.setdefault(r["date"], {}).update({
+                    k: r.get(k) for k in
+                    ("netGex", "gammaFlip", "atmCEDelta", "atmCEGamma", "atmPEDelta", "atmPEGamma")
+                })
+            have_greeks = len(rows_g) >= 6
+        except Exception:  # noqa: BLE001
+            have_greeks = False
 
     step = _STEP.get(symbol, 50)
     lot = _LOT.get(symbol, 1)
@@ -335,7 +364,7 @@ async def backtest_rule(
         "symbol": symbol, "expiry": expiry or None, "from": from_date, "to": to_date,
         "instrument": rule.get("instrument"), "side": side, "lots": rule.get("lots", 1),
         "lot": lot, "days": len(win),
-        "pricing": pricing, "hasChain": have_chain,
+        "pricing": pricing, "hasChain": have_chain, "hasGreeksHistory": have_greeks,
         "synIV": round(syn_iv, 3), "synDTE": syn_dte,
         "trades": trades,
         "equity": equity,
