@@ -616,6 +616,22 @@ export const api = {
         trend: "BULLISH" | "BEARISH" | "NEUTRAL";
       }[];
     }>("/api/upstox/indicator-scan", { method: "POST", body: JSON.stringify({ symbols, date }) }),
+  weeklyGex: (symbol: string, days = 7) =>
+    j<{
+      symbol: string;
+      source: "nse_bhavcopy" | "upstox";
+      series: {
+        date: string;
+        spot: number;
+        netGex: number;
+        gammaFlip: number;
+        atmCEDelta: number;
+        atmCEGamma: number;
+        atmPEDelta: number;
+        atmPEGamma: number;
+        expiry: string;
+      }[];
+    }>(`/api/upstox/weekly-gex?symbol=${symbol}&days=${days}`),
   dataSource: () => j<{ source: "nse" | "upstox" }>("/api/upstox/data-source"),
   setDataSource: (source: "nse" | "upstox") =>
     j<{ source: "nse" | "upstox" }>("/api/upstox/data-source", {

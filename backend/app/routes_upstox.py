@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse
 
 from .brokers.upstox import get_upstox
 from .processing import build_chain
-from . import upstox_data
+from . import nse_bhavcopy, upstox_data
 
 router = APIRouter(prefix="/api/upstox", tags=["upstox"])
 
@@ -169,6 +169,35 @@ async def history_greeks(
         return await upstox_data.fetch_history_greeks(symbol.upper(), expiry, frm, to)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(502, f"Upstox history failed: {exc}")
+
+
+@router.get("/weekly-gex")
+async def weekly_gex(symbol: str = Query(...), days: int = Query(7, ge=1, le=30)):
+    """Daily netGex / gammaFlip / spot for the last `days` *trading* days,
+    reconstructed from NSE's own bhavcopy (real front-week contract per day —
+    see nse_bhavcopy) so this needs no Upstox connection for NIFTY/BANKNIFTY/
+    FINNIFTY/MIDCPNIFTY/NIFTYNXT50. Falls back to the Upstox same-expiry
+    approximation (which does need Upstox connected) for anything bhavcopy
+    doesn't cover, e.g. BSE names."""
+    symbol = symbol.upper()
+    from datetime import datetime, timedelta
+
+    to_date = datetime.now().strftime("%Y-%m-%d")
+    from_date = (datetime.now() - timedelta(days=days * 2 + 5)).strftime("%Y-%m-%d")
+    try:
+        hg = await nse_bhavcopy.fetch_bhavcopy_greeks(symbol, from_date, to_date)
+        rows = hg.get("series", [])
+        source = "nse_bhavcopy"
+        if len(rows) < 3:
+            exps = await upstox_data.fetch_expiries(symbol)
+            expiry = exps[0] if exps else ""
+            if expiry:
+                hg2 = await upstox_data.fetch_history_greeks(symbol, expiry, from_date, to_date)
+                rows = hg2.get("series", [])
+                source = "upstox"
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"weekly GEX failed: {exc}")
+    return {"symbol": symbol, "source": source, "series": sorted(rows, key=lambda r: r["date"])[-days:]}
 
 
 @router.get("/chain-preview")

@@ -33,8 +33,13 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const isMobile = useIsMobile();
   const [tools, setTools] = useState(false); // mobile: show the extra control rows
   const [metric, setMetric] = useState<Metric>("combined");
-  const [layout, setLayout] = useState<"chart" | "ladder" | "sensibull" | "pcr">("chart");
+  const [layout, setLayout] = useState<"chart" | "ladder" | "sensibull" | "pcr" | "gex">("chart");
   const [pcrPts, setPcrPts] = useState<{ t: number; pcr: number; spot: number }[]>([]);
+  const [gexPts, setGexPts] = useState<
+    { date: string; spot: number; netGex: number; gammaFlip: number }[]
+  >([]);
+  const [gexSource, setGexSource] = useState<"nse_bhavcopy" | "upstox" | null>(null);
+  const [gexErr, setGexErr] = useState<string | null>(null);
   const [count, setCount] = useState(10);
   const [symChoices, setSymChoices] = useState<string[]>([]);
   const [zoom, setZoom] = useState(1);
@@ -124,6 +129,32 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       );
     load();
     const id = window.setInterval(load, 20000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [layout, symbol]);
+
+  // daily netGex/gammaFlip history for the "gex" layout — daily-resolution,
+  // so a slow refresh is plenty (unlike the live 20s polls above)
+  useEffect(() => {
+    if (layout !== "gex" || !symbol) return;
+    let alive = true;
+    setGexErr(null);
+    const load = () =>
+      api.weeklyGex(symbol, 10).then(
+        (d) => {
+          if (!alive) return;
+          setGexPts(d.series);
+          setGexSource(d.source);
+        },
+        (e) => {
+          if (!alive) return;
+          setGexErr(e?.message || "failed");
+        }
+      );
+    load();
+    const id = window.setInterval(load, 5 * 60000);
     return () => {
       alive = false;
       window.clearInterval(id);
@@ -878,6 +909,118 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     );
   })();
 
+  // ---- Weekly GEX: daily net dealer-gamma-exposure trend (bars) with
+  // spot + gamma-flip level overlaid (lines) ----
+  const gexEl = (() => {
+    if (gexErr)
+      return (
+        <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-xs text-down">
+          {gexErr}
+        </div>
+      );
+    if (gexPts.length < 2)
+      return (
+        <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-xs text-term-dim">
+          loading daily GEX history for {symbol}…
+        </div>
+      );
+    const W = 1000;
+    const H = 320;
+    const pad = { l: 56, r: 56, t: 20, b: 34 };
+    const n = gexPts.length;
+    const gexVals = gexPts.map((p) => p.netGex);
+    let glo = Math.min(0, ...gexVals);
+    let ghi = Math.max(0, ...gexVals);
+    const gPad = (ghi - glo) * 0.12 || 1;
+    glo -= gPad;
+    ghi += gPad;
+    const prices = gexPts.flatMap((p) => [p.spot, p.gammaFlip]);
+    let plo = Math.min(...prices);
+    let phi = Math.max(...prices);
+    const pPad = (phi - plo) * 0.15 || 1;
+    plo -= pPad;
+    phi += pPad;
+    const x = (i: number) => pad.l + (n > 1 ? (i / (n - 1)) * (W - pad.l - pad.r) : (W - pad.l - pad.r) / 2);
+    const y = (v: number) => pad.t + (1 - (v - glo) / (ghi - glo || 1)) * (H - pad.t - pad.b);
+    const yp = (v: number) => pad.t + (1 - (v - plo) / (phi - plo || 1)) * (H - pad.t - pad.b);
+    const zeroY = y(0);
+    const spotPath = gexPts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${yp(p.spot).toFixed(1)}`).join(" ");
+    const flipPath = gexPts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${yp(p.gammaFlip).toFixed(1)}`).join(" ");
+    const last = gexPts[n - 1];
+    const longGamma = last.spot >= last.gammaFlip;
+    const barW = Math.max(6, Math.min(28, ((W - pad.l - pad.r) / n) * 0.55));
+    const ddmmm = (d: string) => {
+      const [, m, day] = d.split("-");
+      const names = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      return `${day}-${names[Number(m)]}`;
+    };
+    return (
+      <div className={`overflow-hidden p-3 ${isMobile ? "h-[68vh]" : "min-h-0 flex-1"}`}>
+        <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
+          <span className="font-semibold text-term-text">{symbol} · Weekly GEX Trend</span>
+          <span className={`num text-lg font-bold ${longGamma ? "text-up" : "text-down"}`}>
+            {compact(last.netGex)}
+          </span>
+          <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${longGamma ? "bg-up text-white" : "bg-down text-white"}`}>
+            {longGamma ? "long-γ / dampening" : "short-γ / amplifying"}
+          </span>
+          <span className="num text-fuchsia-400">┈ γ-flip {nf(last.gammaFlip, 0)}</span>
+          <span className="num text-sky-400">── spot {nf(last.spot, 1)}</span>
+          <span className="ml-auto text-[9px] uppercase tracking-wide text-term-dim">
+            {gexSource === "upstox" ? "Upstox approximation" : "NSE bhavcopy · real front-week"}
+          </span>
+        </div>
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-[calc(100%-2rem)] w-full">
+          <line x1={pad.l} x2={W - pad.r} y1={zeroY} y2={zeroY} stroke="currentColor" strokeOpacity={0.35} className="text-term-dim" />
+          <text x={4} y={zeroY + 3} fontSize={10} className="fill-term-dim">0</text>
+          <text x={4} y={y(ghi) + 8} fontSize={10} className="fill-term-dim">{compact(ghi)}</text>
+          <text x={4} y={y(glo) - 2} fontSize={10} className="fill-term-dim">{compact(glo)}</text>
+          {[phi - (phi - plo) * 0.1, (plo + phi) / 2, plo + (phi - plo) * 0.1].map((v, i) => (
+            <text key={i} x={W - pad.r + 4} y={yp(v) + 3} fontSize={9} className="fill-sky-400/80">
+              {nf(v, 0)}
+            </text>
+          ))}
+          {gexPts.map((p, i) => {
+            const up = p.netGex >= 0;
+            const y1 = y(Math.max(0, p.netGex));
+            const y2 = y(Math.min(0, p.netGex));
+            return (
+              <g key={p.date}>
+                <rect
+                  x={x(i) - barW / 2}
+                  y={y1}
+                  width={barW}
+                  height={Math.max(1.5, y2 - y1)}
+                  rx={1.5}
+                  fill={up ? "#22c55e" : "#ef4444"}
+                  fillOpacity={0.85}
+                >
+                  <title>
+                    {p.date}: netGex {compact(p.netGex)}, spot {nf(p.spot, 1)}, γ-flip {nf(p.gammaFlip, 0)}
+                  </title>
+                </rect>
+                <text
+                  x={x(i)}
+                  y={H - pad.b + 14}
+                  fontSize={9}
+                  textAnchor="middle"
+                  className="fill-term-dim"
+                >
+                  {ddmmm(p.date)}
+                </text>
+              </g>
+            );
+          })}
+          <path d={flipPath} fill="none" stroke="#e879f9" strokeWidth={1.5} strokeDasharray="4 3" strokeOpacity={0.9} />
+          <path d={spotPath} fill="none" stroke="#38bdf8" strokeWidth={2} />
+          {gexPts.map((p, i) => (
+            <circle key={p.date} cx={x(i)} cy={yp(p.spot)} r={2.5} fill="#38bdf8" />
+          ))}
+        </svg>
+      </div>
+    );
+  })();
+
   // ---- Sensibull-style strike-wise "Change in OI" bar chart ----
   // Call bar = red, Put bar = green (leg shown by colour); above the zero line
   // = OI added, below = OI reduced (reduced bars dimmed so direction reads even
@@ -1221,6 +1364,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
                 ["ladder", "ladder"],
                 ["sensibull", "sensibull"],
                 ["pcr", "pcr"],
+                ["gex", "weekly gex"],
               ] as const
             ).map(([v, l]) => (
               <button key={v} onClick={() => setLayout(v)} className={layout === v ? "on" : ""}>
@@ -1354,6 +1498,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       {layout === "ladder" && ladderEl}
       {layout === "sensibull" && sensiEl}
       {layout === "pcr" && pcrEl}
+      {layout === "gex" && gexEl}
 
       <div className="flex flex-wrap items-center gap-x-3 border-t border-term-border px-3 py-1 text-[9px] text-term-dim">
         <span>

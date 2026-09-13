@@ -146,7 +146,7 @@ def _compute_day(symbol: str, rows: list[dict], d: date) -> dict | None:
             break
 
     return {
-        "date": ds, "netGex": round(net_gex, 2), "gammaFlip": gamma_flip,
+        "date": ds, "spot": round(spot, 2), "netGex": round(net_gex, 2), "gammaFlip": gamma_flip,
         "atmCEDelta": round(atm_ce_delta, 4), "atmCEGamma": round(atm_ce_gamma, 6),
         "atmPEDelta": round(atm_pe_delta, 4), "atmPEGamma": round(atm_pe_gamma, 6),
         "expiry": expiry_nse_fmt,
