@@ -170,10 +170,13 @@ async def backtest_rule(
     if expiry and _rule_uses_greeks(rule):
         try:
             if have_chain:
-                # the pcr/maxPain fetch above just made ~120 historical-candle
-                # requests to the same Upstox endpoint this one uses -- give
-                # its rate limiter a moment before starting a second wave.
-                await asyncio.sleep(2)
+                # The pcr/maxPain fetch above just made ~120 historical-candle
+                # requests to the same Upstox endpoint this one uses. Measured
+                # empirically against production: back-to-back, every single
+                # leg in this second wave gets rate-limited and silently
+                # returns [] (no exception anywhere); a 15s gap was the first
+                # one that reliably recovered, so 20s is used here for margin.
+                await asyncio.sleep(20)
             hg = await upstox_data.fetch_history_greeks(symbol, expiry, dates[0], to_date)
             rows_g = hg.get("series", [])
             for r in rows_g:
