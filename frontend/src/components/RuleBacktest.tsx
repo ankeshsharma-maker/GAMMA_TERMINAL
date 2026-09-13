@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { RangePresets } from "./RangePresets";
 import { api } from "../lib/api";
 import { nf } from "../lib/format";
@@ -42,11 +42,8 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
 
   // gamma_flip / net_gex / delta_change / gamma_change only have historical
   // data reconstructed for the daily-bar path -- intraday backtests can never
-  // fire these, so don't let this rule's timeframe drift off 1D.
+  // fire these, so warn (but don't block) when this rule is off 1D.
   const dailyOnly = usesGreeks(rule);
-  useEffect(() => {
-    if (dailyOnly) setTf(86400);
-  }, [dailyOnly]);
 
   const run = () => {
     setBusy(true);
@@ -146,7 +143,7 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
 
       <div className="mb-1.5 flex flex-wrap items-center gap-2 text-term-dim">
         <span className="uppercase tracking-wide">Timeframe</span>
-        <div className="seg" title={dailyOnly ? "This rule uses gamma_flip / net_gex / delta_change / gamma_change — those only have historical data on daily bars, so intraday timeframes are disabled here." : undefined}>
+        <div className="seg">
           {(
             [
               ["1m", 60],
@@ -157,19 +154,17 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
               ["1D", 86400],
             ] as const
           ).map(([lbl, v]) => (
-            <button
-              key={v}
-              onClick={() => setTf(v)}
-              disabled={dailyOnly && v !== 86400}
-              className={`${tf === v ? "on" : ""} ${dailyOnly && v !== 86400 ? "cursor-not-allowed opacity-40" : ""}`}
-            >
+            <button key={v} onClick={() => setTf(v)} className={tf === v ? "on" : ""}>
               {lbl}
             </button>
           ))}
         </div>
-        {dailyOnly && (
-          <span className="text-[9px] text-amber-400">
-            1D only — this rule's gamma/delta conditions need daily Greeks history
+        {dailyOnly && tf < 86400 && (
+          <span
+            className="text-[9px] text-amber-400"
+            title="gamma_flip / net_gex / delta_change / gamma_change only have historical data on daily bars — this timeframe will show 0 trades for this rule regardless of range"
+          >
+            heads up: this rule's gamma/delta conditions won't fire outside 1D
           </span>
         )}
         {tf < 86400 && (
