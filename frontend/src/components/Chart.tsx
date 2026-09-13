@@ -13,6 +13,7 @@ import { api } from "../lib/api";
 import { MiniChart } from "./MiniChart";
 import { SelectMenu } from "./SelectMenu";
 import { getDataSrc, getIntervalS } from "../lib/prefs";
+import { computeGammaFlip } from "../lib/gammaFlip";
 import {
   bollinger,
   ema,
@@ -60,6 +61,7 @@ const TOGGLES = [
   ["vwap", "VWAP"],
   ["boll", "Bollinger"],
   ["pivot", "Pivot Points"],
+  ["gammaFlip", "Gamma Flip"],
   ["supertrend", "Supertrend"],
   ["vol", "Volume"],
   ["rsi", "RSI"],
@@ -192,6 +194,7 @@ export function Chart() {
   const [priceLines, setPriceLines] = useState<number[]>([]);
   const plRefs = useRef<any[]>([]);
   const pvtRefs = useRef<any[]>([]);
+  const gfRef = useRef<any>(null);
   const drawRef = useRef(false);
   const [legend, setLegend] = useState<string>("");
   const [rsiVal, setRsiVal] = useState<number | null>(null);
@@ -238,6 +241,7 @@ export function Chart() {
     oi: false,
     oichg: false,
     pivot: false,
+    gammaFlip: false,
     fibpivot: false,
     straddle: false, // ATM CE+PE price (a volatility proxy) — opt-in, it was crowding every chart
     score: false,
@@ -936,6 +940,28 @@ export function Chart() {
       })
     );
   }, [eff.pivot, eff.fibpivot, priceCandles, data]);
+
+  // dealer gamma-flip level (see lib/gammaFlip.ts — same formula OI Profile's
+  // "weekly gex" panel and chart marker use), drawn as one reference line
+  useEffect(() => {
+    const cs = s.current.candle as ISeriesApi<"Candlestick"> | undefined;
+    if (!cs) return;
+    if (gfRef.current) {
+      cs.removePriceLine(gfRef.current);
+      gfRef.current = null;
+    }
+    if (!eff.gammaFlip || !chain?.rows.length) return;
+    const gf = computeGammaFlip(chain.rows);
+    if (!gf) return;
+    gfRef.current = cs.createPriceLine({
+      price: Number(gf.strike.toFixed(2)),
+      color: "#e879f9",
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: "γ-flip",
+    });
+  }, [eff.gammaFlip, chain?.rows, data]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">

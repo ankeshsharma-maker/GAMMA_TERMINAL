@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import { compact, crores, nf, sk } from "../lib/format";
 import { SelectMenu } from "./SelectMenu";
 import { useIsMobile } from "../lib/useIsMobile";
+import { computeGammaFlip } from "../lib/gammaFlip";
 import type { ChainRow } from "../types";
 
 type Metric = "oi" | "chg" | "combined";
@@ -20,6 +21,62 @@ const OI_CUT = "#ef4444";
 
 const zClamp = (z: number) => Math.min(3, Math.max(0.5, z));
 
+/** Two-value ring: |aVal| vs |bVal| as an arc split, a bold center label and
+ *  a dim caption underneath. Shared by the OI-split donuts and the Dealer
+ *  Exposure panel's Call/Put and ITM/OTM rings. */
+const MiniDonut = ({
+  aVal,
+  bVal,
+  aCol,
+  bCol,
+  center,
+  sub,
+}: {
+  aVal: number;
+  bVal: number;
+  aCol: string;
+  bCol: string;
+  center: string;
+  sub: string;
+}) => {
+  const R = 40;
+  const SW = 12;
+  const C = 2 * Math.PI * R;
+  const t = Math.abs(aVal) + Math.abs(bVal) || 1;
+  const aLen = (Math.abs(aVal) / t) * C;
+  return (
+    <svg viewBox="0 0 100 100" className="w-full max-w-[190px]">
+      <circle cx="50" cy="50" r={R} fill="none" stroke="#1e2733" strokeWidth={SW} />
+      <circle
+        cx="50"
+        cy="50"
+        r={R}
+        fill="none"
+        stroke={bCol}
+        strokeWidth={SW}
+        strokeDasharray={`${C} ${C}`}
+        transform="rotate(-90 50 50)"
+      />
+      <circle
+        cx="50"
+        cy="50"
+        r={R}
+        fill="none"
+        stroke={aCol}
+        strokeWidth={SW}
+        strokeDasharray={`${aLen.toFixed(1)} ${C}`}
+        transform="rotate(-90 50 50)"
+      />
+      <text x="50" y="47" textAnchor="middle" className="fill-term-text" fontSize="16" fontWeight="700">
+        {center}
+      </text>
+      <text x="50" y="61" textAnchor="middle" className="fill-term-dim" fontSize="8">
+        {sub}
+      </text>
+    </svg>
+  );
+};
+
 export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const chain = useStore((s) => s.chain);
   const chainError = useStore((s) => s.chainError);
@@ -33,7 +90,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const isMobile = useIsMobile();
   const [tools, setTools] = useState(false); // mobile: show the extra control rows
   const [metric, setMetric] = useState<Metric>("combined");
-  const [layout, setLayout] = useState<"chart" | "ladder" | "sensibull" | "pcr" | "gex">("chart");
+  const [layout, setLayout] = useState<"chart" | "ladder" | "sensibull" | "pcr" | "gex" | "dex">("chart");
   const [pcrPts, setPcrPts] = useState<{ t: number; pcr: number; spot: number }[]>([]);
   const [gexPts, setGexPts] = useState<
     { date: string; spot: number; netGex: number; gammaFlip: number }[]
@@ -209,25 +266,9 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     return { ceAdd, ceCut, peAdd, peCut, maxChg };
   }, [rows, win, tf]);
 
-  // gamma-flip: strike where cumulative dealer gamma exposure crosses zero.
-  // Dealer gamma proxy per strike = putGamma·putOI − callGamma·callOI (dealers long puts / short calls
-  // from customer flow). Below the flip dealers are short gamma (moves amplified), above it long gamma.
-  const gammaFlip = useMemo(() => {
-    if (rows.length < 2) return null;
-    let cum = 0;
-    let prev = 0;
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
-      prev = cum;
-      cum += (r.put.gamma ?? 0) * (r.put.oi ?? 0) - (r.call.gamma ?? 0) * (r.call.oi ?? 0);
-      if (i > 0 && prev !== 0 && Math.sign(cum) !== Math.sign(prev)) {
-        const t = Math.abs(prev) / (Math.abs(prev) + Math.abs(cum) || 1);
-        const k0 = rows[i - 1].strike;
-        return { strike: k0 + (r.strike - k0) * t, index: i - 1 + t };
-      }
-    }
-    return null;
-  }, [rows]);
+  // gamma-flip: strike where cumulative dealer gamma exposure crosses zero
+  // (see lib/gammaFlip.ts — shared with Chart.tsx's price-line overlay).
+  const gammaFlip = useMemo(() => computeGammaFlip(rows), [rows]);
 
   // current spot / close: fractional column index for a vertical marker line
   const spotMark = useMemo(() => {
@@ -686,59 +727,6 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     const dtot = Math.abs(dCEnet) + Math.abs(dPEnet);
     const tfLbl = tf === 0 ? "since open" : `last ${tf}m`;
 
-    const MiniDonut = ({
-      aVal,
-      bVal,
-      aCol,
-      bCol,
-      center,
-      sub,
-    }: {
-      aVal: number;
-      bVal: number;
-      aCol: string;
-      bCol: string;
-      center: string;
-      sub: string;
-    }) => {
-      const R = 40;
-      const SW = 12;
-      const C = 2 * Math.PI * R;
-      const t = Math.abs(aVal) + Math.abs(bVal) || 1;
-      const aLen = (Math.abs(aVal) / t) * C;
-      return (
-        <svg viewBox="0 0 100 100" className="w-full max-w-[190px]">
-          <circle cx="50" cy="50" r={R} fill="none" stroke="#1e2733" strokeWidth={SW} />
-          <circle
-            cx="50"
-            cy="50"
-            r={R}
-            fill="none"
-            stroke={bCol}
-            strokeWidth={SW}
-            strokeDasharray={`${C} ${C}`}
-            transform="rotate(-90 50 50)"
-          />
-          <circle
-            cx="50"
-            cy="50"
-            r={R}
-            fill="none"
-            stroke={aCol}
-            strokeWidth={SW}
-            strokeDasharray={`${aLen.toFixed(1)} ${C}`}
-            transform="rotate(-90 50 50)"
-          />
-          <text x="50" y="47" textAnchor="middle" className="fill-term-text" fontSize="16" fontWeight="700">
-            {center}
-          </text>
-          <text x="50" y="61" textAnchor="middle" className="fill-term-dim" fontSize="8">
-            {sub}
-          </text>
-        </svg>
-      );
-    };
-
     const Row = ({ c, label, val }: { c: string; label: string; val: string }) => (
       <div className="flex items-center justify-between text-2xs">
         <span className="flex items-center gap-1">
@@ -1095,6 +1083,134 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     );
   })();
 
+  // ---- Dealer Exposure: regime + IV/expected-move + aggregate greeks +
+  // Call/Put and ITM/OTM OI split, all off the already-fetched chain (no
+  // extra request — unlike weekly gex this needs no history, just today's
+  // live rows) ----
+  const dexEl = (() => {
+    if (!chain) return null;
+    let dex = 0, theta = 0, vega = 0, itmOI = 0, otmOI = 0;
+    for (const r of rows) {
+      // same "call − put" dealer-exposure convention as the backend's own
+      // netGex (processing.py) — NOT the gammaFlip walk above, which nets
+      // the opposite way for its own, different purpose (finding the
+      // zero-cross strike rather than one aggregate figure).
+      dex += (r.call.delta ?? 0) * (r.call.oi ?? 0) - (r.put.delta ?? 0) * (r.put.oi ?? 0);
+      theta += (r.call.theta ?? 0) * (r.call.oi ?? 0) - (r.put.theta ?? 0) * (r.put.oi ?? 0);
+      vega += (r.call.vega ?? 0) * (r.call.oi ?? 0) - (r.put.vega ?? 0) * (r.put.oi ?? 0);
+      // ITM/OTM per leg, not the row's own `moneyness` (that field is
+      // call-centric — a strike below spot is a call ITM but a put OTM).
+      if (r.strike < spot) { itmOI += r.call.oi || 0; otmOI += r.put.oi || 0; }
+      else if (r.strike > spot) { otmOI += r.call.oi || 0; itmOI += r.put.oi || 0; }
+    }
+    const expMove = chain.atmIV && chain.dte != null
+      ? spot * (chain.atmIV / 100) * Math.sqrt(Math.max(chain.dte, 0) / 365)
+      : null;
+    const shortGamma = gammaFlip ? spot < gammaFlip.strike : null;
+    const { ce, pe } = oiTotals;
+    const oiTot = ce + pe;
+    const itmTot = itmOI + otmOI;
+
+    const Tile = ({ label, value, sub }: { label: string; value: string; sub?: string }) => (
+      <div className="rounded border border-term-border bg-term-bg/40 p-2">
+        <div className="text-[9px] uppercase tracking-wide text-term-dim">{label}</div>
+        <div className="num text-base font-bold text-term-text">{value}</div>
+        {sub && <div className="text-[9px] text-term-dim">{sub}</div>}
+      </div>
+    );
+    const Greek = ({ label, value, up }: { label: string; value: string; up: boolean | null }) => (
+      <div className="rounded border border-term-border bg-term-bg/40 px-1 py-1.5 text-center">
+        <div className="text-[9px] text-term-dim">{label}</div>
+        <div className={`num text-xs font-bold ${up == null ? "text-term-text" : up ? "text-up" : "text-down"}`}>
+          {value}
+        </div>
+      </div>
+    );
+
+    return (
+      <div className={`p-3 ${isMobile ? "" : "min-h-0 flex-1 overflow-y-auto"}`}>
+        <div className="mx-auto max-w-sm">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-semibold text-term-text">{symbol} · Dealer Exposure</span>
+            <span className="num text-xs font-bold text-term-text">{nf(spot, 1)}</span>
+          </div>
+
+          {gammaFlip && (
+            <div
+              className={`mb-2 flex items-center justify-between rounded border p-2.5 ${
+                shortGamma ? "border-down/40 bg-down/10" : "border-up/40 bg-up/10"
+              }`}
+              title="Below the gamma-flip strike dealers are short gamma and hedging amplifies moves; above it they're long gamma and hedging dampens moves."
+            >
+              <div>
+                <div className="text-[9px] uppercase tracking-wide text-term-dim">GEX regime</div>
+                <div className={`text-base font-extrabold ${shortGamma ? "text-down" : "text-up"}`}>
+                  {shortGamma ? "Short-γ" : "Long-γ"}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-[9px] uppercase tracking-wide text-term-dim">Gamma flip</div>
+                <div className="num text-base font-extrabold text-fuchsia-400">{sk(gammaFlip.strike)}</div>
+              </div>
+            </div>
+          )}
+
+          <div className="mb-2 grid grid-cols-2 gap-2">
+            <Tile label="PCR" value={nf(chain.pcr, 2)} />
+            <Tile label="Max Pain" value={nf(chain.maxPain, 0)} />
+            <Tile label="ATM IV" value={chain.atmIV ? `${nf(chain.atmIV, 1)}%` : "–"} />
+            <Tile
+              label="Expected move"
+              value={expMove ? `±${nf(expMove, 0)}` : "–"}
+              sub={expMove ? `${nf((expMove / spot) * 100, 2)}% · ${nf(chain.dte, 1)}d` : undefined}
+            />
+          </div>
+          {chain.atmStraddle != null && (
+            <div className="mb-2">
+              <Tile label="ATM straddle" value={nf(chain.atmStraddle, 1)} />
+            </div>
+          )}
+
+          <div
+            className="mb-3 grid grid-cols-4 gap-1.5"
+            title="Aggregate dealer exposure over the visible strike window: Σ(call·OI − put·OI) per greek, same sign convention as netGex — assumes dealers are net long puts / short calls from customer flow."
+          >
+            <Greek label="ΔDEX" value={compact(dex)} up={dex >= 0} />
+            <Greek label="ΓGEX" value={compact(chain.netGex)} up={chain.netGex >= 0} />
+            <Greek label="Θ/day" value={compact(theta)} up={theta >= 0} />
+            <Greek label="Vega" value={compact(vega)} up={null} />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="rounded border border-term-border bg-term-panel/40 p-2 text-center">
+              <div className="mb-1 text-[9px] uppercase tracking-wide text-term-dim">Call vs Put OI</div>
+              <MiniDonut aVal={pe} bVal={ce} aCol={PUT_OI} bCol={CALL_OI} center={nf(chain.pcr, 2)} sub="PCR" />
+              <div className="mt-1 flex justify-center gap-3 text-[9px] text-term-dim">
+                <span><Sw c={PUT_OI} /> Put {oiTot ? nf((pe / oiTot) * 100, 0) : "–"}%</span>
+                <span><Sw c={CALL_OI} /> Call {oiTot ? nf((ce / oiTot) * 100, 0) : "–"}%</span>
+              </div>
+            </div>
+            <div className="rounded border border-term-border bg-term-panel/40 p-2 text-center">
+              <div className="mb-1 text-[9px] uppercase tracking-wide text-term-dim">ITM vs OTM OI</div>
+              <MiniDonut
+                aVal={itmOI}
+                bVal={otmOI}
+                aCol="#3b82f6"
+                bCol="#a855f7"
+                center={itmTot ? `${nf((itmOI / itmTot) * 100, 0)}%` : "–"}
+                sub="ITM"
+              />
+              <div className="mt-1 flex justify-center gap-3 text-[9px] text-term-dim">
+                <span><Sw c="#3b82f6" /> ITM {itmTot ? nf((itmOI / itmTot) * 100, 0) : "–"}%</span>
+                <span><Sw c="#a855f7" /> OTM {itmTot ? nf((otmOI / itmTot) * 100, 0) : "–"}%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  })();
+
   // ---- Sensibull-style strike-wise "Change in OI" bar chart ----
   // Call bar = red, Put bar = green (leg shown by colour); above the zero line
   // = OI added, below = OI reduced (reduced bars dimmed so direction reads even
@@ -1439,6 +1555,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
                 ["sensibull", "sensibull"],
                 ["pcr", "pcr"],
                 ["gex", "weekly gex"],
+                ["dex", "dealer exposure"],
               ] as const
             ).map(([v, l]) => (
               <button key={v} onClick={() => setLayout(v)} className={layout === v ? "on" : ""}>
@@ -1573,6 +1690,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       {layout === "sensibull" && sensiEl}
       {layout === "pcr" && pcrEl}
       {layout === "gex" && gexEl}
+      {layout === "dex" && dexEl}
 
       <div className="flex flex-wrap items-center gap-x-3 border-t border-term-border px-3 py-1 text-[9px] text-term-dim">
         <span>
