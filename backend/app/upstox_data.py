@@ -291,7 +291,13 @@ def _compute_greeks_series(
         atm = min(strikes, key=lambda k: abs(k - spot))
         lo, hi = atm - STRIKE_WINDOW * step, atm + STRIKE_WINDOW * step
         window = sorted(k for k in strikes if lo <= k <= hi and k in pd)
-        if not window:
+        # A handful of thinly-traded strikes can carry historical candles from
+        # long before the rest of the chain was even listed (confirmed: dates
+        # over a year outside the real listing window showing up with 2-5 of
+        # ~120 legs present, vs. 57+ on genuinely covered days). One stray
+        # strike used to be enough to pass; require a real fraction of the
+        # intended window so a sparse/immature day is skipped, not faked.
+        if len(window) < max(10, round((2 * STRIKE_WINDOW + 1) * 0.3)):
             continue
 
         now = datetime.strptime(d, "%Y-%m-%d").replace(hour=15, minute=30, tzinfo=IST)
