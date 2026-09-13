@@ -1129,60 +1129,60 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
 
     return (
       <div className={`p-3 ${isMobile ? "" : "min-h-0 flex-1 overflow-y-auto"}`}>
-        <div className="mx-auto max-w-sm">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-semibold text-term-text">{symbol} · Dealer Exposure</span>
-            <span className="num text-xs font-bold text-term-text">{nf(spot, 1)}</span>
-          </div>
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs font-semibold text-term-text">{symbol} · Dealer Exposure</span>
+          <span className="num text-xs font-bold text-term-text">{nf(spot, 1)}</span>
+        </div>
 
-          {gammaFlip && (
-            <div
-              className={`mb-2 flex items-center justify-between rounded border p-2.5 ${
-                shortGamma ? "border-down/40 bg-down/10" : "border-up/40 bg-up/10"
-              }`}
-              title="Below the gamma-flip strike dealers are short gamma and hedging amplifies moves; above it they're long gamma and hedging dampens moves."
-            >
-              <div>
-                <div className="text-[9px] uppercase tracking-wide text-term-dim">GEX regime</div>
-                <div className={`text-base font-extrabold ${shortGamma ? "text-down" : "text-up"}`}>
-                  {shortGamma ? "Short-γ" : "Long-γ"}
+        <div className={`flex gap-4 ${isMobile ? "flex-col" : "flex-row items-stretch"}`}>
+          {/* stats table */}
+          <div className={isMobile ? "" : "w-[380px] shrink-0"}>
+            {gammaFlip && (
+              <div
+                className={`mb-2 flex items-center justify-between rounded border p-2.5 ${
+                  shortGamma ? "border-down/40 bg-down/10" : "border-up/40 bg-up/10"
+                }`}
+                title="Below the gamma-flip strike dealers are short gamma and hedging amplifies moves; above it they're long gamma and hedging dampens moves."
+              >
+                <div>
+                  <div className="text-[9px] uppercase tracking-wide text-term-dim">GEX regime</div>
+                  <div className={`text-base font-extrabold ${shortGamma ? "text-down" : "text-up"}`}>
+                    {shortGamma ? "Short-γ" : "Long-γ"}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[9px] uppercase tracking-wide text-term-dim">Gamma flip</div>
+                  <div className="num text-base font-extrabold text-fuchsia-400">{sk(gammaFlip.strike)}</div>
                 </div>
               </div>
-              <div className="text-right">
-                <div className="text-[9px] uppercase tracking-wide text-term-dim">Gamma flip</div>
-                <div className="num text-base font-extrabold text-fuchsia-400">{sk(gammaFlip.strike)}</div>
-              </div>
-            </div>
-          )}
+            )}
 
-          <div className="mb-2 grid grid-cols-2 gap-2">
-            <Tile label="PCR" value={nf(chain.pcr, 2)} />
-            <Tile label="Max Pain" value={nf(chain.maxPain, 0)} />
-            <Tile label="ATM IV" value={chain.atmIV ? `${nf(chain.atmIV, 1)}%` : "–"} />
-            <Tile
-              label="Expected move"
-              value={expMove ? `±${nf(expMove, 0)}` : "–"}
-              sub={expMove ? `${nf((expMove / spot) * 100, 2)}% · ${nf(chain.dte, 1)}d` : undefined}
-            />
-          </div>
-          {chain.atmStraddle != null && (
-            <div className="mb-2">
-              <Tile label="ATM straddle" value={nf(chain.atmStraddle, 1)} />
+            <div className="mb-2 grid grid-cols-3 gap-2">
+              <Tile label="PCR" value={nf(chain.pcr, 2)} />
+              <Tile label="Max Pain" value={nf(chain.maxPain, 0)} />
+              <Tile label="ATM IV" value={chain.atmIV ? `${nf(chain.atmIV, 1)}%` : "–"} />
+              <Tile
+                label="Expected move"
+                value={expMove ? `±${nf(expMove, 0)}` : "–"}
+                sub={expMove ? `${nf((expMove / spot) * 100, 2)}% · ${nf(chain.dte, 1)}d` : undefined}
+              />
+              {chain.atmStraddle != null && <Tile label="ATM straddle" value={nf(chain.atmStraddle, 1)} />}
             </div>
-          )}
 
-          <div
-            className="mb-3 grid grid-cols-4 gap-1.5"
-            title="Aggregate dealer exposure over the visible strike window: Σ(call·OI − put·OI) per greek, same sign convention as netGex — assumes dealers are net long puts / short calls from customer flow."
-          >
-            <Greek label="ΔDEX" value={compact(dex)} up={dex >= 0} />
-            <Greek label="ΓGEX" value={compact(chain.netGex)} up={chain.netGex >= 0} />
-            <Greek label="Θ/day" value={compact(theta)} up={theta >= 0} />
-            <Greek label="Vega" value={compact(vega)} up={null} />
+            <div
+              className="grid grid-cols-4 gap-1.5"
+              title="Aggregate dealer exposure over the visible strike window: Σ(call·OI − put·OI) per greek, same sign convention as netGex — assumes dealers are net long puts / short calls from customer flow."
+            >
+              <Greek label="ΔDEX" value={compact(dex)} up={dex >= 0} />
+              <Greek label="ΓGEX" value={compact(chain.netGex)} up={chain.netGex >= 0} />
+              <Greek label="Θ/day" value={compact(theta)} up={theta >= 0} />
+              <Greek label="Vega" value={compact(vega)} up={null} />
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2.5">
-            <div className="rounded border border-term-border bg-term-panel/40 p-2 text-center">
+          {/* donuts — horizontal, filling the rest of the row, sized to the stats table's height */}
+          <div className="flex min-w-0 flex-1 flex-row gap-3">
+            <div className="flex min-w-0 flex-1 flex-col items-center justify-center rounded border border-term-border bg-term-panel/40 p-3 text-center">
               <div className="mb-1 text-[9px] uppercase tracking-wide text-term-dim">Call vs Put OI</div>
               <MiniDonut aVal={pe} bVal={ce} aCol={PUT_OI} bCol={CALL_OI} center={nf(chain.pcr, 2)} sub="PCR" />
               <div className="mt-1 flex justify-center gap-3 text-[9px] text-term-dim">
@@ -1190,7 +1190,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
                 <span><Sw c={CALL_OI} /> Call {oiTot ? nf((ce / oiTot) * 100, 0) : "–"}%</span>
               </div>
             </div>
-            <div className="rounded border border-term-border bg-term-panel/40 p-2 text-center">
+            <div className="flex min-w-0 flex-1 flex-col items-center justify-center rounded border border-term-border bg-term-panel/40 p-3 text-center">
               <div className="mb-1 text-[9px] uppercase tracking-wide text-term-dim">ITM vs OTM OI</div>
               <MiniDonut
                 aVal={itmOI}
