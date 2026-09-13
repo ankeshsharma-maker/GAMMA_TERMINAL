@@ -98,6 +98,10 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const [gexSource, setGexSource] = useState<"nse_bhavcopy" | "upstox" | null>(null);
   const [gexErr, setGexErr] = useState<string | null>(null);
   const [gexView, setGexView] = useState<"chart" | "table">("chart");
+  const [gexFrame, setGexFrame] = useState<"daily" | "intraday">("daily");
+  const [intraGexPts, setIntraGexPts] = useState<
+    { t: number; spot: number; netGex: number; gammaFlip: number | null }[]
+  >([]);
   const [count, setCount] = useState(10);
   const [symChoices, setSymChoices] = useState<string[]>([]);
   const [zoom, setZoom] = useState(1);
@@ -192,6 +196,37 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       window.clearInterval(id);
     };
   }, [layout, symbol]);
+
+  // today's intraday netGex/gammaFlip — same in-memory session history the
+  // PCR chart above already polls (store.py records both on every chain
+  // refresh), just not surfaced as its own view before. Bounded to
+  // HISTORY_MAXLEN snapshots (~3h at the poller's ~15s cadence), persisted
+  // to disk and reloaded on startup (store._load_history/_persist_history)
+  // -- NOT reset by a restart, but also not a clean single trading session
+  // if the backend was down for stretches in between; the daily bhavcopy
+  // view below has no such gaps since it's one real close per real day.
+  useEffect(() => {
+    if (layout !== "gex" || gexFrame !== "intraday" || !symbol) return;
+    let alive = true;
+    const load = () =>
+      api.history(symbol).then(
+        (d) => {
+          if (!alive) return;
+          setIntraGexPts(
+            d.points
+              .filter((p) => p.netGex != null)
+              .map((p) => ({ t: p.t, spot: p.spot, netGex: p.netGex, gammaFlip: p.gammaFlip ?? null }))
+          );
+        },
+        () => {}
+      );
+    load();
+    const id = window.setInterval(load, 15000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [layout, gexFrame, symbol]);
 
   // daily netGex/gammaFlip history for the "gex" layout — daily-resolution,
   // so a slow refresh is plenty (unlike the live 20s polls above)
@@ -898,19 +933,134 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     );
   })();
 
+  const frameToggle = (
+    <div className="seg">
+      <button onClick={() => setGexFrame("daily")} className={gexFrame === "daily" ? "on" : ""}>
+        Daily
+      </button>
+      <button onClick={() => setGexFrame("intraday")} className={gexFrame === "intraday" ? "on" : ""}>
+        Intraday
+      </button>
+    </div>
+  );
+
+  // ---- Weekly GEX / intraday: dealer-gamma-exposure trend, either as daily
+  // bars off NSE bhavcopy (real front-week per day, see gexPts above) or as
+  // today's own live session — the same in-memory netGex/gammaFlip history
+  // the PCR chart already polls, just not charted on its own before. ----
+  const gexIntraEl = (() => {
+    if (intraGexPts.length < 2)
+      return (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-8 text-xs text-term-dim">
+          {frameToggle}
+          <span>collecting intraday GEX for {symbol}… (last ~720 polled samples, persisted to disk)</span>
+        </div>
+      );
+    const W = 1000;
+    const H = 320;
+    const pad = { l: 56, r: 56, t: 20, b: 26 };
+    const n = intraGexPts.length;
+    const withFlip = intraGexPts.filter((p) => p.gammaFlip != null) as { t: number; spot: number; netGex: number; gammaFlip: number }[];
+    const gexVals = intraGexPts.map((p) => p.netGex);
+    let glo = Math.min(0, ...gexVals);
+    let ghi = Math.max(0, ...gexVals);
+    const gPad = (ghi - glo) * 0.12 || 1;
+    glo -= gPad;
+    ghi += gPad;
+    const prices = intraGexPts.flatMap((p) => (p.gammaFlip != null ? [p.spot, p.gammaFlip] : [p.spot]));
+    let plo = Math.min(...prices);
+    let phi = Math.max(...prices);
+    const pPad = (phi - plo) * 0.15 || 1;
+    plo -= pPad;
+    phi += pPad;
+    const t0 = intraGexPts[0].t;
+    const t1 = intraGexPts[n - 1].t || t0 + 1;
+    const x = (t: number) => pad.l + ((t - t0) / (t1 - t0 || 1)) * (W - pad.l - pad.r);
+    const y = (v: number) => pad.t + (1 - (v - glo) / (ghi - glo || 1)) * (H - pad.t - pad.b);
+    const yp = (v: number) => pad.t + (1 - (v - plo) / (phi - plo || 1)) * (H - pad.t - pad.b);
+    const zeroY = y(0);
+    // the poller isn't guaranteed to run continuously (deploy restarts,
+    // backend downtime) and history persists across those gaps rather than
+    // resetting -- break the line instead of drawing a straight connector
+    // across a real gap, so a multi-hour outage doesn't look like a smooth move.
+    const GAP_S = 300; // 20x the ~15s poll cadence
+    const pathWithGaps = <T,>(pts: T[], tOf: (p: T) => number, vOf: (p: T) => number) => {
+      let d = "";
+      let prevT: number | null = null;
+      for (const p of pts) {
+        const t = tOf(p);
+        d += `${prevT === null || t - prevT > GAP_S ? "M" : "L"}${x(t).toFixed(1)},${vOf(p).toFixed(1)} `;
+        prevT = t;
+      }
+      return d.trim();
+    };
+    const gexPath = pathWithGaps(intraGexPts, (p) => p.t, (p) => y(p.netGex));
+    const spotPath = pathWithGaps(intraGexPts, (p) => p.t, (p) => yp(p.spot));
+    const flipPath = pathWithGaps(withFlip, (p) => p.t, (p) => yp(p.gammaFlip));
+    const last = intraGexPts[n - 1];
+    const longGamma = last.gammaFlip != null ? last.spot >= last.gammaFlip : null;
+    const fmtT = (t: number) =>
+      new Date(t * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+    return (
+      <div className={`overflow-hidden p-3 ${isMobile ? "h-[68vh]" : "min-h-0 flex-1"}`}>
+        <div className="mb-1 flex flex-wrap items-center gap-3">
+          <span className="text-xs font-semibold text-term-text">{symbol} · Intraday GEX (today)</span>
+          <span className={`num text-lg font-bold ${longGamma == null ? "text-term-text" : longGamma ? "text-up" : "text-down"}`}>
+            {compact(last.netGex)}
+          </span>
+          {longGamma != null && (
+            <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${longGamma ? "bg-up text-white" : "bg-down text-white"}`}>
+              {longGamma ? "long-γ / dampening" : "short-γ / amplifying"}
+            </span>
+          )}
+          {frameToggle}
+          <span className="ml-auto text-[9px] uppercase tracking-wide text-term-dim">
+            session history · last ~720 polled samples (~3h continuous)
+          </span>
+        </div>
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-[calc(100%-2rem)] w-full">
+          <line x1={pad.l} x2={W - pad.r} y1={zeroY} y2={zeroY} stroke="currentColor" strokeOpacity={0.35} className="text-term-dim" />
+          <text x={4} y={zeroY + 3} fontSize={10} className="fill-term-dim">0</text>
+          <text x={4} y={y(ghi) + 8} fontSize={10} className="fill-term-dim">{compact(ghi)}</text>
+          <text x={4} y={y(glo) - 2} fontSize={10} className="fill-term-dim">{compact(glo)}</text>
+          {[phi - (phi - plo) * 0.1, (plo + phi) / 2, plo + (phi - plo) * 0.1].map((v, i) => (
+            <text key={i} x={W - pad.r + 4} y={yp(v) + 3} fontSize={9} className="fill-sky-400/80">
+              {nf(v, 0)}
+            </text>
+          ))}
+          {[t0, (t0 + t1) / 2, t1].map((t, i) => (
+            <text key={i} x={x(t)} y={H - 8} fontSize={11} textAnchor="middle" className="fill-term-dim">
+              {fmtT(t)}
+            </text>
+          ))}
+          <path d={gexPath} fill="none" stroke={longGamma === false ? "#ef4444" : "#22c55e"} strokeWidth={2} />
+          {withFlip.length > 1 && (
+            <path d={flipPath} fill="none" stroke="#e879f9" strokeWidth={1.5} strokeDasharray="4 3" strokeOpacity={0.9} />
+          )}
+          <path d={spotPath} fill="none" stroke="#38bdf8" strokeWidth={1.5} strokeOpacity={0.9} />
+          <circle cx={x(last.t)} cy={y(last.netGex)} r={3.5} fill={longGamma === false ? "#ef4444" : "#22c55e"} />
+          <circle cx={x(last.t)} cy={yp(last.spot)} r={3} fill="#38bdf8" />
+        </svg>
+      </div>
+    );
+  })();
+
   // ---- Weekly GEX: daily net dealer-gamma-exposure trend (bars) with
   // spot + gamma-flip level overlaid (lines) ----
   const gexEl = (() => {
+    if (gexFrame === "intraday") return gexIntraEl;
     if (gexErr)
       return (
-        <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-xs text-down">
-          {gexErr}
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-8 text-xs text-down">
+          {frameToggle}
+          <span>{gexErr}</span>
         </div>
       );
     if (gexPts.length < 2)
       return (
-        <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-xs text-term-dim">
-          loading daily GEX history for {symbol}…
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-8 text-xs text-term-dim">
+          {frameToggle}
+          <span>loading daily GEX history for {symbol}…</span>
         </div>
       );
     const W = 1000;
@@ -962,6 +1112,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
               Table
             </button>
           </div>
+          {frameToggle}
           <span className="ml-auto text-[9px] uppercase tracking-wide text-term-dim">
             {gexSource === "upstox" ? "Upstox approximation" : "NSE bhavcopy · real front-week"}
           </span>

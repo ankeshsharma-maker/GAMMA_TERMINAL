@@ -80,6 +80,7 @@ export const api = {
         atmIV: number | null;
         maxPain: number;
         netGex: number;
+        gammaFlip?: number | null;
         ceOIChg?: number | null;
         peOIChg?: number | null;
         ceOI?: number | null;
