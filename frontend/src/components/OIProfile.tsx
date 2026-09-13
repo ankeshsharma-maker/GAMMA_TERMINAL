@@ -40,6 +40,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   >([]);
   const [gexSource, setGexSource] = useState<"nse_bhavcopy" | "upstox" | null>(null);
   const [gexErr, setGexErr] = useState<string | null>(null);
+  const [gexView, setGexView] = useState<"chart" | "table">("chart");
   const [count, setCount] = useState(10);
   const [symChoices, setSymChoices] = useState<string[]>([]);
   const [zoom, setZoom] = useState(1);
@@ -965,6 +966,14 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${longGamma ? "bg-up text-white" : "bg-down text-white"}`}>
             {longGamma ? "long-γ / dampening" : "short-γ / amplifying"}
           </span>
+          <div className="seg">
+            <button onClick={() => setGexView("chart")} className={gexView === "chart" ? "on" : ""}>
+              Chart
+            </button>
+            <button onClick={() => setGexView("table")} className={gexView === "table" ? "on" : ""}>
+              Table
+            </button>
+          </div>
           <span className="ml-auto text-[9px] uppercase tracking-wide text-term-dim">
             {gexSource === "upstox" ? "Upstox approximation" : "NSE bhavcopy · real front-week"}
           </span>
@@ -985,53 +994,103 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
             spot <span className="num text-sky-400">{nf(last.spot, 1)}</span>
           </span>
         </div>
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-[calc(100%-2rem)] w-full">
-          <line x1={pad.l} x2={W - pad.r} y1={zeroY} y2={zeroY} stroke="currentColor" strokeOpacity={0.35} className="text-term-dim" />
-          <text x={4} y={zeroY + 3} fontSize={10} className="fill-term-dim">0</text>
-          <text x={4} y={y(ghi) + 8} fontSize={10} className="fill-term-dim">{compact(ghi)}</text>
-          <text x={4} y={y(glo) - 2} fontSize={10} className="fill-term-dim">{compact(glo)}</text>
-          {[phi - (phi - plo) * 0.1, (plo + phi) / 2, plo + (phi - plo) * 0.1].map((v, i) => (
-            <text key={i} x={W - pad.r + 4} y={yp(v) + 3} fontSize={9} className="fill-sky-400/80">
-              {nf(v, 0)}
-            </text>
-          ))}
-          {gexPts.map((p, i) => {
-            const up = p.netGex >= 0;
-            const y1 = y(Math.max(0, p.netGex));
-            const y2 = y(Math.min(0, p.netGex));
-            return (
-              <g key={p.date}>
-                <rect
-                  x={x(i) - barW / 2}
-                  y={y1}
-                  width={barW}
-                  height={Math.max(1.5, y2 - y1)}
-                  rx={1.5}
-                  fill={up ? "#22c55e" : "#ef4444"}
-                  fillOpacity={0.85}
-                >
-                  <title>
-                    {p.date}: netGex {compact(p.netGex)}, spot {nf(p.spot, 1)}, γ-flip {nf(p.gammaFlip, 0)}
-                  </title>
-                </rect>
-                <text
-                  x={x(i)}
-                  y={H - pad.b + 14}
-                  fontSize={9}
-                  textAnchor="middle"
-                  className="fill-term-dim"
-                >
-                  {ddmmm(p.date)}
-                </text>
-              </g>
-            );
-          })}
-          <path d={flipPath} fill="none" stroke="#e879f9" strokeWidth={1.5} strokeDasharray="4 3" strokeOpacity={0.9} />
-          <path d={spotPath} fill="none" stroke="#38bdf8" strokeWidth={2} />
-          {gexPts.map((p, i) => (
-            <circle key={p.date} cx={x(i)} cy={yp(p.spot)} r={2.5} fill="#38bdf8" />
-          ))}
-        </svg>
+        {gexView === "chart" ? (
+          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-[calc(100%-2rem)] w-full">
+            <line x1={pad.l} x2={W - pad.r} y1={zeroY} y2={zeroY} stroke="currentColor" strokeOpacity={0.35} className="text-term-dim" />
+            <text x={4} y={zeroY + 3} fontSize={10} className="fill-term-dim">0</text>
+            <text x={4} y={y(ghi) + 8} fontSize={10} className="fill-term-dim">{compact(ghi)}</text>
+            <text x={4} y={y(glo) - 2} fontSize={10} className="fill-term-dim">{compact(glo)}</text>
+            {[phi - (phi - plo) * 0.1, (plo + phi) / 2, plo + (phi - plo) * 0.1].map((v, i) => (
+              <text key={i} x={W - pad.r + 4} y={yp(v) + 3} fontSize={9} className="fill-sky-400/80">
+                {nf(v, 0)}
+              </text>
+            ))}
+            {gexPts.map((p, i) => {
+              const up = p.netGex >= 0;
+              const y1 = y(Math.max(0, p.netGex));
+              const y2 = y(Math.min(0, p.netGex));
+              return (
+                <g key={p.date}>
+                  <rect
+                    x={x(i) - barW / 2}
+                    y={y1}
+                    width={barW}
+                    height={Math.max(1.5, y2 - y1)}
+                    rx={1.5}
+                    fill={up ? "#22c55e" : "#ef4444"}
+                    fillOpacity={0.85}
+                  >
+                    <title>
+                      {p.date}: netGex {compact(p.netGex)}, spot {nf(p.spot, 1)}, γ-flip {nf(p.gammaFlip, 0)}
+                    </title>
+                  </rect>
+                  <text
+                    x={x(i)}
+                    y={H - pad.b + 14}
+                    fontSize={9}
+                    textAnchor="middle"
+                    className="fill-term-dim"
+                  >
+                    {ddmmm(p.date)}
+                  </text>
+                </g>
+              );
+            })}
+            <path d={flipPath} fill="none" stroke="#e879f9" strokeWidth={1.5} strokeDasharray="4 3" strokeOpacity={0.9} />
+            <path d={spotPath} fill="none" stroke="#38bdf8" strokeWidth={2} />
+            {gexPts.map((p, i) => (
+              <circle key={p.date} cx={x(i)} cy={yp(p.spot)} r={2.5} fill="#38bdf8" />
+            ))}
+          </svg>
+        ) : (
+          <div className="h-[calc(100%-2rem)] w-full overflow-auto">
+            <table className="num w-full text-xs">
+              <thead className="sticky top-0 bg-term-panel2 text-[10px] uppercase text-term-dim">
+                <tr className="[&>th]:border-b [&>th]:border-term-border [&>th]:px-2 [&>th]:py-1 [&>th]:text-right first:[&>th]:text-left">
+                  <th className="!text-left">Date</th>
+                  <th>Spot</th>
+                  <th>netGex</th>
+                  <th>γ-flip</th>
+                  <th>Gap to flip</th>
+                  <th className="!text-center">Regime</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...gexPts].reverse().map((p) => {
+                  const gap = p.spot - p.gammaFlip;
+                  const regimeUp = gap >= 0;
+                  return (
+                    <tr
+                      key={p.date}
+                      className="border-b border-term-border/40 hover:bg-term-accent/[0.06]"
+                    >
+                      <td className="px-2 py-1 text-left text-term-text">{ddmmm(p.date)}</td>
+                      <td className="px-2 py-1 text-right text-sky-400">{nf(p.spot, 1)}</td>
+                      <td className={`px-2 py-1 text-right font-semibold ${p.netGex >= 0 ? "text-up" : "text-down"}`}>
+                        {p.netGex >= 0 ? "+" : ""}
+                        {compact(p.netGex)}
+                      </td>
+                      <td className="px-2 py-1 text-right text-fuchsia-400">{nf(p.gammaFlip, 0)}</td>
+                      <td className={`px-2 py-1 text-right ${regimeUp ? "text-up" : "text-down"}`}>
+                        {gap >= 0 ? "+" : ""}
+                        {nf(gap, 0)}
+                      </td>
+                      <td className="px-2 py-1 text-center">
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
+                            regimeUp ? "bg-up text-white" : "bg-down text-white"
+                          }`}
+                        >
+                          {regimeUp ? "long-γ" : "short-γ"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     );
   })();
