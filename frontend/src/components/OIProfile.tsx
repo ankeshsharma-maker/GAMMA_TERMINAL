@@ -102,6 +102,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const [intraGexPts, setIntraGexPts] = useState<
     { t: number; spot: number; netGex: number; gammaFlip: number | null }[]
   >([]);
+  const [intraTf, setIntraTf] = useState(5); // minutes: bucket size for the intraday gex chart/table
   const [count, setCount] = useState(10);
   const [symChoices, setSymChoices] = useState<string[]>([]);
   const [zoom, setZoom] = useState(1);
@@ -372,6 +373,21 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       didCenter.current = true;
     }
   }, [rows, chain, COLW, layout]);
+
+  // resample the raw ~15s poll samples into one row per intraTf-minute
+  // bucket (last sample in the bucket wins, like a candle's close) — raw
+  // cadence is far too dense to read as a table, and pretty noisy as a
+  // chart too. A real hook, so it has to sit with the others above the
+  // early returns below, not down with the (non-hook) *El render IIFEs.
+  const intraGexBuckets = useMemo(() => {
+    const bucketS = intraTf * 60;
+    const byBucket = new Map<number, { t: number; spot: number; netGex: number; gammaFlip: number | null }>();
+    for (const p of intraGexPts) {
+      const b = Math.floor(p.t / bucketS) * bucketS;
+      byBucket.set(b, p); // later (more recent) sample in the same bucket overwrites
+    }
+    return [...byBucket.entries()].sort((a, b) => a[0] - b[0]).map(([bucketT, p]) => ({ ...p, bucketT }));
+  }, [intraGexPts, intraTf]);
 
   if (chainError && !chain)
     return <div className="flex h-full items-center justify-center p-8 text-sm text-down">{chainError}</div>;
@@ -944,6 +960,16 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     </div>
   );
 
+  const intraTfToggle = (
+    <div className="seg">
+      {([3, 5, 15, 60, 240] as const).map((m) => (
+        <button key={m} onClick={() => setIntraTf(m)} className={intraTf === m ? "on" : ""}>
+          {m < 60 ? `${m}m` : `${m / 60}h`}
+        </button>
+      ))}
+    </div>
+  );
+
   // ---- Weekly GEX / intraday: dealer-gamma-exposure trend, either as daily
   // bars off NSE bhavcopy (real front-week per day, see gexPts above) or as
   // today's own live session — the same in-memory netGex/gammaFlip history
@@ -956,25 +982,91 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           <span>collecting intraday GEX for {symbol}… (last ~720 polled samples, persisted to disk)</span>
         </div>
       );
+    const intraGexPtsAll = intraGexBuckets;
+    if (gexView === "table") {
+      return (
+        <div className={`p-3 ${isMobile ? "h-[68vh]" : "min-h-0 flex-1 overflow-auto"}`}>
+          <div className="mb-2 flex flex-wrap items-center gap-3">
+            <span className="text-xs font-semibold text-term-text">{symbol} · Intraday GEX (today)</span>
+            {frameToggle}
+            <div className="seg">
+              <button onClick={() => setGexView("chart")} className="">
+                Chart
+              </button>
+              <button onClick={() => setGexView("table")} className="on">
+                Table
+              </button>
+            </div>
+            {intraTfToggle}
+            <span className="ml-auto text-[9px] uppercase tracking-wide text-term-dim">
+              {intraGexPtsAll.length} × {intraTf < 60 ? `${intraTf}m` : `${intraTf / 60}h`} buckets
+            </span>
+          </div>
+          <table className="num w-full text-xs">
+            <thead className="sticky top-0 bg-term-panel2 text-[10px] uppercase text-term-dim">
+              <tr className="[&>th]:border-b [&>th]:border-term-border [&>th]:px-2 [&>th]:py-1 [&>th]:text-right first:[&>th]:text-left">
+                <th className="!text-left">Time</th>
+                <th>Spot</th>
+                <th>netGex</th>
+                <th>γ-flip</th>
+                <th>Gap to flip</th>
+                <th className="!text-center">Regime</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...intraGexPtsAll].reverse().map((p) => {
+                const gap = p.gammaFlip != null ? p.spot - p.gammaFlip : null;
+                const regimeUp = gap != null ? gap >= 0 : null;
+                return (
+                  <tr key={p.bucketT} className="border-b border-term-border/40 hover:bg-term-accent/[0.06]">
+                    <td className="px-2 py-1 text-left text-term-text">
+                      {new Date(p.bucketT * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                    </td>
+                    <td className="px-2 py-1 text-right text-sky-400">{nf(p.spot, 1)}</td>
+                    <td className={`px-2 py-1 text-right font-semibold ${p.netGex >= 0 ? "text-up" : "text-down"}`}>
+                      {p.netGex >= 0 ? "+" : ""}
+                      {compact(p.netGex)}
+                    </td>
+                    <td className="px-2 py-1 text-right text-fuchsia-400">
+                      {p.gammaFlip != null ? nf(p.gammaFlip, 0) : "–"}
+                    </td>
+                    <td className={`px-2 py-1 text-right ${regimeUp == null ? "text-term-dim" : regimeUp ? "text-up" : "text-down"}`}>
+                      {gap != null ? `${gap >= 0 ? "+" : ""}${nf(gap, 0)}` : "–"}
+                    </td>
+                    <td className="px-2 py-1 text-center">
+                      {regimeUp != null && (
+                        <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${regimeUp ? "bg-up text-white" : "bg-down text-white"}`}>
+                          {regimeUp ? "long-γ" : "short-γ"}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
     const W = 1000;
     const H = 320;
     const pad = { l: 56, r: 56, t: 20, b: 26 };
-    const n = intraGexPts.length;
-    const withFlip = intraGexPts.filter((p) => p.gammaFlip != null) as { t: number; spot: number; netGex: number; gammaFlip: number }[];
-    const gexVals = intraGexPts.map((p) => p.netGex);
+    const n = intraGexPtsAll.length;
+    const withFlip = intraGexPtsAll.filter((p) => p.gammaFlip != null) as { t: number; spot: number; netGex: number; gammaFlip: number }[];
+    const gexVals = intraGexPtsAll.map((p) => p.netGex);
     let glo = Math.min(0, ...gexVals);
     let ghi = Math.max(0, ...gexVals);
     const gPad = (ghi - glo) * 0.12 || 1;
     glo -= gPad;
     ghi += gPad;
-    const prices = intraGexPts.flatMap((p) => (p.gammaFlip != null ? [p.spot, p.gammaFlip] : [p.spot]));
+    const prices = intraGexPtsAll.flatMap((p) => (p.gammaFlip != null ? [p.spot, p.gammaFlip] : [p.spot]));
     let plo = Math.min(...prices);
     let phi = Math.max(...prices);
     const pPad = (phi - plo) * 0.15 || 1;
     plo -= pPad;
     phi += pPad;
-    const t0 = intraGexPts[0].t;
-    const t1 = intraGexPts[n - 1].t || t0 + 1;
+    const t0 = intraGexPtsAll[0].t;
+    const t1 = intraGexPtsAll[n - 1].t || t0 + 1;
     const x = (t: number) => pad.l + ((t - t0) / (t1 - t0 || 1)) * (W - pad.l - pad.r);
     const y = (v: number) => pad.t + (1 - (v - glo) / (ghi - glo || 1)) * (H - pad.t - pad.b);
     const yp = (v: number) => pad.t + (1 - (v - plo) / (phi - plo || 1)) * (H - pad.t - pad.b);
@@ -983,7 +1075,10 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     // backend downtime) and history persists across those gaps rather than
     // resetting -- break the line instead of drawing a straight connector
     // across a real gap, so a multi-hour outage doesn't look like a smooth move.
-    const GAP_S = 300; // 20x the ~15s poll cadence
+    // Scales with the bucket size: consecutive buckets are intraTf minutes
+    // apart by construction, so the threshold has to clear that normal
+    // spacing (3x it) rather than flagging every single bucket boundary.
+    const GAP_S = intraTf * 60 * 3;
     const pathWithGaps = <T,>(pts: T[], tOf: (p: T) => number, vOf: (p: T) => number) => {
       let d = "";
       let prevT: number | null = null;
@@ -994,10 +1089,10 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       }
       return d.trim();
     };
-    const gexPath = pathWithGaps(intraGexPts, (p) => p.t, (p) => y(p.netGex));
-    const spotPath = pathWithGaps(intraGexPts, (p) => p.t, (p) => yp(p.spot));
+    const gexPath = pathWithGaps(intraGexPtsAll, (p) => p.t, (p) => y(p.netGex));
+    const spotPath = pathWithGaps(intraGexPtsAll, (p) => p.t, (p) => yp(p.spot));
     const flipPath = pathWithGaps(withFlip, (p) => p.t, (p) => yp(p.gammaFlip));
-    const last = intraGexPts[n - 1];
+    const last = intraGexPtsAll[n - 1];
     const longGamma = last.gammaFlip != null ? last.spot >= last.gammaFlip : null;
     const fmtT = (t: number) =>
       new Date(t * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
@@ -1013,7 +1108,16 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
               {longGamma ? "long-γ / dampening" : "short-γ / amplifying"}
             </span>
           )}
+          <div className="seg">
+            <button onClick={() => setGexView("chart")} className="on">
+              Chart
+            </button>
+            <button onClick={() => setGexView("table")} className="">
+              Table
+            </button>
+          </div>
           {frameToggle}
+          {intraTfToggle}
           <span className="ml-auto text-[9px] uppercase tracking-wide text-term-dim">
             session history · last ~720 polled samples (~3h continuous)
           </span>
