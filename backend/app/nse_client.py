@@ -61,6 +61,7 @@ def _alias(leg: dict) -> dict:
 
 class NSEClient:
     BASE = "https://www.nseindia.com"
+    _ARCHIVES = "https://archives.nseindia.com"
     _BOOTSTRAP_TTL = 600  # seconds
 
     def __init__(self) -> None:
@@ -149,6 +150,24 @@ class NSEClient:
         except RuntimeError:
             return []
         return data.get("data", []) or []
+
+    async def bhavcopy_fo(self, yyyymmdd: str) -> bytes | None:
+        """Raw F&O UDiFF Common Bhavcopy Final zip bytes for one trading day,
+        or None (holiday / not yet published / fetch failed). This is NSE's
+        own static daily archive -- unlike the option-chain-v3 API above, it
+        needs no cookie bootstrap, and it carries EVERY expiry that actually
+        traded that day (including ones long since expired and delisted from
+        any live chain), which is what makes it useful for historical Greeks
+        reconstruction: the real front-week contract, not a same-day
+        approximation from whatever's still listed today."""
+        url = f"{self._ARCHIVES}/content/fo/BhavCopy_NSE_FO_0_0_0_{yyyymmdd}_F_0000.csv.zip"
+        try:
+            resp = await self._client.get(url, headers={"Accept": "*/*"})
+        except httpx.HTTPError:
+            return None
+        if resp.status_code != 200 or len(resp.content) < 1000:
+            return None
+        return resp.content
 
     async def index_intraday(self, symbol: str) -> list:
         """Best-effort: today's intraday spot ticks as [[epoch_ms, value], ...].

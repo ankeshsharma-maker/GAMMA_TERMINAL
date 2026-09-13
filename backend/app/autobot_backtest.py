@@ -29,7 +29,7 @@ import asyncio
 import math
 from datetime import datetime
 
-from . import upstox_data
+from . import nse_bhavcopy, upstox_data
 from .autobot import _Ctx, _entry_filter_ok, _parse_hhmm, _resolve_instrument
 from .brokers.upstox import get_upstox
 from .greeks import bs_price
@@ -163,22 +163,30 @@ async def backtest_rule(
             have_chain = False
 
     # 2b. Greeks/GEX history (gamma_flip / net_gex / delta_change / gamma_change)
-    # -- only fetched when the rule actually uses one of these, since unlike
-    # the pcr/maxPain fetch above this does real Black-Scholes IV-solving plus
-    # a second full round of Upstox calls.
+    # -- only fetched when the rule actually uses one of these, since this does
+    # real Black-Scholes IV-solving plus a real round of network calls either way.
+    #
+    # Preferred source: NSE's own bhavcopy (nse_bhavcopy) -- one real chain per
+    # day, correctly using whichever expiry was actually front-week that day,
+    # with no dependence on a contract still being listed today. Falls back to
+    # the Upstox same-expiry approximation only for symbols bhavcopy doesn't
+    # cover (BSE names) or if the bhavcopy fetch comes up short.
     have_greeks = False
-    if expiry and _rule_uses_greeks(rule):
+    if _rule_uses_greeks(rule):
         try:
-            if have_chain:
-                # The pcr/maxPain fetch above just made ~120 historical-candle
-                # requests to the same Upstox endpoint this one uses. Measured
-                # empirically against production: back-to-back, every single
-                # leg in this second wave gets rate-limited and silently
-                # returns [] (no exception anywhere); a 15s gap was the first
-                # one that reliably recovered, so 20s is used here for margin.
-                await asyncio.sleep(20)
-            hg = await upstox_data.fetch_history_greeks(symbol, expiry, dates[0], to_date)
+            hg = await nse_bhavcopy.fetch_bhavcopy_greeks(symbol, dates[0], to_date)
             rows_g = hg.get("series", [])
+            if len(rows_g) < 6 and expiry:
+                if have_chain:
+                    # The pcr/maxPain fetch above just made ~120 historical-candle
+                    # requests to the same Upstox endpoint this one uses. Measured
+                    # empirically against production: back-to-back, every single
+                    # leg in this second wave gets rate-limited and silently
+                    # returns [] (no exception anywhere); a 15s gap was the first
+                    # one that reliably recovered, so 20s is used here for margin.
+                    await asyncio.sleep(20)
+                hg = await upstox_data.fetch_history_greeks(symbol, expiry, dates[0], to_date)
+                rows_g = hg.get("series", [])
             for r in rows_g:
                 chain_by.setdefault(r["date"], {}).update({
                     k: r.get(k) for k in
