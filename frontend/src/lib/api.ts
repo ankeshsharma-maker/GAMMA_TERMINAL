@@ -544,6 +544,7 @@ export const api = {
       candles?: number;
       pricing: "historical" | "synthetic" | "mixed";
       hasChain: boolean;
+      hasGreeksHistory: boolean;
       synIV: number;
       synDTE: number;
       trades: {

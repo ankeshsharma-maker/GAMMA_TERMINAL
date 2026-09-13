@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RangePresets } from "./RangePresets";
 import { api } from "../lib/api";
 import { nf } from "../lib/format";
@@ -14,6 +14,9 @@ const ddmmyy = (d: string) => {
 /** "HH:MM:SS" -> "HH-MM-SS" for display. */
 const hhmmss = (t: string) => t.replace(/:/g, "-");
 type Res = Awaited<ReturnType<typeof api.autobotBacktest>>;
+const _GREEK_KINDS = new Set(["gamma_flip", "net_gex", "delta_change", "gamma_change"]);
+const usesGreeks = (rule: AutoRule) =>
+  [...(rule.entry ?? []), ...(rule.exit ?? [])].some((c) => _GREEK_KINDS.has((c as { kind?: string }).kind ?? ""));
 
 /** Backtest one AutoBot rule against Upstox daily history.
  *
@@ -36,6 +39,14 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
   const [res, setRes] = useState<Res | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // gamma_flip / net_gex / delta_change / gamma_change only have historical
+  // data reconstructed for the daily-bar path -- intraday backtests can never
+  // fire these, so don't let this rule's timeframe drift off 1D.
+  const dailyOnly = usesGreeks(rule);
+  useEffect(() => {
+    if (dailyOnly) setTf(86400);
+  }, [dailyOnly]);
 
   const run = () => {
     setBusy(true);
@@ -135,7 +146,7 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
 
       <div className="mb-1.5 flex flex-wrap items-center gap-2 text-term-dim">
         <span className="uppercase tracking-wide">Timeframe</span>
-        <div className="seg">
+        <div className="seg" title={dailyOnly ? "This rule uses gamma_flip / net_gex / delta_change / gamma_change — those only have historical data on daily bars, so intraday timeframes are disabled here." : undefined}>
           {(
             [
               ["1m", 60],
@@ -146,11 +157,21 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
               ["1D", 86400],
             ] as const
           ).map(([lbl, v]) => (
-            <button key={v} onClick={() => setTf(v)} className={tf === v ? "on" : ""}>
+            <button
+              key={v}
+              onClick={() => setTf(v)}
+              disabled={dailyOnly && v !== 86400}
+              className={`${tf === v ? "on" : ""} ${dailyOnly && v !== 86400 ? "cursor-not-allowed opacity-40" : ""}`}
+            >
               {lbl}
             </button>
           ))}
         </div>
+        {dailyOnly && (
+          <span className="text-[9px] text-amber-400">
+            1D only — this rule's gamma/delta conditions need daily Greeks history
+          </span>
+        )}
         {tf < 86400 && (
           <label className="flex items-center gap-1" title="How many recent candles to replay (Upstox intraday history is ~25 days)">
             candles
@@ -232,6 +253,14 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
             {!res.hasChain && (
               <span className="rounded bg-term-border px-1.5 py-0.5 text-[9px] text-term-dim" title="no daily OI/PCR/max-pain history for this range — OI-based conditions were inert">
                 indicators only
+              </span>
+            )}
+            {usesGreeks(rule) && !res.hasGreeksHistory && (
+              <span
+                className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] text-amber-400"
+                title="couldn't reconstruct historical gamma/delta/GEX for this range (fetch failed or too few days) — gamma_flip / net_gex / delta_change / gamma_change conditions never fired, so this result is not a real 'no signal' — re-run to retry the fetch"
+              >
+                no Greeks history — signal conditions inert
               </span>
             )}
             {res.interval == null && (rule.holdType ?? "intraday") !== "positional" && (
