@@ -956,18 +956,33 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     };
     return (
       <div className={`overflow-hidden p-3 ${isMobile ? "h-[68vh]" : "min-h-0 flex-1"}`}>
-        <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
-          <span className="font-semibold text-term-text">{symbol} · Weekly GEX Trend</span>
+        {/* headline: what it is + today's number + the one-word verdict */}
+        <div className="mb-1 flex flex-wrap items-center gap-3">
+          <span className="text-xs font-semibold text-term-text">{symbol} · Weekly GEX Trend</span>
           <span className={`num text-lg font-bold ${longGamma ? "text-up" : "text-down"}`}>
             {compact(last.netGex)}
           </span>
           <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${longGamma ? "bg-up text-white" : "bg-down text-white"}`}>
             {longGamma ? "long-γ / dampening" : "short-γ / amplifying"}
           </span>
-          <span className="num text-fuchsia-400">┈ γ-flip {nf(last.gammaFlip, 0)}</span>
-          <span className="num text-sky-400">── spot {nf(last.spot, 1)}</span>
           <span className="ml-auto text-[9px] uppercase tracking-wide text-term-dim">
             {gexSource === "upstox" ? "Upstox approximation" : "NSE bhavcopy · real front-week"}
+          </span>
+        </div>
+        {/* legend: tied to the actual line styles in the chart below */}
+        <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-term-dim">
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-3.5 rounded-sm align-middle" style={{ background: "#22c55e" }} />
+            <span className="inline-block h-2.5 w-3.5 rounded-sm align-middle" style={{ background: "#ef4444" }} />
+            daily netGex (green ≥0 · red &lt;0)
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-0 w-4 border-t-2 border-dashed align-middle" style={{ borderColor: "#e879f9" }} />
+            γ-flip <span className="num text-fuchsia-400">{nf(last.gammaFlip, 0)}</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-0 w-4 border-t-2 align-middle" style={{ borderColor: "#38bdf8" }} />
+            spot <span className="num text-sky-400">{nf(last.spot, 1)}</span>
           </span>
         </div>
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-[calc(100%-2rem)] w-full">
