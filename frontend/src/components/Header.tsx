@@ -797,7 +797,7 @@ export function Header({ children }: { children?: ReactNode }) {
         orderMode === "live" ? "border-down" : "border-term-border"
       }`}
     >
-      {/* row 1 — logo, index ticker, view switch, filters, session pills */}
+      {/* row 1 — logo, index ticker, timestamp, session/connection pills */}
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
         <LogoWordmark />
         <HeaderIndices />
@@ -807,8 +807,6 @@ export function Header({ children }: { children?: ReactNode }) {
             <span className="inline-block w-[2.5rem]">{ago(chain.fetchedAt)}</span>
           </span>
         )}
-        <ViewToggle />
-        <ClassFilter />
         <div className="ml-auto flex items-center gap-1.5">
           <OrderModePill />
           <UpstoxPill />
@@ -832,7 +830,13 @@ export function Header({ children }: { children?: ReactNode }) {
         </div>
       </div>
 
-      {/* row 2 — chain stats + margin + P&L */}
+      {/* row 2 — nav: the 4 major tabs + group sub-nav + class filter */}
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+        <ViewToggle />
+        <ClassFilter />
+      </div>
+
+      {/* row 3 — chain stats + margin + P&L */}
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
       {chain ? (
         <>
