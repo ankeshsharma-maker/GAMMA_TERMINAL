@@ -36,6 +36,8 @@ export default defineConfig({
                 navigateFallbackDenylist: [/^\/api/, /^\/ws/],
                 cleanupOutdatedCaches: true,
                 clientsClaim: true,
+                // adds push / notificationclick listeners to the generated SW
+                importScripts: ["push-sw.js"],
             },
             devOptions: { enabled: false },
         }),
