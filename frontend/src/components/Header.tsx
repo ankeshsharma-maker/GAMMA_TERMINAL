@@ -830,14 +830,11 @@ export function Header({ children }: { children?: ReactNode }) {
         </div>
       </div>
 
-      {/* row 2 — nav: the 4 major tabs + group sub-nav + class filter */}
+      {/* row 2 — nav (4 major tabs + group sub-nav + class filter) together
+          with chain stats + margin + P&L */}
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
         <ViewToggle />
         <ClassFilter />
-      </div>
-
-      {/* row 3 — chain stats + margin + P&L */}
-      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
       {chain ? (
         <>
           <Stat label="ATM IV" value={chain.atmIV ? `${nf(chain.atmIV)}%` : "–"} />
