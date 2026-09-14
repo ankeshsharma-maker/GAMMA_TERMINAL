@@ -74,15 +74,15 @@ function ViewToggle() {
   const activeGroup = groupForView(view);
   return (
     <div className="flex flex-wrap items-center gap-2 text-2xs">
-      <div className="flex flex-wrap gap-1">
+      <div className="flex overflow-hidden rounded border border-term-border">
         {NAV_GROUPS.map((g) => (
           <button
             key={g.key}
             onClick={() => setView(g.members[0][0])}
-            className={`rounded border px-1.5 py-1 font-semibold uppercase tracking-normal transition-colors ${
+            className={`border-r border-term-border px-1.5 py-1 font-semibold uppercase tracking-normal transition-colors last:border-r-0 ${
               activeGroup?.key === g.key
-                ? "border-term-accent bg-term-accent text-white"
-                : "border-term-border text-term-dim hover:bg-term-border hover:text-term-text"
+                ? "bg-term-accent text-white"
+                : "text-term-dim hover:bg-term-border hover:text-term-text"
             }`}
           >
             {g.label}
