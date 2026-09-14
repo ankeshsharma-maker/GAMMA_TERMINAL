@@ -756,6 +756,67 @@ async def indicator_scan(symbols: list[str], as_of: str, lookback: int = 90) -> 
     return [o for o in out if o]
 
 
+# ------------------------------------------------------------- daily movers
+_RETURNS_CACHE: dict[str, list[dict]] = {}
+
+
+async def _universe_returns(symbols: list[str], as_of: str) -> list[dict]:
+    """1-day and 7-trading-day % change for each symbol, as of `as_of`
+    ('YYYY-MM-DD'). Same shape/concurrency as indicator_scan(): one
+    underlying daily-candle call per symbol, Semaphore(8)-bounded."""
+    from datetime import timedelta
+
+    ux = get_upstox()
+    await ux.load_instruments()
+    end = datetime.strptime(as_of, "%Y-%m-%d")
+    start = (end - timedelta(days=20)).strftime("%Y-%m-%d")  # ~14 trading days, safely covers 7
+
+    async def _one(sym: str) -> dict | None:
+        sym = sym.upper()
+        key = ux.underlying_key(sym)
+        if not key:
+            return None
+        try:
+            h = await ux.get(f"/historical-candle/{key}/days/1/{as_of}/{start}", v3=True)
+            c = h.get("data", {}).get("candles", []) or []
+            c = [x for x in c if x[0][:10] <= as_of]
+            c.sort(key=lambda x: x[0])  # oldest -> newest, regardless of API order
+            closes = [_num(x[4]) for x in c]
+            if len(closes) < 2:
+                return None
+            latest, prev = closes[-1], closes[-2]
+            week_ago = closes[-8] if len(closes) >= 8 else closes[0]
+            return {
+                "symbol": sym,
+                "date": c[-1][0][:10],
+                "spot": round(latest, 2),
+                "changePct1d": round((latest - prev) / prev * 100, 2) if prev else None,
+                "changePct7d": round((latest - week_ago) / week_ago * 100, 2) if week_ago else None,
+            }
+        except Exception:  # noqa: BLE001
+            return None
+
+    sem = asyncio.Semaphore(8)
+
+    async def _g(s):
+        async with sem:
+            return await _one(s)
+
+    out = await asyncio.gather(*[_g(s) for s in symbols])
+    return [o for o in out if o]
+
+
+async def universe_returns(symbols: list[str]) -> dict:
+    """Cached once-per-day: 1-day / 7-day % change across the F&O universe.
+    Historical closes don't change intraday, so this only ever (re)computes
+    on the first request of a new calendar day, not on every poll."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    if today not in _RETURNS_CACHE:
+        _RETURNS_CACHE.clear()
+        _RETURNS_CACHE[today] = await _universe_returns(symbols, today)
+    return {"date": today, "rows": _RETURNS_CACHE[today]}
+
+
 # ------------------------------------------------------- underlying OHLC candles
 def _candle_ts(iso_ts: str) -> int:
     try:

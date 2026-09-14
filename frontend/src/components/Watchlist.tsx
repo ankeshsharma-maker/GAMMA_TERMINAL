@@ -159,9 +159,10 @@ function Leg({
     : "bg-down/15 hover:bg-down/25 border border-down/25";
   const open = () => {
     if (!w) return;
-    selectSymbol(w.symbol);
+    selectSymbol(w.symbol, true);
     if (w.expiry) selectExpiry(w.expiry);
     setChartInstrument(w.key);
+    setView("chart");
   };
   if (!w)
     return (
@@ -271,8 +272,6 @@ export function Watchlist() {
   const loadPreset = async (p: (typeof WL_PRESETS)[number]) => {
     if (presetBusy || !watchlists) return;
     const target = watchlists.active ?? 0;
-    const listName = watchlists.lists[target]?.name ?? "this list";
-    if (!window.confirm(`Add ${p.syms.length} symbols from "${p.name}" to ${listName}?`)) return;
     setPresetBusy(true);
     let added = 0;
     try {

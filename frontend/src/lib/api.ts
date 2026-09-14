@@ -633,6 +633,17 @@ export const api = {
         expiry: string;
       }[];
     }>(`/api/upstox/weekly-gex?symbol=${symbol}&days=${days}`),
+  moversHistory: () =>
+    j<{
+      date: string;
+      rows: {
+        symbol: string;
+        date: string;
+        spot: number;
+        changePct1d: number | null;
+        changePct7d: number | null;
+      }[];
+    }>("/api/upstox/movers-history"),
   dataSource: () => j<{ source: "nse" | "upstox" }>("/api/upstox/data-source"),
   setDataSource: (source: "nse" | "upstox") =>
     j<{ source: "nse" | "upstox" }>("/api/upstox/data-source", {

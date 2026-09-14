@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse
 
 from .brokers.upstox import get_upstox
 from .processing import build_chain
-from . import nse_bhavcopy, upstox_data
+from . import config, nse_bhavcopy, upstox_data
 
 router = APIRouter(prefix="/api/upstox", tags=["upstox"])
 
@@ -198,6 +198,17 @@ async def weekly_gex(symbol: str = Query(...), days: int = Query(7, ge=1, le=30)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(502, f"weekly GEX failed: {exc}")
     return {"symbol": symbol, "source": source, "series": sorted(rows, key=lambda r: r["date"])[-days:]}
+
+
+@router.get("/movers-history")
+async def movers_history():
+    """1-day and 7-day % move across the F&O universe, for the Yesterday /
+    7 Day tabs on the Movers panel. Cached once per calendar day — see
+    upstox_data.universe_returns()."""
+    try:
+        return await upstox_data.universe_returns(config.FO_UNIVERSE)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"movers history failed: {exc}")
 
 
 @router.get("/chain-preview")

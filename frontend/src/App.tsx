@@ -17,7 +17,6 @@ import { StrategyBuilder } from "./components/StrategyBuilder";
 import { PositionsView } from "./components/PositionsView";
 import { ScalpPanel } from "./components/ScalpPanel";
 import { ScalpCharts } from "./components/ScalpCharts";
-import { OILadder } from "./components/OILadder";
 import { AutoBotView } from "./components/AutoBot";
 import { Funds } from "./components/Funds";
 import { OrderConfirm } from "./components/OrderConfirm";
@@ -71,7 +70,8 @@ function DesktopShell() {
     view === "scanner" ||
     view === "auto" ||
     view === "funds" ||
-    view === "journal";
+    view === "journal" ||
+    view === "chart";
   const [leftW, setLeftW] = useState(() => readNum(LS.left, 190));
   const [rightW, setRightW] = useState(() => readNum(LS.right, view === "scalper" ? 360 : 300));
   const [notifW, setNotifW] = useState(() => readNum(LS.notifW, 320));
@@ -198,7 +198,7 @@ function DesktopShell() {
         {showRight && <VSplit onDrag={bumpRight} />}
         {showRight && (
           <aside className="min-h-0 overflow-hidden border-l border-term-border">
-            {view === "scalper" ? <ScalpPanel /> : view === "chart" ? <OILadder /> : <Positions />}
+            {view === "scalper" ? <ScalpPanel /> : <Positions />}
           </aside>
         )}
 

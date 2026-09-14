@@ -998,6 +998,7 @@ export function Chart() {
                 ["chain", "Chain"],
                 ["scrip", "OI"],
                 ["trendingoi", "Trend OI"],
+                ["oiprofile", "OI Profile"],
               ] as const
             ).map(([v, label]) => (
               <button
