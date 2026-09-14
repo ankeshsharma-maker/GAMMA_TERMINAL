@@ -21,7 +21,7 @@ export function GroupSubNav({
         <button
           key={v}
           onClick={() => setView(v)}
-          className={`px-2 py-0.5 font-semibold transition-colors ${
+          className={`px-2 py-1 font-semibold transition-colors ${
             view === v
               ? "bg-term-accent text-white"
               : "text-term-dim hover:bg-term-border hover:text-term-text"
