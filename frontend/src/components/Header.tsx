@@ -807,7 +807,7 @@ export function Header({ children }: { children?: ReactNode }) {
             <span className="inline-block w-[2.5rem]">{ago(chain.fetchedAt)}</span>
           </span>
         )}
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5">
           <OrderModePill />
           <UpstoxPill />
           <BrokerPill />
@@ -855,7 +855,7 @@ export function Header({ children }: { children?: ReactNode }) {
 
       <MarginStats />
       <PnlStrip />
-      <div className="ml-auto flex items-center">{children}</div>
+      <div className="flex items-center">{children}</div>
       </div>
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
     </div>
