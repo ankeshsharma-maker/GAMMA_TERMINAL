@@ -13,9 +13,9 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 function Stat({ label, value, cls = "" }: { label: string; value: ReactNode; cls?: string }) {
   return (
-    <div className="flex flex-col justify-center border-l border-term-border/60 px-2 leading-tight first:border-l-0">
-      <span className="text-[10px] uppercase tracking-wide text-term-dim">{label}</span>
-      <span className={`num text-sm ${cls}`}>{value}</span>
+    <div className="flex flex-col justify-center leading-tight">
+      <span className="text-2xs uppercase tracking-wide text-term-dim">{label}</span>
+      <span className={`num text-xs font-semibold ${cls}`}>{value}</span>
     </div>
   );
 }
@@ -833,14 +833,13 @@ export function Header({ children }: { children?: ReactNode }) {
         </div>
       </div>
 
-      {/* zone 2 — navigation bar: 4 major tabs -> group sub-nav, class filter */}
-      <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-1 border-b bg-term-panel2 px-3 py-1.5 ${groupBorder}`}>
-        <ViewToggle />
-        <ClassFilter />
-      </div>
-
-      {/* zone 3 — chain stats, grouped: chain greeks | margin | P&L */}
-      <div className="flex flex-wrap items-stretch gap-x-0 gap-y-1 bg-term-bg px-3 py-1.5">
+      {/* zone 2 — nav (4 major tabs -> group sub-nav, class filter) merged
+          with chain stats, grouped: chain greeks | margin | P&L */}
+      <div className="flex flex-wrap items-stretch gap-x-1.5 gap-y-1 bg-term-panel2 px-3 py-1.5">
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 mr-4 border-r border-term-border pr-4">
+          <ViewToggle />
+          <ClassFilter />
+        </div>
         <div className="mr-4 flex flex-wrap items-center gap-x-1.5 gap-y-1 border-r border-term-border pr-4">
           {chain ? (
             <>
