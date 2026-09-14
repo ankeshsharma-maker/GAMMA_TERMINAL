@@ -231,6 +231,7 @@ export function Watchlist() {
     selectSymbol,
     scalpLots,
     symClassOk,
+    setSymClass,
   } = useStore();
   const wlAdd = useStore((s) => s.wlAdd);
   const wlAddList = useStore((s) => s.wlAddList);
@@ -279,6 +280,7 @@ export function Watchlist() {
         try {
           await wlAdd(target, s);
           added++;
+          if (!symClassOk(s)) setSymClass("all");
         } catch {
           /* skip a symbol the catalog doesn't know */
         }
@@ -322,6 +324,11 @@ export function Watchlist() {
     setInput("");
     setResults([]);
     setOpenSearch(false);
+    // a symbol can be added successfully and still be invisible if the
+    // persisted All/Indices/Stocks filter hides its class -- that looked
+    // exactly like "adding does nothing" and cost a lot of back-and-forth
+    // to actually diagnose, so never let a successful add go unseen.
+    if (!symClassOk(add)) setSymClass("all");
     if (optionable && !add.startsWith("IDX:")) selectSymbol(add);
   };
 
@@ -335,6 +342,7 @@ export function Watchlist() {
     if (!v) return;
     await addWatch(v);
     setInput("");
+    if (!symClassOk(v)) setSymClass("all");
     selectSymbol(v);
   };
 

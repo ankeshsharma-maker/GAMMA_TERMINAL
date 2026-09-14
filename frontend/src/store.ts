@@ -565,6 +565,9 @@ export const useStore = create<State>((set, get) => ({
     const exp = get().expiry ?? get().chain?.expiry;
     const res = await api.wlAddStrikes(i, { symbol: sym, expiry: exp ?? undefined, count });
     set({ watchlists: { active: res.active, lists: res.lists }, watch: res.quotes });
+    // the newly-added strikes are filtered the same way as their underlying
+    // symbol -- don't let them land invisibly behind the current filter.
+    if (!get().symClassOk(sym)) get().setSymClass("all");
   },
   wlClear: async (i, optionsOnly = false) => {
     set({ watchlists: await api.wlClear(i, optionsOnly) });
