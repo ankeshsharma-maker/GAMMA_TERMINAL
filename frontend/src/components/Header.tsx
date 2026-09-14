@@ -7,6 +7,8 @@ import { useLiveMtm } from "../lib/useLiveMtm";
 import { ConnBadge } from "./ConnBadge";
 import { LogoWordmark } from "./Logo";
 import { Settings } from "./Settings";
+import { GroupSubNav } from "./GroupSubNav";
+import { NAV_GROUPS, groupForView } from "../lib/navGroups";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 function Stat({ label, value, cls = "" }: { label: string; value: ReactNode; cls?: string }) {
@@ -69,34 +71,25 @@ function HideNum({ k, children }: { k: string; children: ReactNode }) {
 
 function ViewToggle() {
   const { view, setView } = useStore();
+  const activeGroup = groupForView(view);
   return (
-    <div className="flex flex-wrap gap-1 text-2xs">
-      {(
-        [
-          ["scrip", "OI"],
-          ["trendingoi", "Trend OI"],
-          ["scanner", "Scan"],
-          ["chart", "Chart"],
-          ["builder", "Build"],
-          ["positions", "Positions"],
-          ["journal", "Journal"],
-          ["scalper", "Scalp"],
-          ["auto", "Auto"],
-          ["funds", "Funds"],
-        ] as const
-      ).map(([v, label]) => (
-        <button
-          key={v}
-          onClick={() => setView(v)}
-          className={`rounded border px-1.5 py-1 font-semibold uppercase tracking-normal transition-colors ${
-            view === v
-              ? "border-term-accent bg-term-accent text-white"
-              : "border-term-border text-term-dim hover:bg-term-border hover:text-term-text"
-          }`}
-        >
-          {label}
-        </button>
-      ))}
+    <div className="flex flex-wrap items-center gap-2 text-2xs">
+      <div className="flex flex-wrap gap-1">
+        {NAV_GROUPS.map((g) => (
+          <button
+            key={g.key}
+            onClick={() => setView(g.members[0][0])}
+            className={`rounded border px-1.5 py-1 font-semibold uppercase tracking-normal transition-colors ${
+              activeGroup?.key === g.key
+                ? "border-term-accent bg-term-accent text-white"
+                : "border-term-border text-term-dim hover:bg-term-border hover:text-term-text"
+            }`}
+          >
+            {g.label}
+          </button>
+        ))}
+      </div>
+      <GroupSubNav view={view} setView={setView} />
     </div>
   );
 }

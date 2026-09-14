@@ -4,6 +4,8 @@ import { api } from "../lib/api";
 import { nf, sk, compact, signColor, px } from "../lib/format";
 import { ivRegime } from "../lib/iv";
 import type { View } from "../types";
+import { NAV_GROUPS, groupForView } from "../lib/navGroups";
+import { GroupSubNav } from "./GroupSubNav";
 
 import {
   OrderModePill,
@@ -182,26 +184,13 @@ import { Funds } from "./Funds";
 import { TradeJournal } from "./TradeJournal";
 import { LogoMark } from "./Logo";
 
-type NavItem = { v: View; icon: string; label: string };
-
-/** bottom tab bar — the 5 things you act on */
-const BOTTOM_NAV: NavItem[] = [
-  { v: "watchlist", icon: "★", label: "Watch" },
-  { v: "orders", icon: "📜", label: "Orders" },
-  { v: "positions", icon: "💼", label: "Pos" },
-  { v: "scalper", icon: "⚡", label: "Scalp" },
-  { v: "builder", icon: "🧱", label: "Build" },
-];
-
-/** top strip — the analysis views */
-const TOP_NAV: NavItem[] = [
-  { v: "chart", icon: "📈", label: "Chart" },
-  { v: "scrip", icon: "▤", label: "OI" },
-  { v: "scanner", icon: "📡", label: "Scan" },
-  { v: "trendingoi", icon: "🔥", label: "Trend OI" },
-  { v: "journal", icon: "📓", label: "Journal" },
-  { v: "auto", icon: "🤖", label: "Auto" },
-  { v: "funds", icon: "💰", label: "Funds" },
+/** bottom tab bar — Watch (the symbol picker, no desktop equivalent since
+ *  the watchlist sits in an always-visible sidebar there) plus the 4 nav
+ *  groups. Each group button lands on its first/default member; switching
+ *  between a group's other members happens in the sub-nav strip below. */
+const BOTTOM_NAV = [
+  { key: "watchlist", v: "watchlist" as View, icon: "★", label: "Watch" },
+  ...NAV_GROUPS.map((g) => ({ key: g.key, v: g.members[0][0], icon: g.icon, label: g.label })),
 ];
 
 function MobileBody({ view }: { view: View }) {
@@ -365,23 +354,14 @@ export function MobileShell() {
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
 
       <NotificationPanel />
-      {/* ── top strip: analysis views (same layout as the bottom bar) ── */}
-      <div className="flex border-b border-term-border bg-term-panel2">
-        {TOP_NAV.map((n) => (
-          <button
-            key={n.v}
-            onClick={() => setView(n.v)}
-            className={`flex flex-1 flex-col items-center gap-0.5 border-b-2 py-1.5 ${
-              view === n.v
-                ? "border-term-accent bg-term-accent/15 font-semibold text-term-accent"
-                : "border-transparent text-term-dim active:bg-term-border"
-            }`}
-          >
-            <span className="text-[17px] leading-none">{n.icon}</span>
-            <span className="text-[8px] uppercase tracking-wide">{n.label}</span>
-          </button>
-        ))}
-      </div>
+      {/* ── sub-nav: only shown when the current group has other members to
+          switch to (Chart/OI/Trend OI, or Scalp/Build/Positions/Orders, or
+          Auto/Journal/Funds) — Watch and Scan render nothing here ── */}
+      {(groupForView(view)?.members.length ?? 0) > 1 && (
+        <div className="flex justify-center border-b border-term-border bg-term-panel2 px-2 py-1.5">
+          <GroupSubNav view={view} setView={setView} />
+        </div>
+      )}
 
       {/* ── content ───────────────────────────────────────────── */}
       <main className="flex min-h-0 flex-1 flex-col overflow-auto">
@@ -390,20 +370,23 @@ export function MobileShell() {
 
       {/* ── bottom tab bar ────────────────────────────────────── */}
       <nav className="flex shrink-0 border-t border-term-border bg-term-panel2">
-        {BOTTOM_NAV.map((n) => (
-          <button
-            key={n.v}
-            onClick={() => setView(n.v)}
-            className={`flex flex-1 flex-col items-center gap-0.5 border-t-2 py-1.5 ${
-              view === n.v
-                ? "border-term-accent bg-term-accent/15 font-semibold text-term-accent"
-                : "border-transparent text-term-dim active:bg-term-border"
-            }`}
-          >
-            <span className="text-[17px] leading-none">{n.icon}</span>
-            <span className="text-[8px] uppercase tracking-wide">{n.label}</span>
-          </button>
-        ))}
+        {BOTTOM_NAV.map((n) => {
+          const active = n.key === "watchlist" ? view === "watchlist" : groupForView(view)?.key === n.key;
+          return (
+            <button
+              key={n.key}
+              onClick={() => setView(n.v)}
+              className={`flex flex-1 flex-col items-center gap-0.5 border-t-2 py-1.5 ${
+                active
+                  ? "border-term-accent bg-term-accent/15 font-semibold text-term-accent"
+                  : "border-transparent text-term-dim active:bg-term-border"
+              }`}
+            >
+              <span className="text-[17px] leading-none">{n.icon}</span>
+              <span className="text-[8px] uppercase tracking-wide">{n.label}</span>
+            </button>
+          );
+        })}
       </nav>
 
       <OrderConfirm />
