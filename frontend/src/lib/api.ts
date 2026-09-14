@@ -658,11 +658,6 @@ export const api = {
     j<BrokerStatus & { ok: boolean; error?: string | null }>("/api/broker/refresh", {
       method: "POST",
     }),
-  brokerSetToken: (token: string, client?: string) =>
-    j<BrokerStatus>("/api/broker/token", {
-      method: "POST",
-      body: JSON.stringify({ token, client }),
-    }),
   brokerDirectLogin: (b: { uid: string; pwd: string; totp: string; vc?: string }) =>
     j<BrokerStatus>("/api/broker/direct-login", { method: "POST", body: JSON.stringify(b) }),
   brokerFunds: () => j<import("../types").BrokerFunds>("/api/broker/funds"),

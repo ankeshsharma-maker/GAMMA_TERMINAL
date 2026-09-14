@@ -498,10 +498,7 @@ function PnlStrip() {
 }
 
 export function BrokerPill() {
-  const { broker, connectBroker, disconnectBroker, refreshBroker, setBrokerToken } = useStore();
-  const [mode, setMode] = useState<"" | "token">("");
-  const [tok, setTok] = useState("");
-  const [busy, setBusy] = useState(false);
+  const { broker, connectBroker, disconnectBroker, refreshBroker } = useStore();
   const [refreshing, setRefreshing] = useState(false);
 
   const doRefresh = async () => {
@@ -523,62 +520,6 @@ export function BrokerPill() {
       </span>
     );
 
-  const run = async (fn: () => Promise<void>, label: string) => {
-    setBusy(true);
-    try {
-      await fn();
-      setMode("");
-      setTok("");
-    } catch (e: any) {
-      alert(`${label} failed: ${e?.message || e}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const tokenForm = mode === "token" && (
-    <span className="flex items-center gap-1">
-      <input
-        autoFocus
-        value={tok}
-        onChange={(e) => setTok(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && tok.trim() && run(() => setBrokerToken(tok), "Token")}
-        placeholder="paste Flattrade token"
-        className="w-48 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs outline-none focus:border-term-accent"
-      />
-      <button
-        onClick={() => tok.trim() && run(() => setBrokerToken(tok), "Token")}
-        disabled={busy}
-        className="rounded bg-term-accent px-1.5 py-0.5 text-2xs text-white disabled:opacity-40"
-      >
-        {busy ? "…" : "set"}
-      </button>
-      <button onClick={() => setMode("")} className="text-term-dim hover:text-down">
-        ✕
-      </button>
-    </span>
-  );
-
-  const altBtns = !mode && (
-    <>
-      <button
-        onClick={doRefresh}
-        disabled={refreshing}
-        title="Reload the saved session, re-validate the token and reconnect the live feed"
-        className="rounded border border-term-border px-1.5 py-1 text-2xs text-term-dim hover:text-term-text disabled:opacity-40"
-      >
-        {refreshing ? "…" : "⟳ refresh"}
-      </button>
-      <button
-        onClick={() => setMode("token")}
-        title="Paste a token generated from the Flattrade portal"
-        className="rounded border border-term-border px-1.5 py-1 text-2xs text-term-dim hover:text-term-text"
-      >
-        ⌗ token
-      </button>
-    </>
-  );
-
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       {broker.authed ? (
@@ -598,8 +539,14 @@ export function BrokerPill() {
           Connect Flattrade
         </button>
       )}
-      {tokenForm}
-      {altBtns}
+      <button
+        onClick={doRefresh}
+        disabled={refreshing}
+        title="Reload the saved session, re-validate the token and reconnect the live feed"
+        className="rounded border border-term-border px-1.5 py-1 text-2xs text-term-dim hover:text-term-text disabled:opacity-40"
+      >
+        {refreshing ? "…" : "⟳ refresh"}
+      </button>
     </span>
   );
 }
