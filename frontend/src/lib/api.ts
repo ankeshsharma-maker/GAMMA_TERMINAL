@@ -658,6 +658,11 @@ export const api = {
     j<BrokerStatus & { ok: boolean; error?: string | null }>("/api/broker/refresh", {
       method: "POST",
     }),
+  brokerSetToken: (token: string, client?: string) =>
+    j<BrokerStatus>("/api/broker/token", {
+      method: "POST",
+      body: JSON.stringify({ token, client }),
+    }),
   brokerDirectLogin: (b: { uid: string; pwd: string; totp: string; vc?: string }) =>
     j<BrokerStatus>("/api/broker/direct-login", { method: "POST", body: JSON.stringify(b) }),
   brokerFunds: () => j<import("../types").BrokerFunds>("/api/broker/funds"),
@@ -692,8 +697,9 @@ export const api = {
     }),
 
   brokerBracket: () => j<BrokerBracket>("/api/broker/bracket"),
-  brokerBracketSet: (body: Partial<Pick<BrokerBracket, "enabled" | "slAmount" | "targetAmount" | "basis">>) =>
-    j<BrokerBracket>("/api/broker/bracket", { method: "POST", body: JSON.stringify(body) }),
+  brokerBracketSet: (
+    body: Partial<Pick<BrokerBracket, "enabled" | "slAmount" | "targetAmount" | "trailAmount" | "basis">>
+  ) => j<BrokerBracket>("/api/broker/bracket", { method: "POST", body: JSON.stringify(body) }),
   brokerBracketClear: () => j<BrokerBracket>("/api/broker/bracket/clear", { method: "POST" }),
 };
 
@@ -701,9 +707,11 @@ export interface BrokerBracket {
   enabled: boolean;
   slAmount: number;
   targetAmount: number;
+  trailAmount: number;
   basis: "today" | "mtm";
   armedAt: number | null;
   triggeredAt: number | null;
   lastReason: string;
   lastPnl: number | null;
+  peakPnl: number | null;
 }

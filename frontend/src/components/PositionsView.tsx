@@ -53,6 +53,7 @@ function BrokerTab() {
   const [bracket, setBracket] = useState<BrokerBracket | null>(null);
   const [slAmt, setSlAmt] = useState("");
   const [tgtAmt, setTgtAmt] = useState("");
+  const [trailAmt, setTrailAmt] = useState("");
   const [bBasis, setBBasis] = useState<"today" | "mtm">("today");
 
   // per-position target/SL brackets (leg rules attached to an already-open position)
@@ -177,11 +178,15 @@ function BrokerTab() {
   const armBracket = async () => {
     const sl = parseFloat(slAmt) || 0;
     const tgt = parseFloat(tgtAmt) || 0;
-    if (sl <= 0 && tgt <= 0) return;
+    const trail = parseFloat(trailAmt) || 0;
+    if (sl <= 0 && tgt <= 0 && trail <= 0) return;
     const lbl = bBasis === "today" ? "today's P&L" : "open MTM";
-    const cond = `${sl > 0 ? `≤ −₹${nf(sl, 0)}` : ""}${sl > 0 && tgt > 0 ? " or " : ""}${
-      tgt > 0 ? `≥ +₹${nf(tgt, 0)}` : ""
-    }`;
+    const parts = [
+      sl > 0 ? `≤ −₹${nf(sl, 0)}` : "",
+      trail > 0 ? `₹${nf(trail, 0)} back off its peak` : "",
+      tgt > 0 ? `≥ +₹${nf(tgt, 0)}` : "",
+    ].filter(Boolean);
+    const cond = parts.join(" or ");
     if (
       !window.confirm(
         `Auto square-off: flatten ALL broker positions with MARKET orders when ${lbl} is ${cond}.\nRuns on the server. Arm it now?`
@@ -194,6 +199,7 @@ function BrokerTab() {
           enabled: true,
           slAmount: sl,
           targetAmount: tgt,
+          trailAmount: trail,
           basis: bBasis,
         })
       );
@@ -263,6 +269,16 @@ function BrokerTab() {
             className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-up"
           />
         </label>
+        <label className="flex items-center gap-1 text-term-dim">
+          Trail ₹
+          <input
+            value={trailAmt}
+            onChange={(e) => setTrailAmt(e.target.value.replace(/[^\d.]/g, ""))}
+            placeholder="0"
+            title="Stop rises with the peak P&L and fires this many rupees off it"
+            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent"
+          />
+        </label>
         {bracket?.enabled ? (
           <button onClick={disarmBracket} className="btn ml-auto font-semibold text-amber-400">
             Disarm
@@ -270,7 +286,7 @@ function BrokerTab() {
         ) : (
           <button
             onClick={armBracket}
-            disabled={!parseFloat(slAmt) && !parseFloat(tgtAmt)}
+            disabled={!parseFloat(slAmt) && !parseFloat(tgtAmt) && !parseFloat(trailAmt)}
             className="btn btn-sell ml-auto font-semibold disabled:opacity-40"
           >
             Arm
@@ -280,9 +296,15 @@ function BrokerTab() {
           {bracket?.enabled
             ? `ARMED — flattens ALL when ${
                 bracket.basis === "today" ? "today's P&L" : "MTM"
-              } ${bracket.slAmount > 0 ? `≤ −₹${nf(bracket.slAmount, 0)}` : ""}${
-                bracket.slAmount > 0 && bracket.targetAmount > 0 ? " or " : ""
-              }${bracket.targetAmount > 0 ? `≥ +₹${nf(bracket.targetAmount, 0)}` : ""}${
+              } ${[
+                bracket.slAmount > 0 ? `≤ −₹${nf(bracket.slAmount, 0)}` : "",
+                bracket.trailAmount > 0 ? `₹${nf(bracket.trailAmount, 0)} back off its peak` : "",
+                bracket.targetAmount > 0 ? `≥ +₹${nf(bracket.targetAmount, 0)}` : "",
+              ]
+                .filter(Boolean)
+                .join(" or ")}${
+                bracket.trailAmount > 0 && bracket.peakPnl != null ? ` · peak ₹${nf(bracket.peakPnl, 0)}` : ""
+              }${
                 bracket.lastPnl != null ? ` · now ₹${nf(bracket.lastPnl, 0)}` : ""
               }`
             : bracket?.triggeredAt

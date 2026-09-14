@@ -168,6 +168,8 @@ export function Chart() {
   const view = useStore((s) => s.view);
   const symClass = useStore((s) => s.symClass);
   const symClassOk = useStore((s) => s.symClassOk);
+  const quickTradeAt = useStore((s) => s.quickTradeAt);
+  const scalpLots = useStore((s) => s.scalpLots);
   const [symChoices, setSymChoices] = useState<string[]>([]);
   useEffect(() => {
     api.symbols().then(
@@ -1110,6 +1112,37 @@ export function Chart() {
               }`}
             >
               PE
+            </button>
+          </div>
+        )}
+
+        {/* fast execution — trades the strike picked above, at scalpLots */}
+        {strikes.length > 0 && chain?.expiry && pickStrike > 0 && (
+          <div className="flex items-center gap-0.5 rounded border border-term-border px-1" title={`${pickStrike} × ${scalpLots} lot(s)`}>
+            <button
+              onClick={() => quickTradeAt(symbol, chain.expiry, pickStrike, "CE", "BUY")}
+              className="rounded bg-up/20 px-1.5 py-0.5 text-[10px] font-bold text-up hover:bg-up/30"
+            >
+              B CE
+            </button>
+            <button
+              onClick={() => quickTradeAt(symbol, chain.expiry, pickStrike, "CE", "SELL")}
+              className="rounded border border-down/40 px-1.5 py-0.5 text-[10px] font-bold text-down/90 hover:bg-down/10"
+            >
+              S CE
+            </button>
+            <span className="mx-0.5 h-3 w-px bg-term-border" />
+            <button
+              onClick={() => quickTradeAt(symbol, chain.expiry, pickStrike, "PE", "BUY")}
+              className="rounded bg-down/20 px-1.5 py-0.5 text-[10px] font-bold text-down hover:bg-down/30"
+            >
+              B PE
+            </button>
+            <button
+              onClick={() => quickTradeAt(symbol, chain.expiry, pickStrike, "PE", "SELL")}
+              className="rounded border border-up/40 px-1.5 py-0.5 text-[10px] font-bold text-up/90 hover:bg-up/10"
+            >
+              S PE
             </button>
           </div>
         )}

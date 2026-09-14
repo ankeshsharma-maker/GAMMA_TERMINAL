@@ -19,11 +19,14 @@ _DEFAULT = {
     "enabled": False,
     "slAmount": 0.0,      # arm a stop when P&L <= -slAmount  (0 = off)
     "targetAmount": 0.0,  # arm a target when P&L >= targetAmount (0 = off)
+    "trailAmount": 0.0,   # once armed, stop rises with the peak P&L and
+                           # fires if P&L falls trailAmount off that peak (0 = off)
     "basis": "today",     # "today" = MTM + realised, "mtm" = open MTM only
     "armedAt": None,
     "triggeredAt": None,
     "lastReason": "",
     "lastPnl": None,
+    "peakPnl": None,       # highest P&L seen since arming (trail anchor)
 }
 
 
@@ -41,7 +44,7 @@ def get() -> dict:
 
 def set_cfg(patch: dict) -> dict:
     cfg = _load()
-    for k in ("slAmount", "targetAmount"):
+    for k in ("slAmount", "targetAmount", "trailAmount"):
         if k in patch:
             try:
                 cfg[k] = max(0.0, float(patch[k] or 0))
@@ -55,6 +58,7 @@ def set_cfg(patch: dict) -> dict:
             cfg["armedAt"] = time.time()
             cfg["triggeredAt"] = None
             cfg["lastReason"] = ""
+            cfg["peakPnl"] = None
     _save(cfg)
     return cfg
 
@@ -78,7 +82,7 @@ async def tick() -> list[dict]:
     cfg = _load()
     if not cfg.get("enabled"):
         return []
-    if not (cfg.get("slAmount", 0) > 0 or cfg.get("targetAmount", 0) > 0):
+    if not (cfg.get("slAmount", 0) > 0 or cfg.get("targetAmount", 0) > 0 or cfg.get("trailAmount", 0) > 0):
         return []
 
     from .brokers import get_broker
@@ -105,13 +109,23 @@ async def tick() -> list[dict]:
     pnl = mtm + realised if cfg["basis"] == "today" else mtm
     cfg["lastPnl"] = round(pnl, 2)
 
-    hit_sl = cfg["slAmount"] > 0 and pnl <= -cfg["slAmount"]
+    trail_amt = cfg.get("trailAmount", 0) or 0
+    if trail_amt > 0:
+        cfg["peakPnl"] = max(cfg["peakPnl"], pnl) if cfg.get("peakPnl") is not None else pnl
+
+    fixed_level = -cfg["slAmount"] if cfg["slAmount"] > 0 else None
+    trail_level = (cfg["peakPnl"] - trail_amt) if (trail_amt > 0 and cfg.get("peakPnl") is not None) else None
+    levels = [v for v in (fixed_level, trail_level) if v is not None]
+    stop_level = max(levels) if levels else None
+
+    hit_sl = stop_level is not None and pnl <= stop_level
     hit_tgt = cfg["targetAmount"] > 0 and pnl >= cfg["targetAmount"]
     if not (hit_sl or hit_tgt):
         _save(cfg)
         return []
 
-    kind = "SL" if hit_sl else "TARGET"
+    is_trail = hit_sl and trail_level is not None and stop_level == trail_level
+    kind = "TARGET" if hit_tgt else ("TRAIL" if is_trail else "SL")
     # flatten every open position
     squared = 0
     for r in open_rows:
@@ -135,11 +149,14 @@ async def tick() -> list[dict]:
 
     cfg["enabled"] = False
     cfg["triggeredAt"] = time.time()
-    reason = (
-        f"{kind} hit — broker P&L ₹{pnl:.0f} "
-        f"({'≤ −' if hit_sl else '≥ '}₹{(cfg['slAmount'] if hit_sl else cfg['targetAmount']):.0f}); "
-        f"flattened {squared} position(s)"
-    )
+    if is_trail:
+        thresh = f"≤ ₹{stop_level:.0f} (₹{trail_amt:.0f} off peak ₹{cfg['peakPnl']:.0f})"
+    elif hit_sl:
+        thresh = f"≤ −₹{cfg['slAmount']:.0f}"
+    else:
+        thresh = f"≥ ₹{cfg['targetAmount']:.0f}"
+    reason = f"{kind} hit — broker P&L ₹{pnl:.0f} ({thresh}); flattened {squared} position(s)"
     cfg["lastReason"] = reason
+    cfg["peakPnl"] = None
     _save(cfg)
     return [{"kind": "broker-bracket", "message": reason}]

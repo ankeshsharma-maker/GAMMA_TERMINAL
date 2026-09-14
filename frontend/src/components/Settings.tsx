@@ -237,6 +237,65 @@ function AlertDeliverySection() {
   );
 }
 
+/** Paste-a-token path into Flattrade, for when the Connect Flattrade OAuth
+ *  flow (header) isn't available. Hidden entirely if the backend has no
+ *  FLATTRADE_* configured -- same gate BrokerPill uses. */
+function BrokerTokenSection() {
+  const broker = useStore((s) => s.broker);
+  const setBrokerToken = useStore((s) => s.setBrokerToken);
+  const [tok, setTok] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  if (!broker || !broker.configured) return null;
+
+  const submit = async () => {
+    if (!tok.trim()) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      await setBrokerToken(tok);
+      setTok("");
+      setMsg("Token set.");
+    } catch (e: any) {
+      setMsg(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Section title="Broker">
+      <div className="flex flex-col gap-1">
+        <div className="text-xs text-term-text">
+          {broker.authed ? `Connected — ${broker.clientId}` : "Not connected"}
+        </div>
+        <div className="text-[10px] leading-snug text-term-dim">
+          Normally handled by Connect Flattrade in the header — paste a token generated from
+          the Flattrade portal directly if that flow isn't available
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <input
+          value={tok}
+          onChange={(e) => setTok(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          placeholder="paste Flattrade token"
+          className="w-full min-w-0 flex-1 rounded border border-term-border bg-term-bg px-2 py-1 text-2xs text-term-text outline-none focus:border-term-accent"
+        />
+        <button
+          disabled={!tok.trim() || busy}
+          onClick={submit}
+          className={`${SEG} ${off} disabled:opacity-40`}
+        >
+          {busy ? "…" : "Set"}
+        </button>
+      </div>
+      {msg && <div className="text-[10px] text-term-dim">{msg}</div>}
+    </Section>
+  );
+}
+
 /** let a mounted Chart adopt a changed default immediately */
 const notifyPrefs = () => window.dispatchEvent(new Event("gt-prefs"));
 
@@ -429,6 +488,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
             </span>
           </Row>
         </Section>
+
+        <BrokerTokenSection />
 
         {/* ---- Data ---- */}
         <Section title="Data">
