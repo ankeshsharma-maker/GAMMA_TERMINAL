@@ -310,6 +310,9 @@ export function MobileShell() {
 
       {brokerOpen && (
         <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-2 py-1.5">
+          {(groupForView(view)?.members.length ?? 0) > 1 && (
+            <GroupSubNav view={view} setView={setView} />
+          )}
           <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
             Mode <OrderModePill />
           </span>
@@ -354,14 +357,6 @@ export function MobileShell() {
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
 
       <NotificationPanel />
-      {/* ── sub-nav: only shown when the current group has other members to
-          switch to (Chart/OI/Trend OI, or Scalp/Build/Positions/Orders, or
-          Auto/Journal/Funds) — Watch and Scan render nothing here ── */}
-      {(groupForView(view)?.members.length ?? 0) > 1 && (
-        <div className="flex justify-center border-b border-term-border bg-term-panel2 px-2 py-1.5">
-          <GroupSubNav view={view} setView={setView} />
-        </div>
-      )}
 
       {/* ── content ───────────────────────────────────────────── */}
       <main className="flex min-h-0 flex-1 flex-col overflow-auto">
