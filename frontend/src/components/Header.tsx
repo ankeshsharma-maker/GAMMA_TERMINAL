@@ -89,7 +89,12 @@ function ViewToggle() {
           </button>
         ))}
       </div>
-      <GroupSubNav view={view} setView={setView} />
+      {(activeGroup?.members.length ?? 0) > 1 && (
+        <>
+          <span className="text-term-dim">›</span>
+          <GroupSubNav view={view} setView={setView} />
+        </>
+      )}
     </div>
   );
 }
@@ -791,14 +796,12 @@ export function Header({ children }: { children?: ReactNode }) {
   const gexPos = (chain?.netGex ?? 0) >= 0;
   const orderMode = useStore((s) => s.orderMode);
 
+  const groupBorder = orderMode === "live" ? "border-down" : "border-term-border";
+
   return (
-    <div
-      className={`flex flex-col gap-1 border-b bg-term-panel px-3 py-1 ${
-        orderMode === "live" ? "border-down" : "border-term-border"
-      }`}
-    >
-      {/* row 1 — logo, index ticker, timestamp, session/connection pills */}
-      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+    <div className={`flex flex-col border-b ${groupBorder}`}>
+      {/* zone 1 — brand, index ticker, timestamp, session/connection status */}
+      <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-1 border-b bg-term-bg px-3 py-1.5 ${groupBorder}`}>
         <LogoWordmark />
         <HeaderIndices />
         {chain && (
@@ -830,32 +833,40 @@ export function Header({ children }: { children?: ReactNode }) {
         </div>
       </div>
 
-      {/* row 2 — nav (4 major tabs + group sub-nav + class filter) together
-          with chain stats + margin + P&L */}
-      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+      {/* zone 2 — navigation bar: 4 major tabs -> group sub-nav, class filter */}
+      <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-1 border-b bg-term-panel2 px-3 py-1.5 ${groupBorder}`}>
         <ViewToggle />
         <ClassFilter />
-      {chain ? (
-        <>
-          <Stat label="ATM IV" value={chain.atmIV ? `${nf(chain.atmIV)}%` : "–"} />
-          <IvBadge />
-          <Stat
-            label="PCR"
-            value={nf(chain.pcr, 2)}
-            cls={chain.pcr ? (chain.pcr >= 1 ? "text-up" : "text-down") : ""}
-          />
-          <Stat label="Max Pain" value={nf(chain.maxPain, 0)} />
-          <Stat label="Net GEX" value={compact(chain.netGex)} cls={gexPos ? "text-up" : "text-down"} />
-          <Stat label="DTE" value={nf(chain.dte, 1)} />
-          <Stat label="Lot" value={chain.lotSize} />
-        </>
-      ) : (
-        <span className="text-xs text-term-dim">loading chain…</span>
-      )}
+      </div>
 
-      <MarginStats />
-      <PnlStrip />
-      <div className="flex items-center">{children}</div>
+      {/* zone 3 — chain stats, grouped: chain greeks | margin | P&L */}
+      <div className="flex flex-wrap items-stretch gap-x-0 gap-y-1 bg-term-bg px-3 py-1.5">
+        <div className="mr-4 flex flex-wrap items-center gap-x-1.5 gap-y-1 border-r border-term-border pr-4">
+          {chain ? (
+            <>
+              <Stat label="ATM IV" value={chain.atmIV ? `${nf(chain.atmIV)}%` : "–"} />
+              <IvBadge />
+              <Stat
+                label="PCR"
+                value={nf(chain.pcr, 2)}
+                cls={chain.pcr ? (chain.pcr >= 1 ? "text-up" : "text-down") : ""}
+              />
+              <Stat label="Max Pain" value={nf(chain.maxPain, 0)} />
+              <Stat label="Net GEX" value={compact(chain.netGex)} cls={gexPos ? "text-up" : "text-down"} />
+              <Stat label="DTE" value={nf(chain.dte, 1)} />
+              <Stat label="Lot" value={chain.lotSize} />
+            </>
+          ) : (
+            <span className="text-xs text-term-dim">loading chain…</span>
+          )}
+        </div>
+        <div className="mr-4 flex items-center gap-x-1.5 border-r border-term-border pr-4">
+          <MarginStats />
+        </div>
+        <div className="flex items-center gap-x-1.5">
+          <PnlStrip />
+        </div>
+        <div className="ml-auto flex items-center">{children}</div>
       </div>
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
     </div>
