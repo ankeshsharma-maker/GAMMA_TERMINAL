@@ -402,6 +402,16 @@ export const api = {
       method: "POST",
     }),
 
+  pushVapidKey: () => j<{ configured: boolean; key: string }>("/api/push/vapid-key"),
+  pushSubscribe: (sub: unknown) =>
+    j<{ ok: boolean; count: number }>("/api/push/subscribe", { method: "POST", body: JSON.stringify(sub) }),
+  pushUnsubscribe: (endpoint: string) =>
+    j<{ ok: boolean; count: number }>("/api/push/unsubscribe", {
+      method: "POST",
+      body: JSON.stringify({ endpoint }),
+    }),
+  pushTest: () => j<{ ok: boolean; sent: number; total: number }>("/api/push/test", { method: "POST" }),
+
   orderModeGet: () =>
     j<{ mode: "paper" | "live"; brokerAuthed: boolean }>("/api/order/mode"),
   orderModeSet: (mode: "paper" | "live") =>

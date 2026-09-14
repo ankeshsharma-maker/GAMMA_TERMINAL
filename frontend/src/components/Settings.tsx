@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
+import { disablePush, enablePush, getPushState, type PushState } from "../lib/push";
 import { lockNow } from "../lib/auth";
 import { FontScale } from "./FontScale";
 import { SelectMenu } from "./SelectMenu";
@@ -73,6 +74,45 @@ function AlertDeliverySection() {
   const [testMsg, setTestMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [pushState, setPushState] = useState<PushState>({
+    supported: false,
+    permission: "default",
+    subscribed: false,
+  });
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMsg, setPushMsg] = useState<string | null>(null);
+  const loadPush = () => getPushState().then(setPushState, () => {});
+  useEffect(() => {
+    loadPush();
+  }, []);
+
+  const togglePush = async () => {
+    setPushBusy(true);
+    setPushMsg(null);
+    try {
+      if (pushState.subscribed) await disablePush();
+      else await enablePush();
+      await loadPush();
+    } catch (e: any) {
+      setPushMsg(String(e?.message || e));
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const testPush = async () => {
+    setPushBusy(true);
+    setPushMsg(null);
+    try {
+      const d = await api.pushTest();
+      setPushMsg(`Sent to ${d.sent}/${d.total} device(s)`);
+    } catch (e: any) {
+      setPushMsg(String(e?.message || e));
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
   const load = () =>
     api.alertDeliveryGet().then((d) => {
       setEnabled(d.enabled);
@@ -121,7 +161,7 @@ function AlertDeliverySection() {
 
   return (
     <Section title="Alert delivery">
-      <Row label="Send alerts out" hint="Webhook and/or Telegram, on top of the in-app feed">
+      <Row label="Send alerts out" hint="Webhook, Telegram and/or push, on top of the in-app feed">
         <button
           onClick={() => save({ enabled: !enabled })}
           className={`h-4 w-8 shrink-0 rounded-full transition-colors ${enabled ? "bg-up" : "bg-term-border"} relative`}
@@ -233,6 +273,38 @@ function AlertDeliverySection() {
         </button>
       </Row>
       {testMsg && <div className="text-[10px] text-term-dim">{testMsg}</div>}
+
+      <div className="flex flex-col gap-1 border-t border-term-border/60 pt-3">
+        <div className="text-xs text-term-text">Push notifications (this device)</div>
+        <div className="text-[10px] leading-snug text-term-dim">
+          A real notification even when the tab's closed. On iPhone this only works after adding
+          GammaTerminal to the Home Screen (Share → Add to Home Screen) and opening it from there
+          — a plain Safari tab can't subscribe.
+        </div>
+        {!pushState.supported ? (
+          <span className="text-[10px] text-term-dim">Not supported in this browser.</span>
+        ) : pushState.permission === "denied" ? (
+          <span className="text-[10px] text-down">
+            Blocked — allow notifications for this site in the browser's site settings.
+          </span>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <button
+              disabled={pushBusy}
+              onClick={togglePush}
+              className={`${SEG} ${pushState.subscribed ? on : off} disabled:opacity-40`}
+            >
+              {pushBusy ? "…" : pushState.subscribed ? "Enabled ✓" : "Enable"}
+            </button>
+            {pushState.subscribed && (
+              <button disabled={pushBusy} onClick={testPush} className={`${SEG} ${off} disabled:opacity-40`}>
+                Test
+              </button>
+            )}
+          </div>
+        )}
+        {pushMsg && <div className="text-[10px] text-term-dim">{pushMsg}</div>}
+      </div>
     </Section>
   );
 }

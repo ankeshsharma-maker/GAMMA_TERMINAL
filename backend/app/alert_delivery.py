@@ -129,6 +129,9 @@ def deliver(alert: dict) -> None:
         loop.create_task(
             _post_telegram(cfg["telegramBotToken"], cfg["telegramChatId"], _format_telegram(alert))
         )
+    from . import push
+
+    push.deliver(alert)
 
 
 async def send_test() -> dict:

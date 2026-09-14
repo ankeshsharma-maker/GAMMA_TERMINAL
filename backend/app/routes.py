@@ -914,6 +914,48 @@ async def alert_delivery_test():
     return res
 
 
+# ---- web push (per-device, alongside webhook / Telegram) ----
+@router.get("/push/vapid-key")
+def push_vapid_key():
+    from . import push
+
+    return {"configured": push.configured(), "key": push.public_key()}
+
+
+@router.post("/push/subscribe")
+def push_subscribe(body: dict):
+    from . import push
+
+    try:
+        return push.add_subscription(body or {})
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/push/unsubscribe")
+def push_unsubscribe(body: dict):
+    from . import push
+
+    return push.remove_subscription((body or {}).get("endpoint") or "")
+
+
+@router.get("/push/status")
+def push_status(endpoint: str = ""):
+    from . import push
+
+    return {"configured": push.configured(), "subscribed": bool(endpoint) and push.has_subscription(endpoint)}
+
+
+@router.post("/push/test")
+async def push_test():
+    from . import push
+
+    res = await push.send_test()
+    if not res.get("ok"):
+        raise HTTPException(status_code=422, detail=res.get("error") or "send failed")
+    return res
+
+
 @router.delete("/leg-rules/{rid}")
 def leg_rules_del(rid: str):
     from . import leg_rules

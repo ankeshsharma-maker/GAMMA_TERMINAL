@@ -37,6 +37,8 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api/, /^\/ws/],
         cleanupOutdatedCaches: true,
         clientsClaim: true,
+        // adds push / notificationclick listeners to the generated SW
+        importScripts: ["push-sw.js"],
       },
       devOptions: { enabled: false },
     }),
@@ -44,8 +46,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": { target: "http://localhost:8000", changeOrigin: true },
-      "/ws": { target: "ws://localhost:8000", ws: true },
+      "/api": { target: "http://localhost:8001", changeOrigin: true },
+      "/ws": { target: "ws://localhost:8001", ws: true },
     },
   },
 });
