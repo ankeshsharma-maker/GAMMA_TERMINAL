@@ -49,10 +49,14 @@ const Z_KEY = "gt.uiZoom";
 
 /** desktop interface scale (%). Chrome `zoom` — does NOT shift media queries,
  *  so the desktop layout rules still apply, it just renders tighter. */
-export const UI_ZOOMS = [75, 80, 85, 90, 100, 110, 125] as const;
+export const UI_ZOOM_MIN = 80;
+export const UI_ZOOM_MAX = 120;
+export const UI_ZOOM_STEP = 5;
+export const UI_ZOOM_DEFAULT = 85;
+export const UI_ZOOMS = [80, 85, 90, 95, 100, 105, 110, 115, 120] as const;
 export const getUiZoom = (): number => {
-  const n = parseInt(get(Z_KEY) || "85", 10);
-  return (UI_ZOOMS as readonly number[]).includes(n) ? n : 85;
+  const n = parseInt(get(Z_KEY) || String(UI_ZOOM_DEFAULT), 10);
+  return (UI_ZOOMS as readonly number[]).includes(n) ? n : UI_ZOOM_DEFAULT;
 };
 export function applyUiZoom(z = getUiZoom()): void {
   // only on the desktop terminal — the phone UI is already sized for its screen

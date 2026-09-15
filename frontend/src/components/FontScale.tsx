@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 /* user text-size control (A- / A+), persisted, applied to <html> */
 const FONT_LS = "ui.fontScale";
 const FONT_MIN = 0.8;
-const FONT_MAX = 1.4;
+const FONT_MAX = 1.2;
+const FONT_STEP = 0.05;
 
 export function applyFontScale() {
   let v = 1;
@@ -35,7 +36,7 @@ export function FontScale() {
       title="Text size"
     >
       <button
-        onClick={() => step(-0.1)}
+        onClick={() => step(-FONT_STEP)}
         disabled={scale <= FONT_MIN + 1e-6}
         className="px-1.5 py-1 text-term-dim hover:bg-term-border hover:text-term-text disabled:opacity-30"
       >
@@ -49,7 +50,7 @@ export function FontScale() {
         {Math.round(scale * 100)}%
       </button>
       <button
-        onClick={() => step(0.1)}
+        onClick={() => step(FONT_STEP)}
         disabled={scale >= FONT_MAX - 1e-6}
         className="px-1.5 py-1 font-semibold text-term-dim hover:bg-term-border hover:text-term-text disabled:opacity-30"
       >

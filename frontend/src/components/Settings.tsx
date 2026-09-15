@@ -10,7 +10,9 @@ import { useIsMobile } from "../lib/useIsMobile";
 import {
   ACCENTS,
   GROUNDS,
-  UI_ZOOMS,
+  UI_ZOOM_MAX,
+  UI_ZOOM_MIN,
+  UI_ZOOM_STEP,
   getAccent,
   getGround,
   getUiZoom,
@@ -407,18 +409,40 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </Row>
           {!isMobile && (
             <Row label="Interface scale" hint="Shrink the whole desktop layout to fit more on screen">
-              {UI_ZOOMS.map((z) => (
+              <div className="flex items-center overflow-hidden rounded border border-term-border text-2xs">
                 <button
-                  key={z}
                   onClick={() => {
+                    const z = Math.max(UI_ZOOM_MIN, zoom - UI_ZOOM_STEP);
                     setUiZoom(z);
                     setZoom(z);
                   }}
-                  className={`${SEG} ${zoom === z ? on : off}`}
+                  disabled={zoom <= UI_ZOOM_MIN}
+                  className="px-1.5 py-1 text-term-dim hover:bg-term-border hover:text-term-text disabled:opacity-30"
                 >
-                  {z}%
+                  −
                 </button>
-              ))}
+                <button
+                  onClick={() => {
+                    setUiZoom(100);
+                    setZoom(100);
+                  }}
+                  title="Reset interface scale"
+                  className="border-x border-term-border px-1.5 py-1 text-[10px] text-term-dim hover:bg-term-border hover:text-term-text"
+                >
+                  {zoom}%
+                </button>
+                <button
+                  onClick={() => {
+                    const z = Math.min(UI_ZOOM_MAX, zoom + UI_ZOOM_STEP);
+                    setUiZoom(z);
+                    setZoom(z);
+                  }}
+                  disabled={zoom >= UI_ZOOM_MAX}
+                  className="px-1.5 py-1 font-semibold text-term-dim hover:bg-term-border hover:text-term-text disabled:opacity-30"
+                >
+                  +
+                </button>
+              </div>
             </Row>
           )}
           <Row label="Accent colour">
