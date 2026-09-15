@@ -249,6 +249,16 @@ export function StrategyBuilder() {
   const heldCount = legs.filter((l) => l.held).length;
   const runLegCount = executeHeld ? legs.length : legs.length - heldCount;
 
+  // keep "Current P&L" live for a running position -- the other runAnalyze
+  // triggers only fire on a leg/mult/symbol change, so a held leg's P&L
+  // would otherwise go stale the moment you stop touching the builder.
+  useEffect(() => {
+    if (heldCount === 0) return;
+    const t = window.setInterval(() => runAnalyze(scaled(legs)), 8000);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heldCount > 0, legs, scaled]);
+
   useEffect(() => {
     api.strategyTemplates(symbol, expiry ?? undefined).then(
       (d) => setTemplates(d.templates),
@@ -621,6 +631,23 @@ export function StrategyBuilder() {
   const pnlCls = (v: number) => (v >= 0 ? "text-up" : "text-down");
   const mp = (v: number | null | undefined) => (v == null ? null : v + manualPnl);
   const pnlTxt = (v: number | null) => (v == null ? "–" : `${v >= 0 ? "+" : ""}${nf(v, 0)}`);
+
+  // P&L right now, at the actual current spot -- same "now" curve the payoff
+  // chart already plots, just read off at the one point that matters instead
+  // of having to eyeball where it crosses the live-price line.
+  const currentPnl = useMemo(() => {
+    if (!analysis || analysis.x.length === 0) return null;
+    let bestI = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < analysis.x.length; i++) {
+      const d = Math.abs(analysis.x[i] - analysis.spot);
+      if (d < bestD) {
+        bestD = d;
+        bestI = i;
+      }
+    }
+    return analysis.nowPnl[bestI] + manualPnl;
+  }, [analysis, manualPnl]);
 
   // session ATM-IV history → IV regime + strategy fit
   useEffect(() => {
@@ -1524,6 +1551,12 @@ export function StrategyBuilder() {
                         label="Net Premium"
                         value={`₹${nf(Math.abs(analysis.netPremium), 0)}`}
                         cls={analysis.netPremiumType === "CREDIT" ? "text-up" : "text-down"}
+                      />
+                      <StatCol
+                        label={heldCount > 0 ? "Current P&L (live)" : "Current P&L"}
+                        value={currentPnl != null ? `${currentPnl >= 0 ? "+" : ""}₹${nf(currentPnl, 0)}` : "–"}
+                        cls={currentPnl != null ? signColor(currentPnl) : ""}
+                        title="P&L right now at the current spot -- refreshes every 8s while a held (running) leg is in the mix"
                       />
                       <StatCol
                         label="Total Profit (max)"
