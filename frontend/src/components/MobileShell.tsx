@@ -4,8 +4,6 @@ import { api } from "../lib/api";
 import { nf, sk, compact, signColor, px } from "../lib/format";
 import { ivRegime } from "../lib/iv";
 import type { View } from "../types";
-import { NAV_GROUPS, groupForView } from "../lib/navGroups";
-import { GroupSubNav } from "./GroupSubNav";
 
 import {
   OrderModePill,
@@ -185,13 +183,22 @@ import { Funds } from "./Funds";
 import { TradeJournal } from "./TradeJournal";
 import { LogoMark } from "./Logo";
 
-/** bottom tab bar — Watch (the symbol picker, no desktop equivalent since
- *  the watchlist sits in an always-visible sidebar there) plus the 4 nav
- *  groups. Each group button lands on its first/default member; switching
- *  between a group's other members happens in the sub-nav strip below. */
-const BOTTOM_NAV = [
-  { key: "watchlist", v: "watchlist" as View, icon: "★", label: "Watch" },
-  ...NAV_GROUPS.map((g) => ({ key: g.key, v: g.members[0][0], icon: g.icon, label: g.label })),
+/** Top and bottom tab bars — direct shortcuts to the 8 views checked most
+ *  often on the phone, requested explicitly in place of the 4-group
+ *  landing-page nav (which still exists -- Chart.tsx's own Chain/OI/Trend
+ *  OI/OI Profile switcher and each view's own internal navigation still
+ *  reach everything else; these are just the fast one-tap paths). */
+const TOP_NAV: { v: View; label: string }[] = [
+  { v: "scrip", label: "OI" },
+  { v: "scanner", label: "Screener" },
+  { v: "auto", label: "Auto" },
+  { v: "builder", label: "Build" },
+];
+const BOTTOM_NAV: { v: View; icon: string; label: string }[] = [
+  { v: "watchlist", icon: "★", label: "Watchlist" },
+  { v: "orders", icon: "📋", label: "Orders" },
+  { v: "positions", icon: "💼", label: "Position" },
+  { v: "funds", icon: "💰", label: "Funds" },
 ];
 
 function MobileBody({ view }: { view: View }) {
@@ -309,11 +316,28 @@ export function MobileShell() {
         </button>
       </div>
 
+      {/* ── top tab row — fixed one-tap shortcuts ──────────────── */}
+      <nav className="flex shrink-0 items-center gap-1 border-b border-term-border bg-term-panel2 px-1.5 py-1.5">
+        {TOP_NAV.map((n) => {
+          const active = view === n.v;
+          return (
+            <button
+              key={n.v}
+              onClick={() => setView(n.v)}
+              className={`flex-1 rounded border px-1 py-1.5 text-[11px] font-semibold ${
+                active
+                  ? "border-term-accent/50 bg-term-accent/15 text-term-accent"
+                  : "border-term-dim/70 text-term-dim active:bg-term-border"
+              }`}
+            >
+              {n.label}
+            </button>
+          );
+        })}
+      </nav>
+
       {brokerOpen && (
         <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-2 py-1.5">
-          {(groupForView(view)?.members.length ?? 0) > 1 && (
-            <GroupSubNav view={view} setView={setView} />
-          )}
           <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
             Mode <OrderModePill />
           </span>
@@ -368,15 +392,15 @@ export function MobileShell() {
       {/* ── bottom tab bar ────────────────────────────────────── */}
       <nav className="flex shrink-0 border-t border-term-border bg-term-panel2">
         {BOTTOM_NAV.map((n) => {
-          const active = n.key === "watchlist" ? view === "watchlist" : groupForView(view)?.key === n.key;
+          const active = view === n.v;
           return (
             <button
-              key={n.key}
+              key={n.v}
               onClick={() => setView(n.v)}
               className={`flex flex-1 flex-col items-center gap-0.5 border-t-2 py-1.5 ${
                 active
                   ? "border-term-accent bg-term-accent/15 font-semibold text-term-accent"
-                  : "border-transparent text-term-dim active:bg-term-border"
+                  : "border-term-border text-term-dim active:bg-term-border"
               }`}
             >
               <span className="text-[17px] leading-none">{n.icon}</span>
