@@ -1465,7 +1465,7 @@ export function StrategyBuilder() {
       <VSplit onDrag={bumpBuilder} className="hidden lg:block" />
 
       {/* ---- payoff / backtest ---- */}
-      <div className="flex min-h-0 flex-col overflow-y-auto lg:border-l lg:border-term-border">
+      <div className="flex flex-col overflow-y-auto lg:min-h-0 lg:border-l lg:border-term-border">
         <div className="flex flex-wrap items-center gap-1 border-b border-term-border bg-term-panel2 px-2 py-1.5 text-2xs">
           {(
             [
