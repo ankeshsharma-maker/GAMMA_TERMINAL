@@ -798,7 +798,7 @@ export function StrategyBuilder() {
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-term-border lg:grid lg:overflow-hidden"
+      className="flex min-h-0 flex-1 flex-col border-t border-term-border lg:grid lg:overflow-hidden"
       style={{ gridTemplateColumns: `${builderW}px 4px minmax(0,1fr)` }}
     >
       {/* ---- leg editor ---- */}
@@ -1465,7 +1465,7 @@ export function StrategyBuilder() {
       <VSplit onDrag={bumpBuilder} className="hidden lg:block" />
 
       {/* ---- payoff / backtest ---- */}
-      <div className="flex flex-col overflow-y-auto lg:min-h-0 lg:border-l lg:border-term-border">
+      <div className="flex flex-col lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-term-border">
         <div className="flex flex-wrap items-center gap-1 border-b border-term-border bg-term-panel2 px-2 py-1.5 text-2xs">
           {(
             [
