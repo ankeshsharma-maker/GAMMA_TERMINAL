@@ -270,6 +270,19 @@ class _Ctx:
         v = float(c.get("value", 0.5))
         return mv > v if c.get("op", ">") == ">" else mv < v
 
+    def _time_of_day(self, c) -> bool:
+        """True while the current bar's IST clock time sits inside [from, to]
+        (both "HH:MM", inclusive). A pure time gate -- combines via AND with
+        whatever else is in entry/exit, e.g. "RSI < 30 AND time 09:20-09:45"
+        to only take a signal in a specific window, or exclude the first/last
+        few minutes of the session."""
+        if not self.ts:
+            return False
+        now = datetime.fromtimestamp(self.ts[-1], IST).time()
+        frm = _parse_hhmm(c.get("from")) or dtime(9, 15)
+        to = _parse_hhmm(c.get("to")) or dtime(15, 30)
+        return frm <= now <= to
+
     # -- OI / chain conditions -------------------------------------------- #
     def _pcr(self, c) -> bool:
         if len(self.pcr) < 2:
@@ -741,6 +754,7 @@ class _Ctx:
         "oi_state": _oi_state, "supertrend": _supertrend, "pivot": _pivot,
         "delta_change": _delta_change, "gamma_change": _gamma_change,
         "candle": _candle, "atr": _atr, "prev_candle": _prev_candle, "gap": _gap,
+        "time_of_day": _time_of_day,
     }
 
     def eval_one(self, cond: dict) -> bool:

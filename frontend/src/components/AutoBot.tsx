@@ -11,9 +11,10 @@ import { SelectMenu } from "./SelectMenu";
 /* ------------------------------------------------------------------ */
 type Field =
   | { key: string; label: string; type: "num"; def: number; hint?: string }
-  | { key: string; label: string; type: "sel"; def: string; opts: string[]; hint?: string };
+  | { key: string; label: string; type: "sel"; def: string; opts: string[]; hint?: string }
+  | { key: string; label: string; type: "time"; def: string; hint?: string };
 
-type CondGroup = "indicator" | "oi" | "smart" | "trend" | "greeks";
+type CondGroup = "indicator" | "oi" | "smart" | "trend" | "greeks" | "time";
 
 const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field[] }> = {
   rsi: {
@@ -375,6 +376,14 @@ const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field
       { key: "value", label: "value", type: "num", def: 0.0005 },
     ],
   },
+  time_of_day: {
+    label: "Time of day",
+    group: "time",
+    fields: [
+      { key: "from", label: "from", type: "time", def: "09:15", hint: "IST, inclusive" },
+      { key: "to", label: "to", type: "time", def: "15:30", hint: "IST, inclusive" },
+    ],
+  },
 };
 
 const GROUP_LABEL: Record<CondGroup, string> = {
@@ -383,6 +392,7 @@ const GROUP_LABEL: Record<CondGroup, string> = {
   smart: "Smart money / structure",
   trend: "Trend / price action (Supertrend, Pivots, Candles, ATR)",
   greeks: "Greeks (Δ delta / gamma)",
+  time: "Time of day",
 };
 
 const INSTRUMENTS = [
@@ -458,7 +468,7 @@ function CondRow({
         onChange={(e) => onChange(mkCond(e.target.value))}
         className="rounded border border-term-border bg-term-panel px-1 py-0.5 text-2xs"
       >
-        {(["indicator", "oi", "smart", "trend", "greeks"] as CondGroup[]).map((g) => (
+        {(["indicator", "oi", "smart", "trend", "greeks", "time"] as CondGroup[]).map((g) => (
           <optgroup key={g} label={GROUP_LABEL[g]}>
             {Object.entries(COND_DEFS)
               .filter(([, v]) => v.group === g)
@@ -484,6 +494,13 @@ function CondRow({
               step="any"
               value={Number(cond[f.key] ?? f.def)}
               onChange={(e) => onChange({ ...cond, [f.key]: parseFloat(e.target.value) })}
+              className="num w-16 rounded border border-term-border bg-term-panel px-1 py-0.5 text-2xs text-term-text"
+            />
+          ) : f.type === "time" ? (
+            <input
+              value={String(cond[f.key] ?? f.def)}
+              onChange={(e) => onChange({ ...cond, [f.key]: e.target.value })}
+              placeholder={f.def}
               className="num w-16 rounded border border-term-border bg-term-panel px-1 py-0.5 text-2xs text-term-text"
             />
           ) : (
@@ -1369,6 +1386,8 @@ function describe(c: AutoCondition): string {
       const bF = String(g("bField") || "close");
       return `${aC} ${aF} ${g("op")} ${bC} ${bF}`;
     }
+    case "time_of_day":
+      return `time ${g("from") || "09:15"}–${g("to") || "15:30"}`;
     default:
       return c.kind;
   }
