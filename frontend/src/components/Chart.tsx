@@ -25,6 +25,7 @@ import {
   supertrend,
   vwap,
   type Candle,
+  type PivotPeriod,
   type Pt,
 } from "../lib/indicators";
 
@@ -147,6 +148,7 @@ const MTF_INDS: [string, string][] = [
   ["rsi", "RSI"],
   ["macd", "MACD"],
   ["macdsig", "MACD signal"],
+  ["fibpivot", "Fib Pivots"],
 ];
 // MTF indicators whose values sit off the price scale — drawn on a hidden axis
 const MTF_OSC = new Set(["rsi", "macd", "macdsig"]);
@@ -196,6 +198,7 @@ export function Chart() {
   const [priceLines, setPriceLines] = useState<number[]>([]);
   const plRefs = useRef<any[]>([]);
   const pvtRefs = useRef<any[]>([]);
+  const mtfPvtRefs = useRef<any[]>([]);
   const gfRef = useRef<any>(null);
   const drawRef = useRef(false);
   const [legend, setLegend] = useState<string>("");
@@ -266,7 +269,9 @@ export function Chart() {
       return !v;
     });
   // multi-timeframe indicator overlay: pick an indicator + length + timeframe
-  const [mtf, setMtf] = useState<{ ind: string; len: number; tf: number } | null>(null);
+  const [mtf, setMtf] = useState<
+    { ind: string; len: number; tf: number; period?: PivotPeriod } | null
+  >(null);
   // "hide indicators" — blank every overlay/sub-pane at once while keeping the
   // user's real selection so it comes straight back on toggle.
   const [indHidden, setIndHidden] = useState(() => {
@@ -638,7 +643,7 @@ export function Chart() {
     {
       const mser = c.mtf as ISeriesApi<"Line">;
       const mser2 = c.mtf2 as ISeriesApi<"Line">;
-      if (mtf && cd.length && !indHidden) {
+      if (mtf && mtf.ind !== "fibpivot" && cd.length && !indHidden) {
         const rc = mtf.tf > (intervalS || 0) ? resampleCandles(cd, mtf.tf) : cd;
         const L = mtf.len || 21;
         let raw: Pt[] = [];
@@ -957,6 +962,40 @@ export function Chart() {
       })
     );
   }, [eff.pivot, eff.fibpivot, priceCandles, data]);
+
+  // MTF Fib Pivots — same PP/R1-3/S1-3 math as above, but driven by the MTF
+  // picker's own period (Day/Week/Month) instead of always "previous day",
+  // and kept on a separate ref array so it can coexist with the plain
+  // same-timeframe toggle above (dashed to tell them apart at a glance).
+  useEffect(() => {
+    const cs = s.current.candle as ISeriesApi<"Candlestick"> | undefined;
+    if (!cs) return;
+    mtfPvtRefs.current.forEach((pl) => cs.removePriceLine(pl));
+    mtfPvtRefs.current = [];
+    if (!mtf || mtf.ind !== "fibpivot" || indHidden) return;
+    const p = pivots(priceCandles, true, mtf.period ?? "D");
+    if (!p) return;
+    const tag = { D: "D", W: "W", M: "M" }[mtf.period ?? "D"];
+    const rows: [string, number, string][] = [
+      [`${tag}R3`, p.r3, "#22d3ee"],
+      [`${tag}R2`, p.r2, "#22d3ee"],
+      [`${tag}R1`, p.r1, "#22d3ee"],
+      [`${tag}PP`, p.pp, "#67e8f9"],
+      [`${tag}S1`, p.s1, "#22d3ee"],
+      [`${tag}S2`, p.s2, "#22d3ee"],
+      [`${tag}S3`, p.s3, "#22d3ee"],
+    ];
+    mtfPvtRefs.current = rows.map(([title, price, color]) =>
+      cs.createPriceLine({
+        price: Number(price.toFixed(2)),
+        color,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title,
+      })
+    );
+  }, [mtf, priceCandles, data, indHidden]);
 
   // dealer gamma-flip level (see lib/gammaFlip.ts — same formula OI Profile's
   // "weekly gex" panel and chart marker use), drawn as one reference line
@@ -1307,7 +1346,7 @@ export function Chart() {
                     width={150}
                   />
                 </div>
-                {mtf && mtf.ind !== "vwap" && (
+                {mtf && mtf.ind !== "vwap" && mtf.ind !== "fibpivot" && (
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-term-dim">Length</span>
                     <input
@@ -1322,18 +1361,45 @@ export function Chart() {
                     />
                   </div>
                 )}
-                {mtf && (
+                {mtf && mtf.ind === "fibpivot" ? (
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-term-dim">On timeframe</span>
-                    <SelectMenu
-                      value={mtf.tf}
-                      options={TIMEFRAMES.map(([l, v]) => ["@ " + l, v] as [string, number])}
-                      onChange={(v) => setMtf({ ...mtf, tf: v })}
-                      title="MTF source timeframe"
-                      align="right"
-                      width={110}
-                    />
+                    <span className="text-term-dim">Pivot period</span>
+                    <div className="flex overflow-hidden rounded border border-term-border">
+                      {(
+                        [
+                          ["D", "Day"],
+                          ["W", "Week"],
+                          ["M", "Month"],
+                        ] as [PivotPeriod, string][]
+                      ).map(([p, l]) => (
+                        <button
+                          key={p}
+                          onClick={() => setMtf({ ...mtf, period: p })}
+                          className={`px-1.5 py-0.5 ${
+                            (mtf.period ?? "D") === p
+                              ? "bg-cyan-500/25 text-cyan-200"
+                              : "text-term-dim hover:bg-term-border hover:text-term-text"
+                          }`}
+                        >
+                          {l}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+                ) : (
+                  mtf && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-term-dim">On timeframe</span>
+                      <SelectMenu
+                        value={mtf.tf}
+                        options={TIMEFRAMES.map(([l, v]) => ["@ " + l, v] as [string, number])}
+                        onChange={(v) => setMtf({ ...mtf, tf: v })}
+                        title="MTF source timeframe"
+                        align="right"
+                        width={110}
+                      />
+                    </div>
+                  )
                 )}
               </div>
             </>

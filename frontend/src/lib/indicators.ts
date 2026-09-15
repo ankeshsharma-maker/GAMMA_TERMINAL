@@ -255,11 +255,28 @@ const calcPivots = (h: number, l: number, c: number, fib = false): Pivots => {
 /** classic (floor-trader) pivot points from the PREVIOUS session's OHLC.
  *  Groups the (intraday) candle series by IST calendar day and uses the last
  *  completed day. For a 1D series each candle is a day, so it just uses the
- *  prior candle. null when there isn't a prior session yet. */
-export const pivots = (candles: Candle[], fib = false): Pivots | null => {
+ *  prior candle. `period` picks what counts as one session -- D = calendar
+ *  day (IST, the original behaviour), W = ISO week (Mon-Sun), M = calendar
+ *  month -- for the classic Weekly/Monthly pivot variant. null when there
+ *  isn't a prior session yet. */
+export type PivotPeriod = "D" | "W" | "M";
+export const pivots = (candles: Candle[], fib = false, period: PivotPeriod = "D"): Pivots | null => {
   if (candles.length < 2) return null;
-  const dayKey = (t: number) =>
-    new Date(t * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const dayKey = (t: number) => {
+    if (period === "M")
+      return new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+      }).format(new Date(t * 1000));
+    if (period === "W") {
+      // shift to IST wall-clock, then key by that week's Monday
+      const ist = new Date(new Date(t * 1000).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+      ist.setDate(ist.getDate() - ((ist.getDay() + 6) % 7));
+      return ist.toISOString().slice(0, 10);
+    }
+    return new Date(t * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  };
   const days = new Map<string, { h: number; l: number; c: number }>();
   for (const k of candles) {
     const key = dayKey(k.time);
