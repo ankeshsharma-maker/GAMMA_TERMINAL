@@ -178,6 +178,7 @@ import { ScripView } from "./ScripView";
 import { TrendingOI } from "./TrendingOI";
 import { ScannerView } from "./ScannerView";
 import { Chart } from "./Chart";
+import { OIProfile } from "./OIProfile";
 import { StrategyBuilder } from "./StrategyBuilder";
 import { PositionsView, OrdersTab } from "./PositionsView";
 import { ScalpPanel } from "./ScalpPanel";
@@ -197,6 +198,9 @@ const TOP_NAV: { v: View; label: string }[] = [
   { v: "scanner", label: "Screener" },
   { v: "auto", label: "Auto" },
   { v: "builder", label: "Build" },
+  { v: "chart", label: "Chart" },
+  { v: "scalper", label: "Scalp" },
+  { v: "journal", label: "Journal" },
 ];
 const BOTTOM_NAV: { v: View; icon: string; label: string }[] = [
   { v: "watchlist", icon: "★", label: "Watchlist" },
@@ -225,6 +229,8 @@ function MobileBody({ view }: { view: View }) {
       return <ScripView />;
     case "trendingoi":
       return <TrendingOI />;
+    case "oiprofile":
+      return <OIProfile />;
     case "scanner":
       return <ScannerView />;
     case "chart":
@@ -321,17 +327,17 @@ export function MobileShell() {
       </div>
 
       {/* ── top tab row — fixed one-tap shortcuts ──────────────── */}
-      <nav className="flex shrink-0 items-center gap-1 border-b border-term-border bg-term-panel2 px-1.5 py-1.5">
+      <nav className="flex shrink-0 flex-wrap items-center gap-1 border-b border-term-border bg-term-panel2 px-1.5 py-1.5">
         {TOP_NAV.map((n) => {
           const active = view === n.v;
           return (
             <button
               key={n.v}
               onClick={() => setView(n.v)}
-              className={`flex-1 rounded border px-1 py-1.5 text-[11px] font-semibold ${
+              className={`min-w-[22%] flex-1 rounded border px-1 py-1.5 text-[11px] font-semibold ${
                 active
                   ? "border-term-accent/50 bg-term-accent/15 text-term-accent"
-                  : "border-term-dim/70 text-term-dim active:bg-term-border"
+                  : "border-term-dim/70 bg-term-border/40 text-term-dim active:bg-term-border"
               }`}
             >
               {n.label}
@@ -404,7 +410,7 @@ export function MobileShell() {
               className={`flex flex-1 flex-col items-center gap-0.5 border-t-2 py-1.5 ${
                 active
                   ? "border-term-accent bg-term-accent/15 font-semibold text-term-accent"
-                  : "border-term-border text-term-dim active:bg-term-border"
+                  : "border-term-border bg-term-border/25 text-term-dim active:bg-term-border"
               }`}
             >
               <span className="text-[17px] leading-none">{n.icon}</span>
