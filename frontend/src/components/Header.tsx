@@ -73,16 +73,16 @@ function ViewToggle() {
   const { view, setView } = useStore();
   const activeGroup = groupForView(view);
   return (
-    <div className="flex flex-wrap items-center gap-2 text-2xs">
-      <div className="flex overflow-hidden rounded border border-term-border">
+    <div className="flex flex-wrap items-center gap-1.5 text-2xs">
+      <div className="flex flex-wrap items-center gap-1">
         {NAV_GROUPS.map((g) => (
           <button
             key={g.key}
             onClick={() => setView(g.members[0][0])}
-            className={`border-r border-term-border px-1.5 py-1 font-semibold uppercase tracking-normal transition-colors last:border-r-0 ${
+            className={`rounded border px-2 py-1 font-semibold uppercase tracking-normal transition-colors ${
               activeGroup?.key === g.key
-                ? "bg-term-accent text-white"
-                : "text-term-dim hover:bg-term-border hover:text-term-text"
+                ? "border-term-accent/50 bg-term-accent/15 text-term-accent"
+                : "border-term-border text-term-dim hover:bg-term-border hover:text-term-text"
             }`}
           >
             {g.label}
@@ -396,20 +396,29 @@ function MarginStats() {
   const src = live ? "Flattrade" : "paper";
   if (avail == null && used == null) return null;
 
+  const availNeg = avail != null && avail < 0;
   return (
     <div className="flex items-center gap-1.5" title={`Margin (${src})`}>
-      <Stat
-        label={`Margin avail · ${src}`}
-        value={
+      <div
+        className={`flex flex-col justify-center rounded border px-2 py-1 leading-tight ${
+          availNeg ? "border-down/40 bg-down/10 text-down" : "border-up/40 bg-up/10 text-up"
+        }`}
+      >
+        <span className="text-2xs uppercase tracking-wide opacity-80">Margin avail · {src}</span>
+        <span className="num text-xs font-semibold">
           <HideNum k="marginAvail">{avail != null ? `₹${compact(avail)}` : "–"}</HideNum>
-        }
-        cls={avail != null && avail < 0 ? "text-down" : "text-up"}
-      />
-      <Stat
-        label="Margin used"
-        value={<HideNum k="marginUsed">{used != null ? `₹${compact(used)}` : "–"}</HideNum>}
-        cls={used ? "text-amber-400" : ""}
-      />
+        </span>
+      </div>
+      <div
+        className={`flex flex-col justify-center rounded border px-2 py-1 leading-tight ${
+          used ? "border-amber-500/40 bg-amber-500/10 text-amber-400" : "border-term-border text-term-dim"
+        }`}
+      >
+        <span className="text-2xs uppercase tracking-wide opacity-80">Margin used</span>
+        <span className="num text-xs font-semibold">
+          <HideNum k="marginUsed">{used != null ? `₹${compact(used)}` : "–"}</HideNum>
+        </span>
+      </div>
     </div>
   );
 }
@@ -692,6 +701,107 @@ export function AlertBell() {
   );
 }
 
+const LEG_RULE_STAT: Record<string, string> = {
+  waiting: "text-amber-400",
+  active: "text-term-accent",
+  done: "text-term-dim",
+  cancelled: "text-term-dim",
+};
+
+/** Header-visible pending/active leg rules (Scalp > "⚡ Rule order") -- those
+ *  only used to show inside that one panel, so a rule you created and then
+ *  navigated away from was easy to lose track of. Visible from every view. */
+export function LegRuleBell() {
+  const [rules, setRules] = useState<any[]>([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const load = () => api.legRules().then((d) => alive && setRules(d.rules || []), () => {});
+    load();
+    const t = window.setInterval(load, 5000);
+    return () => {
+      alive = false;
+      window.clearInterval(t);
+    };
+  }, []);
+  const live = rules.filter((r) => r.status === "waiting" || r.status === "active");
+  const del = async (id: string) => {
+    try {
+      const d = await api.legRuleDel(id);
+      setRules(d.rules || []);
+    } catch {
+      /* ignore */
+    }
+  };
+  return (
+    <span className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={`relative rounded border px-2 py-1 text-sm hover:bg-term-border ${
+          open ? "border-term-accent bg-term-border" : "border-term-border"
+        }`}
+        title="Pending / active leg rules (Scalp > Rule order)"
+      >
+        ⚡
+        {live.length > 0 && (
+          <span className="absolute -right-1.5 -top-1.5 min-w-[16px] rounded-full bg-term-accent px-1 text-[10px] font-bold leading-4 text-white">
+            {live.length}
+          </span>
+        )}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full z-50 mt-1 w-[260px] space-y-1 rounded-lg border border-term-border bg-term-panel p-2 text-2xs shadow-2xl">
+            <div className="px-1 pb-1 font-semibold uppercase tracking-wide text-term-dim">
+              Leg rules
+            </div>
+            {live.length === 0 ? (
+              <div className="px-1 py-2 text-center text-term-dim">
+                No pending rules — create one from Scalp &gt; Rule order.
+              </div>
+            ) : (
+              live.map((r) => {
+                const rbull =
+                  (r.side === "BUY" && r.optionType === "CE") ||
+                  (r.side === "SELL" && r.optionType === "PE");
+                return (
+                  <div
+                    key={r.id}
+                    className={`flex items-center justify-between rounded border px-2 py-1 ${
+                      rbull ? "border-up/30" : "border-down/30"
+                    }`}
+                  >
+                    <div className="min-w-0 leading-tight">
+                      <div className="num truncate">
+                        <span className={rbull ? "text-up" : "text-down"}>
+                          {r.symbol} {r.side} {sk(r.strike)} {r.optionType}
+                        </span>{" "}
+                        ×{r.lots}
+                      </div>
+                      <div className="text-[10px] text-term-dim">
+                        @ LTP {r.triggerDir === "gte" ? "≥" : "≤"} {nf(r.triggerPx, 2)} ·{" "}
+                        <span className={LEG_RULE_STAT[r.status] ?? ""}>{r.status}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => del(r.id)}
+                      className="shrink-0 rounded px-1.5 text-term-dim hover:text-down"
+                      title="Cancel rule"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </>
+      )}
+    </span>
+  );
+}
+
 /** ATM-IV regime chip — where current IV sits in the session's IV range. */
 function IvBadge() {
   const chain = useStore((s) => s.chain);
@@ -765,6 +875,7 @@ export function Header({ children }: { children?: ReactNode }) {
             <MarginStats />
             <PnlStrip />
           </div>
+          <LegRuleBell />
           <AlertBell />
           <button
             onClick={() => setSettingsOpen(true)}

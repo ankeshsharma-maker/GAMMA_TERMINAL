@@ -13,6 +13,7 @@ import {
   UpstoxPill,
   ClassFilter,
   FontScale,
+  LegRuleBell,
   useBookPnl,
 } from "./Header";
 
@@ -324,6 +325,7 @@ export function MobileShell() {
           <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
             Text <FontScale />
           </span>
+          <LegRuleBell />
           <button
             onClick={() => (notifOpen ? closeNotif() : openNotif())}
             className={`ml-auto rounded border px-2 py-1 text-2xs ${
