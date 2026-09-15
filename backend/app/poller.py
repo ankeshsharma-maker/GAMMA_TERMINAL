@@ -324,6 +324,24 @@ async def run_poller(stop: asyncio.Event) -> None:
             log.warning("leg-rule tick failed: %s", exc)
 
         try:
+            from . import price_alerts
+
+            pev = await price_alerts.tick()
+            for e in pev:
+                store.add_alert(
+                    {
+                        "ts": time.time(), "symbol": e.get("symbol", ""),
+                        "kind": e["kind"], "severity": "warning",
+                        "message": e["message"], "score": 0,
+                    }
+                )
+                log.info("PRICE-ALERT %s", e["message"])
+            if pev:
+                await hub.broadcast_all({"type": "alerts", "data": store.get_alerts(50)})
+        except Exception as exc:  # noqa: BLE001
+            log.warning("price-alert tick failed: %s", exc)
+
+        try:
             from . import oi_alerts
 
             oev = await oi_alerts.tick()

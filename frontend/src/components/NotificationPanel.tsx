@@ -86,6 +86,7 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
             ["unusual", "Unusual Activity", uNew],
             ["alerts", "Alerts", aNew],
             ["oiwatch", "OI Watch", 0],
+            ["pricewatch", "Price Alerts", 0],
           ] as const
         ).map(([k, label, n]) => (
           <button
@@ -213,8 +214,10 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
               </div>
             ))
           )
-        ) : (
+        ) : notifTab === "oiwatch" ? (
           <OiWatchTab />
+        ) : (
+          <PriceAlertTab />
         )}
       </div>
     </div>
@@ -381,6 +384,146 @@ function OiWatchTab() {
                 {r.metric === "oi" ? "OI" : "ΔOI"} {r.op} {r.value.toLocaleString("en-IN")}
                 {r.lastValue != null && <> · now {r.lastValue.toLocaleString("en-IN")}</>}
                 {r.firedAt && <span className="text-up"> · fired</span>}
+              </div>
+            </div>
+            <button onClick={() => del(r.id)} className="shrink-0 px-1 text-term-dim hover:text-down" title="Remove">
+              ✕
+            </button>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------- *
+ *  Price Alerts — "tell me when SYMBOL reaches a spot level" (one-shot) *
+ * -------------------------------------------------------------------- */
+type PriceAlertRule = {
+  id: string;
+  symbol: string;
+  level: number;
+  direction: "above" | "below";
+  note: string;
+  status: "active" | "triggered" | "cancelled";
+  triggeredAt: number | null;
+  triggeredSpot: number | null;
+};
+
+function PriceAlertTab() {
+  const chain = useStore((s) => s.chain);
+  const [rules, setRules] = useState<PriceAlertRule[]>([]);
+  const [symbol, setSymbol] = useState("");
+  const [level, setLevel] = useState("");
+  const [direction, setDirection] = useState<"above" | "below">("above");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    api.priceAlerts().then((d) => setRules((d.alerts || []) as PriceAlertRule[]), () => {});
+  };
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    if (chain?.symbol && !symbol) setSymbol(chain.symbol);
+  }, [chain?.symbol]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const create = async () => {
+    const sym = symbol.trim().toUpperCase();
+    const lvl = Number(level);
+    if (!sym) return alert("Set a symbol");
+    if (!lvl) return alert("Set a price level");
+    setBusy(true);
+    try {
+      await api.priceAlertAdd({ symbol: sym, level: lvl, direction, note });
+      setLevel("");
+      setNote("");
+      load();
+    } catch (e: any) {
+      alert(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const del = async (id: string) => {
+    await api.priceAlertDel(id);
+    load();
+  };
+
+  const SEG = "px-1.5 py-0.5 text-[10px]";
+  const on = "bg-term-accent text-white";
+  const off = "text-term-dim";
+  const active = rules.filter((r) => r.status !== "cancelled");
+
+  return (
+    <div className="flex flex-col">
+      <div className="space-y-1.5 border-b border-term-border/60 p-2 text-[10px]">
+        <div className="flex flex-wrap items-center gap-1">
+          <input
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+            placeholder="symbol"
+            className="num w-20 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+          />
+          <div className="flex overflow-hidden rounded border border-term-border">
+            {(["above", "below"] as const).map((d) => (
+              <button key={d} onClick={() => setDirection(d)} className={`${SEG} ${direction === d ? on : off}`}>
+                {d === "above" ? "≥" : "≤"}
+              </button>
+            ))}
+          </div>
+          <input
+            value={level}
+            onChange={(e) => setLevel(e.target.value.replace(/[^\d.]/g, ""))}
+            placeholder="level"
+            className="num w-20 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+          />
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="note (optional)"
+            className="min-w-0 flex-1 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+          />
+          <button
+            disabled={busy}
+            onClick={create}
+            className="ml-auto rounded bg-term-accent px-2 py-0.5 text-[10px] font-semibold text-white disabled:opacity-40"
+          >
+            {busy ? "…" : "+ Alert"}
+          </button>
+        </div>
+      </div>
+
+      {active.length === 0 ? (
+        <div className="p-4 text-2xs text-term-dim">
+          No price alerts yet. Set a symbol + level above — fires once into this Alerts feed
+          (and webhook/Telegram/push, if you've set those up) when the spot reaches it.
+        </div>
+      ) : (
+        active.map((r) => (
+          <div
+            key={r.id}
+            className={`flex items-center justify-between border-b border-term-border/40 px-3 py-2 text-2xs ${
+              r.status === "triggered" ? "opacity-60" : ""
+            }`}
+          >
+            <div className="min-w-0">
+              <div className="font-semibold">
+                {r.symbol} {r.direction === "above" ? "≥" : "≤"} {r.level.toLocaleString("en-IN")}
+              </div>
+              <div className="text-term-dim">
+                {r.note && <>{r.note} · </>}
+                {r.status === "triggered" ? (
+                  <span className="text-up">
+                    fired{r.triggeredSpot != null && ` @ ${r.triggeredSpot.toLocaleString("en-IN")}`}
+                  </span>
+                ) : (
+                  "waiting"
+                )}
               </div>
             </div>
             <button onClick={() => del(r.id)} className="shrink-0 px-1 text-term-dim hover:text-down" title="Remove">

@@ -968,3 +968,39 @@ def leg_rules_clear():
     from . import leg_rules
 
     return {"rules": leg_rules.clear_finished()}
+
+
+# ---- price-level alerts (fire once when spot reaches a level) ----
+@router.get("/price-alerts")
+def price_alerts_list():
+    from . import price_alerts
+
+    return {"alerts": price_alerts.list_alerts()}
+
+
+@router.post("/price-alerts")
+def price_alerts_add(body: dict):
+    from . import price_alerts
+
+    for k in ("symbol", "level"):
+        if body.get(k) in (None, ""):
+            raise HTTPException(status_code=422, detail=f"{k} is required")
+    try:
+        row = price_alerts.add_alert(body)
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"alert": row, "alerts": price_alerts.list_alerts()}
+
+
+@router.delete("/price-alerts/{aid}")
+def price_alerts_del(aid: str):
+    from . import price_alerts
+
+    return {"alerts": price_alerts.cancel(aid)}
+
+
+@router.post("/price-alerts/clear")
+def price_alerts_clear():
+    from . import price_alerts
+
+    return {"alerts": price_alerts.clear_finished()}

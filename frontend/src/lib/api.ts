@@ -366,6 +366,15 @@ export const api = {
   oiAlertDel: (id: string) =>
     j<{ rules: any[] }>(`/api/oi-alerts/${id}`, { method: "DELETE" }),
 
+  priceAlerts: () => j<{ alerts: any[] }>("/api/price-alerts"),
+  priceAlertAdd: (body: Record<string, unknown>) =>
+    j<{ alert: any; alerts: any[] }>("/api/price-alerts", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  priceAlertDel: (id: string) =>
+    j<{ alerts: any[] }>(`/api/price-alerts/${id}`, { method: "DELETE" }),
+
   journal: (params: { limit?: number; symbol?: string } = {}) => {
     const q = new URLSearchParams();
     if (params.limit) q.set("limit", String(params.limit));
