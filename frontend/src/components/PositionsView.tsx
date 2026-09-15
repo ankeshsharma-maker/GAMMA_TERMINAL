@@ -45,7 +45,6 @@ function BrokerTab() {
   const [rows, setRows] = useState<any[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [lots, setLots] = useState(1);
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const loadRef = useRef<() => void>(() => {});
 
@@ -215,16 +214,6 @@ function BrokerTab() {
     }
   };
 
-  const trade = (r: any, side: "BUY" | "SELL") => {
-    if (
-      !window.confirm(`${side} ${lots} lot(s) of ${r.tsym} — real LIVE MARKET order. Continue?`)
-    )
-      return;
-    withBusy(r.tsym, () =>
-      api.brokerOrderTsym({ tsym: r.tsym, exch: r.exch || "NFO", side, lots, prd: r.prd })
-    );
-  };
-
   return (
     <div className="min-h-0 flex-1 overflow-auto p-3">
       {/* summary header */}
@@ -314,16 +303,8 @@ function BrokerTab() {
       </div>
 
       <div className="mb-2 flex items-center gap-2 text-2xs">
-        <span className="text-term-dim">Lots</span>
-        <button className="btn px-1.5 py-0.5" onClick={() => setLots((l) => Math.max(1, l - 1))}>
-          −
-        </button>
-        <span className="num w-5 text-center">{lots}</span>
-        <button className="btn px-1.5 py-0.5" onClick={() => setLots((l) => l + 1)}>
-          +
-        </button>
         <button
-          className="btn btn-sell ml-auto font-semibold disabled:opacity-40"
+          className="btn btn-sell font-semibold disabled:opacity-40"
           disabled={withPnl.every((w) => (n(w.r.netqty) ?? 0) === 0)}
           onClick={squareOffAll}
           title="Flatten every open position in one click, no selection needed"
@@ -405,22 +386,6 @@ function BrokerTab() {
                 className="mt-1.5 flex items-center gap-1.5"
                 onClick={(e) => e.stopPropagation()}
               >
-                <button
-                  disabled={isBusy}
-                  onClick={() => trade(r, "BUY")}
-                  className="rounded bg-up/15 px-2 py-0.5 text-[10px] font-bold text-up hover:bg-up/30 disabled:opacity-40"
-                  title={`Buy ${lots} lot(s) live`}
-                >
-                  Buy
-                </button>
-                <button
-                  disabled={isBusy}
-                  onClick={() => trade(r, "SELL")}
-                  className="rounded bg-down/15 px-2 py-0.5 text-[10px] font-bold text-down hover:bg-down/30 disabled:opacity-40"
-                  title={`Sell ${lots} lot(s) live`}
-                >
-                  Sell
-                </button>
                 <button
                   disabled={isBusy || !qty}
                   onClick={() => squareOff(r)}
