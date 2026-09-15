@@ -833,6 +833,13 @@ export function Chart() {
   useEffect(() => applyRange(true), [rangeD]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => applyRange(true), [symbol, instrument, intervalS]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // switching to Daily candles while still on an intraday-sized visible
+  // window (e.g. the "1D" range preset) would only fit a couple of daily
+  // bars on screen -- widen it to at least a month, same as a human would.
+  useEffect(() => {
+    if (intervalS >= 86400 && rangeD > 0 && rangeD < 30) setRangeD(30);
+  }, [intervalS]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     chartRef.current?.timeScale().applyOptions({ visible: showTime });
   }, [showTime]);
@@ -1159,6 +1166,7 @@ export function Chart() {
           options={
             [
               ["1D", 1],
+              ["1M", 30],
               ["3M", 90],
               ["6M", 180],
               ["1Y", 365],
