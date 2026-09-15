@@ -835,9 +835,17 @@ export function Chart() {
 
   // switching to Daily candles while still on an intraday-sized visible
   // window (e.g. the "1D" range preset) would only fit a couple of daily
-  // bars on screen -- widen it to at least a month, same as a human would.
+  // bars on screen -- default it out to 6 months, same as a human would.
   useEffect(() => {
-    if (intervalS >= 86400 && rangeD > 0 && rangeD < 30) setRangeD(30);
+    if (intervalS >= 86400 && rangeD > 0 && rangeD < 180) setRangeD(180);
+  }, [intervalS]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // mirror case: coming back down to an intraday timeframe while the window
+  // is still sized for daily browsing (left over from the case above, or a
+  // manual pick) would try to cram months of intraday bars on screen --
+  // snap back to the 1-day default.
+  useEffect(() => {
+    if (intervalS < 86400 && rangeD !== 1) setRangeD(1);
   }, [intervalS]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
