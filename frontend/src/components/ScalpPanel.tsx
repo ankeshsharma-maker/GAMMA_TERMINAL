@@ -176,7 +176,7 @@ export function ScalpPanel() {
   );
 
   return (
-    <div className={`flex flex-col bg-term-panel2 ${isMobile ? "" : "h-full"}`}>
+    <div className={`flex flex-col bg-term-panel2 ${isMobile ? "" : "h-full overflow-y-auto"}`}>
       {/* live P&L straight from the broker position book */}
       <div className="flex items-end gap-4 border-b border-term-border bg-term-panel px-3 py-1.5">
         <div className="flex flex-col leading-tight">
