@@ -11,8 +11,9 @@ export type NavGroup = {
 /** The app's 4 top-level sections. Chart/OI/Trend OI were three separate
  *  nav items that all just look at "this symbol right now" from a
  *  different angle, so they're one section with the same symbol carried
- *  across; Scalp/Build/Positions/Orders are the ones that actually place
- *  or manage a trade; Auto/Journal/Funds are account-level, not
+ *  across; Scalp/Build/Positions/Orders/Auto are the ones that actually
+ *  place or manage a trade (Auto included -- it's an automated trading
+ *  engine, not just account admin); Journal/Funds are account-level, not
  *  symbol-scoped. Scan stays alone -- it already has its own sub-tabs
  *  (Gamma Blast/Movers/Screener/History/Indicators) and doesn't share a
  *  symbol context with the others the way the Chart group does. */
@@ -36,6 +37,7 @@ export const NAV_GROUPS: NavGroup[] = [
       ["builder", "Build"],
       ["positions", "Positions"],
       ["orders", "Orders"],
+      ["auto", "Auto"],
     ],
   },
   {
@@ -49,7 +51,6 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Account",
     icon: "💰",
     members: [
-      ["auto", "Auto"],
       ["journal", "Journal"],
       ["funds", "Funds"],
     ],
