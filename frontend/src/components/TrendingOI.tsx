@@ -407,7 +407,7 @@ function TrendingOILive() {
           className={`rounded border px-2 py-0.5 font-semibold ${
             showChart
               ? "border-term-accent bg-term-accent text-white"
-              : "border-term-border text-term-dim"
+              : "border-term-dim/70 text-term-dim"
           }`}
         >
           {showChart ? "Hide chart" : "Show chart"}

@@ -158,7 +158,7 @@ export function ScalpCharts() {
             onClick={togglePaneTime}
             className={`rounded border px-2 py-0.5 font-semibold ${
               paneTime
-                ? "border-term-border text-term-dim hover:text-term-text"
+                ? "border-term-dim/70 text-term-dim hover:text-term-text"
                 : "border-amber-500/60 bg-amber-500/15 text-amber-400"
             }`}
             title="Show / hide the time axis on every pane"

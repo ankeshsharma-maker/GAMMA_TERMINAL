@@ -186,7 +186,7 @@ export function TradeJournal() {
                   className={`rounded border px-2 py-1 text-2xs ${
                     symbolFilter === s.symbol
                       ? "border-term-accent bg-term-accent text-white"
-                      : "border-term-border text-term-dim hover:text-term-text"
+                      : "border-term-dim/70 text-term-dim hover:text-term-text"
                   }`}
                 >
                   {s.symbol} · {s.trades} · <span className={signColor(s.pnl)}>{rupee(s.pnl)}</span>

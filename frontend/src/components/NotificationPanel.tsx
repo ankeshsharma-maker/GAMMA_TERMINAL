@@ -146,7 +146,7 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
               className={`flex items-center gap-1 rounded border px-1.5 py-0.5 ${
                 uKind === k
                   ? "border-term-accent bg-term-accent/15 text-term-text"
-                  : "border-term-border text-term-dim hover:text-term-text"
+                  : "border-term-dim/70 text-term-dim hover:text-term-text"
               }`}
             >
               {label}

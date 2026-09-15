@@ -24,7 +24,7 @@ export function GroupSubNav({
           className={`rounded border px-2 py-1 font-semibold transition-colors ${
             view === v
               ? "border-term-accent/50 bg-term-accent/15 text-term-accent"
-              : "border-term-border text-term-dim hover:bg-term-border hover:text-term-text"
+              : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
           }`}
         >
           {label}

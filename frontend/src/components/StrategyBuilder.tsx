@@ -848,7 +848,7 @@ export function StrategyBuilder() {
                 className={`rounded border px-1.5 py-0.5 ${
                   mult === n
                     ? "border-term-accent bg-term-accent/20 text-term-text"
-                    : "border-term-border text-term-dim"
+                    : "border-term-dim/70 text-term-dim"
                 }`}
               >
                 {n}
@@ -881,7 +881,7 @@ export function StrategyBuilder() {
                   className={`rounded border px-1.5 py-1 leading-none ${
                     leg.held
                       ? "border-amber-500/50 bg-amber-500/15 text-amber-400"
-                      : "border-term-border text-term-dim hover:text-term-text"
+                      : "border-term-dim/70 text-term-dim hover:text-term-text"
                   }`}
                 >
                   {leg.held ? "🔒" : "🔓"}

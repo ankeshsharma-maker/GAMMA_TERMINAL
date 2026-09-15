@@ -67,7 +67,7 @@ export function HeaderMenu({
         className={`rounded border px-2.5 py-1.5 text-xs ${
           open
             ? "border-term-accent/50 bg-term-accent/15 text-term-text"
-            : "border-term-border text-term-dim hover:text-term-text"
+            : "border-term-dim/70 text-term-dim hover:text-term-text"
         }`}
       >
         {icon}

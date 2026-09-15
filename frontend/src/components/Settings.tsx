@@ -59,7 +59,7 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 const SEG =
   "rounded border px-2 py-1 text-2xs font-semibold transition-colors";
 const on = "border-term-accent bg-term-accent/15 text-term-text";
-const off = "border-term-border text-term-dim hover:text-term-text";
+const off = "border-term-dim/70 text-term-dim hover:text-term-text";
 
 /** Webhook / Telegram delivery for fired alerts -- everything that already
  *  lands in the in-app Alerts feed (broker-bracket hits, leg-rule fills, OI
@@ -498,7 +498,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
                     redraw();
                   }
                 }}
-                className={`${SEG} border-term-border text-term-dim hover:border-down hover:text-down`}
+                className={`${SEG} border-term-dim/70 text-term-dim hover:border-down hover:text-down`}
               >
                 Remove
               </button>
@@ -577,7 +577,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <Row label="Order mode" hint="Change from the header / drawer">
             <span
               className={`${SEG} ${
-                orderMode === "live" ? "border-down text-down" : "border-term-border text-term-dim"
+                orderMode === "live" ? "border-down text-down" : "border-term-dim/70 text-term-dim"
               }`}
             >
               {orderMode === "live" ? "LIVE" : "PAPER"}

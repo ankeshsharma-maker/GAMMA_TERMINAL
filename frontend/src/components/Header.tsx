@@ -82,7 +82,7 @@ function ViewToggle() {
             className={`rounded border px-2 py-1 font-semibold uppercase tracking-normal transition-colors ${
               activeGroup?.key === g.key
                 ? "border-term-accent/50 bg-term-accent/15 text-term-accent"
-                : "border-term-border text-term-dim hover:bg-term-border hover:text-term-text"
+                : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
             }`}
           >
             {g.label}
@@ -273,7 +273,7 @@ export function HeaderIndices({ max = 12 }: { max?: number } = {}) {
         onClick={() => setOpen((o) => !o)}
         title="Choose which indices show here"
         className={`rounded border px-1 py-0.5 text-[10px] ${
-          open ? "border-term-accent text-term-accent" : "border-term-border text-term-dim hover:text-term-text"
+          open ? "border-term-accent text-term-accent" : "border-term-dim/70 text-term-dim hover:text-term-text"
         }`}
       >
         ⚙
@@ -411,7 +411,7 @@ function MarginStats() {
       </div>
       <div
         className={`flex flex-col justify-center rounded border px-2 py-1 leading-tight ${
-          used ? "border-amber-500/40 bg-amber-500/10 text-amber-400" : "border-term-border text-term-dim"
+          used ? "border-amber-500/40 bg-amber-500/10 text-amber-400" : "border-term-dim/70 text-term-dim"
         }`}
       >
         <span className="text-2xs uppercase tracking-wide opacity-80">Margin used</span>

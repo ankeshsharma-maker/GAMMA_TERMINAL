@@ -1036,7 +1036,7 @@ export function Chart() {
             className={`rounded border px-2 py-0.5 font-semibold ${
               indHidden
                 ? "border-amber-500/60 bg-amber-500/15 text-amber-400"
-                : "border-term-border text-term-dim hover:text-term-text"
+                : "border-term-dim/70 text-term-dim hover:text-term-text"
             }`}
           >
             {indHidden ? "▨ ind off" : "▨ hide ind"}
@@ -1048,7 +1048,7 @@ export function Chart() {
         style={barOpen ? undefined : { display: "none" }}
       >
         {view !== "scalper" && (
-          <div className="flex overflow-hidden rounded border border-term-border">
+          <div className="flex flex-wrap items-center gap-1">
             {(
               [
                 ["chain", "Chain"],
@@ -1061,7 +1061,11 @@ export function Chart() {
                 key={v}
                 onClick={() => setView(v)}
                 title={`Open ${label} for ${symbol}`}
-                className="border-r border-term-border px-2 py-0.5 text-term-dim last:border-r-0 hover:bg-term-border hover:text-term-text"
+                className={`rounded border px-2 py-0.5 ${
+                  view === v
+                    ? "border-term-accent/50 bg-term-accent/15 text-term-text"
+                    : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
+                }`}
               >
                 {label}
               </button>
@@ -1098,7 +1102,7 @@ export function Chart() {
             })
           }
           className={`rounded border px-1.5 py-0.5 ${
-            split ? "border-term-accent/50 bg-term-accent/15 text-term-text" : "border-transparent text-term-dim hover:bg-term-border hover:text-term-text"
+            split ? "border-term-accent/50 bg-term-accent/15 text-term-text" : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
           }`}
           title="Split view — underlying + derivative in one window"
         >
@@ -1257,7 +1261,7 @@ export function Chart() {
         <button
           onClick={() => setLogScale((v) => !v)}
           className={`rounded border px-1.5 py-0.5 ${
-            logScale ? "border-term-accent/50 bg-term-accent/15 text-term-text" : "border-transparent text-term-dim hover:bg-term-border hover:text-term-text"
+            logScale ? "border-term-accent/50 bg-term-accent/15 text-term-text" : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
           }`}
           title="Logarithmic price scale"
         >
@@ -1266,7 +1270,7 @@ export function Chart() {
         <button
           onClick={() => setDrawMode((v) => !v)}
           className={`rounded border px-1.5 py-0.5 ${
-            drawMode ? "border-amber-500/60 bg-amber-500/15 text-amber-400" : "border-transparent text-term-dim hover:bg-term-border hover:text-term-text"
+            drawMode ? "border-amber-500/60 bg-amber-500/15 text-amber-400" : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
           }`}
           title="Draw mode — click the chart to drop a horizontal line"
         >
@@ -1292,7 +1296,7 @@ export function Chart() {
           onClick={toggleTime}
           className={`rounded border px-2 py-0.5 font-semibold ${
             showTime
-              ? "border-term-border text-term-dim hover:text-term-text"
+              ? "border-term-dim/70 text-term-dim hover:text-term-text"
               : "border-amber-500/60 bg-amber-500/15 text-amber-400"
           }`}
           title="Show / hide the time axis labels"
@@ -1308,7 +1312,7 @@ export function Chart() {
             className={`rounded border px-2 py-0.5 font-semibold ${
               mtfOpen || mtf
                 ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-200"
-                : "border-term-border text-term-dim hover:bg-term-border hover:text-term-text"
+                : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
             }`}
           >
             MTF
@@ -1411,7 +1415,7 @@ export function Chart() {
           className={`rounded border px-2 py-0.5 font-semibold ${
             indHidden
               ? "border-amber-500/60 bg-amber-500/15 text-amber-400"
-              : "border-term-border text-term-dim hover:text-term-text"
+              : "border-term-dim/70 text-term-dim hover:text-term-text"
           }`}
           title={
             indHidden
@@ -1436,7 +1440,7 @@ export function Chart() {
             className={`rounded border px-2 py-0.5 font-semibold ${
               fxOpen || activeInd
                 ? "border-term-accent/50 bg-term-accent/15 text-term-text"
-                : "border-term-border text-term-dim hover:bg-term-border hover:text-term-text"
+                : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
             }`}
           >
             ƒx{activeInd ? ` · ${activeInd}` : ""}
@@ -1510,7 +1514,7 @@ export function Chart() {
         </span>
       </div>
 
-      <div className={`relative min-h-0 ${split ? "flex-[3]" : "flex-1"}`}>
+      <div className={`relative min-h-[220px] ${split ? "flex-[3]" : "flex-1"}`}>
         <div ref={wrapRef} className="absolute inset-0" />
         {oscTop != null && (
           <>

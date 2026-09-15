@@ -68,7 +68,7 @@ export function RuleOrder({
       ? bull
         ? "border-up bg-up/20 text-up"
         : "border-down bg-down/20 text-down"
-      : "border-term-border text-term-dim hover:text-term-text";
+      : "border-term-dim/70 text-term-dim hover:text-term-text";
 
   const create = async () => {
     if (!expiry || !k) return alert("Pick a strike");

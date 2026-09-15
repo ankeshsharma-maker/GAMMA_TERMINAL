@@ -222,7 +222,7 @@ export function ScalpPanel() {
             key={lotN}
             onClick={() => setScalpLots(lotN)}
             className={`rounded border px-1.5 py-0.5 ${
-              scalpLots === lotN ? "border-term-accent bg-term-accent/20 text-term-text" : "border-term-border text-term-dim"
+              scalpLots === lotN ? "border-term-accent bg-term-accent/20 text-term-text" : "border-term-dim/70 text-term-dim"
             }`}
           >
             {lotN}

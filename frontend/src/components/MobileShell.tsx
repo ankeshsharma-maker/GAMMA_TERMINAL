@@ -224,7 +224,7 @@ function MobileBody({ view }: { view: View }) {
       // an inner flex-1 that collapsed to nothing on a phone.
       return (
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <div className="h-[46vh] shrink-0 border-b border-term-border">
+          <div className="flex min-h-[46vh] shrink-0 flex-col border-b border-term-border">
             <ScalpCharts />
           </div>
           <div className="shrink-0">
@@ -296,7 +296,7 @@ export function MobileShell() {
         <button
           onClick={() => setBrokerOpen((o) => !o)}
           className={`relative ml-auto shrink-0 rounded border px-1.5 py-1 text-[11px] ${
-            brokerOpen ? "border-term-accent text-term-accent" : "border-term-border text-term-dim"
+            brokerOpen ? "border-term-accent text-term-accent" : "border-term-dim/70 text-term-dim"
           }`}
           title="Broker · mode · alerts"
         >
@@ -331,7 +331,7 @@ export function MobileShell() {
             className={`ml-auto rounded border px-2 py-1 text-2xs ${
               notifOpen
                 ? "border-term-accent text-term-accent"
-                : "border-term-border text-term-dim hover:text-term-text"
+                : "border-term-dim/70 text-term-dim hover:text-term-text"
             }`}
             title="Alerts & unusual activity"
           >

@@ -31,7 +31,7 @@ export function RangePresets({
             className={`rounded border px-1.5 py-0.5 text-[10px] ${
               active === from
                 ? "border-term-accent bg-term-accent/20 text-term-text"
-                : "border-term-border text-term-dim hover:text-term-text"
+                : "border-term-dim/70 text-term-dim hover:text-term-text"
             }`}
           >
             {label}
