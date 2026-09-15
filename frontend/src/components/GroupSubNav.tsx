@@ -16,15 +16,15 @@ export function GroupSubNav({
   const group = groupForView(view);
   if (!group || group.members.length < 2) return null;
   return (
-    <div className={`flex overflow-hidden rounded border border-term-border text-2xs ${className}`}>
+    <div className={`flex flex-wrap items-center gap-1 text-2xs ${className}`}>
       {group.members.map(([v, label]) => (
         <button
           key={v}
           onClick={() => setView(v)}
-          className={`px-2 py-1 font-semibold transition-colors ${
+          className={`rounded border px-2 py-1 font-semibold transition-colors ${
             view === v
-              ? "bg-term-accent text-white"
-              : "text-term-dim hover:bg-term-border hover:text-term-text"
+              ? "border-term-accent/50 bg-term-accent/15 text-term-accent"
+              : "border-term-border text-term-dim hover:bg-term-border hover:text-term-text"
           }`}
         >
           {label}
