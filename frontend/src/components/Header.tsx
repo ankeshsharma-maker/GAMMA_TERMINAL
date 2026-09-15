@@ -761,6 +761,10 @@ export function Header({ children }: { children?: ReactNode }) {
           <OrderModePill />
           <UpstoxPill />
           <BrokerPill />
+          <div className="flex items-center gap-1.5 border-l border-term-border pl-1.5">
+            <MarginStats />
+            <PnlStrip />
+          </div>
           <AlertBell />
           <button
             onClick={() => setSettingsOpen(true)}
@@ -805,12 +809,6 @@ export function Header({ children }: { children?: ReactNode }) {
           ) : (
             <span className="text-xs text-term-dim">loading chain…</span>
           )}
-        </div>
-        <div className="mr-4 flex items-center gap-x-1.5 border-r border-term-border pr-4">
-          <MarginStats />
-        </div>
-        <div className="flex items-center gap-x-1.5">
-          <PnlStrip />
         </div>
         <div className="ml-auto flex items-center">{children}</div>
       </div>
