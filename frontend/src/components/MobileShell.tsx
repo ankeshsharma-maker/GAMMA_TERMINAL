@@ -18,11 +18,11 @@ import {
 /** NIFTY + SENSEX, ultra-compact — sits next to the GT mark, fits a folded Fold 6 */
 function TopIndices() {
   const [rows, setRows] = useState<
-    { symbol: string; spot: number | null; chgPct: number | null }[]
+    { symbol: string; spot: number | null; chgPct: number | null; chgPts?: number | null }[]
   >([]);
   // last real value per symbol — a poll that returns null must not blank the
   // chip (that flicker between "–" and the price is what users notice)
-  const lastRef = useRef<Record<string, { spot: number; chgPct: number | null }>>({});
+  const lastRef = useRef<Record<string, { spot: number; chgPct: number | null; chgPts: number | null }>>({});
   useEffect(() => {
     let alive = true;
     const load = () =>
@@ -40,11 +40,14 @@ function TopIndices() {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
       {rows.slice(0, 2).map((r) => {
-        if (r.spot != null) lastRef.current[r.symbol] = { spot: r.spot, chgPct: r.chgPct };
+        if (r.spot != null)
+          lastRef.current[r.symbol] = { spot: r.spot, chgPct: r.chgPct, chgPts: r.chgPts ?? null };
         const last = lastRef.current[r.symbol];
         const spot = r.spot ?? last?.spot ?? null;
         const chgPct = r.chgPct ?? last?.chgPct ?? null;
-        const up = (chgPct ?? 0) >= 0;
+        let chgPts = r.chgPts ?? last?.chgPts ?? null;
+        if (chgPts == null && chgPct != null && spot != null) chgPts = spot - spot / (1 + chgPct / 100);
+        const up = (chgPct ?? chgPts ?? 0) >= 0;
         return (
           <span
             key={r.symbol}
@@ -58,11 +61,12 @@ function TopIndices() {
             </span>
             <span
               className={`num text-[8px] leading-none ${
-                chgPct == null ? "invisible" : up ? "text-up" : "text-down"
+                chgPct == null && chgPts == null ? "invisible" : up ? "text-up" : "text-down"
               }`}
             >
               {up ? "▲" : "▼"}
-              {nf(Math.abs(chgPct ?? 0), 2)}%
+              {chgPts != null ? nf(Math.abs(chgPts), Math.abs(chgPts) < 100 ? 1 : 0) : "0"}
+              {chgPct != null ? ` (${nf(Math.abs(chgPct), 2)}%)` : ""}
             </span>
           </span>
         );
