@@ -195,6 +195,7 @@ import { LogoMark } from "./Logo";
  *  reach everything else; these are just the fast one-tap paths). */
 const TOP_NAV: { v: View; label: string }[] = [
   { v: "scrip", label: "OI" },
+  { v: "trendingoi", label: "Trend OI" },
   { v: "scanner", label: "Screener" },
   { v: "auto", label: "Auto" },
   { v: "builder", label: "Build" },
