@@ -90,7 +90,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const isMobile = useIsMobile();
   const [tools, setTools] = useState(false); // mobile: show the extra control rows
   const [metric, setMetric] = useState<Metric>("combined");
-  const [layout, setLayout] = useState<"chart" | "ladder" | "sensibull" | "pcr" | "gex" | "dex">("chart");
+  const [layout, setLayout] = useState<"chart" | "ladder" | "pcr" | "gex" | "dex">("chart");
   const [pcrPts, setPcrPts] = useState<{ t: number; pcr: number; spot: number }[]>([]);
   const [gexPts, setGexPts] = useState<
     { date: string; spot: number; netGex: number; gammaFlip: number }[]
@@ -1479,231 +1479,6 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     );
   })();
 
-  // ---- Sensibull-style strike-wise "Change in OI" bar chart ----
-  // Call bar = red, Put bar = green (leg shown by colour); above the zero line
-  // = OI added, below = OI reduced (reduced bars dimmed so direction reads even
-  // without checking the axis). Spot + Max Pain marked, ATM band shaded.
-  const sensiCls = isMobile ? "overflow-x-auto" : "min-h-0 flex-1 overflow-auto";
-  const sensiEl = (() => {
-    const COL = 34; // px per strike
-    const H = 340;
-    const padT = 26;
-    const padB = 52;
-    const plot = H - padT - padB;
-    const zeroY = padT + plot / 2;
-    const half = plot / 2;
-    const cmax = flow.maxChg || 1;
-    const W = Math.max(rows.length * COL, 320);
-    const yOf = (v: number) => zeroY - Math.max(-1, Math.min(1, v / cmax)) * half;
-    const CALL_C = "#ef4444"; // Call OI change — red
-    const PUT_C = "#22c55e"; // Put OI change — green
-    const atmIdx = rows.findIndex((r) => r.strike === chain.atmStrike);
-    const ticks = [1, 0.5, 0, -0.5, -1].map((f) => f * cmax);
-    const tfLbl = tf === 0 ? "since open" : `last ${tf}m`;
-
-    // fractional column index of a given strike (for spot / max-pain lines)
-    const idxOfStrike = (px: number) => {
-      if (rows.length < 2 || px <= rows[0].strike) return px <= rows[0].strike ? 0 : -1;
-      if (px >= rows[rows.length - 1].strike) return rows.length - 1;
-      for (let i = 0; i < rows.length - 1; i++) {
-        const a = rows[i].strike;
-        const b = rows[i + 1].strike;
-        if (px >= a && px <= b) return i + (px - a) / (b - a || 1);
-      }
-      return -1;
-    };
-    const mpIdx = chain.maxPain ? idxOfStrike(chain.maxPain) : -1;
-
-    const chip = (label: string, val: string) => (
-      <span className="num rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
-        <span className="text-term-dim">{label} </span>
-        <span className="text-term-text">{val}</span>
-      </span>
-    );
-
-    const bar = (x: number, bw: number, v: number, col: string, leg: string, strike: number) => {
-      const y1 = yOf(Math.max(0, v));
-      const y2 = yOf(Math.min(0, v));
-      const added = v >= 0;
-      // added = filled body, reduced = hollow body (candle convention)
-      return (
-        <rect
-          x={x}
-          y={y1}
-          width={bw}
-          height={Math.max(1, y2 - y1)}
-          rx={1}
-          fill={added ? col : "none"}
-          stroke={col}
-          strokeWidth={added ? 0 : 1.5}
-        >
-          <title>
-            {leg} {added ? "+" : ""}
-            {compact(v)} @ {sk(strike)} · {added ? "OI added" : "OI reduced"}
-          </title>
-        </rect>
-      );
-    };
-
-    return (
-      <div className={`p-3 ${sensiCls}`}>
-        <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px]">
-          {chip(symbol, nf(spot, 1))}
-          {chip("ATM", sk(chain.atmStrike))}
-          {chip("PCR", nf(chain.pcr, 2))}
-          {chip("Max Pain", nf(chain.maxPain, 0))}
-          {chip("ΔOI", tfLbl)}
-        </div>
-
-        <div className="flex">
-          {/* fixed Y axis */}
-          <svg width={42} height={H} className="shrink-0 overflow-visible">
-            {ticks.map((v, i) => (
-              <text
-                key={i}
-                x={38}
-                y={yOf(v) + 3}
-                fontSize={9}
-                textAnchor="end"
-                className="fill-term-dim"
-              >
-                {v > 0 ? "+" : ""}
-                {compact(v)}
-              </text>
-            ))}
-            <text x={38} y={padT - 12} fontSize={8} textAnchor="end" className="fill-term-dim">
-              ΔOI
-            </text>
-          </svg>
-
-          <div className="min-w-0 flex-1 overflow-x-auto">
-            <svg width={W} height={H} className="block">
-              {ticks.map((v, i) => (
-                <line
-                  key={i}
-                  x1={0}
-                  x2={W}
-                  y1={yOf(v)}
-                  y2={yOf(v)}
-                  stroke="currentColor"
-                  strokeOpacity={v === 0 ? 0.5 : 0.12}
-                  className="text-term-dim"
-                />
-              ))}
-
-              {atmIdx >= 0 && (
-                <rect
-                  x={atmIdx * COL}
-                  y={padT}
-                  width={COL}
-                  height={plot}
-                  className="fill-term-accent"
-                  fillOpacity={0.12}
-                />
-              )}
-
-              {mpIdx >= 0 && (
-                <g>
-                  <line
-                    x1={mpIdx * COL + COL / 2}
-                    x2={mpIdx * COL + COL / 2}
-                    y1={padT}
-                    y2={H - padB}
-                    stroke="#eab308"
-                    strokeWidth={1.5}
-                    strokeDasharray="2 3"
-                  />
-                  <text
-                    x={mpIdx * COL + COL / 2}
-                    y={H - padB + 24}
-                    fontSize={8}
-                    textAnchor="middle"
-                    className="fill-amber-400"
-                  >
-                    max pain
-                  </text>
-                </g>
-              )}
-
-              {spotMark && (
-                <g>
-                  <line
-                    x1={spotMark.index * COL + COL / 2}
-                    x2={spotMark.index * COL + COL / 2}
-                    y1={padT - 8}
-                    y2={H - padB}
-                    stroke="#38bdf8"
-                    strokeWidth={1.5}
-                    strokeDasharray="4 3"
-                  />
-                  <text
-                    x={spotMark.index * COL + COL / 2}
-                    y={padT - 12}
-                    fontSize={9}
-                    textAnchor="middle"
-                    className="fill-sky-400"
-                  >
-                    spot {nf(spotMark.spot, 0)}
-                  </text>
-                </g>
-              )}
-
-              {rows.map((r, i) => {
-                const c = dCE(r);
-                const p = dPE(r);
-                const x0 = i * COL;
-                const bw = 11;
-                const gap = 2;
-                const isATM = r.strike === chain.atmStrike;
-                const lx = x0 + COL / 2;
-                return (
-                  <g key={r.strike}>
-                    {bar(lx - bw - gap / 2, bw, c, CALL_C, "Call ΔOI", r.strike)}
-                    {bar(lx + gap / 2, bw, p, PUT_C, "Put ΔOI", r.strike)}
-                    <text
-                      x={lx}
-                      y={H - padB + 14}
-                      fontSize={8.5}
-                      textAnchor="end"
-                      className={isATM ? "fill-term-accent font-bold" : "fill-term-dim"}
-                      transform={`rotate(-45 ${lx} ${H - padB + 14})`}
-                    >
-                      {sk(r.strike)}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
-          </div>
-        </div>
-
-        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-term-dim">
-          <span>
-            <Sw c={CALL_C} /> Call OI change
-          </span>
-          <span>
-            <Sw c={PUT_C} /> Put OI change
-          </span>
-          <span>above 0 = OI added (solid) · below 0 = OI reduced (hollow)</span>
-          <span>
-            <span
-              className="mr-1 inline-block border-l-2 border-dashed align-middle"
-              style={{ borderColor: "#38bdf8", height: 10 }}
-            />
-            spot
-          </span>
-          <span>
-            <span
-              className="mr-1 inline-block border-l-2 border-dashed align-middle"
-              style={{ borderColor: "#eab308", height: 10 }}
-            />
-            max pain
-          </span>
-        </div>
-      </div>
-    );
-  })();
-
   // View / Strikes / ΔOI-over / Zoom — on the web portal these ride the "Show"
   // row (one row saved); on mobile they stay a separate ⚙-collapsible row.
   const chartControls = (
@@ -1820,10 +1595,9 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
               [
                 ["chart", "chart"],
                 ["ladder", "ladder"],
-                ["sensibull", "sensibull"],
-                ["pcr", "pcr"],
                 ["gex", "weekly gex"],
                 ["dex", "dealer exposure"],
+                ["pcr", "pcr"],
               ] as const
             ).map(([v, l]) => (
               <button key={v} onClick={() => setLayout(v)} className={layout === v ? "on" : ""}>
@@ -1887,19 +1661,21 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       </div>
 
       {/* legend / totals */}
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-term-border bg-term-panel px-3 py-1 text-[10px]">
-        <span className="text-term-dim">
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel px-3 py-1.5 text-[10px]">
+        <span className="rounded border border-down/30 bg-down/5 px-2 py-1 text-term-dim">
           <span className="font-semibold text-down">Call OI</span>{" "}
-          <span className="num">{crores(chain.totals.ceOI)}</span> ·{" "}
+          <span className="num text-term-text">{crores(chain.totals.ceOI)}</span> ·{" "}
           <Sw c={OI_ADD} /> added <span style={{ color: OI_ADD }}>+{compact(flow.ceAdd)}</span> ·{" "}
           <Sw c={OI_CUT} hollow /> reduced <span style={{ color: OI_CUT }}>{compact(flow.ceCut)}</span>
         </span>
-        <span className="text-term-dim">
-          Resistance {sk(stats.resistance)} · Floor {sk(stats.floor)} · ATM {sk(chain.atmStrike)}
+        <span className="rounded border border-term-border bg-term-bg/40 px-2 py-1 text-term-dim">
+          Resistance <span className="num text-term-text">{sk(stats.resistance)}</span> · Floor{" "}
+          <span className="num text-term-text">{sk(stats.floor)}</span> · ATM{" "}
+          <span className="num text-term-text">{sk(chain.atmStrike)}</span>
         </span>
-        <span className="text-term-dim">
+        <span className="rounded border border-up/30 bg-up/5 px-2 py-1 text-term-dim">
           <span className="font-semibold text-up">Put OI</span>{" "}
-          <span className="num">{crores(chain.totals.peOI)}</span> ·{" "}
+          <span className="num text-term-text">{crores(chain.totals.peOI)}</span> ·{" "}
           <Sw c={OI_ADD} /> added <span style={{ color: OI_ADD }}>+{compact(flow.peAdd)}</span> ·{" "}
           <Sw c={OI_CUT} hollow /> reduced <span style={{ color: OI_CUT }}>{compact(flow.peCut)}</span>
         </span>
@@ -1955,7 +1731,6 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         </div>
       )}
       {layout === "ladder" && ladderEl}
-      {layout === "sensibull" && sensiEl}
       {layout === "pcr" && pcrEl}
       {layout === "gex" && gexEl}
       {layout === "dex" && dexEl}
