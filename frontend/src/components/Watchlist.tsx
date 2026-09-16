@@ -48,19 +48,6 @@ function sortWatch(rows: WatchQuote[], { k, dir }: { k: SortKey; dir: 1 | -1 }) 
   });
 }
 
-/** remove button */
-function DelBtn({ onClick, title }: { onClick: (e: React.MouseEvent) => void; title: string }) {
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      className="shrink-0 rounded border border-term-border bg-term-bg/60 px-1 py-0.5 text-[10px] leading-none text-term-dim transition hover:border-down hover:bg-down hover:text-white"
-    >
-      ✕
-    </button>
-  );
-}
-
 const BSE_SYMS = new Set(["SENSEX", "BANKEX", "SENSEX50", "SNSX50"]);
 const wExch = (w: WatchQuote) => {
   const u = w.symbol.toUpperCase();
@@ -78,8 +65,9 @@ const wAbsChg = (w: WatchQuote) => {
 /** broker-style quote row: name + exchange on the left, LTP + change on the
  *  right, divider between rows. Tapping the row opens the chart for that symbol. */
 function QuoteRow({ w }: { w: WatchQuote }) {
-  const { symbol, selectSymbol, setView, removeWatch } = useStore();
-  const on = w.symbol === symbol && w.kind !== "option";
+  const { symbol, selectSymbol, selectExpiry, setChartInstrument, chartInstrument, setView, removeWatch } =
+    useStore();
+  const on = w.kind === "option" ? chartInstrument === w.key : w.symbol === symbol;
   const px = wPx(w);
   const pct = wPct(w);
   const chg = wAbsChg(w);
@@ -95,9 +83,13 @@ function QuoteRow({ w }: { w: WatchQuote }) {
       <button
         onClick={() => {
           selectSymbol(w.symbol, true);
+          if (w.kind === "option") {
+            if (w.expiry) selectExpiry(w.expiry);
+            setChartInstrument(w.key);
+          }
           setView("chart");
         }}
-        title={`Chart ${w.symbol}`}
+        title={`Chart ${wName(w)}`}
         className="min-w-0 flex-1 text-left"
       >
         <div className="truncate text-sm font-semibold text-term-text">{wName(w)}</div>
@@ -139,85 +131,6 @@ type StrikePair = {
   ce?: WatchQuote;
   pe?: WatchQuote;
 };
-
-/** one clickable option leg: price + %chg, tinted, opens the chart for that leg */
-function Leg({
-  w,
-  side,
-  align,
-}: {
-  w: WatchQuote | undefined;
-  side: "CE" | "PE";
-  align: "left" | "right";
-}) {
-  const { selectSymbol, selectExpiry, setChartInstrument, chartInstrument, setView } = useStore();
-  const on = !!w && chartInstrument === w.key;
-  const ce = side === "CE";
-  const tint = ce ? "text-up" : "text-down";
-  const bg = ce
-    ? "bg-up/15 hover:bg-up/25 border border-up/25"
-    : "bg-down/15 hover:bg-down/25 border border-down/25";
-  const open = () => {
-    if (!w) return;
-    selectSymbol(w.symbol, true);
-    if (w.expiry) selectExpiry(w.expiry);
-    setChartInstrument(w.key);
-    setView("chart");
-  };
-  if (!w)
-    return (
-      <span
-        className={`flex-1 rounded border py-1 text-center text-[10px] ${
-          ce ? "border-up/15 bg-up/5" : "border-down/15 bg-down/5"
-        } text-term-dim/50`}
-      >
-        no {side}
-      </span>
-    );
-  return (
-    <button
-      onClick={open}
-      title={`Chart ${w.symbol} ${sk(w.strike)} ${side}`}
-      className={`flex flex-1 flex-col ${
-        align === "right" ? "items-end" : "items-start"
-      } rounded px-1 py-0.5 transition ${bg} ${
-        on ? "ring-1 ring-term-accent" : ""
-      }`}
-    >
-      <span className="flex items-baseline gap-1 leading-none">
-        <span className={`text-[8px] font-bold ${tint}`}>{side}</span>
-        <span className="num text-xs font-semibold tabular-nums text-term-text">
-          {w.ltp != null ? nf(w.ltp) : "–"}
-        </span>
-      </span>
-      {w.chgPct != null && (
-        <span className={`num text-[9px] tabular-nums ${signColor(w.chgPct)}`}>
-          {w.chgPct >= 0 ? "▲" : "▼"}
-          {nf(Math.abs(w.chgPct), 2)}%
-        </span>
-      )}
-    </button>
-  );
-}
-
-/** CALL | STRIKE | PUT row so both legs of a strike are visible at a glance */
-function StrikeRow({ p }: { p: StrikePair }) {
-  const removeWatch = useStore((s) => s.removeWatch);
-  const removeBoth = async () => {
-    if (p.ce) await removeWatch(p.ce.key);
-    if (p.pe) await removeWatch(p.pe.key);
-  };
-  return (
-    <div className="group relative flex items-center gap-1 rounded-md border border-term-border/50 bg-term-panel/50 px-2 py-1 transition-colors hover:bg-term-panel">
-      <Leg w={p.ce} side="CE" align="right" />
-      <span className="num shrink-0 rounded bg-term-bg px-1.5 py-0.5 text-xs font-bold tabular-nums text-term-text">
-        {sk(p.strike)}
-      </span>
-      <Leg w={p.pe} side="PE" align="left" />
-      <DelBtn onClick={removeBoth} title="Remove this strike (CE + PE)" />
-    </div>
-  );
-}
 
 export function Watchlist() {
   const {
@@ -393,7 +306,10 @@ export function Watchlist() {
             <span className="h-px flex-1 bg-term-border/60" />
           </div>
           {blk.items.map((p) => (
-            <StrikeRow key={p.gkey} p={p} />
+            <div key={p.gkey} className="flex flex-col gap-0.5">
+              {p.ce && rowFor(p.ce)}
+              {p.pe && rowFor(p.pe)}
+            </div>
           ))}
         </div>
       ))}
