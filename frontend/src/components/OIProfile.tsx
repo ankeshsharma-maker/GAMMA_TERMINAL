@@ -1002,49 +1002,58 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
               {intraGexPtsAll.length} × {intraTf < 60 ? `${intraTf}m` : `${intraTf / 60}h`} buckets
             </span>
           </div>
-          <table className="num w-full text-xs">
-            <thead className="sticky top-0 bg-term-panel2 text-[10px] uppercase text-term-dim">
-              <tr className="[&>th]:border-b [&>th]:border-term-border [&>th]:px-2 [&>th]:py-1 [&>th]:text-right first:[&>th]:text-left">
-                <th className="!text-left">Time</th>
-                <th>Spot</th>
-                <th>netGex</th>
-                <th>γ-flip</th>
-                <th>Gap to flip</th>
-                <th className="!text-center">Regime</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...intraGexPtsAll].reverse().map((p) => {
-                const gap = p.gammaFlip != null ? p.spot - p.gammaFlip : null;
-                const regimeUp = gap != null ? gap >= 0 : null;
-                return (
-                  <tr key={p.bucketT} className="border-b border-term-border/40 hover:bg-term-accent/[0.06]">
-                    <td className="px-2 py-1 text-left text-term-text">
-                      {new Date(p.bucketT * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
-                    </td>
-                    <td className="px-2 py-1 text-right text-sky-400">{nf(p.spot, 1)}</td>
-                    <td className={`px-2 py-1 text-right font-semibold ${p.netGex >= 0 ? "text-up" : "text-down"}`}>
-                      {p.netGex >= 0 ? "+" : ""}
-                      {compact(p.netGex)}
-                    </td>
-                    <td className="px-2 py-1 text-right text-fuchsia-400">
-                      {p.gammaFlip != null ? nf(p.gammaFlip, 0) : "–"}
-                    </td>
-                    <td className={`px-2 py-1 text-right ${regimeUp == null ? "text-term-dim" : regimeUp ? "text-up" : "text-down"}`}>
-                      {gap != null ? `${gap >= 0 ? "+" : ""}${nf(gap, 0)}` : "–"}
-                    </td>
-                    <td className="px-2 py-1 text-center">
-                      {regimeUp != null && (
-                        <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${regimeUp ? "bg-up text-white" : "bg-down text-white"}`}>
-                          {regimeUp ? "long-γ" : "short-γ"}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          {isMobile && (
+            <div className="mb-1 text-right text-[9px] uppercase tracking-wide text-term-dim">
+              swipe to scroll →
+            </div>
+          )}
+          <div className="overflow-x-auto">
+            <table className="num min-w-[540px] w-full text-xs">
+              <thead className="sticky top-0 z-10 bg-term-panel2 text-[10px] uppercase text-term-dim">
+                <tr className="[&>th]:border-b [&>th]:border-term-border [&>th]:px-2 [&>th]:py-1 [&>th]:text-right first:[&>th]:text-left">
+                  <th className="sticky left-0 z-10 !text-left bg-term-panel2 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.5)]">
+                    Time
+                  </th>
+                  <th>Spot</th>
+                  <th>netGex</th>
+                  <th>γ-flip</th>
+                  <th>Gap to flip</th>
+                  <th className="!text-center">Regime</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...intraGexPtsAll].reverse().map((p) => {
+                  const gap = p.gammaFlip != null ? p.spot - p.gammaFlip : null;
+                  const regimeUp = gap != null ? gap >= 0 : null;
+                  return (
+                    <tr key={p.bucketT} className="border-b border-term-border/40 hover:bg-term-accent/[0.06]">
+                      <td className="sticky left-0 bg-term-bg px-2 py-1 text-left text-term-text shadow-[2px_0_4px_-2px_rgba(0,0,0,0.5)]">
+                        {new Date(p.bucketT * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                      </td>
+                      <td className="px-2 py-1 text-right text-sky-400">{nf(p.spot, 1)}</td>
+                      <td className={`px-2 py-1 text-right font-semibold ${p.netGex >= 0 ? "text-up" : "text-down"}`}>
+                        {p.netGex >= 0 ? "+" : ""}
+                        {compact(p.netGex)}
+                      </td>
+                      <td className="px-2 py-1 text-right text-fuchsia-400">
+                        {p.gammaFlip != null ? nf(p.gammaFlip, 0) : "–"}
+                      </td>
+                      <td className={`px-2 py-1 text-right ${regimeUp == null ? "text-term-dim" : regimeUp ? "text-up" : "text-down"}`}>
+                        {gap != null ? `${gap >= 0 ? "+" : ""}${nf(gap, 0)}` : "–"}
+                      </td>
+                      <td className="px-2 py-1 text-center">
+                        {regimeUp != null && (
+                          <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${regimeUp ? "bg-up text-white" : "bg-down text-white"}`}>
+                            {regimeUp ? "long-γ" : "short-γ"}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       );
     }
@@ -1287,10 +1296,17 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           </svg>
         ) : (
           <div className="h-[calc(100%-2rem)] w-full overflow-auto">
-            <table className="num w-full text-xs">
-              <thead className="sticky top-0 bg-term-panel2 text-[10px] uppercase text-term-dim">
+            {isMobile && (
+              <div className="mb-1 text-right text-[9px] uppercase tracking-wide text-term-dim">
+                swipe to scroll →
+              </div>
+            )}
+            <table className="num min-w-[540px] w-full text-xs">
+              <thead className="sticky top-0 z-10 bg-term-panel2 text-[10px] uppercase text-term-dim">
                 <tr className="[&>th]:border-b [&>th]:border-term-border [&>th]:px-2 [&>th]:py-1 [&>th]:text-right first:[&>th]:text-left">
-                  <th className="!text-left">Date</th>
+                  <th className="sticky left-0 z-10 !text-left bg-term-panel2 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.5)]">
+                    Date
+                  </th>
                   <th>Spot</th>
                   <th>netGex</th>
                   <th>γ-flip</th>
@@ -1307,7 +1323,9 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
                       key={p.date}
                       className="border-b border-term-border/40 hover:bg-term-accent/[0.06]"
                     >
-                      <td className="px-2 py-1 text-left text-term-text">{ddmmm(p.date)}</td>
+                      <td className="sticky left-0 bg-term-bg px-2 py-1 text-left text-term-text shadow-[2px_0_4px_-2px_rgba(0,0,0,0.5)]">
+                        {ddmmm(p.date)}
+                      </td>
                       <td className="px-2 py-1 text-right text-sky-400">{nf(p.spot, 1)}</td>
                       <td className={`px-2 py-1 text-right font-semibold ${p.netGex >= 0 ? "text-up" : "text-down"}`}>
                         {p.netGex >= 0 ? "+" : ""}

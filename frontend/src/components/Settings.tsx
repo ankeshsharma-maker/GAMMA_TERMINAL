@@ -390,7 +390,15 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const pin = hasPin();
 
   return (
-    <div className="fixed inset-0 z-[90] flex flex-col bg-term-bg text-term-text">
+    <div
+      className="fixed inset-0 z-[90] flex flex-col bg-term-bg text-term-text"
+      style={{
+        paddingTop: "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+        paddingLeft: "env(safe-area-inset-left)",
+        paddingRight: "env(safe-area-inset-right)",
+      }}
+    >
       <div className="flex items-center justify-between border-b border-term-border bg-term-panel2 px-4 py-2.5">
         <span className="text-sm font-semibold">Settings</span>
         <button
