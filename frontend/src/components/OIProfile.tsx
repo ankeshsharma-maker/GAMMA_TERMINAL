@@ -1753,44 +1753,46 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       {layout === "gex" && gexEl}
       {layout === "dex" && dexEl}
 
-      <div className="flex flex-wrap items-center gap-x-3 border-t border-term-border px-3 py-1 text-[9px] text-term-dim">
-        <span>
-          <Sw c={CALL_OI} /> Call OI &nbsp; <Sw c={PUT_OI} /> Put OI
-        </span>
-        <span>
-          {metric === "combined" ? (
-            <>
-              bar = OI (leg colour) &nbsp;
-              <span
-                className="mr-1 inline-block h-2.5 w-3.5 align-middle"
-                style={{ backgroundImage: "repeating-linear-gradient(45deg,#94a3b8 0 2px,transparent 2px 4.5px)" }}
-              />
-              hatched = increase &nbsp;
-              <span
-                className="mr-1 inline-block h-2.5 w-3.5 align-middle"
-                style={{ backgroundImage: "repeating-linear-gradient(45deg,#94a3b855 0 2px,transparent 2px 4.5px)" }}
-              />
-              pale = decrease
-            </>
-          ) : metric === "chg" ? (
-            <>
-              <Sw c={OI_ADD} /> OI added (solid, up) &nbsp; <Sw c={OI_CUT} hollow /> OI reduced (hollow, down)
-            </>
-          ) : (
-            <>
-              <span className="mr-1 inline-block h-2.5 w-3.5 align-middle" style={{ background: "#94a3b855" }} />
-              bar height = total OI at each strike
-            </>
-          )}
-        </span>
-        <span>
-          <span className="mr-1 inline-block border-l-2 border-dashed border-fuchsia-400 align-middle" style={{ height: 10 }} />
-          γ-flip (dealer gamma zero-cross)
-        </span>
-        <span className="text-term-dim">
-          · ΔOI over the selected window · Ctrl+scroll to zoom.
-        </span>
-      </div>
+      {layout === "chart" && (
+        <div className="flex flex-wrap items-center gap-x-3 border-t border-term-border px-3 py-1 text-[9px] text-term-dim">
+          <span>
+            <Sw c={CALL_OI} /> Call OI &nbsp; <Sw c={PUT_OI} /> Put OI
+          </span>
+          <span>
+            {metric === "combined" ? (
+              <>
+                bar = OI (leg colour) &nbsp;
+                <span
+                  className="mr-1 inline-block h-2.5 w-3.5 align-middle"
+                  style={{ backgroundImage: "repeating-linear-gradient(45deg,#94a3b8 0 2px,transparent 2px 4.5px)" }}
+                />
+                hatched = increase &nbsp;
+                <span
+                  className="mr-1 inline-block h-2.5 w-3.5 align-middle"
+                  style={{ backgroundImage: "repeating-linear-gradient(45deg,#94a3b855 0 2px,transparent 2px 4.5px)" }}
+                />
+                pale = decrease
+              </>
+            ) : metric === "chg" ? (
+              <>
+                <Sw c={OI_ADD} /> OI added (solid, up) &nbsp; <Sw c={OI_CUT} hollow /> OI reduced (hollow, down)
+              </>
+            ) : (
+              <>
+                <span className="mr-1 inline-block h-2.5 w-3.5 align-middle" style={{ background: "#94a3b855" }} />
+                bar height = total OI at each strike
+              </>
+            )}
+          </span>
+          <span>
+            <span className="mr-1 inline-block border-l-2 border-dashed border-fuchsia-400 align-middle" style={{ height: 10 }} />
+            γ-flip (dealer gamma zero-cross)
+          </span>
+          <span className="text-term-dim">
+            · ΔOI over the selected window · Ctrl+scroll to zoom.
+          </span>
+        </div>
+      )}
     </div>
   );
 }
