@@ -189,10 +189,13 @@ def _emit_alerts(store, row: dict, prev: dict | None) -> list[dict]:
     return fired
 
 
-def run(store) -> dict:
-    """Re-score every tracked symbol. Returns the sorted scan + any new alerts."""
+def run(store, extra: set[str] | None = None) -> dict:
+    """Re-score every tracked symbol (watchlists + defaults, plus any symbol
+    in `extra` -- e.g. AutoBot rule symbols, so a rule's blast_score
+    condition sees a score even for a symbol not otherwise watched).
+    Returns the sorted scan + any new alerts."""
     new_alerts: list[dict] = []
-    for sym in store.all_symbols():
+    for sym in store.all_symbols(extra=extra):
         chain = store.get_chain(sym)
         if not chain:
             continue

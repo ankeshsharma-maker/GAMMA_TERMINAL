@@ -194,6 +194,14 @@ const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field
       { key: "value", label: "min gap", type: "num", def: 0 },
     ],
   },
+  blast_score: {
+    label: "Gamma Blast score",
+    group: "smart",
+    fields: [
+      { key: "op", label: "op", type: "sel", def: ">", opts: ["<", ">", "cross_up", "cross_down"] },
+      { key: "value", label: "score", type: "num", def: 60 },
+    ],
+  },
   gamma_flip: {
     label: "Gamma flip (spot vs zero-γ)",
     group: "smart",
@@ -374,6 +382,24 @@ const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field
       { key: "bars", label: "bars", type: "num", def: 5 },
       { key: "op", label: "op", type: "sel", def: ">", opts: [">", "<", "abs"] },
       { key: "value", label: "value", type: "num", def: 0.0005 },
+    ],
+  },
+  theta_level: {
+    label: "Theta level (ATM leg)",
+    group: "greeks",
+    fields: [
+      { key: "leg", label: "leg", type: "sel", def: "call", opts: ["call", "put"] },
+      { key: "op", label: "op", type: "sel", def: "<", opts: ["<", ">", "cross_up", "cross_down"] },
+      { key: "value", label: "θ/day", type: "num", def: -10 },
+    ],
+  },
+  vega_level: {
+    label: "Vega level (ATM leg)",
+    group: "greeks",
+    fields: [
+      { key: "leg", label: "leg", type: "sel", def: "call", opts: ["call", "put"] },
+      { key: "op", label: "op", type: "sel", def: ">", opts: ["<", ">", "cross_up", "cross_down"] },
+      { key: "value", label: "vega", type: "num", def: 5 },
     ],
   },
   time_of_day: {
@@ -1427,6 +1453,12 @@ function describe(c: AutoCondition): string {
       return `Δdelta ${g("leg")} ${g("op")} ${g("value")} over ${g("bars")} bars`;
     case "gamma_change":
       return `Δgamma ${g("leg")} ${g("op")} ${g("value")} over ${g("bars")} bars`;
+    case "theta_level":
+      return `theta ${g("leg")} ${g("op")} ${g("value")}`;
+    case "vega_level":
+      return `vega ${g("leg")} ${g("op")} ${g("value")}`;
+    case "blast_score":
+      return `Gamma Blast score ${g("op")} ${g("value")}`;
     case "prev_candle": {
       const raw = g("lookback");
       const n = Number.isFinite(Number(raw)) ? Number(raw) : 1;

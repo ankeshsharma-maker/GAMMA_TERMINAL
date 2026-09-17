@@ -277,6 +277,7 @@ class Store:
         )
         atm_ce_iv = atm_pe_iv = None
         atm_ce_dl = atm_pe_dl = atm_ce_ga = atm_pe_ga = None
+        atm_ce_th = atm_pe_th = atm_ce_vg = atm_pe_vg = None
         if atm_row:
             atm_ce_iv = atm_row["call"].get("ivCalc") or atm_row["call"].get("iv")
             atm_pe_iv = atm_row["put"].get("ivCalc") or atm_row["put"].get("iv")
@@ -284,6 +285,10 @@ class Store:
             atm_pe_dl = atm_row["put"].get("delta")
             atm_ce_ga = atm_row["call"].get("gamma")
             atm_pe_ga = atm_row["put"].get("gamma")
+            atm_ce_th = atm_row["call"].get("theta")
+            atm_pe_th = atm_row["put"].get("theta")
+            atm_ce_vg = atm_row["call"].get("vega")
+            atm_pe_vg = atm_row["put"].get("vega")
         dq.append(
             {
                 "t": now,
@@ -296,6 +301,10 @@ class Store:
                 "atmPEDelta": atm_pe_dl,
                 "atmCEGamma": atm_ce_ga,
                 "atmPEGamma": atm_pe_ga,
+                "atmCETheta": atm_ce_th,
+                "atmPETheta": atm_pe_th,
+                "atmCEVega": atm_ce_vg,
+                "atmPEVega": atm_pe_vg,
                 "atmStraddle": chain.get("atmStraddle"),
                 "atmGammaOI": chain.get("atmGammaOI"),
                 "pcr": chain["pcr"],

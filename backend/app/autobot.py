@@ -218,6 +218,16 @@ class _Ctx:
         self.pe_delta = [float(h["atmPEDelta"]) for h in hist if h.get("atmPEDelta") is not None]
         self.ce_gamma = [float(h["atmCEGamma"]) for h in hist if h.get("atmCEGamma") is not None]
         self.pe_gamma = [float(h["atmPEGamma"]) for h in hist if h.get("atmPEGamma") is not None]
+        self.ce_theta = [float(h["atmCETheta"]) for h in hist if h.get("atmCETheta") is not None]
+        self.pe_theta = [float(h["atmPETheta"]) for h in hist if h.get("atmPETheta") is not None]
+        self.ce_vega = [float(h["atmCEVega"]) for h in hist if h.get("atmCEVega") is not None]
+        self.pe_vega = [float(h["atmPEVega"]) for h in hist if h.get("atmPEVega") is not None]
+        # gamma-blast score -- same engine that powers the blast-warn/blast-crit
+        # alerts (scanner.py), sampled independently of `hist` since it's its
+        # own history deque already maintained once per poll cycle
+        self.blast = [
+            float(h["score"]) for h in store.get_scan_history(symbol) if h.get("score") is not None
+        ]
 
     # -- indicator conditions ------------------------------------------------ #
     def _rsi(self, c) -> bool:
@@ -750,6 +760,32 @@ class _Ctx:
         s = self.ce_gamma if c.get("leg", "call") == "call" else self.pe_gamma
         return self._greek_change(c, s)
 
+    def _greek_level(self, c, series: list[float]) -> bool:
+        if len(series) < 2:
+            return False
+        cur, prev, v = series[-1], series[-2], float(c.get("value", 0))
+        op = c.get("op", ">")
+        if op == "<":
+            return cur < v
+        if op == ">":
+            return cur > v
+        if op == "cross_up":
+            return prev <= v < cur
+        if op == "cross_down":
+            return prev >= v > cur
+        return False
+
+    def _theta_level(self, c) -> bool:
+        s = self.ce_theta if c.get("leg", "call") == "call" else self.pe_theta
+        return self._greek_level(c, s)
+
+    def _vega_level(self, c) -> bool:
+        s = self.ce_vega if c.get("leg", "call") == "call" else self.pe_vega
+        return self._greek_level(c, s)
+
+    def _blast_score(self, c) -> bool:
+        return self._greek_level(c, self.blast)
+
     _DISPATCH = {
         "rsi": _rsi, "ema_cross": _ema_cross, "price_vs_ema": _price_vs_ema,
         "macd": _macd, "spot_move_pct": _spot_move_pct, "pcr": _pcr,
@@ -760,6 +796,7 @@ class _Ctx:
         "gamma_flip": _gamma_flip,
         "oi_state": _oi_state, "supertrend": _supertrend, "pivot": _pivot,
         "delta_change": _delta_change, "gamma_change": _gamma_change,
+        "theta_level": _theta_level, "vega_level": _vega_level, "blast_score": _blast_score,
         "candle": _candle, "atr": _atr, "prev_candle": _prev_candle, "gap": _gap,
         "time_of_day": _time_of_day,
     }

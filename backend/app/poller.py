@@ -228,7 +228,12 @@ async def run_poller(stop: asyncio.Event) -> None:
         await hub.broadcast_watchlist()
 
         try:
-            result = scanner.run(store)
+            from .autobot import autobot as _autobot
+
+            rule_symbols = {
+                r["symbol"] for r in _autobot.rules if r.get("enabled") and r.get("symbol")
+            }
+            result = scanner.run(store, extra=rule_symbols)
             await hub.broadcast_all({"type": "scan", "data": result["scan"]})
             if result["newAlerts"]:
                 await hub.broadcast_all({"type": "alerts", "data": store.get_alerts(50)})
