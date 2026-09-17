@@ -783,6 +783,23 @@ class Store:
                 for a in self.alerts
             )
 
+    # ---- chart drawings (trendline / fib, keyed per chart) ----------
+    def get_chart_drawings(self, key: str) -> list[dict]:
+        with _lock:
+            data = db.get_kv("chart_drawings")
+            return list((data or {}).get(key) or [])
+
+    def save_chart_drawings(self, key: str, drawings: list[dict]) -> list[dict]:
+        with _lock:
+            data = db.get_kv("chart_drawings")
+            data = dict(data) if isinstance(data, dict) else {}
+            if drawings:
+                data[key] = drawings
+            else:
+                data.pop(key, None)
+            db.set_kv("chart_drawings", data)
+            return drawings
+
     # ---- watchlists (5 named lists) --------------------------------
     def _load_watchlists(self) -> dict:
         data = db.get_kv("watchlists")

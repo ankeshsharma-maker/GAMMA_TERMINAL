@@ -14,6 +14,7 @@ import { MiniChart } from "./MiniChart";
 import { SelectMenu } from "./SelectMenu";
 import { getDataSrc, getIntervalS } from "../lib/prefs";
 import { computeGammaFlip } from "../lib/gammaFlip";
+import { DrawingPrimitive, describeDrawing, type Drawing, type Point } from "../lib/chartDrawings";
 import {
   bollinger,
   ema,
@@ -209,19 +210,23 @@ export function Chart() {
   const [cmpInstrument, setCmpInstrument] = useState<string>("STRADDLE");
   const [ctype, setCtype] = useState<"candle" | "heikin" | "line" | "area" | "bar">("candle");
   const [logScale, setLogScale] = useState(false);
-  const [drawMode, setDrawMode] = useState(false);
-  const [priceLines, setPriceLines] = useState<number[]>([]);
-  const plRefs = useRef<any[]>([]);
+  const [drawTool, setDrawTool] = useState<"none" | "hline" | "trend" | "fib">("none");
+  const [drawings, setDrawings] = useState<Drawing[]>([]);
+  const [drawingsOpen, setDrawingsOpen] = useState(false);
+  const plRefs = useRef<any[]>([]); // hline price-line refs (drawn via createPriceLine, not a primitive)
+  const linePrimitives = useRef<Map<string, DrawingPrimitive>>(new Map()); // trend/fib
+  const previewPrimitive = useRef<DrawingPrimitive | null>(null);
+  const dragStart = useRef<Point | null>(null);
   const pvtRefs = useRef<any[]>([]);
   const mtfPvtRefs = useRef<any[]>([]);
   const gfRef = useRef<any>(null);
-  const drawRef = useRef(false);
+  const drawToolRef = useRef<typeof drawTool>("none");
   const [legend, setLegend] = useState<string>("");
   const [rsiVal, setRsiVal] = useState<number | null>(null);
   const lastRsiRef = useRef<number | null>(null);
   useEffect(() => {
-    drawRef.current = drawMode;
-  }, [drawMode]);
+    drawToolRef.current = drawTool;
+  }, [drawTool]);
 
   const instrOptions = watch.filter((w) => w.kind === "option" && w.symbol === symbol);
   const isOption = instrument.includes("|");
@@ -407,12 +412,63 @@ export function Chart() {
       }
     });
 
-    // click to drop a horizontal line (draw mode)
+    // click to drop a horizontal line (hline tool)
     chart.subscribeClick((p) => {
-      if (!drawRef.current || !p.point) return;
+      if (drawToolRef.current !== "hline" || !p.point) return;
       const price = (s.current.candle as ISeriesApi<"Candlestick">).coordinateToPrice(p.point.y);
-      if (price != null) setPriceLines((ls) => [...ls, Number(price.toFixed(2))]);
+      if (price != null) {
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        setDrawings((ds) => [...ds, { id, type: "hline", price: Number(price.toFixed(2)) }]);
+      }
     });
+
+    // drag to draw a trendline / fib retracement (trend/fib tools). Native
+    // pointer events (not the library's own click/crosshair APIs) so mouse
+    // and touch both work with one code path -- same reason this app's
+    // Watchlist search-add already uses pointerdown over onClick.
+    const toChartPoint = (clientX: number, clientY: number): Point | null => {
+      if (!wrapRef.current) return null;
+      const rect = wrapRef.current.getBoundingClientRect();
+      const time = chart.timeScale().coordinateToTime(clientX - rect.left);
+      const price = (s.current.candle as ISeriesApi<"Candlestick">).coordinateToPrice(
+        clientY - rect.top
+      );
+      return time == null || price == null ? null : { time: time as number, price };
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      const tool = drawToolRef.current;
+      if (tool !== "trend" && tool !== "fib") return;
+      const p = toChartPoint(e.clientX, e.clientY);
+      if (!p) return;
+      e.preventDefault();
+      dragStart.current = p;
+      const primitive = new DrawingPrimitive({ id: "__preview__", type: tool, p1: p, p2: p });
+      (s.current.candle as ISeriesApi<"Candlestick">).attachPrimitive(primitive);
+      previewPrimitive.current = primitive;
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      if (!previewPrimitive.current || !dragStart.current) return;
+      const p = toChartPoint(e.clientX, e.clientY);
+      if (!p) return;
+      previewPrimitive.current.setDrawing({ ...previewPrimitive.current.drawing, p2: p });
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      const preview = previewPrimitive.current;
+      const p1 = dragStart.current;
+      if (!preview || !p1) return;
+      const p2 = toChartPoint(e.clientX, e.clientY) ?? preview.drawing.p2;
+      const tool = preview.drawing.type;
+      (s.current.candle as ISeriesApi<"Candlestick">).detachPrimitive(preview);
+      previewPrimitive.current = null;
+      dragStart.current = null;
+      // ignore a bare click (no real drag) -- don't add a zero-length line
+      if (Math.abs(p2.time - p1.time) < 1 && Math.abs(p2.price - p1.price) < 1e-9) return;
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setDrawings((ds) => [...ds, { id, type: tool, p1, p2 }]);
+    };
+    wrapRef.current?.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
     const line = (color: string, w = 1) =>
       chart.addLineSeries({ color, lineWidth: w as any, priceLineVisible: false, lastValueVisible: false });
     c.ema9 = line("#3b82f6");
@@ -511,6 +567,9 @@ export function Chart() {
     chart.priceScale("oichg").applyOptions({ scaleMargins: { top: 0.86, bottom: 0.02 }, visible: false });
 
     return () => {
+      wrapRef.current?.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
       chart.remove();
       chartRef.current = null;
       s.current = {};
@@ -929,22 +988,93 @@ export function Chart() {
       .applyOptions({ mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal });
   }, [logScale]);
 
-  // sync drawn horizontal lines
+  // sync drawn horizontal lines (the "hline" subset of `drawings`)
   useEffect(() => {
     const cs = s.current.candle as ISeriesApi<"Candlestick"> | undefined;
     if (!cs) return;
     plRefs.current.forEach((pl) => cs.removePriceLine(pl));
-    plRefs.current = priceLines.map((price) =>
-      cs.createPriceLine({
-        price,
-        color: "#eab308",
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: String(price),
-      })
+    plRefs.current = drawings
+      .filter((d): d is Drawing & { type: "hline" } => d.type === "hline")
+      .map((d) =>
+        cs.createPriceLine({
+          price: d.price,
+          color: "#eab308",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: String(d.price),
+        })
+      );
+  }, [drawings, data]);
+
+  // sync drawn trendlines / fib retracements (the two-point subset of
+  // `drawings`) to attached chart primitives -- diff against what's
+  // currently attached rather than detach-all/reattach-all, so an in-place
+  // edit (none exist yet, but this keeps it correct if one's added later)
+  // wouldn't flicker.
+  useEffect(() => {
+    const cs = s.current.candle as ISeriesApi<"Candlestick"> | undefined;
+    if (!cs) return;
+    const wanted = new Map(
+      drawings.filter((d) => d.type === "trend" || d.type === "fib").map((d) => [d.id, d])
     );
-  }, [priceLines, data]);
+    const live = linePrimitives.current;
+    for (const [id, prim] of live) {
+      if (!wanted.has(id)) {
+        cs.detachPrimitive(prim);
+        live.delete(id);
+      }
+    }
+    for (const [id, d] of wanted) {
+      if (!live.has(id)) {
+        const prim = new DrawingPrimitive(d as any);
+        cs.attachPrimitive(prim);
+        live.set(id, prim);
+      }
+    }
+  }, [drawings, data]);
+
+  // disable pan/zoom while actively drawing a trendline/fib so the drag
+  // gesture draws instead of panning the chart out from under it
+  useEffect(() => {
+    const active = drawTool === "trend" || drawTool === "fib";
+    chartRef.current?.applyOptions({ handleScroll: !active, handleScale: !active });
+  }, [drawTool]);
+
+  // load this chart's saved drawings whenever "what is this a chart of"
+  // changes (matches how a trendline on NIFTY 5m shouldn't show up on NIFTY
+  // 1D or a NIFTY option leg's own chart)
+  const drawKey = `${instrument || symbol}|${intervalS}`;
+  useEffect(() => {
+    let alive = true;
+    api.chartDrawings(drawKey).then(
+      (d) => alive && setDrawings(Array.isArray(d.drawings) ? (d.drawings as Drawing[]) : []),
+      () => alive && setDrawings([])
+    );
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawKey]);
+
+  // debounce-persist on any add/delete -- not on every pointermove. Skip the
+  // render where drawKey just changed: `drawings` on that render still
+  // describes the OLD key (the load for the new key hasn't resolved yet),
+  // so saving there would write the old symbol's drawings under the new
+  // key. Once drawKey has "settled" for a render, any drawings change on
+  // that same key is a real edit (or the harmless redundant save-back of
+  // what was just loaded) and is safe to persist.
+  const prevDrawKeyRef = useRef(drawKey);
+  useEffect(() => {
+    if (prevDrawKeyRef.current !== drawKey) {
+      prevDrawKeyRef.current = drawKey;
+      return;
+    }
+    const t = setTimeout(() => {
+      api.saveChartDrawings(drawKey, drawings).catch(() => {});
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [drawings, drawKey]);
 
   // pivot points from the previous session — classic or Fibonacci (PP / R1-3 / S1-3)
   useEffect(() => {
@@ -1282,23 +1412,78 @@ export function Chart() {
         >
           Log
         </button>
-        <button
-          onClick={() => setDrawMode((v) => !v)}
-          className={`rounded border px-1.5 py-0.5 ${
-            drawMode ? "border-amber-500/60 bg-amber-500/15 text-amber-400" : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
-          }`}
-          title="Draw mode — click the chart to drop a horizontal line"
-        >
-          ✎ Line
-        </button>
-        {priceLines.length > 0 && (
-          <button
-            onClick={() => setPriceLines([])}
-            className="rounded border border-term-border px-1.5 py-0.5 text-term-dim hover:text-down"
-            title="Clear drawn lines"
-          >
-            ✕ {priceLines.length}
-          </button>
+        <div className="seg">
+          {(
+            [
+              ["hline", "─ Line"],
+              ["trend", "╱ Trend"],
+              ["fib", "Fib"],
+            ] as const
+          ).map(([t, label]) => (
+            <button
+              key={t}
+              onClick={() => setDrawTool((cur) => (cur === t ? "none" : t))}
+              className={drawTool === t ? "on" : ""}
+              title={
+                t === "hline"
+                  ? "Click the chart to drop a horizontal line"
+                  : t === "trend"
+                  ? "Drag on the chart to draw a trendline"
+                  : "Drag on the chart to draw a Fib retracement"
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {drawings.length > 0 && (
+          <span className="relative">
+            <button
+              onClick={() => setDrawingsOpen((o) => !o)}
+              className={`rounded border px-1.5 py-0.5 ${
+                drawingsOpen
+                  ? "border-term-accent/50 bg-term-accent/15 text-term-text"
+                  : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
+              }`}
+              title="Drawings on this chart"
+            >
+              ✎ {drawings.length}
+            </button>
+            {drawingsOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setDrawingsOpen(false)} />
+                <div className="absolute left-0 top-full z-50 mt-1 max-h-[50vh] w-[220px] overflow-y-auto rounded-lg border border-term-border bg-term-panel p-1.5 text-2xs shadow-2xl">
+                  <div className="flex items-center justify-between px-1 py-1 text-term-dim">
+                    <span className="font-semibold uppercase tracking-wide">Drawings</span>
+                    <button
+                      onClick={() => {
+                        setDrawings([]);
+                        setDrawingsOpen(false);
+                      }}
+                      className="hover:text-down"
+                    >
+                      clear all
+                    </button>
+                  </div>
+                  {drawings.map((d) => (
+                    <div
+                      key={d.id}
+                      className="flex items-center justify-between gap-2 rounded px-1.5 py-1 hover:bg-term-border"
+                    >
+                      <span className="truncate text-term-text">{describeDrawing(d)}</span>
+                      <button
+                        onClick={() => setDrawings((ds) => ds.filter((x) => x.id !== d.id))}
+                        className="shrink-0 text-term-dim hover:text-down"
+                        title="Delete"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </span>
         )}
         <button
           onClick={() => applyRange(true)}
@@ -1568,9 +1753,9 @@ export function Chart() {
             </span>
           </div>
         )}
-        {drawMode && (
+        {drawTool !== "none" && (
           <div className="pointer-events-none absolute right-2 top-1 z-10 rounded bg-amber-500/20 px-2 py-0.5 text-[10px] text-amber-400">
-            click chart to add a line
+            {drawTool === "hline" ? "click chart to add a line" : "drag on chart to draw"}
           </div>
         )}
         {data && data.candles.length < 3 && (

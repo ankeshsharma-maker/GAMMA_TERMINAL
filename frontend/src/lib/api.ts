@@ -124,6 +124,16 @@ export const api = {
       }[];
     }>(`/api/symbols/search?q=${encodeURIComponent(q)}`),
 
+  chartDrawings: (key: string) =>
+    j<{ drawings: import("./chartDrawings").Drawing[] }>(
+      `/api/chart/drawings?key=${encodeURIComponent(key)}`
+    ),
+  saveChartDrawings: (key: string, drawings: import("./chartDrawings").Drawing[]) =>
+    j<{ drawings: import("./chartDrawings").Drawing[] }>("/api/chart/drawings", {
+      method: "POST",
+      body: JSON.stringify({ key, drawings }),
+    }),
+
   watchlists: () => j<import("../types").Watchlists>("/api/watchlists"),
   wlSetActive: (index: number) =>
     j<import("../types").Watchlists>("/api/watchlists/active", {

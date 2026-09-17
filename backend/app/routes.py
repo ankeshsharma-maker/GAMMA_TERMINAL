@@ -219,6 +219,20 @@ def screener_symbol(symbol: str):
     }
 
 
+@router.get("/chart/drawings")
+def get_chart_drawings(key: str):
+    return {"drawings": store.get_chart_drawings(key)}
+
+
+@router.post("/chart/drawings")
+def save_chart_drawings(body: dict):
+    key = str(body.get("key") or "")
+    if not key:
+        raise HTTPException(status_code=400, detail="key required")
+    drawings = body.get("drawings") or []
+    return {"drawings": store.save_chart_drawings(key, drawings)}
+
+
 # Noren TPSeries supports these minute intervals; anything else is resampled client-side.
 _NOREN_INTERVALS = (1, 3, 5, 10, 15, 30, 60, 120, 240)
 
