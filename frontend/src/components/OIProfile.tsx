@@ -1611,11 +1611,11 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           <div className="seg">
             {(
               [
-                ["chart", "chart"],
-                ["ladder", "ladder"],
-                ["gex", "weekly gex"],
-                ["dex", "dealer exposure"],
-                ["pcr", "pcr"],
+                ["chart", "Chart"],
+                ["ladder", "Ladder"],
+                ["gex", "Weekly Gex"],
+                ["dex", "Dealer Exp"],
+                ["pcr", "PCR"],
               ] as const
             ).map(([v, l]) => (
               <button key={v} onClick={() => setLayout(v)} className={layout === v ? "on" : ""}>
