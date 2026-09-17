@@ -461,10 +461,16 @@ export function Chart() {
       (s.current.candle as ISeriesApi<"Candlestick">).detachPrimitive(preview);
       previewPrimitive.current = null;
       dragStart.current = null;
-      // ignore a bare click (no real drag) -- don't add a zero-length line
+      // ignore a bare click (no real drag) -- don't add a zero-length line,
+      // and leave the tool armed so the user can just try the drag again
       if (Math.abs(p2.time - p1.time) < 1 && Math.abs(p2.price - p1.price) < 1e-9) return;
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       setDrawings((ds) => [...ds, { id, type: tool, p1, p2 }]);
+      // one-shot: a finished trend/fib deactivates the tool (matches every
+      // other charting app -- draw one, then explicitly re-arm to draw
+      // another) so the next plain click on the chart doesn't start a
+      // second drawing.
+      setDrawTool("none");
     };
     wrapRef.current?.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointermove", onPointerMove);

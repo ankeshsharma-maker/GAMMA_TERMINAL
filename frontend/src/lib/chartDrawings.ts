@@ -38,7 +38,6 @@ type Segment = {
   y2: number;
   color: string;
   label?: string;
-  dashed?: boolean;
 };
 
 class SegmentsRenderer implements ISeriesPrimitivePaneRenderer {
@@ -50,13 +49,11 @@ class SegmentsRenderer implements ISeriesPrimitivePaneRenderer {
         ctx.save();
         ctx.strokeStyle = s.color;
         ctx.lineWidth = 1.5;
-        if (s.dashed) ctx.setLineDash([4, 3]);
         ctx.beginPath();
         ctx.moveTo(s.x1, s.y1);
         ctx.lineTo(s.x2, s.y2);
         ctx.stroke();
         if (s.label) {
-          ctx.setLineDash([]);
           ctx.fillStyle = s.color;
           ctx.font = "10px system-ui, sans-serif";
           ctx.fillText(s.label, s.x2 + 4, s.y1 - 3);
@@ -146,7 +143,6 @@ export class DrawingPrimitive implements ISeriesPrimitive {
         x2,
         y2: y,
         color: FIB_COLOR,
-        dashed: level !== 0 && level !== 1,
         label: `${(level * 100).toFixed(1)}%  ${price.toFixed(1)}`,
       });
     }
