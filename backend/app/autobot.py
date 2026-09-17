@@ -158,7 +158,7 @@ def _crossed(a_prev: float, a_cur: float, b_prev: float, b_cur: float, direction
 class _Ctx:
     """Series snapshot for one symbol, derived from ``store.history``."""
 
-    def __init__(self, symbol: str, hist: list | None = None, tf: int = 0):
+    def __init__(self, symbol: str, hist: list | None = None, tf: int = 0, bars: int = 0):
         hist = list(store.history.get(symbol, [])) if hist is None else list(hist)
         self.n = len(hist)
         self.hist = hist
@@ -197,6 +197,13 @@ class _Ctx:
                 for (t, _sp, o, hi, lo, cl) in rows
             ] or [{"t": 0.0, "o": s, "h": s, "l": s, "c": s} for s in raw_spot]
             self.spot = raw_spot
+        # entryBars caps only the candle warm-up window (what the UI field is
+        # labeled for) -- PCR/GEX/OI/IV series below stay at full history,
+        # since several of those conditions already index relative to their
+        # own array end (e.g. _maxpain_shift's series[-1-bars]).
+        if bars and bars > 0:
+            self.candles = self.candles[-bars:]
+            self.spot = self.spot[-bars:]
         self.pcr = [float(h["pcr"]) for h in hist if h.get("pcr") is not None]
         self.gex = [float(h["netGex"]) for h in hist if h.get("netGex") is not None]
         self.maxpain = [float(h["maxPain"]) for h in hist if h.get("maxPain")]
@@ -1088,7 +1095,10 @@ class AutoBot:
                     reason = "square-off"
                 else:
                     _tf = int(rule.get("entryTf") or 0)
-                    cx = ctx_cache.get((sym, _tf)) or ctx_cache.setdefault((sym, _tf), _Ctx(sym, tf=_tf))
+                    _bars = int(rule.get("entryBars") or 0)
+                    cx = ctx_cache.get((sym, _tf, _bars)) or ctx_cache.setdefault(
+                        (sym, _tf, _bars), _Ctx(sym, tf=_tf, bars=_bars)
+                    )
                     st["live"] = cx.prev_candle_live(rule.get("exit", []))
                     if cx.eval_conds(rule.get("exit", []), rule.get("exitLogic", "any")):
                         reason = "exit signal"
@@ -1127,8 +1137,9 @@ class AutoBot:
                 continue
 
             _tf = int(rule.get("entryTf") or 0)
-            cx = ctx_cache.get((sym, _tf)) or ctx_cache.setdefault(
-                (sym, _tf), _Ctx(sym, tf=_tf)
+            _bars = int(rule.get("entryBars") or 0)
+            cx = ctx_cache.get((sym, _tf, _bars)) or ctx_cache.setdefault(
+                (sym, _tf, _bars), _Ctx(sym, tf=_tf, bars=_bars)
             )
             st["live"] = cx.prev_candle_live(rule.get("entry", []))
             if cx.n < 5 or not cx.eval_conds(rule.get("entry", []), rule.get("entryLogic", "all")):

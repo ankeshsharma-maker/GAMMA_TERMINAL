@@ -719,18 +719,22 @@ function RuleEditor({
               </button>
             ))}
           </div>
-          <label className="flex items-center gap-1" title="How many candles of history to keep for indicator warm-up">
+          <label
+            className="flex items-center gap-1"
+            title="How many candles of history your entry/exit conditions see. Must exceed your slowest indicator's warm-up (MACD needs ~35, a 50-length EMA needs 50+) or that condition silently never fires."
+          >
             bars
             <input
               type="number"
-              min={10}
+              min={35}
               value={r.entryBars ?? 60}
-              onChange={(e) => set({ entryBars: Math.max(10, parseInt(e.target.value) || 60) })}
+              onChange={(e) => set({ entryBars: Math.max(35, parseInt(e.target.value) || 60) })}
               className="num w-14 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
             />
           </label>
           <span className="text-[9px] normal-case text-term-dim/70">
-            RSI / EMA / MACD / Supertrend / Candles / Prev-candle / ATR evaluate on this timeframe
+            RSI / EMA / MACD / Supertrend / Candles / Prev-candle / ATR evaluate on this timeframe — keep "bars" above your
+            slowest indicator's lookback
           </span>
         </div>
         <CondList
