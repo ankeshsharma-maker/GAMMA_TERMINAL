@@ -40,9 +40,12 @@ export type PendingOrder =
       symbol: string;
       expiry: string;
       strike: number;
-      optionType: "CE" | "PE";
+      optionType: "CE" | "PE" | "FUT";
       side: "BUY" | "SELL";
       lots: number;
+      /** known live price when there's no option chain to look one up from
+       *  (futures) -- OrderConfirm uses this instead of a chain-row lookup */
+      price?: number | null;
     }
   | {
       kind: "strategy";
@@ -128,6 +131,7 @@ interface State {
   wlRemove: (i: number, s: string) => Promise<void>;
   wlRename: (i: number, name: string) => Promise<void>;
   wlAddStrikes: (i: number, count?: number) => Promise<void>;
+  wlAddFuture: (i: number) => Promise<void>;
   wlClear: (i: number, optionsOnly?: boolean) => Promise<void>;
   setChartInstrument: (v: string) => void;
   setScalpLots: (n: number) => void;
@@ -137,6 +141,12 @@ interface State {
     expiry: string,
     strike: number,
     ot: "CE" | "PE",
+    side: "BUY" | "SELL",
+    lots?: number
+  ) => Promise<void>;
+  quickTradeFuture: (
+    symbol: string,
+    expiry: string,
     side: "BUY" | "SELL",
     lots?: number
   ) => Promise<void>;
@@ -247,16 +257,27 @@ export const useStore = create<State>((set, get) => ({
     if (!p) return;
     set({ pending: null });
     if (p.kind === "single") {
-      const r = await api.placeUnifiedOrder({
-        symbol: p.symbol,
-        expiry: p.expiry,
-        strike: p.strike,
-        optionType: p.optionType,
-        side: p.side,
-        qtyLots: p.lots,
-        mode: "live",
-      });
-      set({ paper: r.paper });
+      if (p.optionType === "FUT") {
+        const r = await api.placeFutureOrder({
+          symbol: p.symbol,
+          expiry: p.expiry,
+          side: p.side,
+          qtyLots: p.lots,
+          mode: "live",
+        });
+        set({ paper: r.paper });
+      } else {
+        const r = await api.placeUnifiedOrder({
+          symbol: p.symbol,
+          expiry: p.expiry,
+          strike: p.strike,
+          optionType: p.optionType,
+          side: p.side,
+          qtyLots: p.lots,
+          mode: "live",
+        });
+        set({ paper: r.paper });
+      }
     } else {
       const r = await api.executeStrategy({
         symbol: p.symbol,
@@ -569,6 +590,14 @@ export const useStore = create<State>((set, get) => ({
     // symbol -- don't let them land invisibly behind the current filter.
     if (!get().symClassOk(sym)) get().setSymClass("all");
   },
+  wlAddFuture: async (i) => {
+    const sym = get().symbol;
+    const exp = get().expiry ?? get().chain?.expiry;
+    if (!exp) return;
+    const res = await api.wlAddFuture(i, { symbol: sym, expiry: exp });
+    set({ watchlists: { active: res.active, lists: res.lists }, watch: res.quotes });
+    if (!get().symClassOk(sym)) get().setSymClass("all");
+  },
   wlClear: async (i, optionsOnly = false) => {
     set({ watchlists: await api.wlClear(i, optionsOnly) });
     await get().refreshWatch();
@@ -627,6 +656,29 @@ export const useStore = create<State>((set, get) => ({
       side,
       qtyLots: qty,
       mode: "paper",
+    });
+    set({ paper: r.paper });
+  },
+
+  quickTradeFuture: async (symbol, expiry, side, lots) => {
+    symbol = symbol.toUpperCase();
+    const qty = lots ?? get().scalpLots;
+    // known live price, if any -- lets the LIVE confirm dialog show a real
+    // estimate instead of ₹0 (futures have no option chain to price against)
+    const wq = get().watch.find(
+      (w) => w.kind === "future" && w.symbol === symbol && w.expiry === expiry
+    );
+    if (get().orderMode === "live") {
+      set({
+        pending: {
+          kind: "single", symbol, expiry, strike: 0, optionType: "FUT", side, lots: qty,
+          price: wq?.ltp ?? null,
+        },
+      });
+      return;
+    }
+    const r = await api.placeFutureOrder({
+      symbol, expiry, side, qtyLots: qty, mode: "paper",
     });
     set({ paper: r.paper });
   },

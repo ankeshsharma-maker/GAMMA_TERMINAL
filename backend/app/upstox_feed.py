@@ -22,6 +22,7 @@ from .brokers import get_broker
 from .config import DEFAULT_SYMBOLS
 from .hub import hub
 from .store import store
+from .upstox_data import _nse_to_iso
 
 log = logging.getLogger("upstox_feed")
 
@@ -115,6 +116,66 @@ async def _poll_once(fast: bool) -> None:
                 pass
 
 
+def _want_futures() -> set[tuple[str, str]]:
+    """(symbol, NSE-format expiry) pairs currently on the active watchlist --
+    "FUT:NIFTY|29-Sep-2026" entries, same list _want() reads for underlyings."""
+    out: set[tuple[str, str]] = set()
+    for e in store.watchlist:
+        fut = store._parse_fut(e)
+        if fut:
+            out.add(fut)
+    return out
+
+
+async def _poll_futures_once() -> None:
+    """Same shape as _poll_once, but for futures contracts -- these have no
+    underlying spot of their own, so they can't ride that function's
+    underlying-only key resolution. Feeds store.live_futures, which
+    watch_quotes() already reads; the poller's own periodic
+    hub.broadcast_watchlist() picks it up from there, same as option legs."""
+    ux = get_upstox()
+    if not ux.authed:
+        return
+    want = _want_futures()
+    if not want:
+        return
+    keymap: dict[str, tuple[str, str]] = {}
+    req: list[str] = []
+    for sym, exp in want:
+        k = ux.futures_key(sym, _nse_to_iso(exp))
+        if not k:
+            continue
+        req.append(k)
+        keymap[k] = (sym, exp)
+        keymap[k.replace("|", ":")] = (sym, exp)
+    if not req:
+        return
+    try:
+        d = await ux.get("/market-quote/quotes", {"instrument_key": ",".join(req[:250])})
+    except Exception as exc:  # noqa: BLE001
+        log.debug("upstox futures quotes poll failed: %s", exc)
+        return
+    data = (d or {}).get("data") or {}
+    for rkey, q in data.items():
+        pair = keymap.get(q.get("instrument_token") or "") or keymap.get(rkey) or keymap.get(
+            rkey.replace(":", "|")
+        )
+        if not pair:
+            continue
+        sym, exp = pair
+        ltp = _num(q.get("last_price"))
+        if ltp is None:
+            continue
+        net = _num(q.get("net_change"))
+        if net is not None:
+            base = ltp - net
+            chg = round(net / base * 100, 2) if base else None
+        else:
+            prev = _num((q.get("ohlc") or {}).get("close")) or _num(q.get("close_price"))
+            chg = round((ltp - prev) / prev * 100, 2) if prev else None
+        store.set_live_future(sym, exp, ltp, chg)
+
+
 async def run_upstox_feed(stop: asyncio.Event) -> None:
     ux = get_upstox()
     if not ux.configured:
@@ -145,6 +206,7 @@ async def run_upstox_feed(stop: asyncio.Event) -> None:
                 log.info("upstox feed -> %s mode", "FAST (broker WS down)" if fast else "slow (BSE only)")
                 was_fast = fast
             await _poll_once(fast)
+            await _poll_futures_once()
             timeout = 1.5 if fast else 10.0
         except Exception as exc:  # noqa: BLE001
             log.debug("upstox feed loop: %s", exc)

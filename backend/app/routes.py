@@ -9,6 +9,7 @@ from .charting import build_chart
 from .config import DEFAULT_SYMBOLS, FO_UNIVERSE, INDEX_SYMBOLS
 from .models import (
     AnalyzeIn,
+    FutureOrderIn,
     HedgeIn,
     OrderIn,
     OrderModeIn,
@@ -21,6 +22,7 @@ from .models import (
     WatchlistAdd,
 )
 from .nse_client import client
+from .processing import lot_size
 from .store import store
 
 router = APIRouter(prefix="/api")
@@ -433,6 +435,16 @@ async def watchlists_add_strikes(index: int, body: dict):
     return {**store.get_watchlists(), "quotes": store.watch_quotes()}
 
 
+@router.post("/watchlists/{index}/add-future")
+def watchlists_add_future(index: int, body: dict):
+    symbol = str(body.get("symbol", "")).upper()
+    expiry = str(body.get("expiry", ""))
+    if not symbol or not expiry:
+        raise HTTPException(status_code=422, detail="symbol and expiry required")
+    store.add_future(index, symbol, expiry)
+    return {**store.get_watchlists(), "quotes": store.watch_quotes()}
+
+
 @router.get("/paper")
 def paper_state():
     return store.paper_state()
@@ -560,6 +572,77 @@ async def place_order(body: OrderIn):
     result = await _route_leg(
         symbol=body.symbol, expiry=body.expiry, strike=body.strike,
         option_type=body.option_type, side=body.side, qty_lots=body.qty_lots,
+        order_type=body.order_type, price=body.price, product=body.product, mode=mode,
+    )
+    return {"result": result, "paper": store.paper_state(), "mode": mode}
+
+
+async def _route_future(
+    *,
+    symbol: str,
+    expiry: str,
+    side: str,
+    qty_lots: int,
+    order_type: str,
+    price: float | None,
+    product: str,
+    mode: str,
+) -> dict:
+    """Futures sibling of _route_leg -- no strike/option_type to resolve, so
+    no _ensure_chain call. Paper fills reuse the exact same paper-position
+    machinery as options (place_paper_order/_apply_fill/_mark_price all
+    already key generically on symbol+expiry+strike+optionType and now
+    treat optionType=="FUT" as a strike-less instrument -- see _mark_price)."""
+    if mode == "live":
+        from .brokers import get_broker
+
+        broker = get_broker()
+        if not broker.authed:
+            raise HTTPException(status_code=400, detail="Flattrade not connected")
+        info = await broker.resolve_nfo_future(symbol, expiry)
+        lot = info["lotSize"] or lot_size(symbol)
+        qty = qty_lots * lot
+        try:
+            res = await broker.place_order(
+                exch="NFO",
+                tsym=info["tsym"],
+                qty=qty,
+                side=side,
+                order_type=order_type,
+                price=price or 0.0,
+                product="I" if product == "MIS" else "M",
+            )
+        except Exception as exc:  # noqa: BLE001
+            rec = {
+                "mode": "live", "status": "REJECTED", "symbol": symbol, "expiry": expiry,
+                "strike": 0.0, "optionType": "FUT", "side": side,
+                "qtyLots": qty_lots, "qty": qty, "tsym": info["tsym"], "error": str(exc),
+            }
+            store.log_live_order(rec)
+            raise HTTPException(status_code=502, detail=f"broker rejected: {exc}")
+        rec = {
+            "mode": "live", "status": "PLACED", "symbol": symbol, "expiry": expiry,
+            "strike": 0.0, "optionType": "FUT", "side": side,
+            "qtyLots": qty_lots, "qty": qty, "tsym": info["tsym"],
+            "orderId": res.get("orderId"), "confirmed": info["confirmed"],
+        }
+        store.log_live_order(rec)
+        return rec
+
+    order = store.place_paper_order(
+        PaperOrderIn(
+            symbol=symbol, expiry=expiry, strike=0.0, option_type="FUT",
+            side=side, qty_lots=qty_lots, price=price,
+        )
+    )
+    return {"mode": "paper", "status": "FILLED", "order": order}
+
+
+@router.post("/order/future")
+async def place_future_order(body: FutureOrderIn):
+    mode = body.mode or store.order_mode()
+    result = await _route_future(
+        symbol=body.symbol, expiry=body.expiry, side=body.side, qty_lots=body.qty_lots,
         order_type=body.order_type, price=body.price, product=body.product, mode=mode,
     )
     return {"result": result, "paper": store.paper_state(), "mode": mode}

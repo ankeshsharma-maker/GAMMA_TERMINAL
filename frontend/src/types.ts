@@ -85,7 +85,7 @@ export interface UnusualEvent {
 
 export interface WatchQuote {
   key: string;
-  kind?: "symbol" | "option" | "index";
+  kind?: "symbol" | "option" | "index" | "future";
   symbol: string;
   spot?: number | null;
   liveSpot?: number | null;

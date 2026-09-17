@@ -497,6 +497,38 @@ class FlattradeBroker:
             "confirmed": token is not None, "error": error,
         }
 
+    async def resolve_nfo_future(self, name: str, expiry: str) -> dict:
+        """Resolve an NFO futures contract to its Noren trading symbol / token /
+        lot size. Same shape and SearchScrip-confirmation approach as
+        resolve_nfo -- just the futures tsym convention (no strike/C-P, an
+        'F' suffix instead): NIFTY29SEP26F rather than NIFTY29SEP26C24050.
+        """
+        d = datetime.strptime(expiry, "%d-%b-%Y")
+        tsym = f"{name.upper()}{d.strftime('%d%b%y').upper()}F"
+        token: str | None = None
+        lot: int | None = None
+        error: str | None = None
+        try:
+            rows = await self.search_scrip("NFO", tsym)
+            for r in rows:
+                if r.get("tsym", "").upper() == tsym.upper():
+                    token = r.get("token")
+                    tsym = r["tsym"]
+                    try:
+                        lot = int(float(r.get("ls", 0))) or None
+                    except (TypeError, ValueError):
+                        lot = None
+                    break
+            else:
+                error = f"not found in {len(rows)} SearchScrip results"
+        except Exception as exc:  # noqa: BLE001
+            error = str(exc)
+            log.warning("resolve_nfo_future search failed for %s: %s", tsym, exc)
+        return {
+            "tsym": tsym, "token": token, "lotSize": lot,
+            "confirmed": token is not None, "error": error,
+        }
+
     def build_order_payload(
         self,
         *,

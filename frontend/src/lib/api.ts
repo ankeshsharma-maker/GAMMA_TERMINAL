@@ -162,6 +162,11 @@ export const api = {
       `/api/watchlists/${index}/add-strikes`,
       { method: "POST", body: JSON.stringify(body) }
     ),
+  wlAddFuture: (index: number, body: { symbol: string; expiry: string }) =>
+    j<import("../types").Watchlists & { quotes: import("../types").WatchQuote[] }>(
+      `/api/watchlists/${index}/add-future`,
+      { method: "POST", body: JSON.stringify(body) }
+    ),
   watchQuotes: () =>
     j<{ watchlist: string[]; quotes: import("../types").WatchQuote[] }>("/api/watchlist"),
 
@@ -441,6 +446,20 @@ export const api = {
     mode?: "paper" | "live";
   }) =>
     j<{ result: any; paper: PaperState; mode: string }>("/api/order", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  placeFutureOrder: (body: {
+    symbol: string;
+    expiry: string;
+    side: "BUY" | "SELL";
+    qtyLots: number;
+    orderType?: "MKT" | "LMT";
+    price?: number | null;
+    product?: "NRML" | "MIS";
+    mode?: "paper" | "live";
+  }) =>
+    j<{ result: any; paper: PaperState; mode: string }>("/api/order/future", {
       method: "POST",
       body: JSON.stringify(body),
     }),

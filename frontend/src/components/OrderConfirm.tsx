@@ -16,19 +16,21 @@ export function OrderConfirm() {
           optionType: pending.optionType,
           side: pending.side,
           lots: pending.lots,
+          price: pending.price,
         },
       ];
     return pending.legs.filter((l) => l.optionType !== "FUT");
   }, [pending]);
 
   const lotSize = chain?.lotSize ?? 1;
-  const priceFor = (strike: number, ot: "CE" | "PE" | "FUT") => {
+  const priceFor = (strike: number, ot: "CE" | "PE" | "FUT", knownPrice?: number | null) => {
+    if (ot === "FUT") return knownPrice || 0;
     const row = chain?.rows.find((r) => r.strike === strike);
-    if (!row || ot === "FUT") return 0;
+    if (!row) return 0;
     return (ot === "CE" ? row.call.ltp : row.put.ltp) || 0;
   };
   const net = legs.reduce((s, l) => {
-    const px = priceFor(l.strike, l.optionType);
+    const px = priceFor(l.strike, l.optionType, l.price);
     return s + (l.side === "BUY" ? 1 : -1) * px * l.lots * lotSize;
   }, 0);
 
@@ -65,14 +67,14 @@ export function OrderConfirm() {
 
         <div className="mb-3 divide-y divide-term-border rounded border border-term-border">
           {legs.map((l, i) => {
-            const px = priceFor(l.strike, l.optionType as "CE" | "PE");
+            const px = priceFor(l.strike, l.optionType, l.price);
             return (
               <div key={i} className="flex items-center justify-between px-2 py-1.5 text-xs">
                 <span className={l.side === "BUY" ? "text-up" : "text-down"}>
                   {l.side} {l.lots}×
                 </span>
                 <span className="num">
-                  {sk(l.strike)} {l.optionType}
+                  {l.optionType === "FUT" ? "FUT" : `${sk(l.strike)} ${l.optionType}`}
                 </span>
                 <span className="num text-term-dim">
                   {l.lots * lotSize} qty @ ~{nf(px)}

@@ -73,6 +73,7 @@ class Store:
             "scanned": 0, "total": 0, "cycleStart": None, "lastFull": None, "current": None,
         }
         self.live_spot: dict[str, dict] = {}          # symbol -> {ltp, chgPct, ts}
+        self.live_futures: dict[str, dict] = {}       # "SYMBOL|EXPIRY" -> {ltp, chgPct, ts}
         self.tick_ohlc: dict[str, deque] = {}         # symbol -> deque[{t,o,h,l,c}] @ _TICK_BUCKET_S
         self.index_quotes: dict[str, dict] = {}       # NSE index name -> {last, pChange, ts}
         self.index_catalog: list[dict] = []           # [{symbol, name, category}]
@@ -618,6 +619,21 @@ class Store:
         with _lock:
             return self.live_spot.get(symbol.upper())
 
+    def set_live_future(self, symbol: str, expiry: str, ltp: float, chg_pct: float | None = None) -> None:
+        now = time.time()
+        key = f"{symbol.upper()}|{expiry}"
+        with _lock:
+            self.live_futures[key] = {
+                "ltp": round(ltp, 2),
+                "chgPct": round(chg_pct, 2) if chg_pct is not None else None,
+                "ts": now,
+            }
+            self._record_tick(f"FUT:{key}", float(ltp), now)
+
+    def get_live_future(self, symbol: str, expiry: str) -> dict | None:
+        with _lock:
+            return self.live_futures.get(f"{symbol.upper()}|{expiry}")
+
     # ---- live position MTM (tick-by-tick) -----------------------
     def set_broker_positions(self, rows: list[dict]) -> None:
         """Store a fresh raw PositionBook snapshot; it anchors the live MTM."""
@@ -866,7 +882,15 @@ class Store:
             return list(syms)
 
     def remove_watch(self, symbol: str, index: int | None = None) -> list[str]:
-        symbol = symbol.upper().strip()
+        symbol = symbol.strip()
+        # composite keys (options "SYM|EXP|STRIKE|OT", futures "FUT:SYM|EXP")
+        # are built by the app itself with a canonical, mixed-case NSE expiry
+        # ("08-Sep-2026") and must match exactly -- uppercasing here silently
+        # broke removing them (confirmed: stored key survives an uppercased
+        # comparison). Plain typed-in symbols/"IDX:" entries stay
+        # case-insensitive, since those really do come from free-text input.
+        if "|" not in symbol:
+            symbol = symbol.upper()
         with _lock:
             i = self.watchlists["active"] if index is None else self._wli(index)
             lst = self.watchlists["lists"][i]
@@ -892,6 +916,16 @@ class Store:
         except ValueError:
             return None
 
+    @staticmethod
+    def _parse_fut(entry: str):
+        """'FUT:NIFTY|29-Sep-2026' -> (symbol, expiry) or None."""
+        if not entry.startswith("FUT:"):
+            return None
+        parts = entry[4:].split("|")
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            return None
+        return parts[0].upper(), parts[1]
+
     def watch_quotes(self) -> list[dict]:
         with _lock:
             hidden = set(self.watchlists.get("hiddenDefaults", []))
@@ -912,6 +946,23 @@ class Store:
                         "variation": q.get("variation") if q else None,
                         "optionable": False,
                         "error": None if q else "no quote",
+                    }
+                )
+                continue
+            fut = self._parse_fut(entry)
+            if fut:
+                sym, exp = fut
+                live = self.live_futures.get(f"{sym}|{exp}")
+                out.append(
+                    {
+                        "key": entry,
+                        "kind": "future",
+                        "symbol": sym,
+                        "expiry": exp,
+                        "ltp": live["ltp"] if live else None,
+                        "chgPct": live["chgPct"] if live else None,
+                        "lotSize": lot_size(sym),
+                        "error": None if live else "loading",
                     }
                 )
                 continue
@@ -1051,8 +1102,26 @@ class Store:
             self._save_watchlists()
             return list(syms)
 
+    def add_future(self, index: int, symbol: str, expiry: str) -> list[str]:
+        """Add one futures-contract key. Builds the key directly (like
+        add_strikes does for options) rather than going through add_watch,
+        which uppercases the whole string -- that would mangle the NSE-style
+        mixed-case expiry ("29-Sep-2026" -> "29-SEP-2026") and break every
+        later exact-string match against it."""
+        key = f"FUT:{symbol.upper()}|{expiry}"
+        with _lock:
+            i = self._wli(index)
+            syms = self.watchlists["lists"][i]["symbols"]
+            if key not in syms:
+                syms.append(key)
+            self._save_watchlists()
+            return list(syms)
+
     # ---- paper trading -----------------------------------------------
     def _mark_price(self, symbol: str, expiry: str, strike: float, ot: str) -> Optional[float]:
+        if ot == "FUT":
+            live = self.live_futures.get(f"{symbol.upper()}|{expiry}")
+            return live["ltp"] if live else None
         chain = self.get_chain(symbol, expiry)
         if not chain:
             return None
@@ -1232,9 +1301,12 @@ class Store:
                 ltp = ltp if ltp is not None else pos["avgPrice"]
                 pnl = (ltp - pos["avgPrice"]) * pos["qty"]
                 unrealized += pnl
-                # blocked margin: long = premium paid, short = ~SPAN+exposure on strike notional
-                if pos["qty"] >= 0:
-                    margin_used += pos["avgPrice"] * pos["qty"]
+                # blocked margin: long = premium paid, short = ~SPAN+exposure on strike
+                # notional -- a future has no strike, so fall back to the same
+                # price-based figure longs use (still a heuristic, not real SPAN,
+                # same honesty the rest of this margin model already has)
+                if pos["qty"] >= 0 or pos["optionType"] == "FUT":
+                    margin_used += pos["avgPrice"] * abs(pos["qty"])
                 else:
                     margin_used += SHORT_OPTION_MARGIN_PCT * pos["strike"] * abs(pos["qty"])
                 positions.append({**pos, "ltp": round(ltp, 2), "pnl": round(pnl, 2)})

@@ -14,7 +14,7 @@ class PaperOrderIn(BaseModel):
     symbol: str
     expiry: str
     strike: float
-    option_type: Literal["CE", "PE"]
+    option_type: Literal["CE", "PE", "FUT"]
     side: Literal["BUY", "SELL"]
     qty_lots: int = Field(1, ge=1, le=500)
     price: Optional[float] = None  # None -> mark against latest LTP
@@ -77,6 +77,19 @@ class OrderIn(BaseModel):
     expiry: Optional[str] = None
     strike: float
     option_type: Literal["CE", "PE"] = Field(..., alias="optionType")
+    side: Literal["BUY", "SELL"]
+    qty_lots: int = Field(1, ge=1, le=500, alias="qtyLots")
+    order_type: Literal["MKT", "LMT"] = Field("MKT", alias="orderType")
+    price: Optional[float] = None
+    product: Literal["NRML", "MIS"] = "NRML"
+    mode: Optional[Literal["paper", "live"]] = None  # None -> server default
+
+    model_config = {"populate_by_name": True}
+
+
+class FutureOrderIn(BaseModel):
+    symbol: str
+    expiry: str
     side: Literal["BUY", "SELL"]
     qty_lots: int = Field(1, ge=1, le=500, alias="qtyLots")
     order_type: Literal["MKT", "LMT"] = Field("MKT", alias="orderType")

@@ -22,15 +22,21 @@ const WL_PRESETS: { name: string; syms: string[] }[] = [
   { name: "Pharma & FMCG", syms: ["SUNPHARMA", "DRREDDY", "CIPLA", "DIVISLAB", "ITC", "HINDUNILVR", "NESTLEIND", "BRITANNIA", "DABUR"] },
 ];
 
-const wPx = (w: WatchQuote) => (w.kind === "option" ? w.ltp : w.liveSpot ?? w.spot) ?? null;
-const wPct = (w: WatchQuote) => (w.kind === "option" ? w.chgPct : w.liveChgPct) ?? null;
+const wPx = (w: WatchQuote) =>
+  (w.kind === "option" || w.kind === "future" ? w.ltp : w.liveSpot ?? w.spot) ?? null;
+const wPct = (w: WatchQuote) =>
+  (w.kind === "option" || w.kind === "future" ? w.chgPct : w.liveChgPct) ?? null;
 const wChg = (w: WatchQuote) => {
   const p = wPx(w);
   const c = wPct(w);
   return p != null && c != null ? (p * c) / 100 : null; // approx rupee move
 };
 const wName = (w: WatchQuote) =>
-  w.kind === "option" ? `${w.symbol} ${w.strike} ${w.optionType}` : w.symbol;
+  w.kind === "option"
+    ? `${w.symbol} ${w.strike} ${w.optionType}`
+    : w.kind === "future"
+    ? `${w.symbol} ${w.expiry} FUT`
+    : w.symbol;
 
 function sortWatch(rows: WatchQuote[], { k, dir }: { k: SortKey; dir: 1 | -1 }) {
   if (k === "none") return rows;
@@ -65,8 +71,10 @@ const wAbsChg = (w: WatchQuote) => {
 /** broker-style quote row: name + exchange on the left, LTP + change on the
  *  right, divider between rows. Tapping the row opens the chart for that symbol. */
 function QuoteRow({ w }: { w: WatchQuote }) {
-  const { symbol, selectSymbol, selectExpiry, setChartInstrument, chartInstrument, setView, removeWatch } =
-    useStore();
+  const {
+    symbol, selectSymbol, selectExpiry, setChartInstrument, chartInstrument, setView, removeWatch,
+    quickTradeFuture, scalpLots,
+  } = useStore();
   const on = w.kind === "option" ? chartInstrument === w.key : w.symbol === symbol;
   const px = wPx(w);
   const pct = wPct(w);
@@ -109,6 +117,24 @@ function QuoteRow({ w }: { w: WatchQuote }) {
           </span>
         )}
       </div>
+      {w.kind === "future" && w.expiry && (
+        <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => quickTradeFuture(w.symbol, w.expiry!, "BUY", scalpLots)}
+            title={`Buy ${scalpLots} lot(s) of ${wName(w)}`}
+            className="rounded border border-up/40 bg-up/10 px-1.5 py-0.5 text-[10px] font-semibold text-up transition hover:bg-up/20"
+          >
+            Buy
+          </button>
+          <button
+            onClick={() => quickTradeFuture(w.symbol, w.expiry!, "SELL", scalpLots)}
+            title={`Sell ${scalpLots} lot(s) of ${wName(w)}`}
+            className="rounded border border-down/40 bg-down/10 px-1.5 py-0.5 text-[10px] font-semibold text-down transition hover:bg-down/20"
+          >
+            Sell
+          </button>
+        </div>
+      )}
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -140,6 +166,7 @@ export function Watchlist() {
     wlSetActive,
     wlRename,
     wlAddStrikes,
+    wlAddFuture,
     wlClear,
     selectSymbol,
     scalpLots,
@@ -476,6 +503,14 @@ export function Watchlist() {
             title="Add 10 strikes (CE+PE) around ATM for the current symbol"
           >
             + 10 strikes
+          </button>
+          <button
+            type="button"
+            onClick={() => wlAddFuture(active)}
+            className="flex-1 rounded border border-term-border py-0.5 text-[10px] text-term-dim transition hover:border-term-accent hover:text-term-text"
+            title="Add the futures contract for the current symbol + expiry"
+          >
+            + Future
           </button>
           {hasOptions && (
             <button

@@ -63,6 +63,7 @@ class Upstox:
         self._token_date: str = ""
         self._eq_keys: dict[str, str] = {}
         self._opt_keys: dict[tuple, str] = {}
+        self._fut_keys: dict[tuple, str] = {}
         self._instr_date: str = ""
         self._http = httpx.AsyncClient(timeout=15.0)
         if UPSTOX_ACCESS_TOKEN:
@@ -218,6 +219,7 @@ class Upstox:
             return
         eq: dict[str, str] = {}
         opt: dict[tuple, str] = {}
+        fut: dict[tuple, str] = {}
         lots: dict[str, int] = {}
         for it in rows:
             seg = it.get("segment")
@@ -249,7 +251,20 @@ class Upstox:
                     except Exception:  # noqa: BLE001
                         continue
                     opt[(name, d, float(strike), ot)] = ik
-        self._eq_keys, self._opt_keys, self._instr_date = eq, opt, _today()
+            elif it.get("instrument_type") == "FUT" and seg in ("NSE_FO", "BSE_FO"):
+                name = str(it.get("asset_symbol") or it.get("underlying_symbol") or "").upper()
+                exp = it.get("expiry")  # epoch ms or ISO
+                if name and exp:
+                    try:
+                        d = (
+                            datetime.utcfromtimestamp(int(exp) / 1000).strftime("%Y-%m-%d")
+                            if str(exp).isdigit()
+                            else str(exp)[:10]
+                        )
+                    except Exception:  # noqa: BLE001
+                        continue
+                    fut[(name, d)] = ik
+        self._eq_keys, self._opt_keys, self._fut_keys, self._instr_date = eq, opt, fut, _today()
         if lots:
             try:
                 from ..processing import set_lot_sizes
@@ -257,12 +272,15 @@ class Upstox:
             except Exception:  # noqa: BLE001
                 pass
         log.info(
-            "upstox instruments: %d equities, %d option contracts, %d lot sizes",
-            len(eq), len(opt), len(lots),
+            "upstox instruments: %d equities, %d option contracts, %d futures contracts, %d lot sizes",
+            len(eq), len(opt), len(fut), len(lots),
         )
 
     def option_key(self, symbol: str, iso_expiry: str, strike: float, ot: str) -> str | None:
         return self._opt_keys.get((symbol.upper(), iso_expiry, float(strike), ot.upper()))
+
+    def futures_key(self, symbol: str, iso_expiry: str) -> str | None:
+        return self._fut_keys.get((symbol.upper(), iso_expiry))
 
     async def aclose(self) -> None:
         await self._http.aclose()
