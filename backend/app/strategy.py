@@ -6,6 +6,7 @@ not supplied. Everything is a heuristic aid, not broker-accurate (margin especia
 """
 from __future__ import annotations
 
+import logging
 import math
 import time
 import uuid
@@ -15,6 +16,7 @@ from .config import DIVIDEND_YIELD, RISK_FREE_RATE
 from .greeks import bs_price
 from .processing import year_fraction
 
+log = logging.getLogger("strategy")
 _TABLE = "saved_strategies"
 _SQRT2PI = math.sqrt(2 * math.pi)
 
@@ -491,14 +493,22 @@ def from_paper(positions: list[dict]) -> dict | None:
     return {"symbol": symbol, "expiry": expiry, "legs": legs}
 
 
-def from_broker(positions: list[dict]) -> dict | None:
-    """Turn live Flattrade PositionBook rows (open NFO option legs only) into
-    strategy legs, same shape as from_paper -- picks the symbol/expiry with the
-    most open legs so the hedge finder / builder work on the live position."""
+def from_broker(positions: list[dict], preferred_symbol: str | None = None) -> dict | None:
+    """Turn live Flattrade PositionBook rows (open option legs only) into
+    strategy legs, same shape as from_paper. Groups open legs by (symbol,
+    expiry); loads `preferred_symbol`'s group when given and present --
+    otherwise the (symbol, expiry) with the most open legs.
+
+    Without `preferred_symbol`, holding legs in more than one underlying at
+    once (e.g. NIFTY *and* SENSEX) meant whichever had fewer open legs was
+    silently dropped -- "From live positions" would load NIFTY and just never
+    show a smaller SENSEX position, with no error or indication anything was
+    skipped."""
     from .brokers.flattrade import parse_noren_tsym
     from .processing import lot_size
 
     groups: dict[tuple, list[dict]] = {}
+    skipped: list[str] = []
     for p in positions or []:
         try:
             qty = float(p.get("netqty") or 0)
@@ -508,7 +518,12 @@ def from_broker(positions: list[dict]) -> dict | None:
             continue
         parsed = parse_noren_tsym(p.get("tsym", ""))
         if not parsed:
-            continue  # not an NFO option in the conventional tsym form (e.g. equity)
+            # not an option in the conventional tsym form (e.g. equity) --
+            # logged so a genuine tsym-format miss (e.g. a BFO/Sensex
+            # convention this regex doesn't expect) is visible instead of
+            # silently vanishing.
+            skipped.append(f"{p.get('exch')}:{p.get('tsym')}")
+            continue
         avg = p.get("netavgprc") or p.get("daybuyavgprc") or p.get("daysellavgprc") or 0
         try:
             avg = float(avg)
@@ -517,8 +532,16 @@ def from_broker(positions: list[dict]) -> dict | None:
         key = (parsed["symbol"], parsed["expiry"])
         groups.setdefault(key, []).append({**parsed, "qty": qty, "avg": avg})
     if not groups:
+        if skipped:
+            log.warning("from_broker: no leg matched the option tsym pattern, skipped %s", skipped)
         return None
-    (symbol, expiry), rows = max(groups.items(), key=lambda kv: len(kv[1]))
+
+    preferred_keys = (
+        [k for k in groups if k[0] == preferred_symbol.upper()] if preferred_symbol else []
+    )
+    candidates = preferred_keys or list(groups)
+    symbol, expiry = max(candidates, key=lambda k: len(groups[k]))
+    rows = groups[(symbol, expiry)]
     ls = lot_size(symbol)
     legs = [
         {

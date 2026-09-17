@@ -9,6 +9,7 @@ from .charting import build_chart
 from .config import DEFAULT_SYMBOLS, FO_UNIVERSE, INDEX_SYMBOLS
 from .models import (
     AnalyzeIn,
+    FromBrokerIn,
     FutureOrderIn,
     HedgeIn,
     OrderIn,
@@ -722,7 +723,7 @@ async def strategy_from_paper():
 
 
 @router.post("/strategy/from-broker")
-async def strategy_from_broker():
+async def strategy_from_broker(body: FromBrokerIn):
     """Pull your live Flattrade positions into the builder so the hedge finder
     (and Execute LIVE) can cap the running loss on a real open position."""
     from .brokers import get_broker
@@ -734,7 +735,7 @@ async def strategy_from_broker():
         positions = await b.positions()
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
-    built = strat.from_broker(positions)
+    built = strat.from_broker(positions, preferred_symbol=body.symbol)
     if not built:
         raise HTTPException(status_code=404, detail="no open broker option positions")
     chain = await _ensure_chain(built["symbol"], built["expiry"])

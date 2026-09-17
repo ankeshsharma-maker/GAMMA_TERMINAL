@@ -410,7 +410,7 @@ export function StrategyBuilder() {
     );
 
   const loadFromBroker = () =>
-    api.strategyFromBroker().then(
+    api.strategyFromBroker(symbol).then(
       (d) => {
         setFromBroker(true);
         setExecuteHeld(false);

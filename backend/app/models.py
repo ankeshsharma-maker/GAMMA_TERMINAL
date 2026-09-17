@@ -104,6 +104,13 @@ class OrderModeIn(BaseModel):
     mode: Literal["paper", "live"]
 
 
+class FromBrokerIn(BaseModel):
+    # underlying currently selected in the Builder, if any -- when a live
+    # position for it exists, prefer loading that over whichever symbol
+    # happens to have the most open legs.
+    symbol: Optional[str] = None
+
+
 class HedgeIn(BaseModel):
     symbol: str
     expiry: Optional[str] = None

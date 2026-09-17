@@ -309,10 +309,10 @@ export const api = {
       "/api/strategy/from-paper",
       { method: "POST", body: "{}" }
     ),
-  strategyFromBroker: () =>
+  strategyFromBroker: (symbol?: string) =>
     j<{ symbol: string; expiry: string; legs: StrategyLeg[]; analysis: Analysis }>(
       "/api/strategy/from-broker",
-      { method: "POST", body: "{}" }
+      { method: "POST", body: JSON.stringify({ symbol: symbol || null }) }
     ),
 
   listStrategies: () => j<{ strategies: SavedStrategy[] }>("/api/strategies"),
