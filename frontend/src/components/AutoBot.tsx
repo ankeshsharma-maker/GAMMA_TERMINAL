@@ -984,6 +984,16 @@ export function AutoBotView() {
   );
   const [editing, setEditing] = useState<Partial<AutoRule> | null>(null);
   const [btId, setBtId] = useState<string | null>(null);
+  // collapsed by default -- a card's full entry/exit condition grid only
+  // shows once expanded, so scanning several active rules doesn't mean
+  // scrolling past every field of every one
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleExpanded = (id: string) =>
+    setExpanded((s) => {
+      const n = new Set(s);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
   const [lossDraft, setLossDraft] = useState("");
   const [tab, setTab] = useState<"rules" | "backtest">("rules");
 
@@ -1182,10 +1192,18 @@ export function AutoBotView() {
                     </span>
                   )}
                   <span className="text-2xs text-term-dim">
-                    {r._state?.tradesToday ?? 0}/{r.maxTradesPerDay} today
+                    {r._state?.tradesToday ?? 0}/{r.maxTradesPerDay} today ·{" "}
+                    {(r.entry ?? []).length} entry · {(r.exit ?? []).length} exit
                   </span>
 
                   <div className="ml-auto flex items-center gap-1">
+                    <button
+                      className="btn px-1.5 py-0.5 text-2xs"
+                      onClick={() => toggleExpanded(r.id)}
+                      title={expanded.has(r.id) ? "Collapse" : "Show entry / exit conditions"}
+                    >
+                      {expanded.has(r.id) ? "▾" : "▸"}
+                    </button>
                     <button
                       className={`btn px-1.5 py-0.5 text-2xs ${btId === r.id ? "btn-buy" : ""}`}
                       onClick={() => setBtId(btId === r.id ? null : r.id)}
@@ -1211,6 +1229,7 @@ export function AutoBotView() {
 
                 {btId === r.id && <RuleBacktest rule={r} onClose={() => setBtId(null)} />}
 
+                {expanded.has(r.id) && (
                 <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
                   <div>
                     <span className="uppercase tracking-wide text-term-dim">
@@ -1268,6 +1287,7 @@ export function AutoBotView() {
                     </ul>
                   </div>
                 </div>
+                )}
               </div>
             );
           })}
