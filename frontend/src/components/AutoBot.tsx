@@ -903,6 +903,7 @@ function RuleEditor({
             ["trailPct", `trail ${u}`, "0 = off. Trails the stop this far behind the best favourable premium."],
             ["trailArmPct", `trail arm ${u}`, "arm the trailing stop only after the trade is this far in profit"],
             ["beArmPct", `breakeven arm ${u}`, "move the stop to breakeven once the trade is this far in profit. 0 = off."],
+            ["target1Pct", `scale-out ${u}`, "0/blank = off. Book part of the position once it's this far in profit, let the rest ride to the full target/trail above."],
           ];
           return fields.map(([k, label, title]) => (
             <label key={k} className="flex flex-col text-[10px] text-term-dim" title={title}>
@@ -917,6 +918,20 @@ function RuleEditor({
             </label>
           ));
         })()}
+        <label
+          className="flex flex-col text-[10px] text-term-dim"
+          title="What share of the position to close at the scale-out level above (rounded to whole lots, always leaves at least 1 lot open)."
+        >
+          scale-out lots %
+          <input
+            type="number"
+            min={1}
+            max={99}
+            value={r.target1LotsPct ?? 50}
+            onChange={(e) => set({ target1LotsPct: Math.min(99, Math.max(1, parseInt(e.target.value) || 50)) })}
+            className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-20"
+          />
+        </label>
         <label className="flex flex-col text-[10px] text-term-dim">
           max trades/day
           <input
@@ -1292,7 +1307,10 @@ export function AutoBotView() {
                                 r.trailArmPct ? `@+${r.trailArmPct}${u}` : ""
                               }`
                             : ""}
-                          {r.beArmPct ? ` · BE@+${r.beArmPct}${u}` : ""}{" "}
+                          {r.beArmPct ? ` · BE@+${r.beArmPct}${u}` : ""}
+                          {r.target1Pct
+                            ? ` · scale-out ${r.target1LotsPct ?? 50}%@+${r.target1Pct}${u}`
+                            : ""}{" "}
                           · {r.holdType === "positional" ? "positional" : `sq ${r.squareOff}`}
                           {r.noEntryBefore ? ` · from ${r.noEntryBefore}` : ""}
                         </span>

@@ -277,6 +277,11 @@ export interface AutoRule {
   trailPct?: number;
   trailArmPct?: number;
   beArmPct?: number;
+  /** single-level scale-out: book target1LotsPct% of the position once it's
+   *  target1Pct in favour, let the remainder ride to the target/trail above.
+   *  Unset/0 = off. */
+  target1Pct?: number;
+  target1LotsPct?: number;
   maxTradesPerDay: number;
   cooldownMin: number;
   squareOff: string;

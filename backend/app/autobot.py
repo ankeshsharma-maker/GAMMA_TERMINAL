@@ -1110,6 +1110,41 @@ class AutoBot:
                     pos["stopPx"] = new_stop
                     changed = True
 
+                # single-level scale-out: book part of the position at an
+                # earlier target, let the remainder ride to the existing
+                # SL/target/trail. Peak-tracking is NOT reset on a partial --
+                # it's a price level, not a size, so trailing/breakeven keep
+                # protecting the smaller remainder with no extra code.
+                t1_v = rule.get("target1Pct")
+                if (
+                    t1_v not in (None, "")
+                    and float(t1_v) != 0
+                    and not pos.get("partial1Done")
+                    and cur_fav >= abs(float(t1_v))
+                ):
+                    entry_lots = int(pos.get("entryLots") or pos["lots"])
+                    close_lots = round(entry_lots * float(rule.get("target1LotsPct") or 50) / 100)
+                    close_lots = max(1, min(close_lots, pos["lots"] - 1))
+                    if pos["lots"] > close_lots:
+                        exit_side = "SELL" if buy else "BUY"
+                        try:
+                            await self._place(rule, exit_side, pos["strike"], pos["ot"],
+                                              pos["expiry"], close_lots)
+                        except Exception as exc:  # noqa: BLE001
+                            self._emit(rule, "error", f"partial exit failed: {exc}")
+                        else:
+                            pnl = signed / 100 * base * close_lots * pos.get("lotSize", 1)
+                            self.daily_pnl += pnl
+                            pos["lots"] -= close_lots
+                            pos["partial1Done"] = True
+                            self._emit(
+                                rule, "exit",
+                                f"PARTIAL {close_lots} lots @~{ltp:.1f} "
+                                f"(target1 {t1_v}{unit}) P&L~{pnl:+.0f}, {pos['lots']} left",
+                            )
+                            changed = True
+                        continue
+
                 positional = str(rule.get("holdType", "intraday")).lower() == "positional"
                 reason = None
                 sq = None if positional else _parse_hhmm(rule.get("squareOff"))
@@ -1217,7 +1252,7 @@ class AutoBot:
                 continue
             st["open"] = {
                 "side": side, "strike": strike, "ot": ot, "expiry": exp,
-                "entryPx": float(entry_px), "lots": lots,
+                "entryPx": float(entry_px), "lots": lots, "entryLots": lots,
                 "lotSize": chain.get("lotSize", 1), "ts": time.time(),
                 "mode": res.get("mode", "paper"),
                 "peak": float(entry_px), "stopPx": None,
