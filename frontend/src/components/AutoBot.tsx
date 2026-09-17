@@ -761,7 +761,7 @@ function RuleEditor({
         />
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
         <label className="flex flex-col text-[10px] text-term-dim">
           symbol
           <SelectMenu
@@ -809,7 +809,7 @@ function RuleEditor({
             min={1}
             value={r.lots ?? 1}
             onChange={(e) => set({ lots: Math.max(1, parseInt(e.target.value) || 1) })}
-            className="num w-16 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
+            className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-16"
           />
         </label>
         <label className="flex flex-col text-[10px] text-term-dim">
@@ -847,7 +847,7 @@ function RuleEditor({
         </label>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
         <div className="flex flex-col text-[10px] text-term-dim">
           SL / target / trail unit
           <div className="seg mt-0.5">
@@ -886,7 +886,7 @@ function RuleEditor({
                 step="any"
                 value={(r[k] as number | undefined) ?? ""}
                 onChange={(e) => set({ [k]: num(e.target.value) } as Partial<AutoRule>)}
-                className="num w-24 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
+                className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-24"
               />
             </label>
           ));
@@ -898,7 +898,7 @@ function RuleEditor({
             min={1}
             value={r.maxTradesPerDay ?? 3}
             onChange={(e) => set({ maxTradesPerDay: Math.max(1, parseInt(e.target.value) || 1) })}
-            className="num w-16 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
+            className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-16"
           />
         </label>
         <label className="flex flex-col text-[10px] text-term-dim">
@@ -908,7 +908,7 @@ function RuleEditor({
             min={0}
             value={r.cooldownMin ?? 5}
             onChange={(e) => set({ cooldownMin: Math.max(0, parseInt(e.target.value) || 0) })}
-            className="num w-16 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
+            className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-16"
           />
         </label>
         <label
@@ -921,7 +921,7 @@ function RuleEditor({
             onChange={(e) => set({ squareOff: e.target.value })}
             placeholder="15:20"
             disabled={r.holdType === "positional"}
-            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text disabled:opacity-40"
+            className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text disabled:opacity-40 md:w-20"
           />
         </label>
         <label className="flex flex-col text-[10px] text-term-dim" title="Earliest clock time an entry may fire (IST). Blank = from market open.">
@@ -930,7 +930,7 @@ function RuleEditor({
             value={r.noEntryBefore ?? ""}
             onChange={(e) => set({ noEntryBefore: e.target.value })}
             placeholder="09:20"
-            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
+            className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-20"
           />
         </label>
         <label className="flex flex-col text-[10px] text-term-dim" title="Latest clock time an entry may fire (IST).">
@@ -939,7 +939,7 @@ function RuleEditor({
             value={r.noEntryAfter ?? ""}
             onChange={(e) => set({ noEntryAfter: e.target.value })}
             placeholder="15:00"
-            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
+            className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-20"
           />
         </label>
       </div>
@@ -1018,7 +1018,7 @@ export function AutoBotView() {
   const anyLive = useMemo(() => rules.some((r) => r.mode === "live" && r.enabled), [rules]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex flex-col md:min-h-0 md:flex-1 md:overflow-hidden">
       {/* control bar */}
       <div className="flex flex-wrap items-center gap-3 border-b border-term-border bg-term-panel2 px-3 py-2">
         <button
@@ -1116,9 +1116,9 @@ export function AutoBotView() {
       )}
 
       {tab === "rules" && (
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3 md:flex-row md:overflow-hidden">
+      <div className="flex flex-col gap-3 p-3 md:min-h-0 md:flex-1 md:flex-row md:overflow-hidden">
         {/* rules + editor */}
-        <div className="min-h-0 flex-1 space-y-3 md:overflow-auto md:pr-1">
+        <div className="space-y-3 md:min-h-0 md:flex-1 md:overflow-auto md:pr-1">
           {editing && (
             <RuleEditor
               seed={editing}
