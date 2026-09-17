@@ -662,6 +662,25 @@ function RuleEditor({
   const set = (patch: Partial<AutoRule>) => setR((prev) => ({ ...prev, ...patch }));
   const num = (v: string) => (v === "" ? undefined : parseFloat(v));
 
+  // the rule's own expiry list — independent of whatever symbol/expiry the
+  // user happens to have open elsewhere (chain/OI Profile), since a rule can
+  // target any F&O symbol and keeps running long after that screen changes
+  const [expiries, setExpiries] = useState<string[]>([]);
+  useEffect(() => {
+    if (!r.symbol) {
+      setExpiries([]);
+      return;
+    }
+    let alive = true;
+    api.chain(r.symbol).then(
+      (c) => alive && setExpiries(c.expiries ?? []),
+      () => alive && setExpiries([])
+    );
+    return () => {
+      alive = false;
+    };
+  }, [r.symbol]);
+
   return (
     <div className="space-y-3 rounded-lg border border-term-accent/50 bg-term-panel p-3">
       <label className="flex flex-col text-[10px] text-term-dim">
@@ -746,6 +765,16 @@ function RuleEditor({
             options={symbols.map((s) => [s, s] as [string, string])}
             onChange={(v) => set({ symbol: v })}
             title="Symbol"
+            width={130}
+          />
+        </label>
+        <label className="flex flex-col text-[10px] text-term-dim" title="Which expiry this rule trades. Front week = nearest expiry, whatever that is on the day the rule fires — the safe default for a rule left running unattended.">
+          expiry
+          <SelectMenu
+            value={r.expiry ?? ""}
+            options={[["Front week", ""], ...expiries.map((e) => [e, e] as [string, string])]}
+            onChange={(v) => set({ expiry: v || null })}
+            title="Expiry"
             width={130}
           />
         </label>
@@ -1126,7 +1155,8 @@ export function AutoBotView() {
                   </button>
                   <span className="text-sm font-semibold text-term-text">{r.name}</span>
                   <span className="rounded bg-term-bg px-1.5 py-0.5 text-2xs text-term-dim">
-                    {r.symbol} · {r.instrument} · {r.side} ×{r.lots}
+                    {r.symbol}
+                    {r.expiry ? ` ${r.expiry}` : ""} · {r.instrument} · {r.side} ×{r.lots}
                   </span>
                   <span
                     className={`rounded px-1.5 py-0.5 text-2xs ${
