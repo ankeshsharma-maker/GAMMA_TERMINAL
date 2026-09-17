@@ -160,8 +160,23 @@ export function Chart() {
   // which churns on every tick of every watchlist / subscribed symbol
   const liveTick = useStore((s) => s.liveSpots[s.symbol]);
   // broker session up but its live socket down => charts are on the REST
-  // fallback; surface it loudly instead of letting the chart look frozen
-  const feedStale = useStore((s) => !!s.broker?.authed && !s.broker?.wsConnected);
+  // fallback; surface it loudly instead of letting the chart look frozen.
+  // Debounced on the way *up* only: the WS reconnects on its own within a
+  // few seconds for a plain transient drop (5s->60s backoff), so flipping
+  // this the instant a single status poll sees it down made the "FEED
+  // STALE" badge (and the toolbar row it can wrap onto) flash in and out
+  // during live trading -- reads as the whole chart flickering / shifting
+  // position. Recovery still clears it immediately.
+  const rawFeedStale = useStore((s) => !!s.broker?.authed && !s.broker?.wsConnected);
+  const [feedStale, setFeedStale] = useState(false);
+  useEffect(() => {
+    if (!rawFeedStale) {
+      setFeedStale(false);
+      return;
+    }
+    const t = setTimeout(() => setFeedStale(true), 6000);
+    return () => clearTimeout(t);
+  }, [rawFeedStale]);
   const watch = useStore((s) => s.watch);
   const instrument = useStore((s) => s.chartInstrument);
   const setInstrument = useStore((s) => s.setChartInstrument);
@@ -1495,22 +1510,27 @@ export function Chart() {
             </>
           )}
         </span>
-        {feedStale && (
-          <span
-            className="ml-auto flex items-center gap-1 rounded border border-down/60 bg-down/15 px-1.5 py-0.5 font-semibold text-down"
-            title="Broker live feed is down — chart is on ~3s REST quotes, not tick-by-tick. Hit ↻ refresh in the header."
-          >
-            ⚠ FEED STALE · REST
+        {/* ml-auto lives on this wrapper permanently (not on whichever child
+            happens to be present) so the badge appearing/disappearing never
+            shifts the "N bars · Flattrade" text or the rest of the toolbar. */}
+        <span className="ml-auto flex items-center gap-1.5">
+          {feedStale && (
+            <span
+              className="flex items-center gap-1 rounded border border-down/60 bg-down/15 px-1.5 py-0.5 font-semibold text-down"
+              title="Broker live feed is down — chart is on ~3s REST quotes, not tick-by-tick. Hit ↻ refresh in the header."
+            >
+              ⚠ FEED STALE · REST
+            </span>
+          )}
+          <span className="text-term-dim">
+            {data
+              ? data.candleSource === "broker"
+                ? `${data.candles.length} bars · Flattrade${data.hasVolume ? " + vol" : ""}`
+                : data.candleSource === "upstox"
+                ? `${data.candles.length} bars · Upstox${data.hasVolume ? " + vol" : ""}`
+                : `${data.points} samples · sampled (connect Flattrade / Upstox for real bars)`
+              : "loading…"}
           </span>
-        )}
-        <span className={`${feedStale ? "" : "ml-auto"} text-term-dim`}>
-          {data
-            ? data.candleSource === "broker"
-              ? `${data.candles.length} bars · Flattrade${data.hasVolume ? " + vol" : ""}`
-              : data.candleSource === "upstox"
-              ? `${data.candles.length} bars · Upstox${data.hasVolume ? " + vol" : ""}`
-              : `${data.points} samples · sampled (connect Flattrade / Upstox for real bars)`
-            : "loading…"}
         </span>
       </div>
 
