@@ -1120,7 +1120,7 @@ export function StrategyBuilder() {
               <button
                 onClick={findHedge}
                 disabled={hedgeBusy}
-                className="btn flex-1 text-2xs disabled:opacity-40"
+                className="flex-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-2xs font-semibold text-amber-400 transition-colors hover:bg-amber-500/20 disabled:opacity-40"
               >
                 {hedgeBusy ? "Searching…" : "Find best hedge"}
               </button>
