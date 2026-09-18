@@ -197,7 +197,8 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
         ) : notifTab === "alerts" ? (
           alerts.length === 0 ? (
             <div className="p-4 text-2xs text-term-dim">
-              No alerts. Fires on IV pops, straddle expansion, and rising gamma-blast scores.
+              No alerts. Fires on IV pops, straddle expansion, rising gamma-blast scores, and
+              unusual delta/gamma jumps on near-ATM strikes.
             </div>
           ) : (
             alerts.map((a, i) => (

@@ -96,7 +96,18 @@ async def _refresh(symbol: str, expiry: str) -> None:
         if events:
             for e in events:
                 log.info("UNUSUAL %s", e["message"])
+                # was only landing in the separate Unusual Activity feed --
+                # also feed the same choke point every other alert source
+                # uses, so an unusual delta jump / gamma spike-collapse
+                # reaches webhook/Telegram/push too, same as everything else
+                store.add_alert(
+                    {
+                        "ts": e["ts"], "symbol": e["symbol"], "kind": e["kind"],
+                        "severity": e["severity"], "message": e["message"], "score": 0,
+                    }
+                )
             await hub.broadcast_all({"type": "unusual", "data": store.get_unusual(60)})
+            await hub.broadcast_all({"type": "alerts", "data": store.get_alerts(50)})
     except Exception as exc:  # noqa: BLE001 - keep the loop alive
         store.put_error(symbol, str(exc))
         log.warning("refresh failed for %s %s: %s", symbol, expiry, exc)
