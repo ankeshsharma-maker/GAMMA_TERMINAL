@@ -376,10 +376,10 @@ class Store:
                 elif rel_g >= GREEK_GAMMA_JUMP_PCT and abs(pg) > 3e-4 and abs(g) > 3e-4:
                     kind = "GAMMA_SPIKE" if dg > 0 else "GAMMA_COLLAPSE"
                 # 150s meant the same strike could re-fire every ~2.5 min if
-                # it kept drifting past the threshold; 600s (10 min) keeps
+                # it kept drifting past the threshold; 900s (15 min) keeps
                 # the feed to one alert per strike per genuine move instead
                 # of a running commentary on it
-                if not kind or self._recent_unusual(symbol, r["strike"], ot, 600):
+                if not kind or self._recent_unusual(symbol, r["strike"], ot, 900):
                     continue
                 label = {
                     "DELTA_JUMP": "delta jump",
