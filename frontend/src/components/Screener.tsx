@@ -110,9 +110,9 @@ function Num({
 export function Screener() {
   const { screener, screenerProgress, screenerPresets, selectSymbol, setView, symClass, symClassOk } =
     useStore();
-  const openScrip = (sym: string) => {
+  const openChart = (sym: string) => {
     selectSymbol(sym, true);
-    setView("scrip");
+    setView("chart");
   };
   const [spec, setSpec] = useState<Spec>({ sortBy: "ivRank", sortDir: "desc" });
 
@@ -248,8 +248,8 @@ export function Screener() {
             {rows.map((r) => (
               <tr
                 key={r.symbol}
-                onClick={() => openScrip(r.symbol)}
-                title="Open scrip dashboard (chart + OI + chain)"
+                onClick={() => openChart(r.symbol)}
+                title="Open chart — switch to OI / chain from there"
                 className="click-row border-b border-term-border/40"
               >
                 <td className="px-2 py-1.5">
