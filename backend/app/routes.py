@@ -941,21 +941,24 @@ async def portfolio_greeks():
     def _empty() -> dict:
         return {"delta": 0.0, "gamma": 0.0, "theta": 0.0, "vega": 0.0, "positions": 0}
 
+    def _add(bucket: dict, leg: dict, qty: float) -> None:
+        bucket["positions"] += 1
+        for k in ("delta", "gamma", "theta", "vega"):
+            bucket[k] += _fnum(leg.get(k)) * qty
+
     def _accumulate(bucket: dict, symbol: str, expiry: str, strike: float, ot: str, qty: float) -> None:
         if not qty:
             return
         leg = _chain_leg(store, symbol, expiry, strike, ot)
-        if not leg:
-            return
-        bucket["positions"] += 1
-        for k in ("delta", "gamma", "theta", "vega"):
-            bucket[k] += _fnum(leg.get(k)) * qty
+        if leg:
+            _add(bucket, leg, qty)
 
     paper = _empty()
     for p in store.paper["positions"]:
         _accumulate(paper, p["symbol"], p["expiry"], p["strike"], p["optionType"], _fnum(p.get("qty")))
 
     live = _empty()
+    live_by_symbol: dict[str, dict] = {}
     from .brokers import get_broker
     from .brokers.flattrade import parse_noren_tsym
 
@@ -968,13 +971,28 @@ async def portfolio_greeks():
         for r in rows or []:
             netqty = _fnum(r.get("netqty"))
             parsed = parse_noren_tsym(r.get("tsym") or "") if netqty else None
-            if parsed:
-                _accumulate(live, parsed["symbol"], parsed["expiry"], parsed["strike"], parsed["optionType"], netqty)
+            if not parsed:
+                continue
+            leg = _chain_leg(store, parsed["symbol"], parsed["expiry"], parsed["strike"], parsed["optionType"])
+            if not leg:
+                continue
+            # one chain lookup feeds both the portfolio total and that
+            # symbol's own subtotal -- a blended total can hide two
+            # opposite bets (e.g. +80 NIFTY delta offset by -30 SENSEX)
+            # behind one calmer-looking number
+            _add(live, leg, netqty)
+            _add(live_by_symbol.setdefault(parsed["symbol"], _empty()), leg, netqty)
 
-    for bucket in (paper, live):
+    for bucket in (paper, live, *live_by_symbol.values()):
         for k in ("delta", "gamma", "theta", "vega"):
             bucket[k] = round(bucket[k], 4)
-    return {"paper": paper, "live": live}
+    live_symbols = [
+        {"symbol": sym, **bucket}
+        for sym, bucket in sorted(
+            live_by_symbol.items(), key=lambda kv: -abs(kv[1]["delta"])
+        )
+    ]
+    return {"paper": paper, "live": live, "liveBySymbol": live_symbols}
 
 
 # ---- alert delivery (webhook / Telegram) ----

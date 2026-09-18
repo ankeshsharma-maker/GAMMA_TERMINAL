@@ -412,6 +412,14 @@ export const api = {
     j<{
       paper: { delta: number; gamma: number; theta: number; vega: number; positions: number };
       live: { delta: number; gamma: number; theta: number; vega: number; positions: number };
+      liveBySymbol: {
+        symbol: string;
+        delta: number;
+        gamma: number;
+        theta: number;
+        vega: number;
+        positions: number;
+      }[];
     }>("/api/portfolio-greeks"),
 
   alertDeliveryGet: () =>
