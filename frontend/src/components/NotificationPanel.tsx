@@ -87,6 +87,7 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
             ["alerts", "Alerts", aNew],
             ["oiwatch", "OI Watch", 0],
             ["pricewatch", "Price Alerts", 0],
+            ["mtmwatch", "MTM Alerts", 0],
           ] as const
         ).map(([k, label, n]) => (
           <button
@@ -216,8 +217,10 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
           )
         ) : notifTab === "oiwatch" ? (
           <OiWatchTab />
-        ) : (
+        ) : notifTab === "pricewatch" ? (
           <PriceAlertTab />
+        ) : (
+          <MtmAlertTab />
         )}
       </div>
     </div>
@@ -520,6 +523,148 @@ function PriceAlertTab() {
                 {r.status === "triggered" ? (
                   <span className="text-up">
                     fired{r.triggeredSpot != null && ` @ ${r.triggeredSpot.toLocaleString("en-IN")}`}
+                  </span>
+                ) : (
+                  "waiting"
+                )}
+              </div>
+            </div>
+            <button onClick={() => del(r.id)} className="shrink-0 px-1 text-term-dim hover:text-down" title="Remove">
+              ✕
+            </button>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------- *
+ *  MTM Alerts — "tell me when total live P&L crosses ₹X" (one-shot)     *
+ * -------------------------------------------------------------------- */
+type MtmAlertRule = {
+  id: string;
+  level: number;
+  direction: "above" | "below";
+  basis: "today" | "mtm";
+  note: string;
+  status: "active" | "triggered" | "cancelled";
+  triggeredAt: number | null;
+  triggeredPnl: number | null;
+};
+
+function MtmAlertTab() {
+  const [rules, setRules] = useState<MtmAlertRule[]>([]);
+  const [level, setLevel] = useState("");
+  const [direction, setDirection] = useState<"above" | "below">("above");
+  const [basis, setBasis] = useState<"today" | "mtm">("today");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    api.mtmAlerts().then((d) => setRules((d.alerts || []) as MtmAlertRule[]), () => {});
+  };
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
+  }, []);
+
+  const create = async () => {
+    const lvl = Number(level);
+    if (!lvl) return alert("Set a ₹ level");
+    setBusy(true);
+    try {
+      await api.mtmAlertAdd({ level: lvl, direction, basis, note });
+      setLevel("");
+      setNote("");
+      load();
+    } catch (e: any) {
+      alert(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const del = async (id: string) => {
+    await api.mtmAlertDel(id);
+    load();
+  };
+
+  const SEG = "px-1.5 py-0.5 text-[10px]";
+  const on = "bg-term-accent text-white";
+  const off = "text-term-dim";
+  const active = rules.filter((r) => r.status !== "cancelled");
+
+  return (
+    <div className="flex flex-col">
+      <div className="space-y-1.5 border-b border-term-border/60 p-2 text-[10px]">
+        <div className="flex flex-wrap items-center gap-1">
+          <div className="flex overflow-hidden rounded border border-term-border">
+            {(["today", "mtm"] as const).map((b) => (
+              <button
+                key={b}
+                onClick={() => setBasis(b)}
+                className={`${SEG} ${basis === b ? on : off}`}
+                title={b === "today" ? "MTM + realised (today's total P&L)" : "Open MTM only"}
+              >
+                {b === "today" ? "P&L" : "MTM"}
+              </button>
+            ))}
+          </div>
+          <div className="flex overflow-hidden rounded border border-term-border">
+            {(["above", "below"] as const).map((d) => (
+              <button key={d} onClick={() => setDirection(d)} className={`${SEG} ${direction === d ? on : off}`}>
+                {d === "above" ? "≥" : "≤"}
+              </button>
+            ))}
+          </div>
+          <input
+            value={level}
+            onChange={(e) => setLevel(e.target.value.replace(/[^\d.-]/g, ""))}
+            placeholder="₹ level"
+            className="num w-20 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+          />
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="note (optional)"
+            className="min-w-0 flex-1 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+          />
+          <button
+            disabled={busy}
+            onClick={create}
+            className="ml-auto rounded bg-term-accent px-2 py-0.5 text-[10px] font-semibold text-white disabled:opacity-40"
+          >
+            {busy ? "…" : "+ Alert"}
+          </button>
+        </div>
+      </div>
+
+      {active.length === 0 ? (
+        <div className="p-4 text-2xs text-term-dim">
+          No MTM alerts yet. Set a ₹ level above — fires once into this Alerts feed (and
+          webhook/Telegram/push, if you've set those up) when your total live broker P&L reaches
+          it. Needs a connected broker; direction is against whichever basis (P&L or MTM) you pick.
+        </div>
+      ) : (
+        active.map((r) => (
+          <div
+            key={r.id}
+            className={`flex items-center justify-between border-b border-term-border/40 px-3 py-2 text-2xs ${
+              r.status === "triggered" ? "opacity-60" : ""
+            }`}
+          >
+            <div className="min-w-0">
+              <div className="font-semibold">
+                {r.basis === "mtm" ? "MTM" : "P&L"} {r.direction === "above" ? "≥" : "≤"} ₹
+                {r.level.toLocaleString("en-IN")}
+              </div>
+              <div className="text-term-dim">
+                {r.note && <>{r.note} · </>}
+                {r.status === "triggered" ? (
+                  <span className="text-up">
+                    fired{r.triggeredPnl != null && ` @ ₹${r.triggeredPnl.toLocaleString("en-IN")}`}
                   </span>
                 ) : (
                   "waiting"

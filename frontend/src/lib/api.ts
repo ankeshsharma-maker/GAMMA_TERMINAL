@@ -390,6 +390,15 @@ export const api = {
   priceAlertDel: (id: string) =>
     j<{ alerts: any[] }>(`/api/price-alerts/${id}`, { method: "DELETE" }),
 
+  mtmAlerts: () => j<{ alerts: any[] }>("/api/mtm-alerts"),
+  mtmAlertAdd: (body: Record<string, unknown>) =>
+    j<{ alert: any; alerts: any[] }>("/api/mtm-alerts", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  mtmAlertDel: (id: string) =>
+    j<{ alerts: any[] }>(`/api/mtm-alerts/${id}`, { method: "DELETE" }),
+
   journal: (params: { limit?: number; symbol?: string } = {}) => {
     const q = new URLSearchParams();
     if (params.limit) q.set("limit", String(params.limit));

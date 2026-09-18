@@ -1102,3 +1102,37 @@ def price_alerts_clear():
     from . import price_alerts
 
     return {"alerts": price_alerts.clear_finished()}
+
+
+@router.get("/mtm-alerts")
+def mtm_alerts_list():
+    from . import mtm_alerts
+
+    return {"alerts": mtm_alerts.list_alerts()}
+
+
+@router.post("/mtm-alerts")
+def mtm_alerts_add(body: dict):
+    from . import mtm_alerts
+
+    if body.get("level") in (None, ""):
+        raise HTTPException(status_code=422, detail="level is required")
+    try:
+        row = mtm_alerts.add_alert(body)
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"alert": row, "alerts": mtm_alerts.list_alerts()}
+
+
+@router.delete("/mtm-alerts/{aid}")
+def mtm_alerts_del(aid: str):
+    from . import mtm_alerts
+
+    return {"alerts": mtm_alerts.cancel(aid)}
+
+
+@router.post("/mtm-alerts/clear")
+def mtm_alerts_clear():
+    from . import mtm_alerts
+
+    return {"alerts": mtm_alerts.clear_finished()}

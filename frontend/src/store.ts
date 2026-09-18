@@ -75,7 +75,7 @@ interface State {
   unusualSeen: number;
   notifOpen: boolean;
   notifDock: boolean;
-  notifTab: "alerts" | "unusual" | "oiwatch" | "pricewatch";
+  notifTab: "alerts" | "unusual" | "oiwatch" | "pricewatch" | "mtmwatch";
   screener: ScreenerRow[];
   screenerProgress: ScreenerProgress | null;
   screenerPresets: Record<string, Record<string, unknown>>;
@@ -116,10 +116,10 @@ interface State {
   refreshChain: () => Promise<void>;
   setView: (v: View) => void;
   markAlertsSeen: () => void;
-  openNotif: (tab?: "alerts" | "unusual" | "oiwatch" | "pricewatch") => void;
+  openNotif: (tab?: "alerts" | "unusual" | "oiwatch" | "pricewatch" | "mtmwatch") => void;
   closeNotif: () => void;
   setNotifDock: (v: boolean) => void;
-  setNotifTab: (t: "alerts" | "unusual" | "oiwatch" | "pricewatch") => void;
+  setNotifTab: (t: "alerts" | "unusual" | "oiwatch" | "pricewatch" | "mtmwatch") => void;
   addWatch: (s: string) => Promise<void>;
   removeWatch: (s: string) => Promise<void>;
   loadWatchlists: () => Promise<void>;
