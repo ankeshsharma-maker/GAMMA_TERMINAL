@@ -354,15 +354,32 @@ class Store:
                 if not p:
                     continue
                 pd, pg = p
+                # a genuine previous reading of exactly (0, 0) is a stale/
+                # missing-data placeholder (a feed gap), not a real quote --
+                # treating "gap recovers to a real value" as a jump was the
+                # single biggest source of false positives
+                if pd == 0.0 and pg == 0.0:
+                    continue
                 dd = d - pd
                 dg = g - pg
                 rel_g = abs(dg) / max(abs(pg), 1e-6)
                 kind = None
-                if abs(dd) >= GREEK_DELTA_JUMP and abs(g) > 1e-5:
+                # deep ITM/OTM strikes sit near delta 0 or 1 with naturally
+                # near-zero gamma -- both the delta-jump and gamma-spike/
+                # collapse floors below require *meaningful* gamma on both
+                # sides of the move, not just "not literally zero", so a
+                # strike oscillating between two negligible gamma values
+                # (e.g. 0.0002 -> 0.0000, a real move but an irrelevant one)
+                # no longer qualifies as "unusual"
+                if abs(dd) >= GREEK_DELTA_JUMP and abs(g) > 3e-4:
                     kind = "DELTA_JUMP"
-                elif rel_g >= GREEK_GAMMA_JUMP_PCT and abs(pg) > 5e-5:
+                elif rel_g >= GREEK_GAMMA_JUMP_PCT and abs(pg) > 3e-4 and abs(g) > 3e-4:
                     kind = "GAMMA_SPIKE" if dg > 0 else "GAMMA_COLLAPSE"
-                if not kind or self._recent_unusual(symbol, r["strike"], ot, 150):
+                # 150s meant the same strike could re-fire every ~2.5 min if
+                # it kept drifting past the threshold; 600s (10 min) keeps
+                # the feed to one alert per strike per genuine move instead
+                # of a running commentary on it
+                if not kind or self._recent_unusual(symbol, r["strike"], ot, 600):
                     continue
                 label = {
                     "DELTA_JUMP": "delta jump",
