@@ -23,7 +23,7 @@ import logging
 import re
 import struct
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Awaitable, Callable
 from zoneinfo import ZoneInfo
 
@@ -109,26 +109,61 @@ _BROWSERISH = {
 TickHandler = Callable[[str, dict], Awaitable[None] | None]
 
 _TSYM_RE = re.compile(r"^([A-Z]+)(\d{2}[A-Z]{3}\d{2})([CP])(\d+(?:\.\d+)?)$")
+# BSE (SENSEX/BANKEX) Noren tsyms use a different shape from NFO's: no
+# 2-digit year, and the CE/PE suffix trails the strike instead of a single
+# C/P leading it -- e.g. "SENSEX26SEP74500CE" vs NFO's "NIFTY29SEP26C24050".
+# Confirmed against a real Flattrade PositionBook row after the plain NFO
+# regex above was silently skipping every open BSE leg ("no leg matched the
+# option tsym pattern").
+_BFO_TSYM_RE = re.compile(r"^([A-Z]+)(\d{2}[A-Z]{3})(\d+(?:\.\d+)?)(CE|PE)$")
+
+
+def _infer_year(datepart: str, fmt: str, now: datetime | None = None) -> datetime | None:
+    """BFO tsyms carry no year -- assume the current one, rolling to next
+    year if that would already be well in the past (a contract opened in
+    December and still held when checked in January)."""
+    now = now or datetime.now()
+    try:
+        d = datetime.strptime(f"{datepart}{now.year}", f"{fmt}%Y")
+    except ValueError:
+        return None
+    if d < now - timedelta(days=60):
+        d = d.replace(year=now.year + 1)
+    return d
 
 
 def parse_noren_tsym(tsym: str) -> dict | None:
     """Reverse of resolve_nfo's tsym build: 'NIFTY08SEP26C24050' ->
-    {symbol, expiry ('08-Sep-2026'), optionType, strike}. None if tsym isn't a
-    NFO option in that conventional form (e.g. an equity '-EQ' symbol)."""
-    m = _TSYM_RE.match((tsym or "").upper())
-    if not m:
-        return None
-    name, datepart, cp, strike_s = m.groups()
-    try:
-        d = datetime.strptime(datepart, "%d%b%y")
-    except ValueError:
-        return None
-    return {
-        "symbol": name,
-        "expiry": d.strftime("%d-%b-%Y"),
-        "optionType": "CE" if cp == "C" else "PE",
-        "strike": float(strike_s),
-    }
+    {symbol, expiry ('08-Sep-2026'), optionType, strike}. Also handles BSE's
+    year-less, suffix-CE/PE shape (see _BFO_TSYM_RE). None if tsym isn't an
+    option in either conventional form (e.g. an equity '-EQ' symbol)."""
+    up = (tsym or "").upper()
+    m = _TSYM_RE.match(up)
+    if m:
+        name, datepart, cp, strike_s = m.groups()
+        try:
+            d = datetime.strptime(datepart, "%d%b%y")
+        except ValueError:
+            return None
+        return {
+            "symbol": name,
+            "expiry": d.strftime("%d-%b-%Y"),
+            "optionType": "CE" if cp == "C" else "PE",
+            "strike": float(strike_s),
+        }
+    m = _BFO_TSYM_RE.match(up)
+    if m:
+        name, datepart, strike_s, ot = m.groups()
+        d = _infer_year(datepart, "%d%b")
+        if d is None:
+            return None
+        return {
+            "symbol": name,
+            "expiry": d.strftime("%d-%b-%Y"),
+            "optionType": ot,
+            "strike": float(strike_s),
+        }
+    return None
 
 
 class FlattradeBroker:
