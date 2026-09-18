@@ -21,6 +21,9 @@ _DEFAULT = {
     "targetAmount": 0.0,  # arm a target when P&L >= targetAmount (0 = off)
     "trailAmount": 0.0,   # once armed, stop rises with the peak P&L and
                            # fires if P&L falls trailAmount off that peak (0 = off)
+    "floorAmount": 0.0,   # fixed absolute P&L floor — fires if P&L ever drops
+                           # to/below this exact rupee level, regardless of
+                           # where the peak ends up (0 = off)
     "basis": "today",     # "today" = MTM + realised, "mtm" = open MTM only
     "armedAt": None,
     "triggeredAt": None,
@@ -44,7 +47,7 @@ def get() -> dict:
 
 def set_cfg(patch: dict) -> dict:
     cfg = _load()
-    for k in ("slAmount", "targetAmount", "trailAmount"):
+    for k in ("slAmount", "targetAmount", "trailAmount", "floorAmount"):
         if k in patch:
             try:
                 cfg[k] = max(0.0, float(patch[k] or 0))
@@ -82,7 +85,12 @@ async def tick() -> list[dict]:
     cfg = _load()
     if not cfg.get("enabled"):
         return []
-    if not (cfg.get("slAmount", 0) > 0 or cfg.get("targetAmount", 0) > 0 or cfg.get("trailAmount", 0) > 0):
+    if not (
+        cfg.get("slAmount", 0) > 0
+        or cfg.get("targetAmount", 0) > 0
+        or cfg.get("trailAmount", 0) > 0
+        or cfg.get("floorAmount", 0) > 0
+    ):
         return []
 
     from .brokers import get_broker
@@ -110,12 +118,18 @@ async def tick() -> list[dict]:
     cfg["lastPnl"] = round(pnl, 2)
 
     trail_amt = cfg.get("trailAmount", 0) or 0
-    if trail_amt > 0:
+    floor_amt = cfg.get("floorAmount", 0) or 0
+    if trail_amt > 0 or floor_amt > 0:
         cfg["peakPnl"] = max(cfg["peakPnl"], pnl) if cfg.get("peakPnl") is not None else pnl
 
     fixed_level = -cfg["slAmount"] if cfg["slAmount"] > 0 else None
     trail_level = (cfg["peakPnl"] - trail_amt) if (trail_amt > 0 and cfg.get("peakPnl") is not None) else None
-    levels = [v for v in (fixed_level, trail_level) if v is not None]
+    # the floor only arms once P&L has actually risen above it -- otherwise a
+    # floor set at +4000 would fire immediately while still down/at breakeven
+    floor_level = (
+        floor_amt if (floor_amt > 0 and cfg.get("peakPnl") is not None and cfg["peakPnl"] > floor_amt) else None
+    )
+    levels = [v for v in (fixed_level, trail_level, floor_level) if v is not None]
     stop_level = max(levels) if levels else None
 
     hit_sl = stop_level is not None and pnl <= stop_level
@@ -125,7 +139,8 @@ async def tick() -> list[dict]:
         return []
 
     is_trail = hit_sl and trail_level is not None and stop_level == trail_level
-    kind = "TARGET" if hit_tgt else ("TRAIL" if is_trail else "SL")
+    is_floor = hit_sl and not is_trail and floor_level is not None and stop_level == floor_level
+    kind = "TARGET" if hit_tgt else ("TRAIL" if is_trail else ("FLOOR" if is_floor else "SL"))
     # flatten every open position
     squared = 0
     for r in open_rows:
@@ -151,6 +166,8 @@ async def tick() -> list[dict]:
     cfg["triggeredAt"] = time.time()
     if is_trail:
         thresh = f"≤ ₹{stop_level:.0f} (₹{trail_amt:.0f} off peak ₹{cfg['peakPnl']:.0f})"
+    elif is_floor:
+        thresh = f"≤ ₹{cfg['floorAmount']:.0f} (fixed profit floor)"
     elif hit_sl:
         thresh = f"≤ −₹{cfg['slAmount']:.0f}"
     else:
