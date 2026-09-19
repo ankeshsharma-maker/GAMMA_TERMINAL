@@ -83,7 +83,7 @@ function applySpec(rows: ScreenerRow[], s: Spec): ScreenerRow[] {
   });
 }
 
-function Num({
+export function Num({
   label,
   value,
   onChange,

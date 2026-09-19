@@ -1,6 +1,100 @@
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
-import { compact, nf, signColor } from "../lib/format";
-import type { ScanRow } from "../types";
+import { compact, nf, sk, signColor } from "../lib/format";
+import type { HotStrike, ScanRow } from "../types";
+import { Num } from "./Screener";
+
+type Spec = {
+  scoreMin?: number;
+  dteMax?: number;
+  building?: boolean;
+  hotOnly?: boolean;
+  bias?: "UP" | "DOWN";
+};
+
+const LS_KEY = "blastFilter";
+
+const loadSpec = (): Spec => {
+  try {
+    const v = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+    return v && typeof v === "object" ? v : {};
+  } catch {
+    return {};
+  }
+};
+
+const matches = (r: ScanRow, s: Spec) =>
+  (s.scoreMin == null || r.score >= s.scoreMin) &&
+  (s.dteMax == null || r.dte <= s.dteMax) &&
+  (!s.building || r.building === true) &&
+  (!s.hotOnly || (r.hotStrikes?.length ?? 0) > 0) &&
+  (!s.bias || r.bias === s.bias);
+
+const PRESETS: [string, string, Spec][] = [
+  [
+    "Building + hot strike",
+    "Same trigger as the 'starting to build' alert: the score is climbing fast AND a near-ATM strike has an outsized OI move",
+    { building: true, hotOnly: true },
+  ],
+  ["Building", "Blast score climbing fast over the last 5 minutes", { building: true }],
+  ["Hot OI strike", "A near-ATM strike with an outsized OI move in the last ~15 minutes", { hotOnly: true }],
+  ["Expiry day", "Days to expiry ≤ 1 — the only time the score can reach its alert levels", { dteMax: 1 }],
+  ["Score ≥ 60", "Already at the warning level", { scoreMin: 60 }],
+];
+
+const specKey = (s: Spec) =>
+  JSON.stringify(Object.entries(s).filter(([, v]) => v != null && v !== false).sort());
+
+// same 4-colour OI scheme as the OI Profile: call add red, call cut amber, put add green, put cut sky
+const hotStyle = (h: HotStrike) =>
+  h.side === "CE" ? (h.chg >= 0 ? "text-down" : "text-amber-400") : h.chg >= 0 ? "text-up" : "text-sky-400";
+
+function Chip({
+  on,
+  onClick,
+  title,
+  children,
+}: {
+  on?: boolean;
+  onClick: () => void;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`rounded px-1.5 py-0.5 text-[10px] ${on ? "bg-term-accent text-white" : "bg-term-panel text-term-dim"}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function HotCell({ hs }: { hs?: HotStrike[] }) {
+  if (!hs?.length) return <span className="text-term-dim">—</span>;
+  return (
+    <div className="flex flex-col gap-0.5">
+      {hs.map((h) => (
+        <span
+          key={`${h.strike}${h.side}`}
+          className={`num whitespace-nowrap text-[10.5px] font-semibold ${hotStyle(h)}`}
+          title={`${h.side} OI now ${nf(h.oi / 1e5, 1)}L · ${h.chg >= 0 ? "built" : "unwound"} ${nf(
+            Math.abs(h.chg) / 1e5,
+            1
+          )}L (${nf(Math.abs(h.pct), 0)}%) in ~${h.mins} min`}
+        >
+          {sk(h.strike)} {h.side} {h.chg >= 0 ? "+" : "−"}
+          {nf(Math.abs(h.chg) / 1e5, 1)}L{" "}
+          <span className="font-normal opacity-80">
+            ({h.pct >= 0 ? "+" : "−"}
+            {nf(Math.abs(h.pct), 0)}%)
+          </span>
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const scoreColor = (s: number) =>
   s >= 80 ? "bg-down" : s >= 60 ? "bg-amber-500" : s >= 40 ? "bg-term-accent" : "bg-term-border";
@@ -77,19 +171,87 @@ const TD = ({
 
 export function Scanner() {
   const { scan, selectSymbol, setView, symClassOk } = useStore();
-  const rows = [...scan].filter((r) => symClassOk(r.symbol)).sort((a, b) => b.score - a.score);
+  const [spec, setSpec] = useState<Spec>(loadSpec);
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(spec));
+    } catch {
+      /* storage blocked: the filter just won't survive a reload */
+    }
+  }, [spec]);
+  const patch = (p: Partial<Spec>) => setSpec((s) => ({ ...s, ...p }));
+
+  const all = useMemo(() => scan.filter((r) => symClassOk(r.symbol)), [scan, symClassOk]);
+  const rows = useMemo(
+    () => all.filter((r) => matches(r, spec)).sort((a, b) => b.score - a.score),
+    [all, spec]
+  );
   const openScrip = (sym: string) => {
     selectSymbol(sym, true);
     setView("scrip");
   };
+  const filtered = specKey(spec) !== "[]";
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto p-2">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-term-border bg-term-panel2 px-3 py-2">
+        <Num label="Score≥" value={spec.scoreMin} onChange={(v) => patch({ scoreMin: v })} />
+        <Num label="DTE≤" value={spec.dteMax} onChange={(v) => patch({ dteMax: v })} />
+        <Chip
+          on={spec.building}
+          onClick={() => patch({ building: spec.building ? undefined : true })}
+          title="Blast score climbing fast over the last 5 minutes (the trigger of the 'starting to build' alert)"
+        >
+          Building
+        </Chip>
+        <Chip
+          on={spec.hotOnly}
+          onClick={() => patch({ hotOnly: spec.hotOnly ? undefined : true })}
+          title="A near-ATM strike with an outsized OI move in the last ~15 minutes"
+        >
+          Hot OI strike
+        </Chip>
+        <div className="flex gap-1">
+          {(["UP", "DOWN"] as const).map((b) => (
+            <Chip key={b} on={spec.bias === b} onClick={() => patch({ bias: spec.bias === b ? undefined : b })}>
+              {b === "UP" ? "Bias up" : "Bias down"}
+            </Chip>
+          ))}
+        </div>
+        <button onClick={() => setSpec({})} className="btn px-2 py-0.5 text-2xs">
+          Reset
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1 border-b border-term-border bg-term-panel2 px-3 py-1 text-2xs">
+        <span className="text-term-dim">Presets:</span>
+        {PRESETS.map(([name, hint, p]) => (
+          <button
+            key={name}
+            title={hint}
+            onClick={() => setSpec(p)}
+            className={`rounded border px-1.5 py-0.5 ${
+              specKey(spec) === specKey(p)
+                ? "border-term-accent bg-term-accent/20 text-term-text"
+                : "border-term-border text-term-dim hover:bg-term-border hover:text-term-text"
+            }`}
+          >
+            {name}
+          </button>
+        ))}
+        <span className="ml-auto text-term-dim">
+          {rows.length} of {all.length} watchlist symbols match
+        </span>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-auto p-2">
       <table className="grid-table text-xs">
         <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
           <tr>
             <TH>Symbol</TH>
             <TH>Blast Score</TH>
+            <TH r>Δ score 5m</TH>
+            <TH>Hot OI strike (~15m)</TH>
             <TH>Sub-scores (DTE·Γ·Brk·Strd·IV·OI·Pin)</TH>
             <TH>Bias</TH>
             <TH r>DTE</TH>
@@ -107,8 +269,25 @@ export function Scanner() {
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={14} className="border border-term-border px-3 py-10 text-center text-term-dim">
-                warming up — the scanner needs a few polls of history…
+              <td colSpan={16} className="border border-term-border px-3 py-10 text-center text-term-dim">
+                {all.length === 0 ? (
+                  "warming up — the scanner needs a few polls of history…"
+                ) : (
+                  <>
+                    No watchlist symbol matches {filtered ? "these filters" : "yet"} right now.
+                    <br />
+                    <span className="text-[10px]">
+                      The scanner covers your watchlist symbols — add a symbol to a watchlist to include it.
+                    </span>
+                    {filtered && (
+                      <div className="mt-2">
+                        <button onClick={() => setSpec({})} className="btn px-2 py-0.5 text-2xs">
+                          Reset filters
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
               </td>
             </tr>
           )}
@@ -127,6 +306,24 @@ export function Scanner() {
               </TD>
               <TD>
                 <ScoreCell r={r} />
+              </TD>
+              <TD cls="num text-right">
+                {r.scoreChg5m == null ? (
+                  <span className="text-term-dim">—</span>
+                ) : (
+                  <span className={`${signColor(r.scoreChg5m)} ${r.building ? "font-bold" : ""}`}>
+                    {r.scoreChg5m > 0 ? "+" : ""}
+                    {nf(r.scoreChg5m, 0)}
+                  </span>
+                )}
+                {r.building && (
+                  <span className="ml-1 rounded bg-amber-500/20 px-1 text-[9px] font-semibold text-amber-400">
+                    BUILDING
+                  </span>
+                )}
+              </TD>
+              <TD>
+                <HotCell hs={r.hotStrikes} />
               </TD>
               <TD>
                 <CompBars c={r.components} />
@@ -150,6 +347,7 @@ export function Scanner() {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

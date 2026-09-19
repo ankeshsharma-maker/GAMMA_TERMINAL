@@ -242,6 +242,13 @@ def _fmt_hot(hot: list[dict]) -> str:
     return f"OI {hot[0]['mins']}m: " + ", ".join(parts)
 
 
+def score_change(store, symbol: str, ts: float, score: float) -> float | None:
+    """Score points gained over the last WIN_SHORT_S; None until the score
+    history reaches back that far (fresh restart / early session)."""
+    ago = _at(store.get_scan_history(symbol), ts - WIN_SHORT_S)
+    return round(score - ago["score"], 1) if ago else None
+
+
 def _emit_alerts(store, row: dict, prev: dict | None, chain: dict | None = None) -> list[dict]:
     from .history_archive import in_session
 
@@ -263,11 +270,13 @@ def _emit_alerts(store, row: dict, prev: dict | None, chain: dict | None = None)
         store.add_alert(alert)
         fired.append(alert)
 
-    hot_cache: list[list[dict]] = []
+    # run() attaches these to the row (the app's filter reads the same values);
+    # a row built elsewhere just gets them computed on demand
+    hot_cache: list[list[dict]] = [row["hotStrikes"][:2]] if "hotStrikes" in row else []
 
     def hot() -> list[dict]:
         if not hot_cache:
-            hot_cache.append(hot_strikes(store, sym, chain) if chain else [])
+            hot_cache.append(hot_strikes(store, sym, chain, limit=2) if chain else [])
         return hot_cache[0]
 
     def with_oi(msg: str) -> str:
@@ -282,8 +291,8 @@ def _emit_alerts(store, row: dict, prev: dict | None, chain: dict | None = None)
     elif BUILD_MIN_SCORE <= sc < 60 and in_session(row["ts"]):
         # "started building": the score has climbed fast AND a strike is seeing an
         # outsized OI move. Below 60 only -- from 60 up, warn/crit already cover it.
-        ago = _at(store.get_scan_history(sym), row["ts"] - WIN_SHORT_S)
-        rise = sc - ago["score"] if ago else 0.0
+        chg = row["scoreChg5m"] if "scoreChg5m" in row else score_change(store, sym, row["ts"], sc)
+        rise = chg or 0.0
         if rise >= BUILD_MIN_RISE and hot():
             recent = sum(
                 1 for a in store.get_alerts(200)
@@ -315,6 +324,11 @@ def run(store, extra: set[str] | None = None) -> dict:
             continue
         prev = store.scan_results.get(sym)
         row = evaluate(sym, chain, store.get_history(sym))
+        # extra fields for the app's Gamma Blast filter; the "building" flag is
+        # the alert's own trigger minus the <60 cap, so the two can't disagree
+        row["scoreChg5m"] = score_change(store, sym, row["ts"], row["score"])
+        row["hotStrikes"] = hot_strikes(store, sym, chain, limit=3)
+        row["building"] = row["score"] >= BUILD_MIN_SCORE and (row["scoreChg5m"] or 0.0) >= BUILD_MIN_RISE
         store.set_scan(sym, row)
         new_alerts += _emit_alerts(store, row, prev, chain)
     return {"scan": store.get_scan(), "newAlerts": new_alerts}

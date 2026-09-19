@@ -185,10 +185,25 @@ export interface BrokerFunds {
 
 export type ConnStatus = "connecting" | "open" | "closed";
 
+/** A near-ATM strike whose OI moved unusually hard (chg > 0 = build, < 0 = unwind). */
+export interface HotStrike {
+  strike: number;
+  side: "CE" | "PE";
+  chg: number;
+  oi: number;
+  pct: number;
+  mins: number;
+}
+
 export interface ScanRow {
   symbol: string;
   ts: number;
   score: number;
+  /** score points gained over the last 5 min; null until history reaches back that far */
+  scoreChg5m?: number | null;
+  hotStrikes?: HotStrike[];
+  /** same trigger as the "starting to build" alert, minus its <60 cap */
+  building?: boolean;
   bias: "UP" | "DOWN" | "NEUTRAL";
   dte: number;
   spot: number;
