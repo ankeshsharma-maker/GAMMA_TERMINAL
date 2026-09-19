@@ -23,7 +23,7 @@ from .config import (
     SHORT_OPTION_MARGIN_PCT,
     SCREENER_IV_HISTORY_MAXLEN,
 )
-from . import db
+from . import db, history_archive
 from .processing import build_chain, lot_size
 
 _WATCHLIST_FILE = DATA_DIR / "watchlist.json"  # legacy pre-multi-list schema; read-only upgrade path
@@ -290,7 +290,7 @@ class Store:
             atm_ce_vg = atm_row["call"].get("vega")
             atm_pe_vg = atm_row["put"].get("vega")
         dq.append(
-            {
+            row := {
                 "t": now,
                 "expiry": expiry,
                 "spot": chain["spot"],
@@ -320,6 +320,7 @@ class Store:
                 "peVol": chain["totals"].get("peVol"),
             }
         )
+        history_archive.record(symbol, row)
         self._hist_writes += 1
         if self._hist_writes % 20 == 0:
             self._persist_history(symbol)
