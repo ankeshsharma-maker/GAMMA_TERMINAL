@@ -466,9 +466,11 @@ export const useStore = create<State>((set, get) => ({
       ...(keepView ? {} : { view: "scrip" }),
     });
     socket?.subscribe(s, null);
+    // a slow response for a symbol you've already stepped past (Next / Prev clicked
+    // quickly) must not land on the symbol you're looking at now
     api.chain(s).then(
-      (c) => set({ chain: c, expiry: c.expiry }),
-      (e) => set({ chainError: String(e.message || e) })
+      (c) => get().symbol === s && set({ chain: c, expiry: c.expiry }),
+      (e) => get().symbol === s && set({ chainError: String(e.message || e) })
     );
   },
 
@@ -477,8 +479,8 @@ export const useStore = create<State>((set, get) => ({
     set({ expiry: e });
     socket?.subscribe(symbol, e);
     api.chain(symbol, e).then(
-      (c) => set({ chain: c, chainError: null }),
-      (err) => set({ chainError: String(err.message || err) })
+      (c) => get().symbol === symbol && set({ chain: c, chainError: null }),
+      (err) => get().symbol === symbol && set({ chainError: String(err.message || err) })
     );
   },
 
@@ -486,8 +488,8 @@ export const useStore = create<State>((set, get) => ({
     const { symbol, expiry } = get();
     if (!symbol) return Promise.resolve();
     return api.chain(symbol, expiry ?? undefined).then(
-      (c) => set({ chain: c, chainError: null }),
-      (err) => set({ chainError: String(err.message || err) })
+      (c) => void (get().symbol === symbol && set({ chain: c, chainError: null })),
+      (err) => void (get().symbol === symbol && set({ chainError: String(err.message || err) }))
     );
   },
 

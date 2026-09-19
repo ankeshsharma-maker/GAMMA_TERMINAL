@@ -205,6 +205,12 @@ export function Chart() {
     [symbol, symChoices, symClass]
   );
   const [data, setData] = useState<ChartData | null>(null);
+  // why the current symbol's chart couldn't load (null = no failure), and a nudge to retry it
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
+  // a new symbol / instrument / interval just started loading: re-frame the view
+  // once its first candles land, instead of trusting the previous chart's scroll position
+  const reframeRef = useRef(false);
   const [intervalS, setIntervalS] = useState(getIntervalS); // default from Settings
   const [rangeD, setRangeD] = useState(1); // visible-history window in days (1 = intraday / 1D); 0 = all
   const [split, setSplit] = useState(false);
@@ -233,23 +239,17 @@ export function Chart() {
   const isOption = instrument.includes("|");
   const strikes = chain?.rows.map((r) => r.strike) ?? [];
   const [pickStrike, setPickStrike] = useState<number>(0);
-  const [strikeCount, setStrikeCount] = useState(10); // 0 = all
   useEffect(() => {
     if (chain?.atmStrike) setPickStrike(chain.atmStrike);
   }, [chain?.atmStrike, chain?.symbol]);
-  const shownStrikes = useMemo(() => {
-    const atmS = chain?.atmStrike;
-    let list = strikes;
-    if (strikeCount > 0 && strikeCount < strikes.length && atmS) {
-      list = [...strikes]
-        .sort((a, b) => Math.abs(a - atmS) - Math.abs(b - atmS))
-        .slice(0, strikeCount)
-        .sort((a, b) => a - b);
-    }
-    return list.includes(pickStrike) || !pickStrike
-      ? list
-      : [...list, pickStrike].sort((a, b) => a - b);
-  }, [strikes, strikeCount, chain?.atmStrike, pickStrike]);
+  // every strike is listed; the picker scrolls the ATM one into view when opened
+  const shownStrikes = useMemo(
+    () =>
+      strikes.includes(pickStrike) || !pickStrike
+        ? strikes
+        : [...strikes, pickStrike].sort((a, b) => a - b),
+    [strikes, pickStrike]
+  );
   const chartLeg = (ot: "CE" | "PE") => {
     if (chain && pickStrike) setInstrument(`${symbol}|${chain.expiry}|${pickStrike}|${ot}`);
   };
@@ -609,6 +609,7 @@ export function Chart() {
   const tickFreshRef = useRef(false);
   const feedDownRef = useRef(false);
   const lastSymRef = useRef("");
+  const lastFrameRef = useRef("");
   useEffect(() => {
     let alive = true;
     let lastAt = 0;
@@ -620,8 +621,14 @@ export function Chart() {
       lastAt = now;
       api
         .chart(symbol, intervalS, instrument || undefined, dataSrc)
-        .then((d) => alive && setData(d as ChartData))
-        .catch(() => {});
+        .then((d) => {
+          if (!alive) return;
+          setLoadErr(null);
+          setData(d as ChartData);
+        })
+        // never fail silently: a chart that can't load says so (and offers a retry)
+        // instead of sitting on "loading…" forever
+        .catch((e) => alive && setLoadErr(String(e?.message || e)));
     };
     // only blank when the underlying instrument actually changed — a plain
     // timeframe / source switch keeps the current candles on screen and just
@@ -629,7 +636,13 @@ export function Chart() {
     const symKey = `${symbol}|${instrument}`;
     if (lastSymRef.current !== symKey) {
       setData(null);
+      setLoadErr(null);
       lastSymRef.current = symKey;
+    }
+    const frameKey = `${symKey}|${intervalS}`;
+    if (lastFrameRef.current !== frameKey) {
+      reframeRef.current = true;
+      lastFrameRef.current = frameKey;
     }
     load(true);
     const t = setInterval(() => load(false), 2000);
@@ -637,7 +650,7 @@ export function Chart() {
       alive = false;
       clearInterval(t);
     };
-  }, [symbol, intervalS, instrument, dataSrc]);
+  }, [symbol, intervalS, instrument, dataSrc, reloadTick]);
 
   const candles = useMemo(() => data?.candles ?? [], [data]);
 
@@ -667,7 +680,14 @@ export function Chart() {
   const prevPriceRef = useRef<{ key: string; candles: Candle[] }>({ key: "", candles: [] });
 
   useEffect(() => {
-    if (!chartRef.current || !data) return;
+    if (!chartRef.current) return;
+    if (!data) {
+      // a new symbol / instrument is loading: drop the previous chart's candles and
+      // overlays, so the old chart never sits on screen under the new name
+      Object.values(s.current).forEach((ser) => ser.setData([]));
+      prevPriceRef.current = { key: "", candles: [] };
+      return;
+    }
     const c = s.current;
 
     // route price data to the selected chart-type series. When only the tail
@@ -886,7 +906,12 @@ export function Chart() {
       });
     }
 
-    applyRange(false);
+    // first candles for a new symbol / instrument / interval: always re-frame (the
+    // "don't snap back" guard compares the old view position with the NEW candle
+    // count and could otherwise leave the chart parked on a stale stretch)
+    const reframe = reframeRef.current && priceCandles.length > 0;
+    if (reframe) reframeRef.current = false;
+    applyRange(reframe);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [priceCandles, ctype, data, eff, mtf, indHidden, intervalS]);
 
@@ -958,13 +983,16 @@ export function Chart() {
     return leg && leg.ltp != null ? leg.ltp : null;
   }, [isOption, instrument, chain]);
 
+  // only trust the chain if it belongs to the symbol on screen (a late response for a
+  // symbol you've stepped past must never nudge this chart's last candle)
+  const chainMine = chain?.symbol === symbol ? chain : null;
   const livePx = isOption
     ? optLegPx
     : instrument.toUpperCase() === "STRADDLE"
-    ? chain?.atmStraddle ?? null
+    ? chainMine?.atmStraddle ?? null
     : tickAgeOk
     ? liveTick!.ltp
-    : chain?.spot ?? null;
+    : chainMine?.spot ?? null;
 
   useEffect(() => {
     if (!chartRef.current || !data || !priceCandles.length || livePx == null) return;
@@ -1171,6 +1199,14 @@ export function Chart() {
     });
   }, [eff.gammaFlip, chain?.rows, data]);
 
+  // what the on-canvas loading / error / empty message calls this chart
+  const chartLabel = isOption
+    ? instrument.split("|").filter((_, i) => i !== 1).join(" ")
+    : instrument.toUpperCase() === "STRADDLE"
+    ? `${symbol} straddle`
+    : symbol;
+  const noCandles = !!data && priceCandles.length === 0;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {!barOpen && (
@@ -1281,21 +1317,6 @@ export function Chart() {
         {/* pick any strike's CE / PE */}
         {strikes.length > 0 && (
           <div className="flex items-center gap-0.5 rounded border border-term-dim/70 px-1">
-            {([5, 10, 20, 0] as const).map((c) => (
-              <button
-                key={c}
-                onClick={() => setStrikeCount(c)}
-                className={`rounded border px-1 text-[9px] font-semibold ${
-                  strikeCount === c
-                    ? "border-term-accent bg-term-accent/25 text-term-text"
-                    : "border-term-dim/50 text-term-dim hover:text-term-text"
-                }`}
-                title={c === 0 ? "All strikes" : `${c} strikes around ATM`}
-              >
-                {c === 0 ? "All" : c}
-              </button>
-            ))}
-            <span className="mx-0.5 h-3 w-px bg-term-border" />
             <SelectMenu
               value={pickStrike}
               options={shownStrikes.map(
@@ -1725,6 +1746,8 @@ export function Chart() {
                 : data.candleSource === "upstox"
                 ? `${data.candles.length} bars · Upstox${data.hasVolume ? " + vol" : ""}`
                 : `${data.points} samples · sampled (connect Flattrade / Upstox for real bars)`
+              : loadErr
+              ? "⚠ load failed"
               : "loading…"}
           </span>
         </span>
@@ -1732,6 +1755,45 @@ export function Chart() {
 
       <div className={`relative min-h-[220px] ${split ? "flex-[3]" : "flex-1"}`}>
         <div ref={wrapRef} className="absolute inset-0" />
+        {(!data || noCandles) && (
+          <div
+            className={`absolute inset-0 z-20 flex items-center justify-center p-4 ${
+              loadErr && !data ? "" : "pointer-events-none"
+            }`}
+          >
+            <div className="max-w-[320px] rounded-lg border border-term-dim/70 bg-term-panel/95 px-4 py-3 text-center text-xs shadow-xl">
+              {!data && !loadErr && (
+                <div className="flex items-center justify-center gap-2 text-term-text">
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-term-dim/50 border-t-term-accent" />
+                  Loading {chartLabel}…
+                </div>
+              )}
+              {!data && loadErr && (
+                <>
+                  <div className="font-semibold text-down">Couldn't load {chartLabel}</div>
+                  <div className="mt-1 break-words text-[10px] text-term-dim">{loadErr}</div>
+                  <button
+                    onClick={() => {
+                      setLoadErr(null);
+                      setReloadTick((t) => t + 1);
+                    }}
+                    className="chipbtn mt-2 text-term-text"
+                  >
+                    Retry
+                  </button>
+                </>
+              )}
+              {noCandles && (
+                <>
+                  <div className="font-semibold text-term-text">No chart data for {chartLabel}</div>
+                  <div className="mt-1 text-[10px] text-term-dim">
+                    The data source returned no candles for this timeframe. Try another timeframe.
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
         {oscTop != null && (
           <>
             <div
