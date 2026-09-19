@@ -166,7 +166,7 @@ function AlertDeliverySection() {
       <Row label="Send alerts out" hint="Webhook, Telegram and/or push, on top of the in-app feed">
         <button
           onClick={() => save({ enabled: !enabled })}
-          className={`h-4 w-8 shrink-0 rounded-full transition-colors ${enabled ? "bg-up" : "bg-term-border"} relative`}
+          className={`h-4 w-8 shrink-0 rounded-full transition-colors ${enabled ? "bg-up" : "bg-term-border ring-1 ring-inset ring-term-dim/60"} relative`}
         >
           <span
             className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${enabled ? "left-4" : "left-0.5"}`}
@@ -403,7 +403,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         <span className="text-sm font-semibold">Settings</span>
         <button
           onClick={onClose}
-          className="rounded border border-term-border px-2.5 py-1 text-2xs text-term-dim hover:text-term-text"
+          className="rounded border border-term-dim/70 px-2.5 py-1 text-2xs text-term-dim hover:text-term-text"
         >
           Done
         </button>
@@ -417,7 +417,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </Row>
           {!isMobile && (
             <Row label="Interface scale" hint="Shrink the whole desktop layout to fit more on screen">
-              <div className="flex items-center overflow-hidden rounded border border-term-border text-2xs">
+              <div className="segx items-center text-2xs">
                 <button
                   onClick={() => {
                     const z = Math.max(UI_ZOOM_MIN, zoom - UI_ZOOM_STEP);

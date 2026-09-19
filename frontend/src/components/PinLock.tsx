@@ -107,7 +107,7 @@ function Keypad({ value, onKey }: { value: string; onKey: (k: string) => void })
             <button
               key={i}
               onClick={() => onKey(k)}
-              className="rounded-lg border border-term-border bg-term-bg py-4 text-2xl font-semibold hover:bg-term-border"
+              className="rounded-lg border border-term-dim/70 bg-term-bg py-4 text-2xl font-semibold hover:bg-term-border"
             >
               {k}
             </button>

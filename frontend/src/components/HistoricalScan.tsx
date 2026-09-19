@@ -137,7 +137,7 @@ export function HistoricalScan() {
             <button
               key={s}
               onClick={() => toggle(stateF, setStateF, s)}
-              className={`rounded px-1.5 py-0.5 ${stateF.has(s) ? STATE_CLS[s] : "bg-term-panel2 text-term-dim"}`}
+              className={`chipbtn ${stateF.has(s) ? `${STATE_CLS[s]} border-transparent` : ""}`}
             >
               {s.replace("LONG ", "L ").replace("SHORT ", "S ").replace(" BUILDUP", " B")}
             </button>
@@ -147,7 +147,7 @@ export function HistoricalScan() {
             <button
               key={b}
               onClick={() => toggle(biasF, setBiasF, b)}
-              className={`rounded px-1.5 py-0.5 ${biasF.has(b) ? BIAS_CLS[b] : "bg-term-panel2 text-term-dim"}`}
+              className={`chipbtn ${biasF.has(b) ? `${BIAS_CLS[b]} border-transparent` : ""}`}
             >
               {b}
             </button>

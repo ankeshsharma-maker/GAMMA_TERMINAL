@@ -1065,7 +1065,7 @@ export function AutoBotView() {
         <button
           onClick={() => setMaster(!bot?.master)}
           className={`rounded px-3 py-1 text-xs font-semibold ${
-            bot?.master ? "bg-up text-white" : "border border-term-border bg-term-panel text-term-dim"
+            bot?.master ? "bg-up text-white" : "border border-term-dim/70 bg-term-panel text-term-dim"
           }`}
         >
           {bot?.master ? "● ENGINE ON" : "○ engine off"}
@@ -1116,8 +1116,10 @@ export function AutoBotView() {
           <button
             key={k}
             onClick={() => setTab(k)}
-            className={`rounded px-2.5 py-1 font-semibold ${
-              tab === k ? "bg-term-accent text-white" : "text-term-dim hover:bg-term-border"
+            className={`rounded border px-2.5 py-1 font-semibold ${
+              tab === k
+                ? "border-term-accent bg-term-accent text-white"
+                : "border-term-dim/70 text-term-dim hover:bg-term-border"
             }`}
           >
             {label}
@@ -1198,7 +1200,7 @@ export function AutoBotView() {
                   <button
                     onClick={() => enableRule(r.id, !r.enabled)}
                     className={`h-4 w-8 shrink-0 rounded-full transition-colors ${
-                      r.enabled ? "bg-up" : "bg-term-border"
+                      r.enabled ? "bg-up" : "bg-term-border ring-1 ring-inset ring-term-dim/60"
                     } relative`}
                     title={r.enabled ? "enabled" : "disabled"}
                   >
@@ -1412,7 +1414,7 @@ function AutoBacktestTab({
         </span>
         <button
           onClick={onDone}
-          className="ml-auto rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:border-term-accent hover:text-term-text"
+          className="ml-auto rounded border border-term-dim/70 px-2 py-1 text-2xs text-term-dim hover:border-term-accent hover:text-term-text"
         >
           ✕ Close · back to Rules
         </button>

@@ -72,10 +72,10 @@ export function ExpiryTabs() {
           <button
             key={e}
             onClick={() => selectExpiry(e)}
-            className={`shrink-0 rounded px-2 py-1 text-2xs num transition-colors ${
+            className={`shrink-0 rounded border px-2 py-1 text-2xs num transition-colors ${
               cur === e
-                ? "bg-term-accent text-white"
-                : "bg-term-panel text-term-dim hover:bg-term-border"
+                ? "border-term-accent bg-term-accent text-white"
+                : "border-term-dim/70 bg-term-panel text-term-dim hover:bg-term-border"
             }`}
           >
             {e}

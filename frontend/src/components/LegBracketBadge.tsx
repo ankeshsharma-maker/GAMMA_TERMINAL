@@ -128,7 +128,7 @@ export function LegBracketBadge({
     return (
       <button
         onClick={() => setOpen(true)}
-        className="rounded border border-term-border px-1 text-[10px] text-term-dim hover:text-term-text"
+        className="rounded border border-term-dim/70 px-1 text-[10px] text-term-dim hover:text-term-text"
         title="Auto square-off this position at a target / stop-loss"
       >
         + SL / TGT
@@ -141,7 +141,7 @@ export function LegBracketBadge({
       className="mt-1 flex flex-wrap items-center gap-1 rounded border border-amber-500/40 bg-term-panel p-1 text-[10px]"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="flex overflow-hidden rounded border border-term-border">
+      <div className="segx">
         {(["pts", "pct", "rs"] as const).map((u) => (
           <button key={u} onClick={() => setUnit(u)} className={`${SEG} ${unit === u ? on : off}`}>
             {u === "pts" ? "Pts" : u === "pct" ? "%" : "₹"}

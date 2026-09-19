@@ -1628,7 +1628,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
             <button
               onClick={() => setTools((t) => !t)}
               className={`rounded border px-1.5 py-0.5 ${
-                tools ? "border-term-accent text-term-accent" : "border-term-border"
+                tools ? "border-term-accent text-term-accent" : "border-term-dim/70 text-term-dim"
               }`}
               title="Show / hide the chart controls"
             >

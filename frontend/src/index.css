@@ -118,10 +118,18 @@ select:focus-visible {
     @apply border-b border-r border-term-border/60 last:border-r-0;
   }
   .seg {
-    @apply flex overflow-hidden rounded border border-term-border/60 text-2xs;
+    @apply flex overflow-hidden rounded border border-term-dim/70 text-2xs;
   }
   .seg > button {
-    @apply px-2.5 py-1 border-r border-term-border/60 last:border-r-0 text-term-dim transition-colors;
+    @apply px-2.5 py-1 border-r border-term-dim/40 last:border-r-0 text-term-dim transition-colors;
+  }
+  /* hand-rolled segmented control whose buttons carry their own padding/colours:
+     a clearly visible outline plus a divider between segments */
+  .segx {
+    @apply flex overflow-hidden rounded border border-term-dim/70;
+  }
+  .segx > * + * {
+    @apply border-l border-term-dim/40;
   }
   .seg > button.on {
     @apply bg-term-accent text-white;
@@ -129,9 +137,9 @@ select:focus-visible {
   .seg > button:not(.on) {
     @apply hover:bg-term-border hover:text-term-text;
   }
-  /* one button look: no resting border, fills on hover, outlined when active */
+  /* one button look: visible resting border so it reads as clickable, fills on hover, accent-outlined when active */
   .btn {
-    @apply px-2 py-1 rounded border border-transparent bg-term-panel text-xs text-term-dim transition-colors hover:bg-term-border hover:text-term-text disabled:opacity-40 disabled:hover:bg-term-panel;
+    @apply px-2 py-1 rounded border border-term-dim/70 bg-term-panel text-xs text-term-dim transition-colors hover:bg-term-border hover:text-term-text disabled:opacity-40 disabled:hover:bg-term-panel;
   }
   .btn.on,
   .btn[aria-pressed="true"] {
@@ -143,9 +151,12 @@ select:focus-visible {
   .btn-sell {
     @apply bg-down/20 border-down/40 hover:bg-down/30 text-down;
   }
-  /* a small pill that marks plain text / icons as clickable */
+  /* a small bordered pill that marks plain text / icons as clickable; add `on` for a toggle's active state */
   .chipbtn {
-    @apply inline-flex items-center gap-1 rounded border border-transparent bg-term-panel px-1.5 py-0.5 text-2xs text-term-dim transition-colors hover:bg-term-border hover:text-term-text;
+    @apply inline-flex items-center gap-1 rounded border border-term-dim/70 bg-term-panel px-1.5 py-0.5 text-2xs text-term-dim transition-colors hover:bg-term-border hover:text-term-text;
+  }
+  .chipbtn.on {
+    @apply border-term-accent bg-term-accent text-white hover:bg-term-accent hover:text-white;
   }
   /* a table row that navigates when clicked */
   .click-row {

@@ -1277,13 +1277,15 @@ export function Chart() {
 
         {/* pick any strike's CE / PE */}
         {strikes.length > 0 && (
-          <div className="flex items-center gap-0.5 rounded border border-term-border px-1">
+          <div className="flex items-center gap-0.5 rounded border border-term-dim/70 px-1">
             {([5, 10, 20, 0] as const).map((c) => (
               <button
                 key={c}
                 onClick={() => setStrikeCount(c)}
-                className={`rounded px-1 text-[9px] font-semibold ${
-                  strikeCount === c ? "bg-term-accent/25 text-term-text" : "text-term-dim hover:text-term-text"
+                className={`rounded border px-1 text-[9px] font-semibold ${
+                  strikeCount === c
+                    ? "border-term-accent bg-term-accent/25 text-term-text"
+                    : "border-term-dim/50 text-term-dim hover:text-term-text"
                 }`}
                 title={c === 0 ? "All strikes" : `${c} strikes around ATM`}
               >
@@ -1304,20 +1306,20 @@ export function Chart() {
             />
             <button
               onClick={() => chartLeg("CE")}
-              className={`rounded px-1 text-[10px] font-bold ${
+              className={`rounded border px-1 text-[10px] font-bold ${
                 instrument === `${symbol}|${chain?.expiry}|${pickStrike}|CE`
-                  ? "bg-up text-white"
-                  : "text-up hover:bg-up/20"
+                  ? "border-up bg-up text-white"
+                  : "border-up/50 text-up hover:bg-up/20"
               }`}
             >
               CE
             </button>
             <button
               onClick={() => chartLeg("PE")}
-              className={`rounded px-1 text-[10px] font-bold ${
+              className={`rounded border px-1 text-[10px] font-bold ${
                 instrument === `${symbol}|${chain?.expiry}|${pickStrike}|PE`
-                  ? "bg-down text-white"
-                  : "text-down hover:bg-down/20"
+                  ? "border-down bg-down text-white"
+                  : "border-down/70 text-down hover:bg-down/20"
               }`}
             >
               PE
@@ -1327,29 +1329,29 @@ export function Chart() {
 
         {/* fast execution — trades the strike picked above, at scalpLots */}
         {strikes.length > 0 && chain?.expiry && pickStrike > 0 && (
-          <div className="flex items-center gap-0.5 rounded border border-term-border px-1" title={`${pickStrike} × ${scalpLots} lot(s)`}>
+          <div className="flex items-center gap-0.5 rounded border border-term-dim/70 px-1" title={`${pickStrike} × ${scalpLots} lot(s)`}>
             <button
               onClick={() => quickTradeAt(symbol, chain.expiry, pickStrike, "CE", "BUY")}
-              className="rounded bg-up/20 px-1.5 py-0.5 text-[10px] font-bold text-up hover:bg-up/30"
+              className="rounded border border-up/50 bg-up/20 px-1.5 py-0.5 text-[10px] font-bold text-up hover:bg-up/30"
             >
               B CE
             </button>
             <button
               onClick={() => quickTradeAt(symbol, chain.expiry, pickStrike, "CE", "SELL")}
-              className="rounded border border-down/40 px-1.5 py-0.5 text-[10px] font-bold text-down/90 hover:bg-down/10"
+              className="rounded border border-down/70 px-1.5 py-0.5 text-[10px] font-bold text-down/90 hover:bg-down/10"
             >
               S CE
             </button>
             <span className="mx-0.5 h-3 w-px bg-term-border" />
             <button
               onClick={() => quickTradeAt(symbol, chain.expiry, pickStrike, "PE", "BUY")}
-              className="rounded bg-down/20 px-1.5 py-0.5 text-[10px] font-bold text-down hover:bg-down/30"
+              className="rounded border border-down/70 bg-down/20 px-1.5 py-0.5 text-[10px] font-bold text-down hover:bg-down/30"
             >
               B PE
             </button>
             <button
               onClick={() => quickTradeAt(symbol, chain.expiry, pickStrike, "PE", "SELL")}
-              className="rounded border border-up/40 px-1.5 py-0.5 text-[10px] font-bold text-up/90 hover:bg-up/10"
+              className="rounded border border-up/50 px-1.5 py-0.5 text-[10px] font-bold text-up/90 hover:bg-up/10"
             >
               S PE
             </button>
@@ -1466,7 +1468,7 @@ export function Chart() {
                         setDrawings([]);
                         setDrawingsOpen(false);
                       }}
-                      className="hover:text-down"
+                      className="underline underline-offset-2 hover:text-down"
                     >
                       clear all
                     </button>
@@ -1493,7 +1495,7 @@ export function Chart() {
         )}
         <button
           onClick={() => applyRange(true)}
-          className="rounded border border-term-border px-1.5 py-0.5 text-term-dim hover:text-term-text"
+          className="rounded border border-term-dim/70 px-1.5 py-0.5 text-term-dim hover:text-term-text"
           title="Reset view to the selected window"
         >
           ⤢
@@ -1533,7 +1535,7 @@ export function Chart() {
                 <div className="flex items-center justify-between text-term-dim">
                   <span className="font-semibold uppercase tracking-wide">MTF overlay</span>
                   {mtf && (
-                    <button onClick={() => setMtf(null)} className="hover:text-down">
+                    <button onClick={() => setMtf(null)} className="underline underline-offset-2 hover:text-down">
                       off
                     </button>
                   )}
@@ -1574,7 +1576,7 @@ export function Chart() {
                 {mtf && mtf.ind === "fibpivot" ? (
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-term-dim">Pivot period</span>
-                    <div className="flex overflow-hidden rounded border border-term-border">
+                    <div className="segx">
                       {(
                         [
                           ["D", "Day"],
@@ -1666,7 +1668,7 @@ export function Chart() {
                           return z;
                         })
                       }
-                      className="hover:text-down"
+                      className="underline underline-offset-2 hover:text-down"
                     >
                       clear
                     </button>

@@ -123,7 +123,7 @@ export function TradeJournal() {
         <button
           onClick={load}
           disabled={busy}
-          className="ml-auto rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:text-term-text disabled:opacity-50"
+          className="ml-auto rounded border border-term-dim/70 px-2 py-1 text-2xs text-term-dim hover:text-term-text disabled:opacity-50"
         >
           {busy ? "…" : "Refresh"}
         </button>

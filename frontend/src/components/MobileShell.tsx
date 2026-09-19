@@ -377,14 +377,14 @@ export function MobileShell() {
               setBrokerOpen(false);
               setSettingsOpen(true);
             }}
-            className="rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:text-term-text"
+            className="rounded border border-term-dim/70 px-2 py-1 text-2xs text-term-dim hover:text-term-text"
             title="Settings"
           >
             ⚙ Settings
           </button>
           <button
             onClick={lockNow}
-            className="rounded border border-term-border px-2 py-1 text-2xs text-term-dim hover:text-term-text"
+            className="rounded border border-term-dim/70 px-2 py-1 text-2xs text-term-dim hover:text-term-text"
             title="Lock the app — require the password / PIN again"
           >
             🔒 Lock

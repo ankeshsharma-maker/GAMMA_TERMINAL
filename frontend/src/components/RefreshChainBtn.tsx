@@ -17,7 +17,7 @@ export function RefreshChainBtn() {
       }}
       disabled={busy}
       title={fetchedAt ? `chain updated ${ago(fetchedAt)}` : "refresh chain"}
-      className="flex items-center gap-1 rounded border border-term-border px-1.5 py-0.5 text-2xs text-term-dim hover:border-term-accent hover:text-term-text disabled:opacity-40"
+      className="flex items-center gap-1 rounded border border-term-dim/70 px-1.5 py-0.5 text-2xs text-term-dim hover:border-term-accent hover:text-term-text disabled:opacity-40"
     >
       <span className={busy ? "inline-block animate-spin" : ""}>⟳</span>
       {busy ? "…" : "Refresh"}

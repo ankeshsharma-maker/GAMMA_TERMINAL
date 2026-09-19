@@ -47,7 +47,7 @@ export function StopEditor({ p }: { p: Position }) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="rounded border border-term-border px-1 text-[10px] text-term-dim hover:text-term-text"
+        className="rounded border border-term-dim/70 px-1 text-[10px] text-term-dim hover:text-term-text"
         title="Set stop-loss / target"
       >
         + SL / TGT
@@ -57,7 +57,7 @@ export function StopEditor({ p }: { p: Position }) {
 
   return (
     <div className="mt-1 flex flex-wrap items-center gap-1 rounded border border-amber-500/40 bg-term-panel p-1 text-[10px]">
-      <div className="flex overflow-hidden rounded border border-term-border">
+      <div className="segx">
         {(["points", "amount"] as const).map((m) => (
           <button
             key={m}

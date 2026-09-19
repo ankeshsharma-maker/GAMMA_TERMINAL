@@ -362,7 +362,7 @@ export function Watchlist() {
             {counts.sym} sym · {counts.opt} opt
           </span>
         </div>
-        <div className="flex overflow-hidden rounded-md border border-term-border">
+        <div className="segx rounded-md">
           {(["list", "grid"] as const).map((v) => (
             <button
               key={v}
@@ -439,7 +439,7 @@ export function Watchlist() {
                     className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition ${
                       on
                         ? "border-term-accent bg-term-accent text-white"
-                        : "border-term-border bg-term-bg text-term-dim hover:text-term-text"
+                        : "border-term-dim/70 bg-term-bg text-term-dim hover:text-term-text"
                     }`}
                   >
                     {l.name}
@@ -463,7 +463,7 @@ export function Watchlist() {
             <button
               onClick={wlAddList}
               title="Add a watchlist"
-              className="shrink-0 rounded-full border border-dashed border-term-border px-2 py-0.5 text-[11px] text-term-dim hover:border-term-accent hover:text-term-text"
+              className="shrink-0 rounded-full border border-dashed border-term-dim/70 px-2 py-0.5 text-[11px] text-term-dim hover:border-term-accent hover:text-term-text"
             >
               ＋
             </button>
@@ -499,7 +499,7 @@ export function Watchlist() {
           <button
             type="button"
             onClick={() => wlAddStrikes(active, 10)}
-            className="flex-1 rounded border border-term-border py-0.5 text-[10px] text-term-dim transition hover:border-term-accent hover:text-term-text"
+            className="flex-1 rounded border border-term-dim/70 py-0.5 text-[10px] text-term-dim transition hover:border-term-accent hover:text-term-text"
             title="Add 10 strikes (CE+PE) around ATM for the current symbol"
           >
             + 10 strikes
@@ -507,7 +507,7 @@ export function Watchlist() {
           <button
             type="button"
             onClick={() => wlAddFuture(active)}
-            className="flex-1 rounded border border-term-border py-0.5 text-[10px] text-term-dim transition hover:border-term-accent hover:text-term-text"
+            className="flex-1 rounded border border-term-dim/70 py-0.5 text-[10px] text-term-dim transition hover:border-term-accent hover:text-term-text"
             title="Add the futures contract for the current symbol + expiry"
           >
             + Future
@@ -518,7 +518,7 @@ export function Watchlist() {
               onClick={() => {
                 if (confirm("Remove all option strikes from this list?")) wlClear(active, true);
               }}
-              className="flex-1 rounded border border-term-border py-0.5 text-[10px] text-term-dim transition hover:border-down hover:text-down"
+              className="flex-1 rounded border border-term-dim/70 py-0.5 text-[10px] text-term-dim transition hover:border-down hover:text-down"
               title="Delete every strike in this list"
             >
               ⌫ clear strikes

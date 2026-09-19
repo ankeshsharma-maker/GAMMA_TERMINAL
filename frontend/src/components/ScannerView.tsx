@@ -25,8 +25,10 @@ export function ScannerView() {
           <button
             key={k}
             onClick={() => setTab(k)}
-            className={`shrink-0 rounded px-2.5 py-1 ${
-              tab === k ? "bg-term-accent text-white" : "text-term-dim hover:bg-term-border"
+            className={`shrink-0 rounded border px-2.5 py-1 ${
+              tab === k
+                ? "border-term-accent bg-term-accent text-white"
+                : "border-term-dim/70 text-term-dim hover:bg-term-border"
             }`}
           >
             {label}

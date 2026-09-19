@@ -32,7 +32,7 @@ export function FontScale() {
     setScale((p) => Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round((p + d) * 100) / 100)));
   return (
     <div
-      className="flex items-center overflow-hidden rounded border border-term-border text-2xs"
+      className="segx items-center text-2xs"
       title="Text size"
     >
       <button

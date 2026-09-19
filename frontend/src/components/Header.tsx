@@ -361,7 +361,7 @@ export function ClassFilter() {
   const setSymClass = useStore((s) => s.setSymClass);
   return (
     <div
-      className="flex overflow-hidden rounded border border-term-border text-2xs"
+      className="segx text-2xs"
       title="Filter watchlist / scanner / screener to indices or stocks"
     >
       {(
@@ -552,7 +552,7 @@ export function BrokerPill() {
         onClick={doRefresh}
         disabled={refreshing}
         title="Reload the saved session, re-validate the token and reconnect the live feed"
-        className="rounded border border-term-border px-1.5 py-1 text-2xs text-term-dim hover:text-term-text disabled:opacity-40"
+        className="rounded border border-term-dim/70 px-1.5 py-1 text-2xs text-term-dim hover:text-term-text disabled:opacity-40"
       >
         {refreshing ? "…" : "⟳ refresh"}
       </button>
@@ -660,7 +660,7 @@ export function OrderModePill() {
     if (err) alert(err);
   };
   return (
-    <div className="flex overflow-hidden rounded border border-term-border text-2xs">
+    <div className="segx text-2xs">
       <button
         onClick={() => setOrderMode("paper")}
         className={`px-1.5 py-1 ${orderMode === "paper" ? "bg-term-accent text-white" : "text-term-dim hover:bg-term-border"}`}
@@ -687,7 +687,7 @@ export function AlertBell() {
     <button
       onClick={() => (notifOpen ? closeNotif() : openNotif())}
       className={`relative rounded border px-2 py-1 text-sm hover:bg-term-border ${
-        notifOpen ? "border-term-accent bg-term-border" : "border-term-border"
+        notifOpen ? "border-term-accent bg-term-border" : "border-term-dim/70"
       }`}
       title="Notifications"
     >
@@ -738,7 +738,7 @@ export function LegRuleBell() {
       <button
         onClick={() => setOpen((o) => !o)}
         className={`relative rounded border px-2 py-1 text-sm hover:bg-term-border ${
-          open ? "border-term-accent bg-term-border" : "border-term-border"
+          open ? "border-term-accent bg-term-border" : "border-term-dim/70"
         }`}
         title="Pending / active leg rules (Scalp > Rule order)"
       >
@@ -879,14 +879,14 @@ export function Header({ children }: { children?: ReactNode }) {
           <AlertBell />
           <button
             onClick={() => setSettingsOpen(true)}
-            className="rounded border border-term-border px-1.5 py-1 text-2xs text-term-dim hover:text-term-text"
+            className="rounded border border-term-dim/70 px-1.5 py-1 text-2xs text-term-dim hover:text-term-text"
             title="Settings"
           >
             ⚙
           </button>
           <button
             onClick={lockNow}
-            className="rounded border border-term-border px-1.5 py-1 text-2xs text-term-dim hover:text-term-text"
+            className="rounded border border-term-dim/70 px-1.5 py-1 text-2xs text-term-dim hover:text-term-text"
             title="Lock the app — require the password / PIN again"
           >
             🔒

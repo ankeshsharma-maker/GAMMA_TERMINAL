@@ -591,7 +591,7 @@ function OrderRowActions({ order }: { order: any }) {
         <button
           disabled={busy}
           onClick={() => setOpen(true)}
-          className="rounded border border-term-border px-1.5 py-0.5 text-[10px] text-term-dim hover:text-term-text disabled:opacity-40"
+          className="rounded border border-term-dim/70 px-1.5 py-0.5 text-[10px] text-term-dim hover:text-term-text disabled:opacity-40"
         >
           Modify
         </button>
@@ -828,8 +828,10 @@ export function PositionsView({ initialTab }: { initialTab?: Tab } = {}) {
           <button
             key={k}
             onClick={() => setTab(k)}
-            className={`rounded px-2.5 py-1 ${
-              tab === k ? "bg-term-accent text-white" : "text-term-dim hover:bg-term-border"
+            className={`rounded border px-2.5 py-1 ${
+              tab === k
+                ? "border-term-accent bg-term-accent text-white"
+                : "border-term-dim/70 text-term-dim hover:bg-term-border"
             }`}
           >
             {label}

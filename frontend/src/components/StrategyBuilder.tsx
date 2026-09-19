@@ -752,13 +752,13 @@ export function StrategyBuilder() {
         <div className="flex gap-1 text-[10px]">
           <button
             onClick={() => setGMulLot((v) => !v)}
-            className={`rounded px-1.5 py-0.5 ${gMulLot ? "bg-term-accent text-white" : "bg-term-border text-term-dim"}`}
+            className={`chipbtn ${gMulLot ? "on" : ""}`}
           >
             × lot size
           </button>
           <button
             onClick={() => setGMulQty((v) => !v)}
-            className={`rounded px-1.5 py-0.5 ${gMulQty ? "bg-term-accent text-white" : "bg-term-border text-term-dim"}`}
+            className={`chipbtn ${gMulQty ? "on" : ""}`}
           >
             × num lots
           </button>
@@ -952,7 +952,7 @@ export function StrategyBuilder() {
                 </button>
                 <button
                   onClick={() => removeLeg(i)}
-                  className="rounded border border-term-border px-1.5 py-1 text-term-dim hover:text-down"
+                  className="rounded border border-term-dim/70 px-1.5 py-1 text-term-dim hover:text-down"
                 >
                   ×
                 </button>
@@ -1438,7 +1438,7 @@ export function StrategyBuilder() {
               </span>
               <button
                 onClick={() => loadSaved(s)}
-                className="shrink-0 rounded border border-term-border px-1.5 py-0.5 font-semibold text-term-accent hover:bg-term-accent/15"
+                className="shrink-0 rounded border border-term-dim/70 px-1.5 py-0.5 font-semibold text-term-accent hover:bg-term-accent/15"
               >
                 Edit
               </button>
@@ -1447,13 +1447,13 @@ export function StrategyBuilder() {
                   loadSaved(s);
                   setPanel("backtest");
                 }}
-                className="shrink-0 rounded border border-term-border px-1.5 py-0.5 text-term-dim hover:text-term-text"
+                className="shrink-0 rounded border border-term-dim/70 px-1.5 py-0.5 text-term-dim hover:text-term-text"
               >
                 Backtest
               </button>
               <button
                 onClick={() => delSaved(s.id)}
-                className="shrink-0 rounded border border-term-border px-1.5 py-0.5 text-term-dim hover:border-down hover:text-down"
+                className="shrink-0 rounded border border-term-dim/70 px-1.5 py-0.5 text-term-dim hover:border-down hover:text-down"
               >
                 Delete
               </button>
@@ -1479,7 +1479,7 @@ export function StrategyBuilder() {
               className={`rounded border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide shadow-sm transition-colors ${
                 panel === k
                   ? "border-term-accent bg-term-accent text-white"
-                  : "border-term-border bg-term-bg/40 text-term-dim hover:text-term-text"
+                  : "border-term-dim/70 bg-term-bg/40 text-term-dim hover:text-term-text"
               }`}
             >
               {label}
@@ -1507,7 +1507,7 @@ export function StrategyBuilder() {
                   className={`rounded border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide shadow-sm transition-colors ${
                     payoffTab === k
                       ? "border-term-accent bg-term-accent text-white"
-                      : "border-term-border bg-term-bg/40 text-term-dim hover:text-term-text"
+                      : "border-term-dim/70 bg-term-bg/40 text-term-dim hover:text-term-text"
                   }`}
                 >
                   {label}
@@ -1692,9 +1692,7 @@ export function StrategyBuilder() {
                     </div>
                     <button
                       onClick={() => setShowPct((v) => !v)}
-                      className={`rounded px-1.5 py-0.5 text-[10px] ${
-                        showPct ? "bg-term-accent text-white" : "bg-term-border text-term-dim"
-                      }`}
+                      className={`chipbtn ${showPct ? "on" : ""}`}
                     >
                       %
                     </button>
@@ -1839,11 +1837,7 @@ export function StrategyBuilder() {
                           month: "short",
                         })} · ${dte - d}d left`
                   }
-                  className={`num rounded px-1.5 py-0.5 ${
-                    tDays === d
-                      ? "bg-amber-500 text-black"
-                      : "bg-term-border text-term-dim hover:text-term-text"
-                  }`}
+                  className={`chipbtn num ${tDays === d ? "border-transparent bg-amber-500 text-black" : ""}`}
                 >
                   {d === 0 ? "Now" : d === dte ? "Exp" : `+${d}`}
                 </button>
@@ -1879,11 +1873,7 @@ export function StrategyBuilder() {
                   key={v}
                   onClick={() => setIvShift(v)}
                   title={v === 0 ? "current IV" : `IV ${v > 0 ? "+" : ""}${v}%`}
-                  className={`num rounded px-1.5 py-0.5 ${
-                    ivShift === v
-                      ? "bg-fuchsia-500 text-black"
-                      : "bg-term-border text-term-dim hover:text-term-text"
-                  }`}
+                  className={`chipbtn num ${ivShift === v ? "border-transparent bg-fuchsia-500 text-black" : ""}`}
                 >
                   {v === 0 ? "0" : `${v > 0 ? "+" : ""}${v}%`}
                 </button>
@@ -1912,7 +1902,7 @@ export function StrategyBuilder() {
               </span>
               <button
                 onClick={() => setTPrice(Math.round(analysis.spot))}
-                className="rounded bg-term-border px-1.5 py-0.5 text-term-dim hover:text-term-text"
+                className="chipbtn"
               >
                 reset
               </button>

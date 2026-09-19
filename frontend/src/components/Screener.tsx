@@ -150,9 +150,7 @@ export function Screener() {
         <Num label="Smart≤" value={spec.smartScoreMax} onChange={(v) => patch({ smartScoreMax: v })} />
         <button
           onClick={() => patch({ compression: spec.compression ? undefined : true })}
-          className={`rounded px-1.5 py-0.5 text-[10px] ${
-            spec.compression ? "bg-term-accent text-white" : "bg-term-panel text-term-dim"
-          }`}
+          className={`chipbtn ${spec.compression ? "on" : ""}`}
         >
           Coiled
         </button>
@@ -161,9 +159,7 @@ export function Screener() {
             <button
               key={b}
               onClick={() => toggleBuildup(b)}
-              className={`rounded px-1.5 py-0.5 text-[10px] ${
-                spec.oiBuildup?.includes(b) ? buildupStyle[b] : "bg-term-panel text-term-dim"
-              }`}
+              className={`chipbtn ${spec.oiBuildup?.includes(b) ? `${buildupStyle[b]} border-transparent` : ""}`}
             >
               {buildupLabel[b]}
             </button>
@@ -183,7 +179,7 @@ export function Screener() {
           <button
             key={name}
             onClick={() => applyPreset(name)}
-            className="rounded border border-term-border px-1.5 py-0.5 text-term-dim hover:bg-term-border hover:text-term-text"
+            className="rounded border border-term-dim/70 px-1.5 py-0.5 text-term-dim hover:bg-term-border hover:text-term-text"
           >
             {name}
           </button>

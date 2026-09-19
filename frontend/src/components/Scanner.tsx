@@ -61,11 +61,7 @@ function Chip({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      onClick={onClick}
-      title={title}
-      className={`rounded px-1.5 py-0.5 text-[10px] ${on ? "bg-term-accent text-white" : "bg-term-panel text-term-dim"}`}
-    >
+    <button onClick={onClick} title={title} className={`chipbtn ${on ? "on" : ""}`}>
       {children}
     </button>
   );
@@ -233,7 +229,7 @@ export function Scanner() {
             className={`rounded border px-1.5 py-0.5 ${
               specKey(spec) === specKey(p)
                 ? "border-term-accent bg-term-accent/20 text-term-text"
-                : "border-term-border text-term-dim hover:bg-term-border hover:text-term-text"
+                : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
             }`}
           >
             {name}

@@ -112,7 +112,7 @@ export function IndicatorScan() {
             <button
               key={t}
               onClick={() => toggle(t)}
-              className={`rounded px-1.5 py-0.5 ${trendF.has(t) ? TREND_CLS[t] : "bg-term-panel2 text-term-dim"}`}
+              className={`chipbtn ${trendF.has(t) ? `${TREND_CLS[t]} border-transparent` : ""}`}
             >
               {t}
             </button>

@@ -80,7 +80,7 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
           : "absolute right-3 top-12 z-[70] flex max-h-[75vh] w-[calc(100vw-1.5rem)] max-w-[400px] flex-col rounded-lg border border-term-border bg-term-panel shadow-2xl"
       }
     >
-      <div className="flex items-center border-b border-term-border text-2xs">
+      <div className="flex flex-wrap items-center gap-1 border-b border-term-border px-2 py-1.5 text-2xs">
         {(
           [
             ["unusual", "Unusual Activity", uNew],
@@ -93,10 +93,10 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
           <button
             key={k}
             onClick={() => setNotifTab(k)}
-            className={`flex items-center gap-1.5 px-3 py-2 ${
+            className={`flex items-center gap-1.5 rounded border px-2 py-1 ${
               notifTab === k
-                ? "border-b-2 border-term-accent text-term-text"
-                : "text-term-dim hover:text-term-text"
+                ? "border-term-accent bg-term-accent/15 text-term-text"
+                : "border-term-dim/70 text-term-dim hover:text-term-text"
             }`}
           >
             {label}
@@ -111,7 +111,7 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
           <button
             onClick={() => setNotifDock(false)}
             title="Undock — back to the pop-over"
-            className="ml-auto px-3 py-2 text-term-dim hover:text-term-text"
+            className="ml-auto rounded border border-term-dim/70 px-2 py-1 text-term-dim hover:text-term-text"
           >
             ⇤ undock
           </button>
@@ -120,11 +120,14 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
             <button
               onClick={() => setNotifDock(true)}
               title="Dock as a fixed side panel"
-              className="ml-auto px-2 py-2 text-term-dim hover:text-term-text"
+              className="ml-auto rounded border border-term-dim/70 px-2 py-1 text-term-dim hover:text-term-text"
             >
               ⇥ dock
             </button>
-            <button onClick={closeNotif} className="px-3 py-2 text-term-dim hover:text-term-text">
+            <button
+              onClick={closeNotif}
+              className="rounded border border-term-dim/70 px-2 py-1 text-term-dim hover:text-term-text"
+            >
               ✕
             </button>
           </>
@@ -323,21 +326,21 @@ function OiWatchTab() {
             placeholder="strike"
             className="num w-16 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
           />
-          <div className="flex overflow-hidden rounded border border-term-border">
+          <div className="segx">
             {(["CE", "PE"] as const).map((o) => (
               <button key={o} onClick={() => setOptionType(o)} className={`${SEG} ${optionType === o ? on : off}`}>
                 {o}
               </button>
             ))}
           </div>
-          <div className="flex overflow-hidden rounded border border-term-border">
+          <div className="segx">
             {(["oi", "oiChg"] as const).map((m) => (
               <button key={m} onClick={() => setMetric(m)} className={`${SEG} ${metric === m ? on : off}`}>
                 {m === "oi" ? "OI" : "ΔOI"}
               </button>
             ))}
           </div>
-          <div className="flex overflow-hidden rounded border border-term-border">
+          <div className="segx">
             {([">", "<"] as const).map((o) => (
               <button key={o} onClick={() => setOp(o)} className={`${SEG} ${op === o ? on : off}`}>
                 {o}
@@ -352,7 +355,7 @@ function OiWatchTab() {
           />
           <button
             onClick={() => setRepeat((v) => !v)}
-            className={`${SEG} rounded border border-term-border ${repeat ? "text-term-accent" : off}`}
+            className={`${SEG} rounded border border-term-dim/70 ${repeat ? "text-term-accent" : off}`}
             title="Keep re-arming after it fires (default: fires once)"
           >
             repeat
@@ -473,7 +476,7 @@ function PriceAlertTab() {
             placeholder="symbol"
             className="num w-20 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
           />
-          <div className="flex overflow-hidden rounded border border-term-border">
+          <div className="segx">
             {(["above", "below"] as const).map((d) => (
               <button key={d} onClick={() => setDirection(d)} className={`${SEG} ${direction === d ? on : off}`}>
                 {d === "above" ? "≥" : "≤"}
@@ -601,7 +604,7 @@ function MtmAlertTab() {
     <div className="flex flex-col">
       <div className="space-y-1.5 border-b border-term-border/60 p-2 text-[10px]">
         <div className="flex flex-wrap items-center gap-1">
-          <div className="flex overflow-hidden rounded border border-term-border">
+          <div className="segx">
             {(["today", "mtm"] as const).map((b) => (
               <button
                 key={b}
@@ -613,7 +616,7 @@ function MtmAlertTab() {
               </button>
             ))}
           </div>
-          <div className="flex overflow-hidden rounded border border-term-border">
+          <div className="segx">
             {(["above", "below"] as const).map((d) => (
               <button key={d} onClick={() => setDirection(d)} className={`${SEG} ${direction === d ? on : off}`}>
                 {d === "above" ? "≥" : "≤"}

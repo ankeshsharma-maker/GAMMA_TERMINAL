@@ -246,10 +246,10 @@ export function ScalpPanel() {
                   active
                     ? "border-term-accent bg-term-accent/20 text-term-text"
                     : n === 0
-                    ? "border-term-border bg-term-bg/60 text-term-text"
+                    ? "border-term-dim/70 bg-term-bg/60 text-term-text"
                     : ot === "CE"
-                    ? "border-up/40 text-up hover:bg-up/10"
-                    : "border-down/40 text-down hover:bg-down/10"
+                    ? "border-up/50 text-up hover:bg-up/10"
+                    : "border-down/70 text-down hover:bg-down/10"
                 }`}
               >
                 {lbl}
@@ -308,19 +308,19 @@ export function ScalpPanel() {
       </div>
 
       <div className="grid grid-cols-2 gap-1.5 px-2 py-1.5">
-        <BigBtn label="BUY CALL" ot="CE" side="BUY" cls="bg-up/20 text-up hover:bg-up/30" />
-        <BigBtn label="BUY PUT" ot="PE" side="BUY" cls="bg-down/20 text-down hover:bg-down/30" />
+        <BigBtn label="BUY CALL" ot="CE" side="BUY" cls="border border-up/50 bg-up/20 text-up hover:bg-up/30" />
+        <BigBtn label="BUY PUT" ot="PE" side="BUY" cls="border border-down/70 bg-down/20 text-down hover:bg-down/30" />
         <BigBtn
           label="SELL CALL"
           ot="CE"
           side="SELL"
-          cls="border border-down/40 text-down/90 hover:bg-down/10"
+          cls="border border-down/70 text-down/90 hover:bg-down/10"
         />
         <BigBtn
           label="SELL PUT"
           ot="PE"
           side="SELL"
-          cls="border border-up/40 text-up/90 hover:bg-up/10"
+          cls="border border-up/50 text-up/90 hover:bg-up/10"
         />
       </div>
 
