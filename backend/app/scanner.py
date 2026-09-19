@@ -40,6 +40,22 @@ STRADDLE_EXP = 0.15   # +15% straddle in 5m -> full straddle score
 MOVE_REF_PCT = 0.004  # 0.4% spot move -> full breakout score (fallback)
 MP_REF_PCT = 0.004    # 0.4% away from max pain -> full pin-break score
 
+# "blast building" alert: fires when the score has RISEN fast (so it works from
+# any calm baseline) AND one near-ATM strike shows an outsized OI move. Untuned
+# starting values -- calibrate with tools/blast_backtest.py once sessions are
+# archived (history_archive.py).
+BUILD_MIN_SCORE = 35.0     # ignore rises out of a dead-calm baseline
+BUILD_MIN_RISE = 12.0      # score points gained over the last WIN_SHORT_S
+BUILD_DEDUP_S = 900        # one "building" alert per symbol per 15 min
+BUILD_MAX_PER_10MIN = 5    # flood valve across all symbols (e.g. stock-expiry day)
+
+# what counts as a high-value OI move at one strike, vs ~OI_WINDOW_MIN ago
+OI_WINDOW_MIN = 15
+OI_NEAR_STRIKES = 8        # +-8 strikes around spot, where gamma actually bites
+OI_MIN_TOTAL_PCT = 0.006   # >= 0.6% of that side's total OI (material to the chain)
+OI_MIN_OWN_PCT = 0.10      # >= 10% of the strike's own OI (material to the strike)
+OI_STAND_OUT = 2.5         # >= 2.5x the median |change| of the near-ATM legs
+
 
 def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, x))
@@ -173,13 +189,68 @@ def evaluate(symbol: str, chain: dict, hist: list[dict], now: float | None = Non
     }
 
 
-def _emit_alerts(store, row: dict, prev: dict | None) -> list[dict]:
+def hot_strikes(store, symbol: str, chain: dict, limit: int = 2) -> list[dict]:
+    """Near-ATM strikes whose OI moved unusually hard over the last ~15 min,
+    biggest first. A leg qualifies only if the move is material to the whole
+    chain, material to that strike, AND an outlier among its neighbours.
+    Positive `chg` = OI build, negative = unwind."""
+    expiry = chain.get("expiry")
+    if not expiry:
+        return []
+    w = store.oi_change_window(symbol, expiry, OI_WINDOW_MIN)
+    strikes = w.get("strikes") or {}
+    if not strikes or w.get("baseTs") is None:
+        return []
+    mins = (w["curTs"] - w["baseTs"]) / 60
+    # too little history to call anything a "move", or a stale base after a feed gap
+    if mins < 3 or mins > 2 * OI_WINDOW_MIN:
+        return []
+    spot = chain.get("spot") or 0.0
+    near = sorted(strikes, key=lambda k: abs(float(k) - spot))[: 2 * OI_NEAR_STRIKES + 1]
+    legs = []
+    for k in near:
+        s = strikes[k]
+        legs.append((float(k), "CE", s["ceOiChg"], s["ceOi"]))
+        legs.append((float(k), "PE", s["peOiChg"], s["peOi"]))
+    mags = sorted(abs(chg) for _, _, chg, _ in legs)
+    median = mags[len(mags) // 2] if mags else 0.0
+    totals = chain.get("totals") or {}
+    out = []
+    for strike, side, chg, oi in legs:
+        base = oi - chg
+        side_total = totals.get("ceOI" if side == "CE" else "peOI") or 0.0
+        if not chg or base <= 0 or side_total <= 0:
+            continue
+        if abs(chg) < OI_MIN_TOTAL_PCT * side_total:
+            continue
+        if abs(chg) / base < OI_MIN_OWN_PCT:
+            continue
+        if abs(chg) < OI_STAND_OUT * median:
+            continue
+        out.append({
+            "strike": strike, "side": side, "chg": chg, "oi": oi,
+            "pct": 100 * chg / base, "mins": round(mins),
+        })
+    out.sort(key=lambda h: -abs(h["chg"]))
+    return out[:limit]
+
+
+def _fmt_hot(hot: list[dict]) -> str:
+    if not hot:
+        return ""
+    parts = [f"{int(h['strike'])} {h['side']} {h['chg'] / 1e5:+.1f}L ({h['pct']:+.0f}%)" for h in hot]
+    return f"OI {hot[0]['mins']}m: " + ", ".join(parts)
+
+
+def _emit_alerts(store, row: dict, prev: dict | None, chain: dict | None = None) -> list[dict]:
+    from .history_archive import in_session
+
     sym, sc = row["symbol"], row["score"]
     psc = (prev or {}).get("score", 0.0)
     fired: list[dict] = []
 
-    def fire(kind: str, severity: str, message: str) -> None:
-        if store.recent_alert(sym, kind, 300):
+    def fire(kind: str, severity: str, message: str, dedup: float = 300) -> None:
+        if store.recent_alert(sym, kind, dedup):
             return
         alert = {
             "ts": time.time(),
@@ -192,11 +263,39 @@ def _emit_alerts(store, row: dict, prev: dict | None) -> list[dict]:
         store.add_alert(alert)
         fired.append(alert)
 
+    hot_cache: list[list[dict]] = []
+
+    def hot() -> list[dict]:
+        if not hot_cache:
+            hot_cache.append(hot_strikes(store, sym, chain) if chain else [])
+        return hot_cache[0]
+
+    def with_oi(msg: str) -> str:
+        oi = _fmt_hot(hot())
+        return f"{msg} · {oi}" if oi else msg
+
     tag = ", ".join(row["reasons"][:2]) or f"bias {row['bias']}"
     if sc >= 80 and psc < 80:
-        fire("blast-crit", "critical", f"{sym}: gamma-blast score {sc:.0f} — {tag}")
+        fire("blast-crit", "critical", with_oi(f"{sym}: gamma-blast score {sc:.0f} — {tag}"))
     elif sc >= 60 and psc < 60:
-        fire("blast-warn", "warning", f"{sym}: gamma-blast building {sc:.0f} — {tag}")
+        fire("blast-warn", "warning", with_oi(f"{sym}: gamma-blast building {sc:.0f} — {tag}"))
+    elif BUILD_MIN_SCORE <= sc < 60 and in_session(row["ts"]):
+        # "started building": the score has climbed fast AND a strike is seeing an
+        # outsized OI move. Below 60 only -- from 60 up, warn/crit already cover it.
+        ago = _at(store.get_scan_history(sym), row["ts"] - WIN_SHORT_S)
+        rise = sc - ago["score"] if ago else 0.0
+        if rise >= BUILD_MIN_RISE and hot():
+            recent = sum(
+                1 for a in store.get_alerts(200)
+                if a["kind"] == "blast-build" and row["ts"] - a["ts"] < 600
+            )
+            if recent < BUILD_MAX_PER_10MIN:
+                bias = "" if row["bias"] == "NEUTRAL" else f", bias {row['bias']}"
+                fire(
+                    "blast-build", "warning",
+                    f"{sym}: gamma blast starting to build — score {sc:.0f} (+{rise:.0f} in 5m){bias} · {tag} · {_fmt_hot(hot())}",
+                    dedup=BUILD_DEDUP_S,
+                )
     if row["ivChg5m"] >= 2.0:
         fire("iv-spike", "warning", f"{sym}: ATM IV {row['ivChg5m']:+.1f} pts in 5m")
     if row["straddlePct5m"] >= 20:
@@ -217,5 +316,5 @@ def run(store, extra: set[str] | None = None) -> dict:
         prev = store.scan_results.get(sym)
         row = evaluate(sym, chain, store.get_history(sym))
         store.set_scan(sym, row)
-        new_alerts += _emit_alerts(store, row, prev)
+        new_alerts += _emit_alerts(store, row, prev, chain)
     return {"scan": store.get_scan(), "newAlerts": new_alerts}
