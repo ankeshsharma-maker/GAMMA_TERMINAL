@@ -1,7 +1,8 @@
 """Gamma-blast signal engine.
 
 For each tracked symbol we combine the current processed chain with the rolling
-history deque (`store.history`, ~15s cadence) into:
+history deque (`store.history`, one sample per poll; windows below are in real
+seconds so they don't depend on the poll cadence) into:
   - normalised sub-scores (0..1) for the ingredients of an expiry-day gamma blast
   - a composite Gamma Blast Score (0..100), DTE-gated
   - a directional bias
@@ -15,9 +16,12 @@ from __future__ import annotations
 
 import time
 
-# history lookback in samples (~15s each): 20 ~= 5 min, 80 ~= 20 min
-W_SHORT = 20
-W_LONG = 80
+# history lookback in SECONDS, not sample counts: the poll cadence differs per
+# deployment (~9s prod, ~30s local dev), so counting samples silently changed
+# what "5m" meant (about 3 min on prod, 10 min on dev)
+WIN_SHORT_S = 300.0    # 5 min
+WIN_LONG_S = 1200.0    # 20 min
+BASELINE_TOL_S = 90.0  # a baseline sample further than this from its target time is stale
 
 # component weights (sum ~= 1.0 before the DTE gate)
 WEIGHTS = {
@@ -41,14 +45,25 @@ def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, x))
 
 
-def _past(hist: list[dict], n: int, key: str):
-    if not hist:
-        return None
-    return hist[max(0, len(hist) - 1 - n)].get(key)
+def _at(hist: list[dict], ts: float) -> dict | None:
+    """Latest sample at or before `ts`, provided it lies within BASELINE_TOL_S
+    of it. None when history doesn't reach back that far (early session) or the
+    nearest sample is stale (feed gap, restart): callers then treat the change
+    as unknown (0) rather than comparing against the wrong moment."""
+    for h in reversed(hist):
+        t = h.get("t")
+        if t is not None and t <= ts:
+            return h if ts - t <= BASELINE_TOL_S else None
+    return None
 
 
-def evaluate(symbol: str, chain: dict, hist: list[dict]) -> dict:
-    now = time.time()
+def evaluate(symbol: str, chain: dict, hist: list[dict], now: float | None = None) -> dict:
+    now = time.time() if now is None else now
+    # anchor the windows on the newest sample, not the wall clock, so a stalled
+    # feed keeps a stable score and a recorded session replays identically
+    t_ref = (hist[-1].get("t") or now) if hist else now
+    base = _at(hist, t_ref - WIN_SHORT_S)  # the sample ~5 min ago, or None
+    long_hist = [h for h in hist if (h.get("t") or 0) >= t_ref - WIN_LONG_S]  # last ~20 min
     spot = chain["spot"] or 0.0
     dte = chain["dte"]
     atm_iv = chain.get("atmIV")
@@ -67,8 +82,8 @@ def evaluate(symbol: str, chain: dict, hist: list[dict]) -> dict:
         reasons.append(f"{dte:.2f} DTE")
 
     # --- spot move vs recent range (compression -> expansion) ---
-    spot_5m = _past(hist, W_SHORT, "spot") or spot
-    long_spots = [h["spot"] for h in hist[-W_LONG:] if h.get("spot")]
+    spot_5m = (base or {}).get("spot") or spot
+    long_spots = [h["spot"] for h in long_hist if h.get("spot")]
     rng = (max(long_spots) - min(long_spots)) if len(long_spots) >= 3 else 0.0
     move_5m = spot - spot_5m
     move_5m_pct = (move_5m / spot) if spot else 0.0
@@ -80,14 +95,14 @@ def evaluate(symbol: str, chain: dict, hist: list[dict]) -> dict:
         reasons.append(f"Spot {move_5m_pct * 100:+.2f}% in 5m")
 
     # --- IV pop (sudden intraday IV uptick = blast fuel) ---
-    iv_5m = _past(hist, W_SHORT, "atmIV")
+    iv_5m = (base or {}).get("atmIV")
     iv_chg = (atm_iv - iv_5m) if (atm_iv and iv_5m) else 0.0
     g_ivpop = _clamp(iv_chg / IV_POP_PTS)
     if iv_chg >= 0.8:
         reasons.append(f"ATM IV {iv_chg:+.1f} in 5m")
 
     # --- straddle expansion / collapse ---
-    str_5m = _past(hist, W_SHORT, "atmStraddle")
+    str_5m = (base or {}).get("atmStraddle")
     str_pct = ((straddle - str_5m) / str_5m) if (straddle and str_5m) else 0.0
     g_straddle = _clamp(str_pct / STRADDLE_EXP)
     if str_pct >= 0.08:
@@ -96,7 +111,7 @@ def evaluate(symbol: str, chain: dict, hist: list[dict]) -> dict:
         reasons.append(f"Straddle {str_pct * 100:+.0f}% in 5m (pinning)")
 
     # --- gamma proximity: is ATM gamma*OI near its recent peak? ---
-    gex_hist = [abs(h["atmGammaOI"]) for h in hist[-W_LONG:] if h.get("atmGammaOI")]
+    gex_hist = [abs(h["atmGammaOI"]) for h in long_hist if h.get("atmGammaOI")]
     gex_ref = max(gex_hist) if gex_hist else (abs(atm_gex) or 1.0)
     g_gamma = _clamp(abs(atm_gex) / gex_ref) if gex_ref else 0.0
     if net_gex < 0:
