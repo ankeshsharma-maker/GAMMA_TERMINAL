@@ -9,6 +9,7 @@ import {
   type ISeriesApi,
 } from "lightweight-charts";
 import { useStore } from "../store";
+import { ChartStepper } from "./ChartStepper";
 import { api } from "../lib/api";
 import { MiniChart } from "./MiniChart";
 import { SelectMenu } from "./SelectMenu";
@@ -1181,6 +1182,7 @@ export function Chart() {
           >
             ⚙ settings
           </button>
+          <ChartStepper />
           <button
             onClick={() => setInd(!indHidden)}
             title={indHidden ? "Show indicators" : "Hide all indicators"}
@@ -1230,6 +1232,7 @@ export function Chart() {
           title="Index / stock to chart"
           width={150}
         />
+        <ChartStepper />
         <SelectMenu
           value={instrument}
           options={[

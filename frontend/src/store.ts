@@ -65,6 +65,9 @@ interface State {
   watchlists: Watchlists | null;
   scalpLots: number;
   chartInstrument: string; // "" = underlying spot, "STRADDLE", or an option key
+  /** the list the current chart was opened from (Screener / Movers / Watchlist ...),
+   *  in the order it was showing -- the chart's Prev / Next buttons step through it */
+  chartQueue: { source: string; symbols: string[] } | null;
   paper: PaperState | null;
   brokerFunds: import("./types").BrokerFunds | null;
   view: View;
@@ -134,6 +137,8 @@ interface State {
   wlAddFuture: (i: number) => Promise<void>;
   wlClear: (i: number, optionsOnly?: boolean) => Promise<void>;
   setChartInstrument: (v: string) => void;
+  setChartQueue: (source: string, symbols: string[]) => void;
+  chartStep: (dir: 1 | -1) => void;
   setScalpLots: (n: number) => void;
   quickTrade: (symbol: string, ot: "CE" | "PE", side: "BUY" | "SELL", lots?: number) => Promise<void>;
   quickTradeAt: (
@@ -192,6 +197,7 @@ export const useStore = create<State>((set, get) => ({
   watchlists: null,
   scalpLots: getDefaultLots(),
   chartInstrument: "",
+  chartQueue: null,
   paper: null,
   brokerFunds: null,
   view: "scrip",
@@ -603,6 +609,21 @@ export const useStore = create<State>((set, get) => ({
     await get().refreshWatch();
   },
   setChartInstrument: (v) => set({ chartInstrument: v }),
+  setChartQueue: (source, symbols) => {
+    const seen = new Set<string>();
+    const list = symbols.filter((s) => s && !seen.has(s) && !!seen.add(s));
+    set({ chartQueue: list.length > 1 ? { source, symbols: list } : null });
+  },
+  chartStep: (dir) => {
+    const { chartQueue, symbol, selectSymbol } = get();
+    if (!chartQueue) return;
+    const list = chartQueue.symbols;
+    const i = list.indexOf(symbol);
+    // not in the list (symbol picked from the dropdown): Next -> first, Prev -> last
+    const j = i === -1 ? (dir === 1 ? 0 : list.length - 1) : i + dir;
+    if (j < 0 || j >= list.length) return;
+    selectSymbol(list[j], true);
+  },
 
   setScalpLots: (n) => set({ scalpLots: Math.max(1, n) }),
 

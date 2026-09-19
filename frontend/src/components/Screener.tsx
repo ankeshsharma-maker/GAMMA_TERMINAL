@@ -108,9 +108,22 @@ export function Num({
 }
 
 export function Screener() {
-  const { screener, screenerProgress, screenerPresets, selectSymbol, setView, symClass, symClassOk } =
-    useStore();
+  const {
+    screener,
+    screenerProgress,
+    screenerPresets,
+    selectSymbol,
+    setView,
+    setChartQueue,
+    symClass,
+    symClassOk,
+  } = useStore();
   const openChart = (sym: string) => {
+    // the chart's Next / Prev step through the rows exactly as filtered + sorted right now
+    setChartQueue(
+      "Screener",
+      rows.map((r) => r.symbol)
+    );
     selectSymbol(sym, true);
     setView("chart");
   };

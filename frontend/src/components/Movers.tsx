@@ -49,6 +49,7 @@ const Pct = ({ v }: { v: number | null }) => (
  *  only ever seeing one ranking at a time. */
 export function Movers() {
   const selectSymbol = useStore((s) => s.selectSymbol);
+  const setChartQueue = useStore((s) => s.setChartQueue);
   const setView = useStore((s) => s.setView);
   const symClassOk = useStore((s) => s.symClassOk);
   const symClass = useStore((s) => s.symClass);
@@ -175,7 +176,11 @@ export function Movers() {
     }
   };
 
-  const go = (sym: string) => {
+  const go = (sym: string, source: string, list: { symbol: string }[]) => {
+    setChartQueue(
+      source,
+      list.map((r) => r.symbol)
+    );
     selectSymbol(sym, true);
     setView("chart");
   };
@@ -206,7 +211,7 @@ export function Movers() {
                   <td className="border-b border-term-border/40 px-2 py-1">
                     <button
                       className="font-semibold text-term-accent hover:underline"
-                      onClick={() => go(r.symbol)}
+                      onClick={() => go(r.symbol, `Top Movers · ${title}`, list)}
                     >
                       {r.symbol}
                     </button>
@@ -333,7 +338,7 @@ export function Movers() {
                     <td className="border-b border-term-border/40 px-2 py-1">
                       <button
                         className="font-semibold text-term-accent hover:underline"
-                        onClick={() => go(r.symbol)}
+                        onClick={() => go(r.symbol, "Top Movers · Compare", compareShown)}
                       >
                         {r.symbol}
                       </button>

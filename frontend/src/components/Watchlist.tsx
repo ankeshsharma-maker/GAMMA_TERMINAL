@@ -70,10 +70,10 @@ const wAbsChg = (w: WatchQuote) => {
 
 /** broker-style quote row: name + exchange on the left, LTP + change on the
  *  right, divider between rows. Tapping the row opens the chart for that symbol. */
-function QuoteRow({ w }: { w: WatchQuote }) {
+function QuoteRow({ w, queue }: { w: WatchQuote; queue: string[] }) {
   const {
     symbol, selectSymbol, selectExpiry, setChartInstrument, chartInstrument, setView, removeWatch,
-    quickTradeFuture, scalpLots,
+    quickTradeFuture, scalpLots, setChartQueue,
   } = useStore();
   const on = w.kind === "option" ? chartInstrument === w.key : w.symbol === symbol;
   const px = wPx(w);
@@ -90,6 +90,7 @@ function QuoteRow({ w }: { w: WatchQuote }) {
       {on && <span className="absolute inset-y-0 left-0 w-[3px] bg-term-accent" />}
       <button
         onClick={() => {
+          setChartQueue("Watchlist", queue);
           selectSymbol(w.symbol, true);
           if (w.kind === "option") {
             if (w.expiry) selectExpiry(w.expiry);
@@ -321,7 +322,9 @@ export function Watchlist() {
     else strikeBlocks.push({ head, items: [pr] });
   }
 
-  const rowFor = (w: WatchQuote) => <QuoteRow key={w.key} w={w} />;
+  // Next / Prev on the chart follow the underlyings in the order shown here
+  const queueSyms = nonOpts.filter((w) => w.kind !== "future").map((w) => w.symbol);
+  const rowFor = (w: WatchQuote) => <QuoteRow key={w.key} w={w} queue={queueSyms} />;
 
   const optionSection = (
     <div className="flex flex-col gap-2">

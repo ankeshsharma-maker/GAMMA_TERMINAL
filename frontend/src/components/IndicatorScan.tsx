@@ -20,6 +20,7 @@ const TRENDS = ["BULLISH", "BEARISH", "NEUTRAL"];
 export function IndicatorScan() {
   const watch = useStore((s) => s.watch);
   const selectSymbol = useStore((s) => s.selectSymbol);
+  const setChartQueue = useStore((s) => s.setChartQueue);
   const setView = useStore((s) => s.setView);
   const symClass = useStore((s) => s.symClass);
   const symClassOk = useStore((s) => s.symClassOk);
@@ -63,6 +64,7 @@ export function IndicatorScan() {
   };
 
   const shown = rows.filter((r) => !trendF.size || trendF.has(r.trend));
+  const ordered = shown.slice().sort((a, b) => b.score - a.score);
 
   const toggle = (v: string) => {
     const n = new Set(trendF);
@@ -139,16 +141,17 @@ export function IndicatorScan() {
               </tr>
             </thead>
             <tbody>
-              {shown
-                .slice()
-                .sort((a, b) => b.score - a.score)
-                .map((r) => (
+              {ordered.map((r) => (
                   <Fragment key={r.symbol}>
                     <tr>
                       <td className="border-b border-term-border/40 px-3 py-1">
                         <button
                           className="font-semibold text-term-accent hover:underline"
                           onClick={() => {
+                            setChartQueue(
+                              "Indicators",
+                              ordered.map((x) => x.symbol)
+                            );
                             selectSymbol(r.symbol, true);
                             setView("chart");
                           }}
