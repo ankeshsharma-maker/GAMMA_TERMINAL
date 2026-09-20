@@ -151,3 +151,13 @@ def pnl_rs(ev: ExitEval, lots: int, lot_size: int) -> float:
     """Rupee P&L for `lots` lots at the current price (the engine's estimate; a live
     order's true fill isn't known at decision time)."""
     return ev.signed / 100 * ev.base * lots * lot_size
+
+
+def fav_to_px(rule: dict, v: float, *, base: float, qty: int, buy: bool) -> float:
+    """The premium at which the favourable run-up equals `v` in the rule's own unit --
+    where a resting target or scale-out order would sit."""
+    basis = basis_of(rule)
+    base = base or 1.0
+    v = abs(float(v))
+    pts = v if basis == "pts" else v / max(1, int(qty)) if basis == "rs" else base * v / 100.0
+    return base + pts if buy else base - pts

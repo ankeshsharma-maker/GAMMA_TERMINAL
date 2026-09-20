@@ -17,6 +17,14 @@ only need the spot series, so an indicator-only rule backtests over any date
 range.  A warm-up slice of bars *before* from_date is fed to the evaluator so
 RSI/EMA/MACD are fully seeded even for a short visible window.
 
+Every position is stepped through `autobot_sim.SimPosition`, which asks the live engine's own
+exit code (`autobot_exit`) what to do -- so stop, breakeven, trail, target and scale-out behave
+here exactly as they do with real money. Intraday bars are judged on their high / low as well
+as their close (a stop touched inside a bar exits at the stop, and beats a target hit in the
+same bar). Results are net of estimated brokerage / STT / exchange charges and slippage
+(`charges.py`; switch off or tune with the `costs` argument), and the trade-count safety gates
+(weekly cap, losing-streak pause, per-rule loss cap) are replayed.
+
 Option P&L: on an entry signal, take the rule's instrument (ATM/OTM.. CE/PE)
 at that day's premium and mark it daily until an exit.  Premiums come from
 real historical option candles when the expiry's contracts still resolve
@@ -29,21 +37,19 @@ import asyncio
 import math
 from datetime import datetime
 
+from . import charges as chg
 from . import nse_bhavcopy, upstox_data
 from .autobot import _Ctx, _entry_filter_ok, _parse_hhmm, _resolve_instrument
+from .autobot_sim import SimPosition
+from .autobot_stats import summarize
 from .brokers.upstox import get_upstox
 from .greeks import bs_price
-from .processing import IST
+from .processing import IST, lot_size
 
 _STEP = {
     "NIFTY": 50, "BANKNIFTY": 100, "FINNIFTY": 50, "MIDCPNIFTY": 25,
     "NIFTYNXT50": 50, "SENSEX": 100, "BANKEX": 100,
 }
-_LOT = {
-    "NIFTY": 75, "BANKNIFTY": 30, "FINNIFTY": 65, "MIDCPNIFTY": 120,
-    "NIFTYNXT50": 25, "SENSEX": 20, "BANKEX": 30,
-}
-
 # condition kinds that need reconstructed historical Greeks/GEX (see
 # upstox_data.fetch_history_greeks) -- gated separately from the cheap
 # pcr/maxPain fetch below since this one does real IV-solving + a second
@@ -91,11 +97,119 @@ def _resample(cands: list[dict], interval_s: int) -> list[dict]:
     return [buckets[k] for k in sorted(buckets)]
 
 
+def _costs_cfg(costs: dict | None) -> dict:
+    """Backtest cost model. On by default: a backtest that ignores brokerage, STT and the
+    bid-ask spread flatters every rule, and the flattery is worst for the frequent,
+    small-premium trades AutoBot tends to take."""
+    c = costs or {}
+    return {
+        "enabled": bool(c.get("enabled", True)),
+        "slippagePct": _f(c.get("slippagePct"), chg.DEFAULT_SLIPPAGE_PCT) if c.get("slippagePct") not in (None, "") else chg.DEFAULT_SLIPPAGE_PCT,
+        "brokerage": _f(c.get("brokerage"), chg.BROKERAGE_PER_ORDER) if c.get("brokerage") not in (None, "") else chg.BROKERAGE_PER_ORDER,
+    }
+
+
+def _round_trip_costs(cfg: dict, side: str, base: float, lots: int, lot: int,
+                      fills: list[tuple[int, float]]) -> tuple[float, float]:
+    """(charges, slippage) in rupees for a finished trade: one entry order at `base`, and every
+    closing fill (lots, premium). Both are zero when the cost model is switched off."""
+    if not cfg["enabled"]:
+        return 0.0, 0.0
+    exit_side = "SELL" if side == "BUY" else "BUY"
+    entry_q = lots * lot
+    charges = chg.order_charges(base * entry_q, side, brokerage=cfg["brokerage"])
+    slip = base * entry_q * cfg["slippagePct"] / 100.0
+    for n, px in fills:
+        q = n * lot
+        charges += chg.order_charges(px * q, exit_side, brokerage=cfg["brokerage"])
+        slip += px * q * cfg["slippagePct"] / 100.0
+    return charges, slip
+
+
+def _finish_trade(*, rule_side: str, base: float, lots: int, lot: int, ev: dict, sim, cfg: dict,
+                  meta: dict, hold_min: float | None) -> dict:
+    """One row per ROUND TRIP (a trade that scaled out is one trade)."""
+    gross = ev["gross"]
+    charges, slip = _round_trip_costs(cfg, rule_side, base, lots, lot, sim.fills)
+    net = gross - charges - slip
+    invested = base * lots * lot
+    return {
+        **meta,
+        "side": rule_side, "lots": lots, "entryPx": round(base, 2),
+        "exitPx": round(ev["px"], 2), "reason": ev["reason"], "scaled": len(sim.fills) > 1,
+        "pnlPct": round(gross / invested * 100.0, 1) if invested else 0.0,
+        "grossRs": round(gross, 0), "chargesRs": round(charges, 0), "slippageRs": round(slip, 0),
+        "pnlRs": round(net, 0), "holdMin": None if hold_min is None else round(hold_min, 1),
+    }
+
+
+def _summarize_trades(trades: list[dict]) -> tuple[dict, list[float]]:
+    pnls = [t["pnlRs"] for t in trades]
+    s = summarize(
+        pnls,
+        holds_min=[t.get("holdMin") for t in trades],
+        reasons=[t["reason"] for t in trades],
+        days=[t["exitDate"] for t in trades],
+    )
+    s["grossTotal"] = round(sum(t["grossRs"] for t in trades), 0)
+    s["chargesTotal"] = round(sum(t["chargesRs"] for t in trades), 0)
+    s["slippageTotal"] = round(sum(t["slippageRs"] for t in trades), 0)
+    return s, s["equity"]
+
+
+class _Gates:
+    """The engine's trade-history safety gates, replayed in a backtest so a rule with a weekly
+    cap or a loss-streak stop is tested the way it will actually run. (The DTE gate and the
+    spread guard need a real expiry / real quotes, which a backtest doesn't have.)"""
+
+    def __init__(self, rule: dict):
+        self.week_cap = int(_f(rule.get("maxTradesPerWeek"), 0) or 0)
+        self.streak_cap = int(_f(rule.get("maxConsecLosses"), 0) or 0)
+        self.loss_cap = abs(_f(rule.get("ruleMaxLoss"), 0.0))
+        self.week_count: dict[str, int] = {}
+        self.day_pnl: dict[str, float] = {}
+        self.day_streak: dict[str, int] = {}
+        self.paused_days: set[str] = set()
+
+    @staticmethod
+    def week_of(day: str) -> str:
+        y, w, _ = datetime.strptime(day, "%Y-%m-%d").isocalendar()
+        return f"{y}-W{w:02d}"
+
+    def allows(self, day: str) -> bool:
+        if day in self.paused_days:
+            return False
+        return not (self.week_cap and self.week_count.get(self.week_of(day), 0) >= self.week_cap)
+
+    def opened(self, day: str) -> None:
+        wk = self.week_of(day)
+        self.week_count[wk] = self.week_count.get(wk, 0) + 1
+
+    def closed(self, day: str, gross: float) -> None:
+        self.day_pnl[day] = self.day_pnl.get(day, 0.0) + gross
+        self.day_streak[day] = self.day_streak.get(day, 0) + 1 if gross < 0 else 0
+        if (self.streak_cap and self.day_streak[day] >= self.streak_cap) or (
+            self.loss_cap and self.day_pnl[day] <= -self.loss_cap
+        ):
+            self.paused_days.add(day)
+
+
+def _not_simulated(rule: dict) -> list[str]:
+    out = []
+    if rule.get("minDte") not in (None, "") or rule.get("maxDte") not in (None, ""):
+        out.append("days-to-expiry gate (a backtest has no real expiry calendar)")
+    if _f(rule.get("maxSpreadPct"), 0.0) > 0:
+        out.append("spread guard (no historical quotes)")
+    return out
+
+
+
 async def backtest_rule(
-    rule: dict, from_date: str, to_date: str, interval: int = 86400, bars: int = 0
+    rule: dict, from_date: str, to_date: str, interval: int = 86400, bars: int = 0,
+    costs: dict | None = None,
 ) -> dict:
     if interval and interval < 86400:
-        return await _backtest_intraday(rule, from_date, to_date, int(interval), int(bars or 0))
+        return await _backtest_intraday(rule, from_date, to_date, int(interval), int(bars or 0), costs)
     symbol = (rule.get("symbol") or "NIFTY").upper()
     expiry = rule.get("_btExpiry") or ""
     syn_iv = _f(rule.get("_btIV"), 0.0) or 0.15
@@ -197,7 +311,7 @@ async def backtest_rule(
             have_greeks = False
 
     step = _STEP.get(symbol, 50)
-    lot = _LOT.get(symbol, 1)
+    lot = lot_size(symbol)
 
     hist: list[dict] = []
     for d in dates:
@@ -257,14 +371,10 @@ async def backtest_rule(
 
     # 4. walk the days
     side = (rule.get("side") or "BUY").upper()
-    sign = 1 if side == "BUY" else -1
-    basis = (rule.get("slBasis") or "pct").lower()
-    unit = "pts" if basis == "pts" else "₹" if basis == "rs" else "%"
-    qty = max(1, int(rule.get("lots", 1) or 1) * int(lot or 1))
-    sl = _f(rule.get("slPct")) if rule.get("slPct") not in (None, "") else None
-    tp = _f(rule.get("targetPct")) if rule.get("targetPct") not in (None, "") else None
-    trl = _f(rule.get("trailPct") or 0)
-    trl_arm = _f(rule.get("trailArmPct") or 0)
+    buy = side == "BUY"
+    lots0 = int(rule.get("lots", 1) or 1)
+    cfg = _costs_cfg(costs)
+    gates = _Gates(rule)
     positional = str(rule.get("holdType", "intraday")).lower() == "positional"
     max_pd = int(rule.get("maxTradesPerDay", 3) or 3)
     cooldown_d = 1 if _f(rule.get("cooldownMin") or 0) > 0 else 0
@@ -275,51 +385,41 @@ async def backtest_rule(
     open_pos = None
     cooldown_until = -1
 
+    def _close(pos: dict, ev: dict, d: str) -> None:
+        nonlocal open_pos, cooldown_until
+        t = _finish_trade(
+            rule_side=side, base=pos["entry"], lots=lots0, lot=lot, ev=ev, sim=pos["sim"], cfg=cfg,
+            meta={"entryDate": pos["date"], "exitDate": d, "strike": pos["k"], "ot": pos["ot"]},
+            hold_min=None,
+        )
+        trades.append(t)
+        gates.closed(d, t["grossRs"])
+        open_pos = None
+
     for i, d in enumerate(dates):
         if d < first_tradable and not open_pos:
             continue
-        ctx = _Ctx(symbol, hist[: i + 1])  # daily bars — entryTf resample n/a
+        ctx = _Ctx(symbol, hist[: i + 1])  # daily bars -- entryTf resample n/a
+        last = i == len(dates) - 1
 
         if open_pos:
-            k, ot, ep, edate, ei = (
-                open_pos["k"], open_pos["ot"], open_pos["entry"],
-                open_pos["date"], open_pos["i"],
-            )
+            k, ot, ei = open_pos["k"], open_pos["ot"], open_pos["i"]
             px = _premium(k, ot, d, by_date[d], i - ei)
-            pts_move = (px - ep) * sign
-            if basis == "pts":
-                fav = pts_move
-            elif basis == "rs":
-                fav = pts_move * qty
-            else:
-                fav = pts_move / ep * 100.0 if ep else 0.0
-            spct = pts_move / ep * 100.0 if ep else 0.0  # kept for the trade record
-            open_pos["peak"] = max(open_pos["peak"], fav)
-            reason = None
-            if sl is not None and fav <= -abs(sl):
-                reason = f"SL {sl:.0f}{unit}"
-            elif tp is not None and fav >= abs(tp):
-                reason = f"target {tp:.0f}{unit}"
-            elif trl > 0 and open_pos["peak"] >= trl_arm and fav <= open_pos["peak"] - trl:
-                reason = f"trail ({open_pos['peak']:.0f}{unit}→{fav:.0f}{unit})"
-            elif exit_conds and ctx.eval_conds(exit_conds, rule.get("exitLogic", "any")):
-                reason = "exit signal"
-            elif i == len(dates) - 1:
-                reason = "range end"
-            if reason:
-                pnl_rs = round((px - ep) * sign * int(rule.get("lots", 1)) * lot, 0)
-                trades.append({
-                    "entryDate": edate, "exitDate": d, "strike": k, "ot": ot,
-                    "side": side, "entryPx": round(ep, 2), "exitPx": round(px, 2),
-                    "pnlPct": round(spct, 1), "pnlRs": pnl_rs, "reason": reason,
-                })
-                open_pos = None
+            sig = bool(exit_conds) and ctx.eval_conds(exit_conds, rule.get("exitLogic", "any"))
+            evs = open_pos["sim"].step(px, exit_signal=sig)
+            if not open_pos["sim"].closed and last:
+                evs += open_pos["sim"].force_close(px, "range end")
+            fin = next((e for e in evs if e["kind"] == "exit"), None)
+            if fin:
+                _close(open_pos, fin, d)
                 cooldown_until = i + cooldown_d
             continue
 
         if i <= cooldown_until:
             continue
         if sum(1 for t in trades if t["entryDate"] == d) >= max_pd:
+            continue
+        if not gates.allows(d):
             continue
         if not ctx.eval_conds(entry_conds, rule.get("entryLogic", "all")):
             continue
@@ -331,50 +431,27 @@ async def backtest_rule(
         ef_ok, _ = _entry_filter_ok(rule.get("entryFilter") or {}, px, 0.5, 0.0, 0.0)
         if not ef_ok:
             continue
+        gates.opened(d)
         if positional:
-            open_pos = {"k": strike, "ot": ot, "entry": px, "date": d, "peak": 0.0, "i": i}
+            open_pos = {
+                "k": strike, "ot": ot, "entry": px, "date": d, "i": i,
+                "sim": SimPosition(rule, buy=buy, base=px, lots=lots0, lot_size=lot),
+            }
         else:
-            # Intraday: a daily bar is a single end-of-day price, so there's no
-            # way to simulate an intraday square-off -- the position can never
-            # be allowed to carry into the next day's bar. Close it same-day
-            # at the same price (this validates WHEN the entry signal fires,
-            # not intraday P&L -- use an intraday timeframe above for that).
+            # Intraday: a daily bar is a single end-of-day price, so there's no way to simulate an
+            # intraday square-off -- the position can never be allowed to carry into the next day's
+            # bar. Close it same-day at the same price (this validates WHEN the entry signal fires,
+            # not intraday P&L -- use an intraday timeframe above for that). It is not charged: it
+            # isn't a real trade, and a fee on a made-up round trip would only add noise.
             trades.append({
-                "entryDate": d, "exitDate": d, "strike": strike, "ot": ot,
-                "side": side, "entryPx": round(px, 2), "exitPx": round(px, 2),
-                "pnlPct": 0.0, "pnlRs": 0, "reason": "square-off (daily-bar)",
+                "entryDate": d, "exitDate": d, "strike": strike, "ot": ot, "side": side, "lots": lots0,
+                "entryPx": round(px, 2), "exitPx": round(px, 2), "pnlPct": 0.0, "pnlRs": 0, "grossRs": 0,
+                "chargesRs": 0, "slippageRs": 0, "holdMin": None, "scaled": False,
+                "reason": "square-off (daily-bar)",
             })
             cooldown_until = i + cooldown_d
 
-    # a position opened on (or still held into) the very last day never gets
-    # a following iteration to trigger the "range end" exit inside the loop
-    # -- force-close it here so it isn't silently dropped from the results.
-    if open_pos:
-        k, ot, ep, edate, ei = (
-            open_pos["k"], open_pos["ot"], open_pos["entry"],
-            open_pos["date"], open_pos["i"],
-        )
-        d = dates[-1]
-        px = _premium(k, ot, d, by_date[d], len(dates) - 1 - ei)
-        spct = (px - ep) * sign / ep * 100.0 if ep else 0.0
-        pnl_rs = round((px - ep) * sign * int(rule.get("lots", 1)) * lot, 0)
-        trades.append({
-            "entryDate": edate, "exitDate": d, "strike": k, "ot": ot,
-            "side": side, "entryPx": round(ep, 2), "exitPx": round(px, 2),
-            "pnlPct": round(spct, 1), "pnlRs": pnl_rs, "reason": "range end",
-        })
-
-    # 5. stats
-    pnls = [t["pnlRs"] for t in trades]
-    wins = [p for p in pnls if p > 0]
-    losses = [p for p in pnls if p <= 0]
-    equity, run, peak, max_dd = [], 0.0, 0.0, 0.0
-    for p in pnls:
-        run += p
-        equity.append(run)
-        peak = max(peak, run)
-        max_dd = min(max_dd, run - peak)
-
+    summary, equity = _summarize_trades(trades)
     pricing = "historical" if syn_hits == 0 else "synthetic" if real_hits == 0 else "mixed"
     return {
         "symbol": symbol, "expiry": expiry or None, "from": from_date, "to": to_date,
@@ -382,22 +459,12 @@ async def backtest_rule(
         "lot": lot, "days": len(win),
         "pricing": pricing, "hasChain": have_chain, "hasGreeksHistory": have_greeks,
         "synIV": round(syn_iv, 3), "synDTE": syn_dte,
+        "costs": cfg, "notSimulated": _not_simulated(rule),
         "trades": trades,
         "equity": equity,
-        "summary": {
-            "total": round(sum(pnls), 0),
-            "count": len(trades),
-            "wins": len(wins),
-            "losses": len(losses),
-            "winRate": round(len(wins) / len(trades) * 100, 1) if trades else 0.0,
-            "totalWin": round(sum(wins), 0),
-            "totalLoss": round(sum(losses), 0),
-            "avgWin": round(sum(wins) / len(wins), 0) if wins else 0.0,
-            "avgLoss": round(sum(losses) / len(losses), 0) if losses else 0.0,
-            "profitFactor": round(sum(wins) / abs(sum(losses)), 2) if losses and sum(losses) else None,
-            "maxDrawdown": round(max_dd, 0),
-        },
+        "summary": summary,
     }
+
 
 
 # --------------------------------------------------------------------------
@@ -405,7 +472,7 @@ async def backtest_rule(
 # chosen timeframe (1m / 5m / 15m / 30m / 1h)
 # --------------------------------------------------------------------------
 async def _backtest_intraday(
-    rule: dict, from_date: str, to_date: str, interval: int, bars: int
+    rule: dict, from_date: str, to_date: str, interval: int, bars: int, costs: dict | None = None
 ) -> dict:
     symbol = (rule.get("symbol") or "NIFTY").upper()
     syn_iv = _f(rule.get("_btIV"), 0.0) or 0.15
@@ -445,18 +512,14 @@ async def _backtest_intraday(
     series = cands[max(0, warm_i - 150) : cands.index(in_win[-1]) + 1]
 
     step = _STEP.get(symbol, 50)
-    lot = _LOT.get(symbol, 1)
+    lot = lot_size(symbol)
     hist = [{"t": c["time"], "spot": c["close"], "o": c["open"], "h": c["high"], "l": c["low"], "c": c["close"]} for c in series]
 
     side = (rule.get("side") or "BUY").upper()
-    sign = 1 if side == "BUY" else -1
-    basis = (rule.get("slBasis") or "pct").lower()
-    unit = "pts" if basis == "pts" else "\u20b9" if basis == "rs" else "%"
-    qty = max(1, int(rule.get("lots", 1) or 1) * int(lot or 1))
-    sl = _f(rule.get("slPct")) if rule.get("slPct") not in (None, "") else None
-    tp = _f(rule.get("targetPct")) if rule.get("targetPct") not in (None, "") else None
-    trl = _f(rule.get("trailPct") or 0)
-    trl_arm = _f(rule.get("trailArmPct") or 0)
+    buy = side == "BUY"
+    lots0 = int(rule.get("lots", 1) or 1)
+    cfg = _costs_cfg(costs)
+    gates = _Gates(rule)
     positional = str(rule.get("holdType", "intraday")).lower() == "positional"
     max_pd = int(rule.get("maxTradesPerDay", 3) or 3)
     cd_bars = max(0, math.ceil(_f(rule.get("cooldownMin") or 0) * 60 / interval))
@@ -470,6 +533,22 @@ async def _backtest_intraday(
     cd_until = -1
     day_count: dict[str, int] = {}
 
+    def _clock(ts: int) -> str:
+        return datetime.fromtimestamp(ts, IST).strftime("%H:%M:%S")
+
+    def _close(pos: dict, ev: dict, c: dict) -> None:
+        nonlocal open_pos
+        hold = (c["time"] - pos["ts"]) / 60.0
+        t = _finish_trade(
+            rule_side=side, base=pos["entry"], lots=lots0, lot=lot, ev=ev, sim=pos["sim"], cfg=cfg,
+            meta={"entryDate": pos["d"], "exitDate": _dstr(c["time"]), "strike": pos["k"], "ot": pos["ot"],
+                  "entryTime": pos["t"], "exitTime": _clock(c["time"])},
+            hold_min=hold,
+        )
+        trades.append(t)
+        gates.closed(_dstr(c["time"]), t["grossRs"])
+        open_pos = None
+
     for i, c in enumerate(series):
         ts = c["time"]
         spot = c["close"]
@@ -477,42 +556,29 @@ async def _backtest_intraday(
         clk = datetime.fromtimestamp(ts, IST).time()
         tradable = ts >= first_ts
         ctx = _Ctx(symbol, hist[: i + 1], tf=int(rule.get("entryTf") or 0))
+        last = i == len(series) - 1
 
         if open_pos:
-            k, ot, ep, ei = open_pos["k"], open_pos["ot"], open_pos["entry"], open_pos["i"]
-            held_days = (i - ei) * interval / 86400.0
-            px = _syn_premium(ot, spot, k, held_days, syn_iv, syn_dte)
-            pts_move = (px - ep) * sign
-            fav = (
-                pts_move if basis == "pts"
-                else pts_move * qty if basis == "rs"
-                else (pts_move / ep * 100.0 if ep else 0.0)
+            k, ot, ei = open_pos["k"], open_pos["ot"], open_pos["i"]
+            held = (i - ei) * interval / 86400.0
+
+            def prem(s):
+                return _syn_premium(ot, s, k, held, syn_iv, syn_dte)
+
+            # premium at the bar's own open / low / high / close -- the extremes are what let a stop
+            # or target be hit INSIDE the bar instead of only being noticed at its close
+            ps = [prem(c["open"]), prem(c["low"]), prem(c["high"]), prem(spot)]
+            px = ps[3]
+            sig = bool(exit_conds) and ctx.eval_conds(exit_conds, rule.get("exitLogic", "any"))
+            evs = open_pos["sim"].step(
+                px, lo=min(ps), hi=max(ps), opn=ps[0], exit_signal=sig,
+                square_off=bool(not positional and sq and clk >= sq),
             )
-            open_pos["peak"] = max(open_pos["peak"], fav)
-            reason = None
-            if sl is not None and fav <= -abs(sl):
-                reason = f"SL {sl:.0f}{unit}"
-            elif tp is not None and fav >= abs(tp):
-                reason = f"target {tp:.0f}{unit}"
-            elif trl > 0 and open_pos["peak"] >= trl_arm and fav <= open_pos["peak"] - trl:
-                reason = f"trail ({open_pos['peak']:.0f}{unit}\u2192{fav:.0f}{unit})"
-            elif exit_conds and ctx.eval_conds(exit_conds, rule.get("exitLogic", "any")):
-                reason = "exit signal"
-            elif not positional and sq and clk >= sq:
-                reason = "square-off"
-            elif i == len(series) - 1:
-                reason = "range end"
-            if reason:
-                spct = pts_move / ep * 100.0 if ep else 0.0
-                trades.append({
-                    "entryDate": open_pos["d"], "exitDate": dkey, "strike": k, "ot": ot,
-                    "entryTime": open_pos["t"], "exitTime": clk.strftime("%H:%M:%S"),
-                    "side": side, "entryPx": round(ep, 2), "exitPx": round(px, 2),
-                    "pnlPct": round(spct, 1),
-                    "pnlRs": round(pts_move * qty, 0),
-                    "reason": reason,
-                })
-                open_pos = None
+            if not open_pos["sim"].closed and last:
+                evs += open_pos["sim"].force_close(px, "range end")
+            fin = next((e for e in evs if e["kind"] == "exit"), None)
+            if fin:
+                _close(open_pos, fin, c)
                 cd_until = i + cd_bars
             continue
 
@@ -526,6 +592,8 @@ async def _backtest_intraday(
             continue
         if sq and clk >= sq:
             continue
+        if not gates.allows(dkey):
+            continue
         if not ctx.eval_conds(entry_conds, rule.get("entryLogic", "all")):
             continue
         base = round(spot / step) * step
@@ -537,41 +605,13 @@ async def _backtest_intraday(
         if not ok:
             continue
         open_pos = {
-            "k": strike, "ot": ot, "entry": px, "d": dkey, "t": clk.strftime("%H:%M:%S"),
-            "peak": 0.0, "i": i,
+            "k": strike, "ot": ot, "entry": px, "d": dkey, "t": _clock(ts), "ts": ts, "i": i,
+            "sim": SimPosition(rule, buy=buy, base=px, lots=lots0, lot_size=lot),
         }
         day_count[dkey] = day_count.get(dkey, 0) + 1
+        gates.opened(dkey)
 
-    # a position opened on (or still held into) the very last bar never gets
-    # a following iteration to trigger the "range end" exit inside the loop
-    # -- force-close it here so it isn't silently dropped from the results.
-    if open_pos:
-        k, ot, ep, ei = open_pos["k"], open_pos["ot"], open_pos["entry"], open_pos["i"]
-        last = series[-1]
-        held_days = (len(series) - 1 - ei) * interval / 86400.0
-        px = _syn_premium(ot, last["close"], k, held_days, syn_iv, syn_dte)
-        pts_move = (px - ep) * sign
-        spct = pts_move / ep * 100.0 if ep else 0.0
-        trades.append({
-            "entryDate": open_pos["d"], "exitDate": _dstr(last["time"]), "strike": k, "ot": ot,
-            "entryTime": open_pos["t"],
-            "exitTime": datetime.fromtimestamp(last["time"], IST).strftime("%H:%M:%S"),
-            "side": side, "entryPx": round(ep, 2), "exitPx": round(px, 2),
-            "pnlPct": round(spct, 1),
-            "pnlRs": round(pts_move * qty, 0),
-            "reason": "range end",
-        })
-
-    pnls = [t["pnlRs"] for t in trades]
-    wins = [p for p in pnls if p > 0]
-    losses = [p for p in pnls if p <= 0]
-    equity, run, peak, max_dd = [], 0.0, 0.0, 0.0
-    for p in pnls:
-        run += p
-        equity.append(run)
-        peak = max(peak, run)
-        max_dd = min(max_dd, run - peak)
-
+    summary, equity = _summarize_trades(trades)
     return {
         "symbol": symbol, "expiry": None, "from": from_date, "to": to_date,
         "instrument": rule.get("instrument"), "side": side, "lots": rule.get("lots", 1),
@@ -579,18 +619,7 @@ async def _backtest_intraday(
         "interval": interval, "candles": len(in_win),
         "pricing": "synthetic", "hasChain": False,
         "synIV": round(syn_iv, 3), "synDTE": syn_dte,
+        "costs": cfg, "notSimulated": _not_simulated(rule),
         "trades": trades, "equity": equity,
-        "summary": {
-            "total": round(sum(pnls), 0),
-            "count": len(trades),
-            "wins": len(wins),
-            "losses": len(losses),
-            "winRate": round(len(wins) / len(trades) * 100, 1) if trades else 0.0,
-            "totalWin": round(sum(wins), 0),
-            "totalLoss": round(sum(losses), 0),
-            "avgWin": round(sum(wins) / len(wins), 0) if wins else 0.0,
-            "avgLoss": round(sum(losses) / len(losses), 0) if losses else 0.0,
-            "profitFactor": round(sum(wins) / abs(sum(losses)), 2) if losses and sum(losses) else None,
-            "maxDrawdown": round(max_dd, 0),
-        },
+        "summary": summary,
     }

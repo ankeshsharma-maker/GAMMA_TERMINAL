@@ -36,6 +36,8 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
   const [ivPct, setIvPct] = useState("15");
   const [tf, setTf] = useState(86400); // candle interval, seconds; 86400 = daily
   const [nBars, setNBars] = useState("300"); // # candles to replay (intraday)
+  const [costsOn, setCostsOn] = useState(true); // brokerage / STT / exchange / GST + slippage
+  const [slip, setSlip] = useState("0.5"); // % of premium lost to the spread on each fill
   const [res, setRes] = useState<Res | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -56,11 +58,12 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
       // indicators on the backtest's own candles
       entryTf: rule.entryTf || (tf < 86400 ? tf : 0),
     };
+    const costs = { enabled: costsOn, slippagePct: slip === "" ? 0.5 : Number(slip) };
     api
       .autobotBacktest(
         tf >= 86400
-          ? { rule: merged, from, to }
-          : { rule: merged, from, to, interval: tf, bars: Number(nBars) || 0 }
+          ? { rule: merged, from, to, costs }
+          : { rule: merged, from, to, interval: tf, bars: Number(nBars) || 0, costs }
       )
       .then(
       (d) => {
@@ -178,8 +181,11 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
           </label>
         )}
         {tf < 86400 && (
-          <span className="text-[9px] text-amber-400">
-            intraday · indicator-only, synthetic premiums
+          <span
+            className="text-[9px] text-amber-400"
+            title="Each bar is walked open → the extreme nearer the open → the farther extreme → close, so a stop or target touched inside a bar fills at its own price rather than at the close, and a gap through a stop fills at the open."
+          >
+            intraday · indicator-only, synthetic premiums · stops &amp; targets tested inside each bar
           </span>
         )}
       </div>
@@ -205,20 +211,80 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
         <span className="text-[9px]">only used to price legs when real option history is missing</span>
       </div>
 
+      <div className="mb-1.5 flex flex-wrap items-center gap-2 text-term-dim">
+        <span className="uppercase tracking-wide">Costs</span>
+        <div className="seg">
+          <button className={costsOn ? "on" : ""} onClick={() => setCostsOn(true)} title="Deduct brokerage, STT, exchange charges, GST and slippage from every trade">
+            On
+          </button>
+          <button className={!costsOn ? "on" : ""} onClick={() => setCostsOn(false)} title="Gross results, as if trading were free">
+            Off
+          </button>
+        </div>
+        {costsOn && (
+          <label className="flex items-center gap-1" title="How much of the premium you give up to the bid-ask spread on each fill (entry and exit)">
+            slippage %
+            <input
+              value={slip}
+              onChange={(e) => setSlip(e.target.value.replace(/[^\d.]/g, ""))}
+              className="num w-10 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text"
+            />
+          </label>
+        )}
+        <span className="text-[9px]">
+          {costsOn ? "₹20/order brokerage + STT + exchange + GST (estimates), so the result is what you'd keep" : "gross — flatters frequent, small-premium trades"}
+        </span>
+      </div>
+
       {err && <div className="text-down">{err}</div>}
 
       {res && s && (
         <>
           <div className="grid grid-cols-4 gap-x-3 gap-y-1 sm:grid-cols-8">
-            <K l="Total" v={`₹${nf(s.total, 0)}`} up={s.total >= 0} />
+            <K l={res.costs?.enabled ? "Net P&L" : "Total"} v={`₹${nf(s.total, 0)}`} up={s.total >= 0} />
+            {res.costs?.enabled && s.grossTotal != null ? (
+              <K l="Gross" v={`₹${nf(s.grossTotal, 0)}`} up={s.grossTotal >= 0} />
+            ) : (
+              <K l="Total win" v={`₹${nf(s.totalWin, 0)}`} up />
+            )}
+            {res.costs?.enabled && s.chargesTotal != null ? (
+              <K l="Costs" v={`₹${nf((s.chargesTotal ?? 0) + (s.slippageTotal ?? 0), 0)}`} up={false} />
+            ) : (
+              <K l="Total loss" v={`₹${nf(s.totalLoss, 0)}`} up={false} />
+            )}
             <K l="Trades" v={`${s.count}`} />
             <K l="Win rate" v={`${s.winRate}%`} up={s.winRate >= 50} />
-            <K l="Total win" v={`₹${nf(s.totalWin, 0)}`} up />
-            <K l="Total loss" v={`₹${nf(s.totalLoss, 0)}`} up={false} />
-            <K l="Avg win" v={`₹${nf(s.avgWin, 0)}`} up />
-            <K l="Avg loss" v={`₹${nf(s.avgLoss, 0)}`} up={false} />
+            <K l="Expectancy" v={s.expectancy != null ? `₹${nf(s.expectancy, 0)}` : "–"} up={(s.expectancy ?? 0) >= 0} />
+            <K l="Profit factor" v={s.profitFactor != null ? nf(s.profitFactor, 2) : "–"} up={(s.profitFactor ?? 0) >= 1} />
             <K l="Max DD" v={`₹${nf(s.maxDrawdown, 0)}`} up={false} />
           </div>
+          <div className="mt-1 grid grid-cols-4 gap-x-3 gap-y-1 sm:grid-cols-8">
+            <K l="Avg win" v={`₹${nf(s.avgWin, 0)}`} up />
+            <K l="Avg loss" v={`₹${nf(s.avgLoss, 0)}`} up={false} />
+            <K l="Payoff" v={s.payoff != null ? nf(s.payoff, 2) : "–"} up={(s.payoff ?? 0) >= 1} />
+            <K l="Best" v={s.best != null ? `₹${nf(s.best, 0)}` : "–"} up />
+            <K l="Worst" v={s.worst != null ? `₹${nf(s.worst, 0)}` : "–"} up={false} />
+            <K l="Win streak" v={s.maxWinStreak != null ? `${s.maxWinStreak}` : "–"} />
+            <K l="Loss streak" v={s.maxLossStreak != null ? `${s.maxLossStreak}` : "–"} />
+            <K l="Avg hold" v={s.avgHoldMin != null ? (s.avgHoldMin >= 90 ? `${nf(s.avgHoldMin / 60, 1)}h` : `${nf(s.avgHoldMin, 0)}m`) : "–"} />
+          </div>
+          {s.byReason && Object.keys(s.byReason).length > 0 && (
+            <div className="mt-1 flex flex-wrap items-center gap-1 text-[9px] text-term-dim">
+              <span className="uppercase tracking-wide">exits</span>
+              {Object.entries(s.byReason)
+                .sort((a, b) => b[1].n - a[1].n)
+                .map(([k, v]) => (
+                  <span key={k} className="rounded border border-term-border px-1 py-px" title={`${v.n} trade(s), ₹${nf(v.pnl, 0)} net`}>
+                    {k} {v.n} · <span className={v.pnl >= 0 ? "text-up" : "text-down"}>₹{nf(v.pnl, 0)}</span>
+                  </span>
+                ))}
+            </div>
+          )}
+          {(res.notSimulated?.length ?? 0) > 0 && (
+            <div className="mt-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] text-amber-400">
+              Not simulated in a backtest: {res.notSimulated!.join("; ")}. The live rule is stricter than this result.
+            </div>
+          )}
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-term-dim">
             <span>
               {res.symbol} {res.expiry ?? "—"} · {res.instrument} {res.side} ·{" "}
@@ -302,11 +368,21 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
                       </td>
                       <td className="num py-0.5 text-right">{nf(t.entryPx)}</td>
                       <td className="num py-0.5 text-right">{nf(t.exitPx)}</td>
-                      <td className={`num py-0.5 text-right ${t.pnlRs >= 0 ? "text-up" : "text-down"}`}>
+                      <td
+                        className={`num py-0.5 text-right ${t.pnlRs >= 0 ? "text-up" : "text-down"}`}
+                        title={
+                          t.grossRs != null
+                            ? `gross ₹${nf(t.grossRs, 0)} − charges ₹${nf(t.chargesRs ?? 0, 0)} − slippage ₹${nf(t.slippageRs ?? 0, 0)} = net ₹${nf(t.pnlRs, 0)}`
+                            : undefined
+                        }
+                      >
                         {t.pnlRs >= 0 ? "+" : ""}
                         {nf(t.pnlRs, 0)} ({t.pnlPct}%)
                       </td>
-                      <td className="py-0.5 text-term-dim">{t.reason}</td>
+                      <td className="py-0.5 text-term-dim">
+                        {t.reason}
+                        {t.scaled ? " · scaled out" : ""}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

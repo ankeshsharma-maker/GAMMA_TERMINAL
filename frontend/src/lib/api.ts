@@ -626,6 +626,8 @@ export const api = {
     to: string;
     interval?: number;
     bars?: number;
+    /** brokerage / STT / exchange charges + slippage; ON by default server-side */
+    costs?: { enabled?: boolean; slippagePct?: number; brokerage?: number };
   }) =>
     j<{
       symbol: string;
@@ -641,6 +643,9 @@ export const api = {
       hasGreeksHistory: boolean;
       synIV: number;
       synDTE: number;
+      costs?: { enabled: boolean; slippagePct: number; brokerage: number };
+      /** rule settings a backtest can't reproduce (no real expiry calendar / quotes) */
+      notSimulated?: string[];
       trades: {
         entryDate: string;
         exitDate: string;
@@ -653,7 +658,15 @@ export const api = {
         entryPx: number;
         exitPx: number;
         pnlPct: number;
+        /** NET of charges and slippage when costs are on */
         pnlRs: number;
+        grossRs?: number;
+        chargesRs?: number;
+        slippageRs?: number;
+        lots?: number;
+        /** booked part of the position early (scale-out) */
+        scaled?: boolean;
+        holdMin?: number | null;
         reason: string;
       }[];
       equity: number[];
@@ -669,6 +682,17 @@ export const api = {
         avgLoss: number;
         profitFactor: number | null;
         maxDrawdown: number;
+        expectancy?: number;
+        payoff?: number | null;
+        maxWinStreak?: number;
+        maxLossStreak?: number;
+        best?: number;
+        worst?: number;
+        avgHoldMin?: number | null;
+        grossTotal?: number;
+        chargesTotal?: number;
+        slippageTotal?: number;
+        byReason?: Record<string, { n: number; pnl: number }>;
       };
     }>("/api/autobot/backtest", { method: "POST", body: JSON.stringify(body) }),
   upstoxScanHistory: (symbols: string[], from: string, to: string) =>

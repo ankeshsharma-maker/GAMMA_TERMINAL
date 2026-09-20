@@ -59,8 +59,9 @@ def kill():
 
 @router.post("/backtest")
 async def backtest(body: dict):
-    """Daily-bar backtest of a rule over [from, to] ('YYYY-MM-DD').
-    body: {rule:{...}}  OR  {ruleId:"..."} to use a saved rule, + from,to."""
+    """Backtest of a rule over [from, to] ('YYYY-MM-DD').
+    body: {rule:{...}}  OR  {ruleId:"..."} to use a saved rule, + from,to, optional interval/bars
+    and costs {enabled, slippagePct, brokerage} (on by default)."""
     from .autobot_backtest import backtest_rule
 
     rule = body.get("rule")
@@ -80,6 +81,6 @@ async def backtest(body: dict):
     except (TypeError, ValueError):
         bars = 0
     try:
-        return await backtest_rule(rule, frm, to, interval, bars)
+        return await backtest_rule(rule, frm, to, interval, bars, body.get("costs"))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(502, f"backtest failed: {exc}")
