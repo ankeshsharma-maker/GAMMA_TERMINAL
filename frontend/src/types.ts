@@ -419,6 +419,8 @@ export interface AutoSummary {
   total: number;
   gross: number;
   charges: number;
+  totalWin?: number;
+  totalLoss?: number;
   count: number;
   wins: number;
   losses: number;

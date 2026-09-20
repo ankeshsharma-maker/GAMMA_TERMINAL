@@ -141,14 +141,21 @@ export function LineChart({
             </text>
           </g>
         ))}
-        {xt.map((v) => (
-          <g key={`x${v}`}>
-            <line x1={sx(v)} x2={sx(v)} y1={M.t} y2={M.t + ih} className="stroke-term-border/50" strokeWidth={0.5} />
-            <text x={sx(v)} y={height - 8} textAnchor="middle" className="fill-term-dim" fontSize={10}>
-              {xFormat(v)}
-            </text>
-          </g>
-        ))}
+        {xt.map((v) => {
+          // keep the label inside the drawing: a tick at either end anchors its text inward
+          const lbl = xFormat(v);
+          const half = lbl.length * 2.9;
+          const px = sx(v);
+          const anchor = px + half > w - 2 ? "end" : px - half < 2 ? "start" : "middle";
+          return (
+            <g key={`x${v}`}>
+              <line x1={px} x2={px} y1={M.t} y2={M.t + ih} className="stroke-term-border/50" strokeWidth={0.5} />
+              <text x={px} y={height - 8} textAnchor={anchor} className="fill-term-dim" fontSize={10}>
+                {lbl}
+              </text>
+            </g>
+          );
+        })}
 
         {vlines.map((l, i) => (
           <g key={`v${i}`}>

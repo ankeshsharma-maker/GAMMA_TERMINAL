@@ -3,6 +3,7 @@ import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, signColor } from "../lib/format";
 import type { AutoCondition, AutoRule, AutoStats, AutoStructureDef, StructurePreview } from "../types";
+import { FigureBoard, TONE_TEXT, money, tone, tradeTicks } from "./Figures";
 import { LineChart } from "./LineChart";
 import { RuleBacktest } from "./RuleBacktest";
 import { SelectMenu } from "./SelectMenu";
@@ -795,7 +796,7 @@ function StructureBlock({
               .sort((a, b) => (a.side === b.side ? a.ot.localeCompare(b.ot) || a.strike - b.strike : a.side === "BUY" ? -1 : 1))
               .map((lg, i) => (
                 <span key={i} className="num">
-                  <span className={lg.side === "BUY" ? "text-up" : "text-down"}>{lg.side}</span> {lg.strike} {lg.ot}{" "}
+                  <span className={lg.side === "BUY" ? "text-green-500" : "text-red-400"}>{lg.side}</span> {lg.strike} {lg.ot}{" "}
                   <span className="text-term-dim">@ {lg.price ? lg.price.toFixed(1) : "–"}</span>
                   {!lg.inChain && <span className="text-amber-400" title="This strike is outside the loaded option chain"> ⚠</span>}
                 </span>
@@ -809,11 +810,11 @@ function StructureBlock({
             </span>
             <span>
               Max profit at expiry{" "}
-              <b className="num text-up">{pv.maxProfit == null ? "unlimited" : rsP(pv.maxProfit * lots)}</b>
+              <b className="num text-green-500">{pv.maxProfit == null ? "unlimited" : rsP(pv.maxProfit * lots)}</b>
             </span>
             <span>
               Max loss at expiry{" "}
-              <b className="num text-down">{pv.maxLoss == null ? "unlimited" : rsP(pv.maxLoss * lots)}</b>
+              <b className="num text-red-400">{pv.maxLoss == null ? "unlimited" : rsP(pv.maxLoss * lots)}</b>
             </span>
             <span>
               {pv.symbol} {pv.expiry} · ATM {pv.atmStrike}
@@ -1319,16 +1320,9 @@ function WhyLine({ r, masterOn }: { r: AutoRule; masterOn: boolean }) {
 /* ------------------------------------------------------------------ */
 /* performance tab                                                     */
 /* ------------------------------------------------------------------ */
+/** text colour for a P&L figure: brighter than --down so a loss reads as clearly as a win */
+const toneCls = (v: number | null | undefined) => TONE_TEXT[tone(v)];
 const rs = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}₹${Math.abs(Math.round(v)).toLocaleString("en-IN")}`;
-
-function Stat({ label, value, cls = "", title }: { label: string; value: string; cls?: string; title?: string }) {
-  return (
-    <div className="flex min-w-[92px] flex-col rounded border border-term-border px-2.5 py-1.5" title={title}>
-      <span className="text-[9px] uppercase tracking-wide text-term-dim">{label}</span>
-      <span className={`num text-sm font-semibold ${cls}`}>{value}</span>
-    </div>
-  );
-}
 
 function AutoPerformance() {
   const [data, setData] = useState<AutoStats | null>(null);
@@ -1360,26 +1354,17 @@ function AutoPerformance() {
     );
   const rows = Object.entries(data.rules).sort((a, b) => b[1].total - a[1].total);
   const th = (h: string) => (
-    <th key={h} className="border-b border-term-border px-2 py-1 font-medium">
+    <th key={h} className="border-b border-term-border px-2.5 py-1.5 font-medium">
       {h}
     </th>
   );
   return (
     <div className="flex flex-col gap-3 p-3 md:min-h-0 md:flex-1 md:overflow-y-auto">
-      <div className="flex flex-wrap gap-2">
-        <Stat label="Net P&L" value={rs(o.total)} cls={signColor(o.total)} title="After estimated brokerage, STT, exchange and GST charges" />
-        <Stat label="Trades" value={`${o.count}`} title={`${o.wins} won, ${o.losses} lost`} />
-        <Stat label="Win rate" value={`${nf(o.winRate, 1)}%`} />
-        <Stat label="Expectancy" value={rs(o.expectancy)} cls={signColor(o.expectancy)} title="Average net P&L per trade" />
-        <Stat label="Profit factor" value={o.profitFactor != null ? nf(o.profitFactor, 2) : "–"} title="Total won divided by total lost. Above 1 is profitable." />
-        <Stat label="Payoff" value={o.payoff != null ? nf(o.payoff, 2) : "–"} title="Average win divided by average loss" />
-        <Stat label="Max drawdown" value={rs(o.maxDrawdown)} cls="text-down" />
-        <Stat label="Charges" value={rs(-o.charges)} cls="text-term-dim" title="Estimated brokerage + STT + exchange + GST, already deducted" />
-      </div>
+      <FigureBoard s={o} gross={o.gross} costs={o.charges} costsLabel="charges" />
 
       {o.equity.length >= 2 && (
         <section className="min-w-0 rounded border border-term-border bg-term-bg/20 p-3">
-          <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-term-text">
+          <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-term-text">
             Equity curve <span className="font-normal normal-case text-term-dim">· running net P&amp;L, one point per closed trade</span>
           </h3>
           <LineChart
@@ -1388,19 +1373,14 @@ function AutoPerformance() {
               {
                 key: "eq",
                 label: "Net P&L",
-                color: o.total >= 0 ? "#22c55e" : "#ef4444",
+                color: o.total >= 0 ? "#22c55e" : "#f87171",
                 width: 1.6,
                 points: [{ x: 0, y: 0 }, ...o.equity.map((v, i) => ({ x: i + 1, y: v }))],
               },
             ]}
             xFormat={(x) => (x === 0 ? "start" : `trade ${x}`)}
-            xTicks={(() => {
-              // whole trade numbers only, at most ~6 of them
-              const n = o.equity.length;
-              const step = Math.max(1, Math.ceil(n / 5));
-              return Array.from({ length: Math.floor(n / step) + 1 }, (_, i) => i * step);
-            })()}
-            yFormat={(y) => rs(y)}
+            xTicks={tradeTicks(o.equity.length)}
+            yFormat={(y) => money(y, { sign: true })}
             hlines={[{ value: 0, color: "#94a3b8", dashed: true }]}
           />
         </section>
@@ -1409,23 +1389,23 @@ function AutoPerformance() {
       <section className="min-w-0 rounded border border-term-border bg-term-bg/20 p-3">
         <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-term-text">By rule</h3>
         <div className="overflow-x-auto">
-          <table className="w-full whitespace-nowrap text-2xs">
+          <table className="w-full whitespace-nowrap text-xs">
             <thead>
-              <tr className="text-left text-[10px] uppercase text-term-dim">
+              <tr className="text-left text-[11px] uppercase tracking-wide text-term-dim">
                 {["Rule", "Trades", "Win %", "Net P&L", "Expectancy", "Profit factor", "Max DD", "Losing streak"].map(th)}
               </tr>
             </thead>
             <tbody className="num">
               {rows.map(([id, x]) => (
                 <tr key={id} className="border-b border-term-border/50">
-                  <td className="px-2 py-1 text-term-text">{x.name}</td>
-                  <td className="px-2 py-1">{x.count}</td>
-                  <td className="px-2 py-1">{nf(x.winRate, 0)}%</td>
-                  <td className={`px-2 py-1 font-semibold ${signColor(x.total)}`}>{rs(x.total)}</td>
-                  <td className={`px-2 py-1 ${signColor(x.expectancy)}`}>{rs(x.expectancy)}</td>
-                  <td className="px-2 py-1">{x.profitFactor != null ? nf(x.profitFactor, 2) : "–"}</td>
-                  <td className="px-2 py-1 text-down">{rs(x.maxDrawdown)}</td>
-                  <td className="px-2 py-1">{x.maxLossStreak}</td>
+                  <td className="px-2.5 py-1.5 text-term-text">{x.name}</td>
+                  <td className="px-2.5 py-1.5">{x.count}</td>
+                  <td className="px-2.5 py-1.5">{nf(x.winRate, 0)}%</td>
+                  <td className={`px-2.5 py-1.5 font-semibold ${toneCls(x.total)}`}>{rs(x.total)}</td>
+                  <td className={`px-2.5 py-1.5 ${toneCls(x.expectancy)}`}>{rs(x.expectancy)}</td>
+                  <td className="px-2.5 py-1.5">{x.profitFactor != null ? nf(x.profitFactor, 2) : "–"}</td>
+                  <td className="px-2.5 py-1.5 text-red-400">{rs(x.maxDrawdown)}</td>
+                  <td className="px-2.5 py-1.5">{x.maxLossStreak}</td>
                 </tr>
               ))}
             </tbody>
@@ -1436,28 +1416,28 @@ function AutoPerformance() {
       <section className="min-w-0 rounded border border-term-border bg-term-bg/20 p-3">
         <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-term-text">Recent fills</h3>
         <div className="overflow-x-auto">
-          <table className="w-full whitespace-nowrap text-2xs">
+          <table className="w-full whitespace-nowrap text-xs">
             <thead>
-              <tr className="text-left text-[10px] uppercase text-term-dim">
+              <tr className="text-left text-[11px] uppercase tracking-wide text-term-dim">
                 {["When", "Rule", "Position", "Lots", "Entry", "Exit", "P&L", "Why"].map(th)}
               </tr>
             </thead>
             <tbody className="num">
               {data.recent.map((t, i) => (
                 <tr key={i} className="border-b border-term-border/50">
-                  <td className="px-2 py-1 text-term-dim">
+                  <td className="px-2.5 py-1.5 text-term-dim">
                     {new Date(t.exitTs * 1000).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                   </td>
-                  <td className="px-2 py-1 text-term-text">{t.ruleName}</td>
-                  <td className="px-2 py-1">
+                  <td className="px-2.5 py-1.5 text-term-text">{t.ruleName}</td>
+                  <td className="px-2.5 py-1.5">
                     {t.side === "BUY" ? "B" : "S"} {t.label}
                     {t.mode === "live" ? " · live" : ""}
                   </td>
-                  <td className="px-2 py-1">{t.lots}</td>
-                  <td className="px-2 py-1">{nf(t.entryPx, 2)}</td>
-                  <td className="px-2 py-1">{nf(t.exitPx, 2)}</td>
-                  <td className={`px-2 py-1 font-semibold ${signColor(t.pnl - t.charges)}`}>{rs(t.pnl - t.charges)}</td>
-                  <td className="px-2 py-1 text-term-dim">
+                  <td className="px-2.5 py-1.5">{t.lots}</td>
+                  <td className="px-2.5 py-1.5">{nf(t.entryPx, 2)}</td>
+                  <td className="px-2.5 py-1.5">{nf(t.exitPx, 2)}</td>
+                  <td className={`px-2.5 py-1.5 font-semibold ${toneCls(t.pnl - t.charges)}`}>{rs(t.pnl - t.charges)}</td>
+                  <td className="px-2.5 py-1.5 text-term-dim">
                     {t.reason}
                     {t.partial ? " (part)" : ""}
                   </td>
@@ -1551,16 +1531,12 @@ export function AutoBotView() {
           {bot?.marketOpen ? "market open" : "market closed"}
         </span>
         <div className="flex flex-col leading-tight">
-          <span className="text-[10px] uppercase tracking-wide text-term-dim">Bot P&L today</span>
-          <span
-            className={`num text-sm ${
-              (bot?.dailyPnl ?? 0) >= 0 ? "text-up" : "text-down"
-            }`}
-          >
-            ₹{Math.round(bot?.dailyPnl ?? 0).toLocaleString("en-IN")}
+          <span className="text-[11px] uppercase tracking-wide text-term-dim">Bot P&L today</span>
+          <span className={`num text-base font-semibold ${toneCls(bot?.dailyPnl ?? 0)}`}>
+            {money(bot?.dailyPnl ?? 0, { sign: true })}
           </span>
         </div>
-        <label className="ml-auto flex items-center gap-1 text-[10px] text-term-dim">
+        <label className="ml-auto flex items-center gap-1 text-2xs text-term-dim">
           daily loss cap ₹
           <input
             value={lossDraft}
@@ -1704,7 +1680,7 @@ export function AutoBotView() {
                     {r.mode}
                   </span>
                   {open && (
-                    <span className="rounded bg-up/15 px-1.5 py-0.5 text-2xs text-up">
+                    <span className="rounded bg-up/15 px-1.5 py-0.5 text-xs text-green-500">
                       IN TRADE {open.side} {open.label ?? `${open.strike}${open.ot}`} @{open.entryPx.toFixed(1)}
                       {open.peak != null && ` · peak ${open.peak.toFixed(1)}`}
                       {open.stopPx != null && (
@@ -1712,7 +1688,7 @@ export function AutoBotView() {
                       )}
                     </span>
                   )}
-                  <span className="text-2xs text-term-dim">
+                  <span className="text-xs text-term-dim">
                     {r._state?.tradesToday ?? 0}/{r.maxTradesPerDay} today
                     {r.maxTradesPerWeek ? ` · ${r._state?.weekTrades ?? 0}/${r.maxTradesPerWeek} this week` : ""} ·{" "}
                     {(r.entry ?? []).length} entry · {(r.exit ?? []).length} exit
@@ -1730,13 +1706,13 @@ export function AutoBotView() {
                     </span>
                   )}
                   {r._stats && r._stats.trades > 0 && (
-                    <span className="text-2xs text-term-dim" title="From this rule's closed trades, net of estimated charges">
+                    <span className="text-xs text-term-dim" title="From this rule's closed trades, net of estimated charges">
                       {r._stats.trades} trades · {nf(r._stats.winRate, 0)}% win ·{" "}
-                      <span className={signColor(r._stats.net)}>{rs(r._stats.net)}</span>
+                      <span className={`font-semibold ${toneCls(r._stats.net)}`}>{rs(r._stats.net)}</span>
                       {r._stats.today ? (
                         <>
                           {" "}
-                          (today <span className={signColor(r._stats.today)}>{rs(r._stats.today)}</span>)
+                          (today <span className={`font-semibold ${toneCls(r._stats.today)}`}>{rs(r._stats.today)}</span>)
                         </>
                       ) : null}
                     </span>
@@ -1775,7 +1751,7 @@ export function AutoBotView() {
 
                 <WhyLine r={r} masterOn={!!bot?.master} />
                 {open?.legs && (
-                  <div className="mt-1 flex flex-wrap gap-x-3 text-[10px] text-term-dim">
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-term-dim">
                     {open.unwind && <span className="text-down">unwinding — a leg failed to close</span>}
                     {open.legs.map((lg, i) => (
                       <span key={i} className="num">

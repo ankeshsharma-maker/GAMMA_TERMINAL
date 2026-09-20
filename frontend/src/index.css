@@ -167,3 +167,57 @@ select:focus-visible {
     box-shadow: inset 3px 0 0 #3b82f6;
   }
 }
+
+/* Result figures (Figures.tsx): the column count follows the width of the panel they sit in,
+   not the window -- a 600px panel in a 1400px window used to get 8 cramped columns -- and every
+   figure is sized to fit its own tile (width / characters), so nothing clips at any width.
+   Two columns and a fixed size are the fallback where container queries aren't supported. */
+.figs {
+  container-type: inline-size;
+}
+.figs-head,
+.figs-cells {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.figs-cells {
+  gap: 0.75rem;
+}
+/* 0.62em is the advance of the monospace face; 22px = a tile's padding + border */
+.figs-value {
+  font-size: clamp(13px, calc((var(--tile-w, 112px) - 22px) / (0.62 * var(--len, 8))), 20px);
+}
+.figs-cellvalue {
+  font-size: clamp(11px, calc(var(--cell-w, 90px) / (0.62 * var(--len, 8))), 0.875rem);
+}
+@container (min-width: 0px) {
+  .figs-head {
+    --tile-w: calc(50cqw - 4px);
+  }
+  .figs-cells {
+    --cell-w: calc(50cqw - 17px);
+  }
+}
+@container (min-width: 300px) {
+  .figs-cells {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    --cell-w: calc(33.3cqw - 15.4px);
+  }
+}
+@container (min-width: 480px) {
+  .figs-head {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    --tile-w: calc(25cqw - 6px);
+  }
+  .figs-cells {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    --cell-w: calc(25cqw - 14.5px);
+  }
+}
+@container (min-width: 760px) {
+  .figs-cells {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    --cell-w: calc(16.6cqw - 13.7px);
+  }
+}
