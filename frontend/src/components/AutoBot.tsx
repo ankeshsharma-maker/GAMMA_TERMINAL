@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, signColor } from "../lib/format";
@@ -675,35 +675,61 @@ function EntryFilterEditor({
 /* ------------------------------------------------------------------ */
 /* rule editor                                                         */
 /* ------------------------------------------------------------------ */
+/** columns of labelled fields with a hint under each; ~140px is the narrowest that keeps a hint readable */
+const FIELD_GRID = "grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] items-start gap-x-4 gap-y-3";
+
+/** Visible help text under a field. Tooltips don't exist on a phone or in the app, so anything a
+ *  person needs to understand a field has to be on the screen. */
+function Hint({ children }: { children: ReactNode }) {
+  return <span className="mt-1 block text-[11px] font-normal leading-snug text-term-dim">{children}</span>;
+}
+
+/** a field: label above, the control, then its hint */
+function HintLabel({ label, hint, title, children }: { label: string; hint?: ReactNode; title?: string; children: ReactNode }) {
+  return (
+    <label className="flex min-w-0 flex-col text-[11px]" title={title}>
+      <span className="mb-0.5 font-medium text-term-text/90">{label}</span>
+      {children}
+      {hint != null && <Hint>{hint}</Hint>}
+    </label>
+  );
+}
+
 /** blank-able number box for the safety fields (blank = off, so it is omitted from the saved rule) */
 function SafetyNum({
   label,
   title,
+  hint,
   value,
   onChange,
   placeholder = "off",
   w = "md:w-20",
 }: {
   label: string;
-  title: string;
+  title?: string;
+  hint?: ReactNode;
   value: number | null | undefined;
   onChange: (v: number | undefined) => void;
   placeholder?: string;
   w?: string;
 }) {
+  const input = (
+    <input
+      type="number"
+      min={0}
+      step="any"
+      value={value ?? ""}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)))}
+      className={`num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text ${w}`}
+    />
+  );
+  // no label = a bare box (the from / to pair under "days to expiry")
+  if (!label) return <label title={title}>{input}</label>;
   return (
-    <label className="flex flex-col text-[10px] text-term-dim" title={title}>
-      {label}
-      <input
-        type="number"
-        min={0}
-        step="any"
-        value={value ?? ""}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)))}
-        className={`num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text ${w}`}
-      />
-    </label>
+    <HintLabel label={label} hint={hint} title={title}>
+      {input}
+    </HintLabel>
   );
 }
 
@@ -1069,118 +1095,138 @@ function RuleEditor({
 
       <StructureBlock r={r} set={set} defs={defs} />
 
-      <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
-        <div className="flex flex-col text-[10px] text-term-dim">
-          SL / target / trail unit
-          <div className="seg mt-0.5">
-            {(
-              [
-                ["pct", "%"],
-                ["pts", "Pts"],
-                ["rs", "₹"],
-              ] as const
-            ).map(([v, lbl]) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => set({ slBasis: v })}
-                className={(r.slBasis ?? "pct") === v ? "on" : ""}
-              >
-                {lbl}
-              </button>
-            ))}
+      {/* ---- exit levels: what protects the trade once it is open ---- */}
+      {(() => {
+        const basis = r.slBasis ?? "pct";
+        const u = basis === "pts" ? "pts" : basis === "rs" ? "₹" : "%";
+        const unitNote =
+          basis === "pts"
+            ? "Points are ₹ per share of the option's own price, not index points. Example: SL 30 on a ₹100 option exits at ₹70."
+            : basis === "rs"
+            ? "₹ of profit or loss on the whole position, all lots together."
+            : "% of the price you entered at. Example: SL 30 on a ₹100 option exits at ₹70.";
+        const sideNote = isStruct
+          ? " For a multi-leg trade these are measured on the combined price of all its legs."
+          : r.side === "SELL"
+          ? " You are selling, so “in profit” means the price is falling."
+          : "";
+        const fields: [keyof AutoRule, string, string][] = [
+          ["slPct", `SL ${u}`, "Get out if the trade goes this far against you."],
+          ["targetPct", `target ${u}`, "Get out and keep the profit once it is this far in profit."],
+          ["trailPct", `trail ${u}`, "Your exit follows the best price, this far behind it. It only moves up, never down. Blank = off."],
+          ["trailArmPct", `trail arm ${u}`, "Trailing only starts once the trade is this far in profit. Blank = it starts at once."],
+          ["beArmPct", `breakeven arm ${u}`, "Once it is this far in profit, your exit moves to your entry price: no loss from there. Blank = off."],
+          ["target1Pct", `scale-out ${u}`, "Sell part of the position at this profit; the rest keeps running. Blank = off."],
+        ];
+        return (
+          <div className="rounded border border-term-border/70 p-2">
+            <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-term-dim">Exit levels</span>
+              <span className="text-[11px] text-term-dim">numbers are in</span>
+              <div className="seg">
+                {(
+                  [
+                    ["pct", "%"],
+                    ["pts", "Pts"],
+                    ["rs", "₹"],
+                  ] as const
+                ).map(([v, lbl]) => (
+                  <button key={v} type="button" onClick={() => set({ slBasis: v })} className={basis === v ? "on" : ""}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="mb-2.5 text-[11px] leading-snug text-term-dim">
+              {unitNote}
+              {sideNote}
+            </p>
+            <div className={FIELD_GRID}>
+              {fields
+                .filter(([k]) => !(isStruct && k === "target1Pct"))
+                .map(([k, label, hint]) => (
+                  <HintLabel key={k} label={label} hint={hint}>
+                    <input
+                      type="number"
+                      step="any"
+                      value={(r[k] as number | undefined) ?? ""}
+                      onChange={(e) => set({ [k]: num(e.target.value) } as Partial<AutoRule>)}
+                      className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-24"
+                    />
+                  </HintLabel>
+                ))}
+              {!isStruct && (
+                <HintLabel
+                  label="scale-out lots %"
+                  hint="How much to sell at that point. At least 1 lot always stays."
+                  title="What share of the position to close at the scale-out level (rounded to whole lots, always leaves at least 1 lot open)."
+                >
+                  <input
+                    type="number"
+                    min={1}
+                    max={99}
+                    value={r.target1LotsPct ?? 50}
+                    onChange={(e) => set({ target1LotsPct: Math.min(99, Math.max(1, parseInt(e.target.value) || 50)) })}
+                    className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-20"
+                  />
+                </HintLabel>
+              )}
+            </div>
           </div>
+        );
+      })()}
+
+      {/* ---- timing: how often, and when in the day ---- */}
+      <div className="rounded border border-term-border/70 p-2">
+        <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-term-dim">Timing</div>
+        <div className={FIELD_GRID}>
+          <HintLabel label="max trades/day" hint="Most new trades this rule can open in a day.">
+            <input
+              type="number"
+              min={1}
+              value={r.maxTradesPerDay ?? 3}
+              onChange={(e) => set({ maxTradesPerDay: Math.max(1, parseInt(e.target.value) || 1) })}
+              className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-16"
+            />
+          </HintLabel>
+          <HintLabel label="cooldown min" hint="Minutes to wait after a trade closes before it can enter again.">
+            <input
+              type="number"
+              min={0}
+              value={r.cooldownMin ?? 5}
+              onChange={(e) => set({ cooldownMin: Math.max(0, parseInt(e.target.value) || 0) })}
+              className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-16"
+            />
+          </HintLabel>
+          <HintLabel
+            label="square-off"
+            hint={r.holdType === "positional" ? "Not used: this rule is Positional, so it keeps trades open." : "Time (IST) when everything is closed for the day."}
+          >
+            <input
+              value={r.squareOff ?? "15:20"}
+              onChange={(e) => set({ squareOff: e.target.value })}
+              placeholder="15:20"
+              disabled={r.holdType === "positional"}
+              className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text disabled:opacity-40 md:w-20"
+            />
+          </HintLabel>
+          <HintLabel label="entry after" hint="Won't enter before this time (IST). Blank = from market open.">
+            <input
+              value={r.noEntryBefore ?? ""}
+              onChange={(e) => set({ noEntryBefore: e.target.value })}
+              placeholder="09:20"
+              className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-20"
+            />
+          </HintLabel>
+          <HintLabel label="no entry after" hint="Won't enter after this time (IST). Blank = no limit.">
+            <input
+              value={r.noEntryAfter ?? ""}
+              onChange={(e) => set({ noEntryAfter: e.target.value })}
+              placeholder="15:00"
+              className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-20"
+            />
+          </HintLabel>
         </div>
-        {(() => {
-          const u = r.slBasis === "pts" ? "pts" : r.slBasis === "rs" ? "₹" : "%";
-          const fields: [keyof AutoRule, string, string][] = [
-            ["slPct", `SL ${u}`, "stop-loss on the option premium (against you)"],
-            ["targetPct", `target ${u}`, "take-profit on the option premium (in your favour)"],
-            ["trailPct", `trail ${u}`, "0 = off. Trails the stop this far behind the best favourable premium."],
-            ["trailArmPct", `trail arm ${u}`, "arm the trailing stop only after the trade is this far in profit"],
-            ["beArmPct", `breakeven arm ${u}`, "move the stop to breakeven once the trade is this far in profit. 0 = off."],
-            ["target1Pct", `scale-out ${u}`, "0/blank = off. Book part of the position once it's this far in profit, let the rest ride to the full target/trail above."],
-          ];
-          return fields.filter(([k]) => !(isStruct && k === "target1Pct")).map(([k, label, title]) => (
-            <label key={k} className="flex flex-col text-[10px] text-term-dim" title={title}>
-              {label}
-              <input
-                type="number"
-                step="any"
-                value={(r[k] as number | undefined) ?? ""}
-                onChange={(e) => set({ [k]: num(e.target.value) } as Partial<AutoRule>)}
-                className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-24"
-              />
-            </label>
-          ));
-        })()}
-        {!isStruct && (
-        <label
-          className="flex flex-col text-[10px] text-term-dim"
-          title="What share of the position to close at the scale-out level above (rounded to whole lots, always leaves at least 1 lot open)."
-        >
-          scale-out lots %
-          <input
-            type="number"
-            min={1}
-            max={99}
-            value={r.target1LotsPct ?? 50}
-            onChange={(e) => set({ target1LotsPct: Math.min(99, Math.max(1, parseInt(e.target.value) || 50)) })}
-            className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-20"
-          />
-        </label>
-        )}
-        <label className="flex flex-col text-[10px] text-term-dim">
-          max trades/day
-          <input
-            type="number"
-            min={1}
-            value={r.maxTradesPerDay ?? 3}
-            onChange={(e) => set({ maxTradesPerDay: Math.max(1, parseInt(e.target.value) || 1) })}
-            className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-16"
-          />
-        </label>
-        <label className="flex flex-col text-[10px] text-term-dim">
-          cooldown min
-          <input
-            type="number"
-            min={0}
-            value={r.cooldownMin ?? 5}
-            onChange={(e) => set({ cooldownMin: Math.max(0, parseInt(e.target.value) || 0) })}
-            className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-16"
-          />
-        </label>
-        <label
-          className="flex flex-col text-[10px] text-term-dim"
-          title={r.holdType === "positional" ? "Ignored while hold=Positional." : undefined}
-        >
-          square-off
-          <input
-            value={r.squareOff ?? "15:20"}
-            onChange={(e) => set({ squareOff: e.target.value })}
-            placeholder="15:20"
-            disabled={r.holdType === "positional"}
-            className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text disabled:opacity-40 md:w-20"
-          />
-        </label>
-        <label className="flex flex-col text-[10px] text-term-dim" title="Earliest clock time an entry may fire (IST). Blank = from market open.">
-          entry after
-          <input
-            value={r.noEntryBefore ?? ""}
-            onChange={(e) => set({ noEntryBefore: e.target.value })}
-            placeholder="09:20"
-            className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-20"
-          />
-        </label>
-        <label className="flex flex-col text-[10px] text-term-dim" title="Latest clock time an entry may fire (IST).">
-          no entry after
-          <input
-            value={r.noEntryAfter ?? ""}
-            onChange={(e) => set({ noEntryAfter: e.target.value })}
-            placeholder="15:00"
-            className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-20"
-          />
-        </label>
       </div>
 
       {/* ---- safety: brakes that hold a rule back when the day is going wrong ---- */}
@@ -1191,73 +1237,75 @@ function RuleEditor({
             blank = off. These only ever stop a rule from trading; they never open a position.
           </span>
         </div>
-        <div className="flex flex-wrap items-end gap-3">
+        <div className={FIELD_GRID}>
           <SafetyNum
             label="max trades/week"
+            hint="Stop trading for the week after this many trades."
             title="Stop opening new trades for the rest of the week once this many have been taken (Mon-Fri, resets each week)."
             value={r.maxTradesPerWeek}
             onChange={(v) => set({ maxTradesPerWeek: v })}
           />
           <SafetyNum
             label="stop after N losses"
-            title="Pause this rule for the rest of the day after this many losing trades in a row. A win resets the count."
+            hint="Pause the rule for the day after this many losing trades in a row."
+            title="A win resets the count."
             value={r.maxConsecLosses}
             onChange={(v) => set({ maxConsecLosses: v })}
           />
           <SafetyNum
             label="rule loss cap ₹"
-            title="Pause this rule for the rest of the day once it has lost this many rupees today (separate from the engine-wide daily loss cap)."
+            hint="Pause the rule for the day once it has lost this much today."
+            title="Separate from the engine-wide daily loss cap."
             value={r.ruleMaxLoss}
             onChange={(v) => set({ ruleMaxLoss: v })}
             w="md:w-24"
           />
           <SafetyNum
             label="max spread %"
-            title="Skip the entry when the option's bid-ask spread is wider than this % of its price. A wide spread is paid on the way in and again on the way out."
+            hint="Skip the entry if the gap between buy and sell price is wider than this % of the price."
+            title="A wide spread is paid on the way in and again on the way out."
             value={r.maxSpreadPct}
             onChange={(v) => set({ maxSpreadPct: v })}
           />
           <SafetyNum
             label="max lots/order"
-            title="Largest single live order. Anything bigger is split into orders of this size so none is rejected for breaching the exchange freeze quantity. Blank = the engine default (20)."
+            hint="Bigger live orders are split into pieces this size. Blank = 20."
+            title="Keeps every order under the exchange's freeze quantity so none is rejected."
             value={r.maxLotsPerOrder}
             onChange={(v) => set({ maxLotsPerOrder: v })}
             placeholder="20"
           />
-          <div className="flex flex-col gap-0.5 text-[10px] text-term-dim">
-            <span title="Whole days between now and the expiry. 0 = expiry day.">days to expiry</span>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <SafetyNum
-                label=""
-                title="Trade only when the expiry is at least this many days away"
-                value={r.minDte}
-                placeholder="from"
-                onChange={(v) => set({ minDte: v })}
-                w="md:w-14"
-              />
-              <SafetyNum
-                label=""
-                title="Trade only when the expiry is at most this many days away"
-                value={r.maxDte}
-                placeholder="to"
-                onChange={(v) => set({ maxDte: v })}
-                w="md:w-14"
-              />
-              <button className="chipbtn" title="Trade only on expiry day" onClick={() => set({ minDte: 0, maxDte: 0 })}>
-                expiry day only
-              </button>
-              <button
-                className="chipbtn"
-                title="Never trade on expiry day"
-                onClick={() => set({ minDte: 1, maxDte: undefined })}
-              >
-                skip expiry day
-              </button>
-              <button className="chipbtn" onClick={() => set({ minDte: undefined, maxDte: undefined })}>
-                any
-              </button>
-            </div>
+        </div>
+        <div className="mt-3 flex flex-col gap-1 text-[11px]">
+          <span className="font-medium text-term-text/90">days to expiry</span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <SafetyNum
+              label=""
+              title="Trade only when the expiry is at least this many days away"
+              value={r.minDte}
+              placeholder="from"
+              onChange={(v) => set({ minDte: v })}
+              w="md:w-14"
+            />
+            <SafetyNum
+              label=""
+              title="Trade only when the expiry is at most this many days away"
+              value={r.maxDte}
+              placeholder="to"
+              onChange={(v) => set({ maxDte: v })}
+              w="md:w-14"
+            />
+            <button className="chipbtn" title="Trade only on expiry day" onClick={() => set({ minDte: 0, maxDte: 0 })}>
+              expiry day only
+            </button>
+            <button className="chipbtn" title="Never trade on expiry day" onClick={() => set({ minDte: 1, maxDte: undefined })}>
+              skip expiry day
+            </button>
+            <button className="chipbtn" onClick={() => set({ minDte: undefined, maxDte: undefined })}>
+              any
+            </button>
           </div>
+          <Hint>Trade only when the expiry is between “from” and “to” days away. 0 = expiry day. Blank = any.</Hint>
         </div>
       </div>
 
