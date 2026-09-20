@@ -186,6 +186,7 @@ import { ScalpCharts } from "./ScalpCharts";
 import { AutoBotView } from "./AutoBot";
 import { Funds } from "./Funds";
 import { TradeJournal } from "./TradeJournal";
+import { VolatilityView } from "./VolatilityView";
 import { LogoMark } from "./Logo";
 
 /** Top and bottom tab bars — direct shortcuts to the 8 views checked most
@@ -196,6 +197,7 @@ import { LogoMark } from "./Logo";
 const TOP_NAV: { v: View; label: string }[] = [
   { v: "scrip", label: "OI" },
   { v: "trendingoi", label: "Trend OI" },
+  { v: "vol", label: "Vol" },
   { v: "scanner", label: "Screener" },
   { v: "auto", label: "Auto" },
   { v: "builder", label: "Build" },
@@ -230,6 +232,8 @@ function MobileBody({ view }: { view: View }) {
       return <ScripView />;
     case "trendingoi":
       return <TrendingOI />;
+    case "vol":
+      return <VolatilityView />;
     case "oiprofile":
       return <OIProfile />;
     case "scanner":

@@ -269,6 +269,18 @@ export const api = {
   }) =>
     j<Analysis>("/api/strategy/analyze", { method: "POST", body: JSON.stringify(body) }),
 
+  volatility: (symbol: string, expiry?: string) =>
+    j<import("../types").VolatilityData>(
+      `/api/volatility/${encodeURIComponent(symbol)}` +
+        (expiry ? `?expiry=${encodeURIComponent(expiry)}` : "")
+    ),
+
+  portfolioScenario: (source: "paper" | "broker" | "all", daysForward = 0) =>
+    j<import("../types").ScenarioData>("/api/portfolio/scenario", {
+      method: "POST",
+      body: JSON.stringify({ source, daysForward }),
+    }),
+
   strategyChart: (body: {
     symbol: string;
     expiry?: string;

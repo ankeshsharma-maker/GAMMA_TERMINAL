@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from . import candle_sources
+from . import candle_sources, portfolio_scenario, volatility
 from . import screener as scr
 from . import strategy as strat
 from . import strategy_chart
@@ -19,6 +19,7 @@ from .models import (
     PaperOrderClose,
     PaperOrderIn,
     SaveStrategyIn,
+    ScenarioIn,
     ScheduleIn,
     StopIn,
     StrategyChartIn,
@@ -157,6 +158,40 @@ def symbols_search(q: str = "", limit: int = Query(25, ge=1, le=60)):
 @router.get("/option-chain/{symbol}")
 async def option_chain(symbol: str, expiry: str | None = Query(None)):
     return await _ensure_chain(symbol, expiry)
+
+
+@router.get("/volatility/{symbol}")
+async def volatility_view(
+    symbol: str,
+    expiry: str | None = Query(None),
+    expiries: int = Query(volatility.MAX_EXPIRIES, ge=2, le=8),
+):
+    """IV smile + skew per expiry, ATM term structure, and implied vs realized vol."""
+    chain = await _ensure_chain(symbol, expiry)
+    return await volatility.build(chain["symbol"], chain, max_expiries=expiries)
+
+
+@router.post("/portfolio/scenario")
+async def portfolio_scenario_grid(body: ScenarioIn):
+    """P&L of everything open under spot x IV x time shocks (paper, broker, or both)."""
+    from .brokers import get_broker
+
+    positions: list[dict] = []
+    skipped: list[str] = []
+    if body.source in ("paper", "all"):
+        positions += portfolio_scenario.from_paper(store.paper_state()["positions"])
+    if body.source in ("broker", "all"):
+        b = get_broker()
+        if b.authed:
+            try:
+                rows = await b.positions()
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(status_code=502, detail=f"broker positions failed: {exc}")
+            legs, skipped = portfolio_scenario.from_broker(rows)
+            positions += legs
+        elif body.source == "broker":
+            raise HTTPException(status_code=409, detail="Flattrade isn't connected - connect it to see live positions")
+    return await portfolio_scenario.build(positions, _ensure_chain, body.days_forward, skipped)
 
 
 @router.get("/history/{symbol}")

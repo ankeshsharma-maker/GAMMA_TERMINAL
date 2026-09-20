@@ -74,6 +74,14 @@ class StrategyChartIn(BaseModel):
     src: Literal["auto", "broker", "upstox"] = "auto"
 
 
+class ScenarioIn(BaseModel):
+    source: Literal["paper", "broker", "all"] = "paper"
+    # days to move time forward; a negative value means "to the nearest expiry"
+    days_forward: float = Field(0.0, ge=-1.0, le=60.0, alias="daysForward")
+
+    model_config = {"populate_by_name": True}
+
+
 class SaveStrategyIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
     symbol: str

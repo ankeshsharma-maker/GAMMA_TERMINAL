@@ -6,10 +6,12 @@ import { StopEditor } from "./StopEditor";
 import { useLiveMtm } from "../lib/useLiveMtm";
 import { useIsMobile } from "../lib/useIsMobile";
 import { LegBracketBadge, findBracket, type LegRule } from "./LegBracketBadge";
+import { ScenarioGrid } from "./ScenarioGrid";
 
-type Tab = "broker" | "holdings" | "orders";
+type Tab = "broker" | "scenario" | "holdings" | "orders";
 const TABS: [Tab, string][] = [
   ["broker", "Broker Positions"],
+  ["scenario", "Scenario"],
   ["holdings", "Holdings"],
   ["orders", "Orders"],
 ];
@@ -839,6 +841,7 @@ export function PositionsView({ initialTab }: { initialTab?: Tab } = {}) {
         ))}
       </div>
       {tab === "broker" && <BrokerTab />}
+      {tab === "scenario" && <ScenarioGrid />}
       {tab === "holdings" && <HoldingsTab />}
       {tab === "orders" && <OrdersTab />}
     </div>

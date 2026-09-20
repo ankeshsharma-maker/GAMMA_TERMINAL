@@ -246,6 +246,7 @@ export type View =
   | "watchlist"
   | "orders"
   | "trendingoi"
+  | "vol"
   | "journal";
 
 export type AutoCondition = Record<string, unknown> & { kind: string };
@@ -387,6 +388,117 @@ export interface Analysis {
   greeks: Record<string, number>;
   greeksPerLot: Record<string, number>;
   margin: { estimate: number; basis: string };
+}
+
+/** GET /api/volatility/{symbol} */
+export interface VolExpiry {
+  expiry: string;
+  dte: number;
+  atmStrike: number;
+  atmIV: number | null;
+  straddle: number | null;
+  sigmaMovePct: number | null;
+  straddleMovePct: number | null;
+  call25: number | null;
+  put25: number | null;
+  rr25: number | null;
+  fly25: number | null;
+  stale?: boolean;
+  smile?: { strike: number; m: number; iv: number; callIV: number | null; putIV: number | null }[];
+}
+
+export interface RvCone {
+  min: number;
+  p25: number;
+  median: number;
+  p75: number;
+  max: number;
+  current: number;
+  pct: number;
+  n: number;
+}
+
+export interface VolatilityData {
+  symbol: string;
+  spot: number;
+  expiry: string;
+  asOf: number;
+  expiries: VolExpiry[];
+  term: VolExpiry[];
+  iv30: number | null;
+  iv7: number | null;
+  rv: {
+    available: boolean;
+    source?: string;
+    error?: string;
+    days?: number;
+    rv5?: number | null;
+    rv10?: number | null;
+    rv20?: number | null;
+    rv30?: number | null;
+    cone?: Record<string, RvCone>;
+    series?: { d: string; rv: number }[];
+    today?: { rv: number | null; bars: number; date: string } | null;
+    lastClose?: number;
+    lastDate?: string;
+  };
+  vrp: { iv30: number; rv20: number; spread: number; ratio: number; read: string } | null;
+  skipped: string[];
+}
+
+/** POST /api/portfolio/scenario -- grids are [ivShift][spotShock] */
+export interface ScenarioPosition {
+  source: "paper" | "broker";
+  symbol: string;
+  expiry: string;
+  strike: number;
+  type: "CE" | "PE" | "FUT";
+  qty: number;
+  lots: number;
+  entry: number;
+  ltp: number;
+  pnl: number;
+  priced: boolean;
+  iv: number | null;
+  ivSource?: "mark" | "chain" | "atm";
+  grid: number[][] | null;
+  delta?: number;
+  gamma?: number;
+  theta?: number;
+  vega?: number;
+}
+
+export interface ScenarioCell {
+  delta: number;
+  iv: number;
+  spot: number;
+}
+
+export interface ScenarioData {
+  spotShocks: number[];
+  ivShifts: number[];
+  daysForward: number;
+  nearestDte: number | null;
+  current: number;
+  grid: number[][];
+  positions: ScenarioPosition[];
+  greeks: { delta: number; deltaRs1pct: number; gamma: number; theta: number; vega: number };
+  byUnderlying: {
+    symbol: string;
+    spot: number | null;
+    pnl: number;
+    delta: number;
+    deltaRs1pct: number;
+    theta: number;
+    vega: number;
+    atmIV: number | null;
+    sigma1dPct: number | null;
+  }[];
+  worst: ScenarioCell | null;
+  best: ScenarioCell | null;
+  errors: { symbol: string; expiry: string; error: string }[];
+  skipped: string[];
+  partial: boolean;
 }
 
 export type GreekKey = "delta" | "gamma" | "theta" | "vega" | "iv";

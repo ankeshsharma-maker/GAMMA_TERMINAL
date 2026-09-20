@@ -11,6 +11,7 @@ import { ScripView } from "./components/ScripView";
 import { Positions } from "./components/Positions";
 import { ScannerView } from "./components/ScannerView";
 import { TrendingOI } from "./components/TrendingOI";
+import { VolatilityView } from "./components/VolatilityView";
 import { TradeJournal } from "./components/TradeJournal";
 import { Chart } from "./components/Chart";
 import { StrategyBuilder } from "./components/StrategyBuilder";
@@ -67,6 +68,7 @@ function DesktopShell() {
     view === "orders" ||
     view === "scrip" ||
     view === "trendingoi" ||
+    view === "vol" ||
     view === "scanner" ||
     view === "auto" ||
     view === "funds" ||
@@ -184,6 +186,7 @@ function DesktopShell() {
           {view === "oiprofile" && <OIProfile />}
           {view === "scrip" && <ScripView />}
           {view === "trendingoi" && <TrendingOI />}
+          {view === "vol" && <VolatilityView />}
           {view === "scanner" && <ScannerView />}
           {view === "chart" && <Chart />}
           {view === "scalper" && <ScalpCharts />}
