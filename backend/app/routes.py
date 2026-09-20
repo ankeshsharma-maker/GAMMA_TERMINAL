@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
+from . import candle_sources
 from . import screener as scr
 from . import strategy as strat
+from . import strategy_chart
 from .charting import build_chart
 from .config import DEFAULT_SYMBOLS, FO_UNIVERSE, INDEX_SYMBOLS
 from .models import (
@@ -19,6 +21,7 @@ from .models import (
     SaveStrategyIn,
     ScheduleIn,
     StopIn,
+    StrategyChartIn,
     StrategyExecuteIn,
     WatchlistAdd,
 )
@@ -233,10 +236,6 @@ def save_chart_drawings(body: dict):
     return {"drawings": store.save_chart_drawings(key, drawings)}
 
 
-# Noren TPSeries supports these minute intervals; anything else is resampled client-side.
-_NOREN_INTERVALS = (1, 3, 5, 10, 15, 30, 60, 120, 240)
-
-
 @router.get("/chart/{symbol}")
 async def chart(
     symbol: str,
@@ -246,51 +245,14 @@ async def chart(
 ):
     symbol = symbol.upper()
     src = (src or "auto").lower()
-    from .brokers import get_broker
-    from .brokers.upstox import get_upstox
-    from . import upstox_data
-
-    broker = get_broker()
-    mins = max(1, interval // 60)
-    fetch_min = max((m for m in _NOREN_INTERVALS if m <= mins), default=1)
-    lookback = min(max(2400, mins * 600), 60 * 24 * 40)
 
     # ---- specific option contract ----
     opt = store._parse_opt(instrument) if instrument else None
     if opt:
         sym, exp, strike, ot = opt
-        candles = None
-        src_label = "sampled"
-
-        want_ux = src == "upstox" or (src == "auto" and not broker.authed)
-        if want_ux and get_upstox().authed:
-            try:
-                c = await upstox_data.fetch_option_candles(sym, exp, strike, ot, interval)
-                if c:
-                    candles, src_label = c, "upstox"
-            except Exception:  # noqa: BLE001
-                candles = None
-
-        if not candles and src != "upstox" and broker.authed:
-            try:
-                info = await broker.resolve_nfo(sym, exp, strike, ot)
-                if info.get("token"):
-                    candles = await broker.tpseries(
-                        "NFO", info["token"], minutes_back=lookback, interval=str(fetch_min)
-                    )
-                    if candles:
-                        src_label = "broker"
-            except Exception:  # noqa: BLE001
-                candles = None
-
-        # last-ditch: Upstox even if not explicitly asked
-        if not candles and get_upstox().authed:
-            try:
-                c = await upstox_data.fetch_option_candles(sym, exp, strike, ot, interval)
-                if c:
-                    candles, src_label = c, "upstox"
-            except Exception:  # noqa: BLE001
-                candles = None
+        candles, src_label = await candle_sources.option_candles(
+            sym, exp, strike, ot, interval, src
+        )
 
         if not candles:
             candles = [
@@ -318,12 +280,6 @@ async def chart(
         )
 
     # ---- underlying (default) ----
-    from .brokers.upstox import get_upstox
-    from . import upstox_data
-
-    base_candles = None
-    src_label = "broker"
-
     # sub-minute: build candles from this session's live tick stream. There is no
     # historical source finer than 1-min, so these only exist from subscribe time.
     if interval < 60:
@@ -339,36 +295,7 @@ async def chart(
             )
         # no ticks yet — fall through and show 1-min until they accumulate
 
-    prefer_ux = store.data_source() == "upstox" and get_upstox().authed
-
-    async def _ux_candles():
-        try:
-            return await upstox_data.fetch_underlying_candles(symbol, interval)
-        except Exception:  # noqa: BLE001
-            return None
-
-    if prefer_ux:
-        base_candles = await _ux_candles()
-        if base_candles:
-            src_label = "upstox"
-
-    if not base_candles and broker.authed:
-        try:
-            tok = await broker.feed_token(symbol)
-            if tok:
-                base_candles = await broker.tpseries(
-                    tok[0], tok[1], minutes_back=lookback, interval=str(fetch_min)
-                )
-                if base_candles:
-                    src_label = "broker"
-        except Exception:  # noqa: BLE001
-            base_candles = None
-
-    # Upstox fallback — real history for BSE indices & long daily ranges
-    if not base_candles and get_upstox().authed:
-        base_candles = await _ux_candles()
-        if base_candles:
-            src_label = "upstox"
+    base_candles, src_label = await candle_sources.underlying_candles(symbol, interval)
 
     return build_chart(
         symbol,
@@ -692,6 +619,26 @@ async def strategy_analyze(body: AnalyzeIn):
         price_range=body.price_range,
         points=body.points,
     )
+
+
+@router.post("/strategy/chart")
+async def strategy_chart_series(body: StrategyChartIn):
+    """Intraday combined-premium candles + per-bar Greeks for a set of legs."""
+    if not body.legs:
+        raise HTTPException(status_code=422, detail="at least one leg required")
+    chain = await _ensure_chain(body.symbol, body.expiry)
+    try:
+        return await strategy_chart.build(
+            chain["symbol"],
+            chain["expiry"],
+            chain["lotSize"],
+            [leg.dump() for leg in body.legs],
+            interval_s=body.interval,
+            days=body.days,
+            src=body.src,
+        )
+    except strategy_chart.StrategyChartError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.post("/strategy/hedge")

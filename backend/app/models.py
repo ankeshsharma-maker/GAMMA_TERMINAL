@@ -65,6 +65,15 @@ class AnalyzeIn(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class StrategyChartIn(BaseModel):
+    symbol: str
+    expiry: Optional[str] = None
+    legs: list[StrategyLeg]
+    interval: int = Field(300, ge=60, le=3600)
+    days: int = Field(1, ge=1, le=5)
+    src: Literal["auto", "broker", "upstox"] = "auto"
+
+
 class SaveStrategyIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
     symbol: str

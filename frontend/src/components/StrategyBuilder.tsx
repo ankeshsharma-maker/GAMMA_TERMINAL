@@ -19,6 +19,7 @@ import type {
 } from "../types";
 import { PayoffChart } from "./PayoffChart";
 import { BacktestPanel } from "./BacktestPanel";
+import { StrategyChart } from "./StrategyChart";
 import { SelectMenu } from "./SelectMenu";
 import { VSplit, clamp, readNum } from "./VSplit";
 
@@ -165,7 +166,7 @@ export function StrategyBuilder() {
   const [slVal, setSlVal] = useState("");
   const [tgtVal, setTgtVal] = useState("");
   const [slTgtBasis, setSlTgtBasis] = useState<"amount" | "points">("amount");
-  const [panel, setPanel] = useState<"payoff" | "backtest">("payoff");
+  const [panel, setPanel] = useState<"payoff" | "schart" | "sgreeks" | "backtest">("payoff");
   const [payoffTab, setPayoffTab] = useState<"stats" | "chart" | "table" | "legs" | "greeks">(
     "chart"
   );
@@ -1470,6 +1471,8 @@ export function StrategyBuilder() {
           {(
             [
               ["payoff", "Payoff"],
+              ["schart", "Strategy chart"],
+              ["sgreeks", "Greek charts"],
               ["backtest", "⏱ Backtest"],
             ] as const
           ).map(([k, label]) => (
@@ -1488,6 +1491,10 @@ export function StrategyBuilder() {
           <span className="ml-2 hidden text-term-dim lg:inline">
             {panel === "payoff"
               ? "Payoff at expiry, T+0, and any day in between"
+              : panel === "schart"
+              ? "The legs' combined premium (or P&L) through the day"
+              : panel === "sgreeks"
+              ? "Net and per-leg Greeks through the day"
               : "Replay these legs against Upstox daily history"}
           </span>
           {panel === "payoff" && (
@@ -1532,6 +1539,16 @@ export function StrategyBuilder() {
               />
             )}
           </div>
+        ) : panel === "schart" || panel === "sgreeks" ? (
+          <StrategyChart
+            key={panel}
+            mode={panel === "schart" ? "premium" : "greeks"}
+            symbol={symbol}
+            expiry={expiry}
+            legs={scaled(legs)}
+            analysis={analysis}
+            held={heldCount > 0}
+          />
         ) : (
           <>
         {!analysis && (

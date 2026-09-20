@@ -389,6 +389,33 @@ export interface Analysis {
   margin: { estimate: number; basis: string };
 }
 
+export type GreekKey = "delta" | "gamma" | "theta" | "vega" | "iv";
+
+/** POST /api/strategy/chart -- every array is aligned to `times` (bar start, unix s). */
+export interface StrategyChartData {
+  symbol: string;
+  expiry: string;
+  interval: number;
+  days: number;
+  lotSize: number;
+  sessions: string[];
+  source: string[];
+  /** net credit is charted as the positive premium collected (sign = -1) */
+  kind: "DEBIT" | "CREDIT";
+  sign: 1 | -1;
+  times: number[];
+  premium: { open: number[]; high: number[]; low: number[]; close: number[] };
+  spot: (number | null)[];
+  legs: { optionType: "CE" | "PE"; strike: number; side: Side; lots: number; close: number[] }[];
+  greeks: {
+    net: Record<GreekKey, (number | null)[]>;
+    /** each leg's signed contribution to the net, so the legs add up to it */
+    legs: Record<GreekKey, (number | null)[]>[];
+  } | null;
+  greeksNote: string | null;
+  updated: number;
+}
+
 export interface SavedStrategy {
   id: string;
   name: string;

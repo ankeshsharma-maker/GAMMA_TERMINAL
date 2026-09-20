@@ -269,6 +269,18 @@ export const api = {
   }) =>
     j<Analysis>("/api/strategy/analyze", { method: "POST", body: JSON.stringify(body) }),
 
+  strategyChart: (body: {
+    symbol: string;
+    expiry?: string;
+    legs: Pick<StrategyLeg, "optionType" | "strike" | "side" | "lots">[];
+    interval: number;
+    days: number;
+  }) =>
+    j<import("../types").StrategyChartData>("/api/strategy/chart", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   findHedge: (body: {
     symbol: string;
     expiry?: string;
