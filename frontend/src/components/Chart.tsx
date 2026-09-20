@@ -39,6 +39,26 @@ interface ChartData {
   points: number;
   candleSource?: "broker" | "sampled" | "upstox";
   hasVolume?: boolean;
+  interval?: number;
+  /** the server is re-serving its last good answer because the feed hiccuped */
+  stale?: boolean;
+}
+
+/** How many refreshes in a row may be refused before a smaller set is believed (15s apart = ~5 min). */
+const DEGRADED_MAX = 20;
+
+/** Is `nd` a degraded version of the chart already on screen? A feed hiccup (an upstream rate limit,
+ *  a restart) can make the server answer with a sliver of the candles, or only its "sampled" fallback.
+ *  Drawn as-is the chart collapses to that sliver and then "replays" its whole history when the feed
+ *  recovers -- which is the flicker. Only ever judged against the SAME symbol and interval, so
+ *  switching timeframe or instrument is never mistaken for a degradation. */
+function isDegraded(cur: ChartData | null, nd: ChartData): boolean {
+  if (!cur || cur.symbol !== nd.symbol || cur.interval !== nd.interval) return false;
+  // only a chart that is already good needs protecting; anything better than a poor one is welcome
+  const curReal = cur.candleSource !== "sampled" && cur.candles.length >= 25;
+  if (!curReal) return false;
+  if (nd.stale) return true; // the server's own copy of an older answer: keep what we already have
+  return nd.candleSource === "sampled" || nd.candles.length < cur.candles.length * 0.5;
 }
 
 const TIMEFRAMES: [string, number][] = [
@@ -211,6 +231,9 @@ export function Chart() {
   // a new symbol / instrument / interval just started loading: re-frame the view
   // once its first candles land, instead of trusting the previous chart's scroll position
   const reframeRef = useRef(false);
+  const dataRef = useRef<ChartData | null>(null); // mirror of `data`, readable inside the fetch loop
+  const degradedRef = useRef(0); // consecutive refreshes refused as degraded
+  const [feedLimited, setFeedLimited] = useState(false);
   const [intervalS, setIntervalS] = useState(getIntervalS); // default from Settings
   const [rangeD, setRangeD] = useState(1); // visible-history window in days (1 = intraday / 1D); 0 = all
   const [split, setSplit] = useState(false);
@@ -624,7 +647,17 @@ export function Chart() {
         .then((d) => {
           if (!alive) return;
           setLoadErr(null);
-          setData(d as ChartData);
+          const nd = d as ChartData;
+          // keep the good candles on screen rather than redraw with a collapsed set; give up after
+          // ~5 minutes so a feed that really has shrunk can't leave the chart frozen
+          if (isDegraded(dataRef.current, nd) && degradedRef.current < DEGRADED_MAX) {
+            degradedRef.current += 1;
+            setFeedLimited(true);
+            return;
+          }
+          degradedRef.current = 0;
+          setFeedLimited(false);
+          setData(nd);
         })
         // never fail silently: a chart that can't load says so (and offers a retry)
         // instead of sitting on "loading…" forever
@@ -643,6 +676,8 @@ export function Chart() {
     if (lastFrameRef.current !== frameKey) {
       reframeRef.current = true;
       lastFrameRef.current = frameKey;
+      degradedRef.current = 0;
+      setFeedLimited(false);
     }
     load(true);
     const t = setInterval(() => load(false), 2000);
@@ -651,6 +686,10 @@ export function Chart() {
       clearInterval(t);
     };
   }, [symbol, intervalS, instrument, dataSrc, reloadTick]);
+
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
 
   const candles = useMemo(() => data?.candles ?? [], [data]);
 
@@ -1731,6 +1770,14 @@ export function Chart() {
             happens to be present) so the badge appearing/disappearing never
             shifts the "N bars · Flattrade" text or the rest of the toolbar. */}
         <span className="ml-auto flex items-center gap-1.5">
+          {feedLimited && (
+            <span
+              className="flex items-center gap-1 rounded border border-amber-500/60 bg-amber-500/15 px-1.5 py-0.5 font-semibold text-amber-400"
+              title="The data feed sent back far fewer candles than before (usually a rate limit), so the chart is keeping its last full set instead of redrawing with a partial one. It updates by itself once the feed recovers."
+            >
+              ⚠ feed limited · showing last data
+            </span>
+          )}
           {feedStale && (
             <span
               className="flex items-center gap-1 rounded border border-down/60 bg-down/15 px-1.5 py-0.5 font-semibold text-down"

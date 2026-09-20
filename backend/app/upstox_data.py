@@ -24,6 +24,11 @@ from .brokers.upstox import get_upstox
 # re-run trips Upstox rate-limiting and comes back empty.
 _UC_CACHE: dict[tuple, tuple[float, list]] = {}
 _UC_TTL = 90.0
+# a partial fetch (one of the two calls failed) may fall back to the last GOOD result this old
+_UC_STALE_MAX = 1800.0
+# Upstox answers 429 when the whole account is over its rate limit for a moment; one short pause
+# clears it far more often than not
+_UC_RETRY_DELAY = 1.5
 
 log = logging.getLogger("upstox_data")
 
@@ -853,6 +858,18 @@ def _hc_intraday(key: str, unit: str, interval: int) -> str:
     return f"/historical-candle/intraday/{key}/{unit}/{interval}"
 
 
+async def _get_retry(ux, path: str) -> dict:
+    """ux.get(v3) with ONE retry after a short pause when Upstox says 429. Anything else is raised
+    straight away, so a genuine failure is not slowed down."""
+    try:
+        return await ux.get(path, v3=True)
+    except Exception as exc:  # noqa: BLE001
+        if getattr(getattr(exc, "response", None), "status_code", None) != 429:
+            raise
+        await asyncio.sleep(_UC_RETRY_DELAY)
+        return await ux.get(path, v3=True)
+
+
 async def fetch_underlying_candles(symbol: str, interval_s: int) -> list[dict]:
     """OHLCV candles for an index / F&O-stock underlying from Upstox v3
     historical-candle, shaped for charting.build_chart(). `interval_s` picks
@@ -890,24 +907,33 @@ async def fetch_underlying_candles(symbol: str, interval_s: int) -> list[dict]:
                 "volume": _num(c[5]) if len(c) > 5 else 0.0,
             })
 
+    hist_ok = intra_ok = True
     try:
-        h = await ux.get(_hc(key, unit, interval, today.isoformat(), frm.isoformat()), v3=True)
+        h = await _get_retry(ux, _hc(key, unit, interval, today.isoformat(), frm.isoformat()))
         _push(h.get("data", {}).get("candles", []))
     except Exception as exc:  # noqa: BLE001
+        hist_ok = False
         log.warning("upstox hist candles %s failed: %s", symbol, exc)
 
     if unit == "minutes":
         try:
-            h = await ux.get(_hc_intraday(key, unit, interval), v3=True)
+            h = await _get_retry(ux, _hc_intraday(key, unit, interval))
             _push(h.get("data", {}).get("candles", []))
         except Exception as exc:  # noqa: BLE001
-            log.debug("upstox intraday candles %s failed: %s", symbol, exc)
+            intra_ok = False
+            log.warning("upstox intraday candles %s failed: %s", symbol, exc)
 
     out.sort(key=lambda c: c["time"])
-    if len(out) >= 40:
+    if hist_ok and intra_ok and len(out) >= 40:
         _UC_CACHE[ck] = (_time.time(), out)
-    elif hit and len(hit[1]) >= 40:
-        return hit[1]  # rate-limited now — serve the last good result
+        return out
+    # A partial answer (one of the two calls failed) must never pass for the real thing. If the
+    # history call failed, `out` is today's bars only: it would replace ~20 days of candles and get
+    # cached for _UC_TTL, so a chart would collapse to one day and then "replay" the whole history
+    # when the next call succeeded. Serve the last GOOD result instead (up to 30 min old); with none,
+    # hand back what we have -- uncached, so the very next request tries again.
+    if hit and len(hit[1]) >= 40 and _time.time() - hit[0] < _UC_STALE_MAX:
+        return hit[1]
     return out
 
 

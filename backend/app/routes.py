@@ -1,6 +1,9 @@
 """REST endpoints."""
 from __future__ import annotations
 
+import time
+from collections import OrderedDict
+
 from fastapi import APIRouter, HTTPException, Query
 
 from . import candle_sources, portfolio_scenario, volatility
@@ -271,6 +274,34 @@ def save_chart_drawings(body: dict):
     return {"drawings": store.save_chart_drawings(key, drawings)}
 
 
+# The last GOOD chart per (instrument, interval, source). When the feed hiccups (Upstox 429, the broker
+# dropping, a restart) the answer can suddenly hold a tiny fraction of the candles, or only the "sampled"
+# fallback; drawn as-is, the chart collapses and then "replays" its history when the feed recovers.
+# So a degraded answer is replaced by the last good one while that is recent (and flagged `stale`).
+_CHART_GOOD: "OrderedDict[tuple, tuple[float, dict]]" = OrderedDict()
+_CHART_GOOD_MAX = 16          # entries kept (a payload is ~250 KB; this bounds memory on a small box)
+_CHART_GOOD_MIN_CANDLES = 25  # fewer than this is never treated as a "good" reference
+_CHART_STALE_MAX_S = 1800.0   # ...and is only served this long after it was good
+_CHART_DEGRADED_RATIO = 0.5   # an answer with under this share of the good one's candles is degraded
+
+
+def _guard_chart(key: tuple, payload: dict) -> dict:
+    now = time.time()
+    n = len(payload.get("candles") or [])
+    if payload.get("candleSource") != "sampled" and n >= _CHART_GOOD_MIN_CANDLES:
+        _CHART_GOOD[key] = (now, payload)
+        _CHART_GOOD.move_to_end(key)
+        while len(_CHART_GOOD) > _CHART_GOOD_MAX:
+            _CHART_GOOD.popitem(last=False)
+        return payload
+    good = _CHART_GOOD.get(key)
+    if good and now - good[0] < _CHART_STALE_MAX_S:
+        gn = len(good[1].get("candles") or [])
+        if payload.get("candleSource") == "sampled" or n < gn * _CHART_DEGRADED_RATIO:
+            return {**good[1], "stale": True}
+    return payload
+
+
 @router.get("/chart/{symbol}")
 async def chart(
     symbol: str,
@@ -296,8 +327,9 @@ async def chart(
                 for p in store.get_opt_history(instrument)
             ]
             src_label = "sampled"
-        return build_chart(
-            instrument, [], [], interval_s=interval, base_candles=candles, source_label=src_label
+        return _guard_chart(
+            (instrument, interval, src),
+            build_chart(instrument, [], [], interval_s=interval, base_candles=candles, source_label=src_label),
         )
 
     # ---- synthetic ATM straddle ----
@@ -332,13 +364,16 @@ async def chart(
 
     base_candles, src_label = await candle_sources.underlying_candles(symbol, interval)
 
-    return build_chart(
-        symbol,
-        store.get_history(symbol),
-        store.get_scan_history(symbol),
-        interval_s=interval,
-        base_candles=base_candles,
-        source_label=src_label,
+    return _guard_chart(
+        (symbol, interval, src),
+        build_chart(
+            symbol,
+            store.get_history(symbol),
+            store.get_scan_history(symbol),
+            interval_s=interval,
+            base_candles=base_candles,
+            source_label=src_label,
+        ),
     )
 
 
