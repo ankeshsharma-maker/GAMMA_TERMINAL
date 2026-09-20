@@ -109,3 +109,8 @@ INDEX_FEED_TOKENS = {
     "MIDCPNIFTY": ("NSE", "26074"),
     "NIFTYNXT50": ("NSE", "26013"),
 }
+
+# Largest single LIVE order AutoBot will send, in lots. A bigger order is split into slices of this
+# size so none can hit the exchange freeze quantity and be rejected. 20 lots is safely under the
+# freeze limit of every index; per-rule override: maxLotsPerOrder.
+AUTOBOT_MAX_LOTS_PER_ORDER = int(os.getenv("AUTOBOT_MAX_LOTS_PER_ORDER", "20"))

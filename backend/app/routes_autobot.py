@@ -40,6 +40,18 @@ def delete_rule(rid: str):
     return autobot.delete_rule(rid)
 
 
+@router.post("/rules/{rid}/resume")
+def resume(rid: str):
+    """Lift a safety pause (losing streak / rule loss cap) for the rest of today."""
+    return autobot.resume_rule(rid)
+
+
+@router.get("/stats")
+def stats(limit: int = 60):
+    """Performance of every rule from the closed-trade ledger, net of estimated charges."""
+    return autobot.stats(max(1, min(int(limit), 500)))
+
+
 @router.post("/kill")
 def kill():
     return autobot.kill()

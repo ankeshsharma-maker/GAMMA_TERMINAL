@@ -450,6 +450,7 @@ export const api = {
     j<{
       enabled: boolean;
       minSeverity: "info" | "warning" | "critical";
+      autobotAlerts: "all" | "important" | "off";
       webhookUrlSet: boolean;
       telegramSet: boolean;
     }>("/api/alert-delivery"),
@@ -529,6 +530,9 @@ export const api = {
   liveOrderLog: () => j<{ orders: any[] }>("/api/order/live-log"),
 
   autobot: () => j<import("../types").AutoBotState>("/api/autobot"),
+  autobotStats: (limit = 60) => j<import("../types").AutoStats>(`/api/autobot/stats?limit=${limit}`),
+  autobotResume: (id: string) =>
+    j<import("../types").AutoBotState>(`/api/autobot/rules/${encodeURIComponent(id)}/resume`, { method: "POST" }),
   autobotMaster: (on: boolean) =>
     j<import("../types").AutoBotState>("/api/autobot/master", {
       method: "POST",

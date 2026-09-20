@@ -303,6 +303,20 @@ export interface AutoRule {
   squareOff: string;
   noEntryAfter?: string;
   noEntryBefore?: string;
+  /** ---- safety (all optional; blank / 0 = off) ---- */
+  /** stop opening new trades for the week after this many */
+  maxTradesPerWeek?: number;
+  /** only trade when the expiry is this many whole days away or more / fewer (0 = expiry day) */
+  minDte?: number | null;
+  maxDte?: number | null;
+  /** pause the rule for the rest of the day after this many losing trades in a row */
+  maxConsecLosses?: number;
+  /** pause the rule for the day once it has lost this many rupees today */
+  ruleMaxLoss?: number;
+  /** skip the entry when the option's bid-ask spread is wider than this % of its price */
+  maxSpreadPct?: number;
+  /** largest single live order in lots; bigger orders are split (blank = the engine default) */
+  maxLotsPerOrder?: number;
   _state?: {
     open: null | {
       side: Side;
@@ -314,9 +328,27 @@ export interface AutoRule {
       mode: string;
       peak?: number;
       stopPx?: number | null;
+      /** e.g. "23350CE", or a structure's summary */
+      label?: string;
     };
     tradesToday: number;
+    weekTrades?: number;
+    lossStreak?: number;
+    dayPnl?: number;
+    /** why the rule is paused for today, when it is */
+    paused?: string | null;
   };
+  /** what the rule concluded on its last look: which conditions passed, or what held it back */
+  _why?: {
+    phase: "watching" | "blocked" | "open";
+    reason?: string | null;
+    list?: "entry" | "exit";
+    logic?: "all" | "any";
+    conds?: boolean[];
+    stop?: number | null;
+    ts: number;
+  } | null;
+  _stats?: { trades: number; winRate: number; net: number; gross: number; today: number };
   /** live readout for the first prev_candle condition in whichever
    *  condition list (entry/exit) is currently active, or null/absent. */
   _live?: {
@@ -334,6 +366,57 @@ export interface AutoLogEntry {
   ruleName: string;
   level: string;
   msg: string;
+}
+
+/** GET /api/autobot/stats -- every P&L is net of estimated charges unless named gross */
+export interface AutoSummary {
+  total: number;
+  gross: number;
+  charges: number;
+  count: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  avgWin: number;
+  avgLoss: number;
+  profitFactor: number | null;
+  payoff: number | null;
+  expectancy: number;
+  maxDrawdown: number;
+  maxWinStreak: number;
+  maxLossStreak: number;
+  best: number;
+  worst: number;
+  avgHoldMin?: number | null;
+  byReason?: Record<string, { n: number; pnl: number }>;
+  byWeekday?: Record<string, { n: number; pnl: number }>;
+  equity: number[];
+}
+
+export interface AutoTradeRow {
+  tid: string;
+  ruleId: string;
+  ruleName: string;
+  symbol: string;
+  label: string;
+  structure?: string | null;
+  side: Side;
+  lots: number;
+  entryPx: number;
+  exitPx: number;
+  pnl: number;
+  charges: number;
+  reason: string;
+  partial: boolean;
+  mode: string;
+  exitTs: number;
+  day: string;
+}
+
+export interface AutoStats {
+  overall: AutoSummary;
+  rules: Record<string, AutoSummary & { name: string }>;
+  recent: AutoTradeRow[];
 }
 
 export interface AutoBotState {

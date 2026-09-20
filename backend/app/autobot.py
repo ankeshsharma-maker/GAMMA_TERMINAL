@@ -25,6 +25,22 @@ poller after ``store.check_stops``).  Every rule is a small JSON document:
       "noEntryAfter": "15:00"       # optional: no new entries at/after this time
     }
 
+Safety fields (all optional; absent or 0 = off). They only ever hold a rule back:
+    "maxTradesPerWeek": 4,        # no new entries once this many trades opened this ISO week
+    "minDte": 1, "maxDte": 5,     # trade only when the expiry is this many WHOLE days away
+                                  #   (0 = expiry day; minDte=maxDte=0 -> expiry day only)
+    "maxConsecLosses": 2,         # pause for the rest of today after N losing trades in a row
+    "ruleMaxLoss": 5000,          # pause for the rest of today once this rule is down this much
+    "maxSpreadPct": 5,            # skip an entry whose bid-ask spread is wider than this % of price
+    "maxLotsPerOrder": 20         # split a bigger LIVE order into slices no larger than this
+                                  #   (default config.AUTOBOT_MAX_LOTS_PER_ORDER) so no single
+                                  #   order can breach the exchange freeze quantity
+
+The exit maths (SL / breakeven / trail / target / scale-out) lives in autobot_exit, shared
+with the backtester so the two can't drift. Every entry, exit, error and safety stop also goes
+out as an alert (category "autobot"; see alert_delivery), closed trades are kept in a ledger
+(`autobot_trades`) for per-rule stats, and each rule carries a `_why` explanation of its last look.
+
 holdType "positional" skips the squareOff / market-close forced exit --
 the position rides across day boundaries until SL/target/an exit
 condition fires (or the KILL switch), same as a manual carry-forward
@@ -77,13 +93,17 @@ already use):
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections import deque
 from datetime import datetime, time as dtime
 from zoneinfo import ZoneInfo
 
-from . import db
+from . import autobot_exit as X
+from . import charges as chg
+from . import config, db
+from .autobot_stats import summarize
 from .store import store
 
 log = logging.getLogger("autobot")
@@ -891,7 +911,70 @@ def _resolve_instrument(inst: str, atm: float, step: float) -> tuple[float, str]
 # --------------------------------------------------------------------------- #
 # the engine                                                                   #
 # --------------------------------------------------------------------------- #
+# Events that also go out as alerts (Telegram / push / webhook), with the severity they carry.
+_ALERT_LEVELS = {"entry": "info", "exit": "info", "error": "critical", "stop": "warning"}
+# A failing order retries every tick; alert once per this long per distinct message, not every 9 s.
+_ALERT_THROTTLE_S = 600.0
+
+
+class PartialFill(Exception):
+    """A sliced live order that got `placed` lots through before a slice failed. The caller
+    must record what really went through instead of assuming all-or-nothing."""
+
+    def __init__(self, placed: int, cause: Exception):
+        super().__init__(f"{placed} lot(s) went through, then: {cause}")
+        self.placed = placed
+        self.cause = cause
+
+
+class StructureBroken(Exception):
+    """A multi-leg order where some legs went through and a later one failed."""
+
+    def __init__(self, done: list[dict], cause: Exception):
+        super().__init__(f"{len(done)} leg(s) went through, then: {cause}")
+        self.done = done
+        self.cause = cause
+
+
+def _week_key(now: datetime) -> str:
+    iso = now.isocalendar()
+    return f"{iso[0]}-W{iso[1]:02d}"
+
+
+def _num_or_none(v):
+    if v in (None, ""):
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _dte_band(lo: float | None, hi: float | None) -> str:
+    if lo == 0 and hi == 0:
+        return "on expiry day only"
+    if lo is not None and hi is not None:
+        return f"only {lo:g} days out" if lo == hi else f"{lo:g} to {hi:g} days out"
+    return f"{lo:g}+ days out" if lo is not None else f"up to {hi:g} days out"
+
+
+def _legs_of(pos: dict) -> list[dict]:
+    """The legs of an open position; a single-option position is a one-leg list."""
+    if pos.get("legs"):
+        return pos["legs"]
+    return [{"ot": pos["ot"], "strike": pos["strike"], "side": pos["side"], "mult": 1,
+             "entryPx": pos["entryPx"]}]
+
+
+def _pos_label(pos: dict) -> str:
+    if pos.get("label"):
+        return pos["label"]
+    return f"{pos.get('strike'):g}{pos.get('ot')}" if pos.get("strike") is not None else "?"
+
+
 class AutoBot:
+    TRADES_MAX = 2000
+
     def __init__(self) -> None:
         doc = db.get_kv("autobot") or {}
         self.master: bool = bool(doc.get("master", False))
@@ -899,8 +982,14 @@ class AutoBot:
         self.rules: list[dict] = list(doc.get("rules", []))
         self.state: dict[str, dict] = db.get_kv("autobot_state") or {}
         self.log: deque = deque((db.get_kv("autobot_log") or [])[-200:], maxlen=200)
+        # closed-trade ledger (one row per fill that reduced a position), feeds the per-rule stats
+        self.trades: list[dict] = list(db.get_kv("autobot_trades") or [])[-self.TRADES_MAX:]
         self.daily_pnl: float = 0.0
         self._pnl_day: str = ""
+        # in-memory only: why each rule did / didn't act on the last look (see _set_why)
+        self._why: dict[str, dict] = {}
+        self._alert_seen: dict[tuple, float] = {}
+        self._trips_cache: tuple[int, list[dict]] = (-1, [])
 
     # -- persistence ------------------------------------------------------- #
     def _save_doc(self) -> None:
@@ -914,6 +1003,10 @@ class AutoBot:
         db.set_kv("autobot_state", self.state)
         db.set_kv("autobot_log", list(self.log))
 
+    def _save_trades(self) -> None:
+        db.set_kv("autobot_trades", self.trades[-self.TRADES_MAX:])
+
+    # -- events / alerts ------------------------------------------------- #
     def _emit(self, rule: dict, level: str, msg: str) -> None:
         rec = {
             "ts": time.time(), "ruleId": rule.get("id"),
@@ -921,21 +1014,150 @@ class AutoBot:
         }
         self.log.appendleft(rec)
         log.info("[%s] %s", rec["ruleName"], msg)
+        sev = _ALERT_LEVELS.get(level)
+        if sev:
+            self._alert(rule, level, msg, sev)
+
+    def _alert(self, rule: dict, level: str, msg: str, sev: str) -> None:
+        """Send the event out through the alert pipeline (in-app feed + Telegram / push /
+        webhook, per Settings). Entries and exits always go out; errors and safety stops
+        repeat every tick while the cause persists, so they are throttled per message."""
+        now = time.time()
+        if level in ("error", "stop"):
+            key = (rule.get("id"), level, msg[:60])
+            if now - self._alert_seen.get(key, 0.0) < _ALERT_THROTTLE_S:
+                return
+            self._alert_seen[key] = now
+            if len(self._alert_seen) > 500:
+                for k in sorted(self._alert_seen, key=self._alert_seen.get)[:250]:
+                    self._alert_seen.pop(k, None)
+        try:
+            store.add_alert({
+                "ts": now, "symbol": (rule.get("symbol") or "").upper(),
+                "kind": f"autobot-{level}", "severity": sev, "score": 0,
+                "message": f"{rule.get('name') or rule.get('id')}: {msg}",
+                "category": "autobot", "ruleId": rule.get("id"),
+            })
+        except Exception as exc:  # noqa: BLE001
+            log.debug("autobot alert failed: %s", exc)
+
+    def _set_why(self, rid: str, new: dict) -> None:
+        """Remember what the rule concluded on this look, for the card's explanation. Kept
+        in memory (not persisted) and only replaced when something changed or a minute
+        has passed, so a quiet rule doesn't churn the snapshot every tick."""
+        old = self._why.get(rid)
+        now = time.time()
+        if old and now - old["ts"] < 60 and {k: v for k, v in old.items() if k != "ts"} == new:
+            return
+        self._why[rid] = {**new, "ts": now}
+
+    # -- ledger / stats --------------------------------------------------- #
+    def _record_trade(self, rule: dict, pos: dict, *, lots: int, exit_px: float, pnl: float,
+                      reason: str, partial: bool, day: str, marks: list[float] | None = None) -> None:
+        ls = int(pos.get("lotSize", 1) or 1)
+        legs = _legs_of(pos)
+        # charges for the closed lots: per leg, entry to exit (est.; see charges.py)
+        cost = 0.0
+        for i, lg in enumerate(legs):
+            m = marks[i] if marks and i < len(marks) else lg["entryPx"]
+            cost += chg.round_trip_charges(lg["entryPx"], m, lots * ls * int(lg.get("mult", 1)), lg["side"])
+        self.trades.append({
+            "tid": str(pos.get("tid") or int(pos.get("ts", 0) * 1000)),
+            "ruleId": rule.get("id"), "ruleName": rule.get("name") or rule.get("id"),
+            "symbol": (rule.get("symbol") or "").upper(), "label": _pos_label(pos),
+            "structure": pos.get("structure"), "side": pos["side"], "lots": lots, "lotSize": ls,
+            "entryPx": round(float(pos["entryPx"]), 2), "exitPx": round(float(exit_px), 2),
+            "pnl": round(pnl, 2), "charges": round(cost, 2), "reason": reason, "partial": partial,
+            "mode": pos.get("mode", "paper"), "entryTs": pos.get("ts"), "exitTs": time.time(), "day": day,
+        })
+        if len(self.trades) > self.TRADES_MAX + 200:
+            self.trades = self.trades[-self.TRADES_MAX:]
+        self._save_trades()
+
+    def _round_trips(self) -> list[dict]:
+        """The ledger folded to one row per trade: a position that scaled out is ONE trade."""
+        n = len(self.trades)
+        if self._trips_cache[0] == n:
+            return self._trips_cache[1]
+        by: dict[tuple, dict] = {}
+        for t in self.trades:
+            k = (t["ruleId"], t["tid"])
+            r = by.get(k)
+            if r is None:
+                by[k] = {**t, "pnl": t["pnl"], "charges": t["charges"], "legsClosed": 1}
+            else:
+                r["pnl"] += t["pnl"]
+                r["charges"] += t["charges"]
+                r["exitTs"] = t["exitTs"]
+                r["exitPx"] = t["exitPx"]
+                r["day"] = t["day"]
+                if not t["partial"]:
+                    r["reason"] = t["reason"]
+        trips = sorted(by.values(), key=lambda r: r["exitTs"])
+        self._trips_cache = (n, trips)
+        return trips
+
+    @staticmethod
+    def _summ(trips: list[dict]) -> dict:
+        net = [t["pnl"] - t["charges"] for t in trips]
+        holds = [((t["exitTs"] - t["entryTs"]) / 60.0) if t.get("entryTs") else None for t in trips]
+        s = summarize(net, holds_min=holds, reasons=[t["reason"] for t in trips], days=[t["day"] for t in trips])
+        gross = sum(t["pnl"] for t in trips)
+        s["gross"] = round(gross, 0)
+        s["charges"] = round(sum(t["charges"] for t in trips), 0)
+        return s
+
+    def _rule_stats(self, rid: str, day: str) -> dict:
+        trips = [t for t in self._round_trips() if t["ruleId"] == rid]
+        if not trips:
+            return {"trades": 0, "winRate": 0.0, "net": 0.0, "today": 0.0, "gross": 0.0}
+        net = [t["pnl"] - t["charges"] for t in trips]
+        wins = sum(1 for p in net if p > 0)
+        return {
+            "trades": len(trips), "winRate": round(wins / len(trips) * 100, 1),
+            "net": round(sum(net), 0), "gross": round(sum(t["pnl"] for t in trips), 0),
+            "today": round(sum(t["pnl"] - t["charges"] for t in trips if t["day"] == day), 0),
+        }
+
+    def stats(self, limit: int = 60) -> dict:
+        trips = self._round_trips()
+        rules: dict[str, dict] = {}
+        for rid in {t["ruleId"] for t in trips}:
+            mine = [t for t in trips if t["ruleId"] == rid]
+            rules[rid] = {"name": mine[-1]["ruleName"], **self._summ(mine)}
+        return {
+            "overall": self._summ(trips),
+            "rules": rules,
+            "recent": list(reversed(self.trades[-limit:])),
+        }
 
     # -- CRUD ------------------------------------------------------------- #
     def snapshot(self) -> dict:
+        day = datetime.now(IST).date().isoformat()
+        out_rules = []
+        for r in self.rules:
+            rid = r.get("id", "")
+            st = self.state.get(rid, {})
+            out_rules.append({
+                **r,
+                "_state": {
+                    "open": st.get("open"),
+                    "tradesToday": st.get("tradesToday", 0),
+                    "weekTrades": st.get("weekTrades", 0),
+                    "lossStreak": st.get("lossStreak", 0),
+                    "dayPnl": round(st.get("dayPnl", 0.0), 0),
+                    "paused": st.get("pauseWhy") if st.get("pausedDay") == day else None,
+                },
+                "_live": st.get("live"),
+                "_why": self._why.get(rid),
+                "_stats": self._rule_stats(rid, day),
+            })
         return {
             "master": self.master,
             "maxLossPerDay": self.max_loss_per_day,
             "marketOpen": _in_market_hours(),
             "dailyPnl": round(self.daily_pnl, 2),
-            "rules": [
-                {**r, "_state": {
-                    "open": self.state.get(r.get("id", ""), {}).get("open"),
-                    "tradesToday": self.state.get(r.get("id", ""), {}).get("tradesToday", 0),
-                }, "_live": self.state.get(r.get("id", ""), {}).get("live")}
-                for r in self.rules
-            ],
+            "rules": out_rules,
             "log": list(self.log)[:100],
         }
 
@@ -973,6 +1195,7 @@ class AutoBot:
     def delete_rule(self, rid: str) -> dict:
         self.rules = [r for r in self.rules if r.get("id") != rid]
         self.state.pop(rid, None)
+        self._why.pop(rid, None)
         self._save_doc()
         self._save_state()
         return self.snapshot()
@@ -984,8 +1207,19 @@ class AutoBot:
         self._save_doc()
         return self.snapshot()
 
+    def resume_rule(self, rid: str) -> dict:
+        """Lift a safety pause (loss streak / rule loss cap) for the rest of today."""
+        st = self.state.get(rid)
+        if st:
+            st.pop("pausedDay", None)
+            st.pop("pauseWhy", None)
+            st["lossStreak"] = 0
+            self._save_state()
+        return self.snapshot()
+
     def kill(self) -> dict:
-        """Panic button: master OFF + flag every open rule position for square-off."""
+        """Panic button: master OFF + flag every open rule position for square-off. The
+        flagged positions are then closed by tick() even though the master is off."""
         self.master = False
         for rid, st in self.state.items():
             if st.get("open"):
@@ -996,6 +1230,14 @@ class AutoBot:
         return self.snapshot()
 
     # -- order helpers -------------------------------------------------- #
+    def _lots_per_order(self, rule: dict, mode: str) -> int:
+        """Largest single live order, in lots (0 = no slicing). A big order is split so no
+        one order can hit the exchange freeze quantity and be rejected outright."""
+        if mode != "live":
+            return 0
+        v = _num_or_none(rule.get("maxLotsPerOrder"))
+        return int(v) if v and v > 0 else int(config.AUTOBOT_MAX_LOTS_PER_ORDER)
+
     async def _place(self, rule: dict, side: str, strike: float, ot: str,
                      expiry: str, lots: int) -> dict:
         from .routes import _route_leg  # lazy: routes imports store, not autobot
@@ -1004,20 +1246,79 @@ class AutoBot:
         want_live = rule.get("mode") == "live"
         mode = "live" if (want_live and store.order_mode() == "live"
                           and get_broker().authed) else "paper"
-        return await _route_leg(
-            symbol=rule["symbol"], expiry=expiry, strike=strike, option_type=ot,
-            side=side, qty_lots=int(lots), order_type="MKT", price=None,
-            product=rule.get("product", "NRML"), mode=mode,
-        )
+
+        async def one(n: int) -> dict:
+            return await _route_leg(
+                symbol=rule["symbol"], expiry=expiry, strike=strike, option_type=ot,
+                side=side, qty_lots=int(n), order_type="MKT", price=None,
+                product=rule.get("product", "NRML"), mode=mode,
+            )
+
+        lots = int(lots)
+        chunk = self._lots_per_order(rule, mode)
+        if not chunk or lots <= chunk:
+            return await one(lots)
+        placed, res = 0, {}
+        while placed < lots:
+            n = min(chunk, lots - placed)
+            try:
+                res = await one(n)
+            except Exception as exc:  # noqa: BLE001
+                if placed:
+                    raise PartialFill(placed, exc) from exc
+                raise
+            placed += n
+            if placed < lots:
+                await asyncio.sleep(0.3)   # stay under the broker's order-rate limit
+        return {**res, "qtyLots": lots, "slices": -(-lots // chunk)}
+
+    def _marks(self, sym: str, pos: dict) -> list[float]:
+        out = []
+        for lg in _legs_of(pos):
+            m = store._mark_price(sym, pos["expiry"], lg["strike"], lg["ot"])
+            out.append(m if m else lg["entryPx"])
+        return out
+
+    def _pos_value(self, sym: str, pos: dict) -> float:
+        """Current premium on the footing autobot_exit expects. One option: its LTP. A
+        structure: the net premium (a credit structure returns what it would cost to close)."""
+        marks = self._marks(sym, pos)
+        if not pos.get("legs"):
+            return marks[0]
+        net = sum((1 if lg["side"] == "BUY" else -1) * int(lg.get("mult", 1)) * m
+                  for lg, m in zip(pos["legs"], marks))
+        return net if pos["side"] == "BUY" else -net
+
+    async def _close(self, rule: dict, pos: dict, lots: int) -> None:
+        """Close `lots` lots of every leg. Shorts are bought back before longs are sold so the
+        margin the hedges provide is never released while the shorts are still open."""
+        legs = sorted(_legs_of(pos), key=lambda lg: 0 if lg["side"] == "SELL" else 1)
+        done: list[dict] = []
+        for lg in legs:
+            exit_side = "SELL" if lg["side"] == "BUY" else "BUY"
+            try:
+                await self._place(rule, exit_side, lg["strike"], lg["ot"], pos["expiry"],
+                                  lots * int(lg.get("mult", 1)))
+            except Exception as exc:  # noqa: BLE001
+                if len(legs) == 1:
+                    raise
+                raise StructureBroken(done, exc) from exc
+            done.append(lg)
 
     # -- main loop ------------------------------------------------------ #
     async def tick(self) -> bool:
         """Evaluate every enabled rule once.  Returns True if anything changed."""
-        if not self.master or not self.rules:
+        if not self.rules:
+            return False
+        # KILL turns the master off but flags open positions for square-off; those still have
+        # to be closed, so an off master only stops entries and normal management.
+        unwinding = any((st.get("open") or {}).get("forceExit") for st in self.state.values())
+        if not self.master and not unwinding:
             return False
 
         now = datetime.now(IST)
         day = now.date().isoformat()
+        wk = _week_key(now)
         if day != self._pnl_day:
             self.daily_pnl = 0.0
             self._pnl_day = day
@@ -1028,245 +1329,302 @@ class AutoBot:
         ctx_cache: dict[tuple, _Ctx] = {}
 
         for rule in self.rules:
-            if not rule.get("enabled"):
-                continue
             rid = rule.get("id", "")
             sym = (rule.get("symbol") or "").upper()
             if not sym:
                 continue
+            pos0 = (self.state.get(rid) or {}).get("open")
+            if not self.master:
+                if not (pos0 and pos0.get("forceExit")):
+                    continue
+            elif not rule.get("enabled"):
+                continue
             st = self.state.setdefault(rid, {})
             if st.get("day") != day:
                 still_open = st.get("open")  # a positional trade can span days
+                keep = {k: st[k] for k in ("weekKey", "weekTrades") if k in st}
                 st.clear()
-                st.update({"day": day, "tradesToday": 0, "open": still_open, "lastExitTs": 0})
+                st.update({"day": day, "tradesToday": 0, "open": still_open, "lastExitTs": 0,
+                           "lossStreak": 0, "dayPnl": 0.0, **keep})
+            if st.get("weekKey") != wk:
+                st["weekKey"], st["weekTrades"] = wk, 0
 
             pos = st.get("open")
-
-            # ---- manage an open position ------------------------------- #
             if pos:
-                ltp = store._mark_price(sym, pos["expiry"], pos["strike"], pos["ot"]) \
-                    or pos["entryPx"]
-                base = pos["entryPx"] or 1.0
-                buy = pos["side"] == "BUY"
-                move = (ltp - base) / base * 100
-                signed = move if buy else -move  # favourable P&L %
-
-                # peak = best favourable premium seen
-                peak = pos.get("peak", base)
-                peak = max(peak, ltp) if buy else min(peak, ltp)
-                pos["peak"] = round(peak, 2)
-
-                # SL / target / trail unit: "pct" (of entry premium), "pts"
-                # (premium points) or "rs" (rupee P&L). Everything is converted
-                # to a premium offset in *points* for the stop price, and the
-                # favourable run-up is measured in the same unit.
-                basis = (rule.get("slBasis") or "pct").lower()
-                qty = max(1, int(pos.get("lots", 1)) * int(pos.get("lotSize", 1)))
-                unit = "pts" if basis == "pts" else "₹" if basis == "rs" else "%"
-
-                def _to_pts(v):
-                    if v in (None, ""):
-                        return None
-                    v = abs(float(v))
-                    if basis == "pts":
-                        return v
-                    if basis == "rs":
-                        return v / qty
-                    return base * v / 100.0
-
-                if basis == "pts":
-                    fav = (peak - base) if buy else (base - peak)
-                    cur_fav = (ltp - base) if buy else (base - ltp)
-                elif basis == "rs":
-                    fav = ((peak - base) if buy else (base - peak)) * qty
-                    cur_fav = ((ltp - base) if buy else (base - ltp)) * qty
-                else:
-                    fav = (peak - base) / base * 100 if buy else (base - peak) / base * 100
-                    cur_fav = signed
-
-                # assemble the effective stop price: fixed SL, then ratcheted
-                # by breakeven-arm and trailing-stop once their triggers are hit
-                stop_px = None
-                sl_pts = _to_pts(rule.get("slPct"))
-                if sl_pts is not None:
-                    stop_px = base - sl_pts if buy else base + sl_pts
-                be_arm = float(rule.get("beArmPct") or 0)
-                be_on = be_arm > 0 and fav >= be_arm
-                if be_on:
-                    stop_px = base if stop_px is None else (
-                        max(stop_px, base) if buy else min(stop_px, base)
-                    )
-                trail_v = float(rule.get("trailPct") or 0)
-                trail_arm = float(rule.get("trailArmPct") or 0)
-                trail_pts = _to_pts(rule.get("trailPct")) if trail_v > 0 else None
-                trail_on = trail_pts is not None and fav >= trail_arm
-                if trail_on:
-                    ts_px = peak - trail_pts if buy else peak + trail_pts
-                    stop_px = ts_px if stop_px is None else (
-                        max(stop_px, ts_px) if buy else min(stop_px, ts_px)
-                    )
-                new_stop = round(stop_px, 2) if stop_px is not None else None
-                if new_stop != pos.get("stopPx"):
-                    pos["stopPx"] = new_stop
-                    changed = True
-
-                # single-level scale-out: book part of the position at an
-                # earlier target, let the remainder ride to the existing
-                # SL/target/trail. Peak-tracking is NOT reset on a partial --
-                # it's a price level, not a size, so trailing/breakeven keep
-                # protecting the smaller remainder with no extra code.
-                t1_v = rule.get("target1Pct")
-                if (
-                    t1_v not in (None, "")
-                    and float(t1_v) != 0
-                    and not pos.get("partial1Done")
-                    and cur_fav >= abs(float(t1_v))
-                ):
-                    entry_lots = int(pos.get("entryLots") or pos["lots"])
-                    close_lots = round(entry_lots * float(rule.get("target1LotsPct") or 50) / 100)
-                    close_lots = max(1, min(close_lots, pos["lots"] - 1))
-                    if pos["lots"] > close_lots:
-                        exit_side = "SELL" if buy else "BUY"
-                        try:
-                            await self._place(rule, exit_side, pos["strike"], pos["ot"],
-                                              pos["expiry"], close_lots)
-                        except Exception as exc:  # noqa: BLE001
-                            self._emit(rule, "error", f"partial exit failed: {exc}")
-                        else:
-                            pnl = signed / 100 * base * close_lots * pos.get("lotSize", 1)
-                            self.daily_pnl += pnl
-                            pos["lots"] -= close_lots
-                            pos["partial1Done"] = True
-                            self._emit(
-                                rule, "exit",
-                                f"PARTIAL {close_lots} lots @~{ltp:.1f} "
-                                f"(target1 {t1_v}{unit}) P&L~{pnl:+.0f}, {pos['lots']} left",
-                            )
-                            changed = True
-                        continue
-
-                positional = str(rule.get("holdType", "intraday")).lower() == "positional"
-                reason = None
-                sq = None if positional else _parse_hhmm(rule.get("squareOff"))
-                stop_hit = stop_px is not None and (ltp <= stop_px if buy else ltp >= stop_px)
-                tp_v = rule.get("targetPct")
-                tp_hit = (
-                    tp_v not in (None, "") and float(tp_v) != 0 and cur_fav >= abs(float(tp_v))
-                )
-                if pos.get("forceExit"):
-                    reason = "kill"
-                elif stop_hit:
-                    reason = (
-                        "trailing stop" if trail_on
-                        else "breakeven stop" if be_on
-                        else f"SL {rule.get('slPct')}{unit}"
-                    )
-                elif tp_hit:
-                    reason = f"target {tp_v}{unit}"
-                elif not positional and (not open_mkt or (sq and now.time() >= sq)):
-                    reason = "square-off"
-                else:
-                    _tf = int(rule.get("entryTf") or 0)
-                    _bars = int(rule.get("entryBars") or 0)
-                    cx = ctx_cache.get((sym, _tf, _bars)) or ctx_cache.setdefault(
-                        (sym, _tf, _bars), _Ctx(sym, tf=_tf, bars=_bars)
-                    )
-                    st["live"] = cx.prev_candle_live(rule.get("exit", []))
-                    if cx.eval_conds(rule.get("exit", []), rule.get("exitLogic", "any")):
-                        reason = "exit signal"
-                if reason:
-                    exit_side = "SELL" if pos["side"] == "BUY" else "BUY"
-                    try:
-                        await self._place(rule, exit_side, pos["strike"], pos["ot"],
-                                          pos["expiry"], pos["lots"])
-                    except Exception as exc:  # noqa: BLE001
-                        self._emit(rule, "error", f"exit order failed: {exc}")
-                        continue
-                    pnl = signed / 100 * base * pos["lots"] * pos.get("lotSize", 1)
-                    self.daily_pnl += pnl
-                    self._emit(
-                        rule, "exit",
-                        f"{exit_side} {pos['strike']}{pos['ot']} @~{ltp:.1f} "
-                        f"({reason}) P&L~{pnl:+.0f}",
-                    )
-                    st["open"] = None
-                    st["lastExitTs"] = time.time()
+                if await self._manage(rule, st, pos, now, day, open_mkt, ctx_cache):
                     changed = True
                 continue
-
-            # ---- look for an entry ------------------------------------ #
-            if not open_mkt or loss_lock:
+            if not self.master:
                 continue
-            if st.get("tradesToday", 0) >= int(rule.get("maxTradesPerDay", 3)):
-                continue
-            if time.time() - st.get("lastExitTs", 0) < float(rule.get("cooldownMin", 5)) * 60:
-                continue
-            nea = _parse_hhmm(rule.get("noEntryAfter"))
-            if nea and now.time() >= nea:
-                continue
-            neb = _parse_hhmm(rule.get("noEntryBefore"))
-            if neb and now.time() < neb:
-                continue
-
-            _tf = int(rule.get("entryTf") or 0)
-            _bars = int(rule.get("entryBars") or 0)
-            cx = ctx_cache.get((sym, _tf, _bars)) or ctx_cache.setdefault(
-                (sym, _tf, _bars), _Ctx(sym, tf=_tf, bars=_bars)
-            )
-            st["live"] = cx.prev_candle_live(rule.get("entry", []))
-            if cx.n < 5 or not cx.eval_conds(rule.get("entry", []), rule.get("entryLogic", "all")):
-                continue
-
-            chain = store.get_chain(sym, rule.get("expiry"))
-            if not chain or not chain.get("atmStrike"):
-                self._emit(rule, "warn", "entry signal but no chain")
-                continue
-            strike, ot = _resolve_instrument(
-                rule.get("instrument", "ATM_CE"), chain["atmStrike"],
-                chain.get("strikeStep") or 50,
-            )
-            exp = chain["expiry"]
-            entry_px = store._mark_price(sym, exp, strike, ot)
-            if not entry_px:
-                self._emit(rule, "warn", f"no LTP for {strike}{ot}")
-                continue
-
-            # ---- premium / delta entry filter --------------------------- #
-            crow = next((r for r in chain.get("rows", []) if r["strike"] == strike), None)
-            leg = (crow or {}).get("call" if ot == "CE" else "put", {}) if crow else {}
-            ef_ok, ef_why = _entry_filter_ok(
-                rule.get("entryFilter") or {}, float(entry_px),
-                abs(float(leg.get("delta") or 0)),
-                float(leg.get("chg") or 0),
-                float(leg.get("chgPct") or 0),
-            )
-            if not ef_ok:
-                continue
-
-            side = rule.get("side", "BUY")
-            lots = int(rule.get("lots", 1))
-            try:
-                res = await self._place(rule, side, strike, ot, exp, lots)
-            except Exception as exc:  # noqa: BLE001
-                self._emit(rule, "error", f"entry order failed: {exc}")
-                continue
-            st["open"] = {
-                "side": side, "strike": strike, "ot": ot, "expiry": exp,
-                "entryPx": float(entry_px), "lots": lots, "entryLots": lots,
-                "lotSize": chain.get("lotSize", 1), "ts": time.time(),
-                "mode": res.get("mode", "paper"),
-                "peak": float(entry_px), "stopPx": None,
-            }
-            st["tradesToday"] = st.get("tradesToday", 0) + 1
-            self._emit(
-                rule, "entry",
-                f"{side} {strike}{ot} x{lots} @~{float(entry_px):.1f} [{res.get('mode')}]",
-            )
-            changed = True
+            if await self._look_for_entry(rule, st, now, day, open_mkt, loss_lock, ctx_cache):
+                changed = True
 
         if changed:
             self._save_state()
         return changed
+
+    # ---- an open position ---------------------------------------------- #
+    def _cx(self, cache: dict, sym: str, rule: dict) -> _Ctx:
+        tf, bars = int(rule.get("entryTf") or 0), int(rule.get("entryBars") or 0)
+        return cache.get((sym, tf, bars)) or cache.setdefault((sym, tf, bars), _Ctx(sym, tf=tf, bars=bars))
+
+    async def _manage(self, rule: dict, st: dict, pos: dict, now: datetime, day: str,
+                      open_mkt: bool, ctx_cache: dict) -> bool:
+        rid = rule.get("id", "")
+        sym = (rule.get("symbol") or "").upper()
+        buy = pos["side"] == "BUY"
+        ls = int(pos.get("lotSize", 1))
+        ltp = self._pos_value(sym, pos)
+        qty = max(1, int(pos.get("lots", 1)) * ls)
+        ev = X.evaluate(rule, buy=buy, base=pos["entryPx"] or 1.0, ltp=ltp, peak=pos.get("peak"), qty=qty)
+        pos["peak"] = round(ev.peak, 2)
+        changed = False
+        new_stop = round(ev.stop_px, 2) if ev.stop_px is not None else None
+        if new_stop != pos.get("stopPx"):
+            pos["stopPx"] = new_stop
+            changed = True
+        label = _pos_label(pos)
+
+        # single-level scale-out: book part of the position at an earlier target and let the
+        # remainder ride to the existing SL / target / trail. Peak-tracking is NOT reset on a
+        # partial -- it's a price level, not a size, so trailing / breakeven keep protecting
+        # the smaller remainder with no extra code.
+        close_lots = X.partial_close_lots(
+            rule, ev, entry_lots=int(pos.get("entryLots") or pos["lots"]), lots=pos["lots"],
+            done=bool(pos.get("partial1Done")),
+        )
+        if close_lots:
+            try:
+                await self._close(rule, pos, close_lots)
+            except PartialFill as pf:
+                self._book_partial(rule, st, pos, ev, pf.placed, day, ls, "scale-out (partly filled)")
+                pos["partial1Done"] = True
+                self._emit(rule, "error", f"scale-out only closed {pf.placed} of {close_lots} lots: {pf.cause}")
+                return True
+            except Exception as exc:  # noqa: BLE001
+                self._emit(rule, "error", f"partial exit failed: {exc}")
+            else:
+                pnl = X.pnl_rs(ev, close_lots, ls)
+                self._book_partial(rule, st, pos, ev, close_lots, day, ls, "scale-out", pnl=pnl)
+                pos["partial1Done"] = True
+                self._emit(
+                    rule, "exit",
+                    f"PARTIAL {close_lots} lots @~{ltp:.1f} "
+                    f"(target1 {rule.get('target1Pct')}{ev.unit}) P&L~{pnl:+.0f}, {pos['lots']} left",
+                )
+                changed = True
+            return changed
+
+        positional = str(rule.get("holdType", "intraday")).lower() == "positional"
+        sq = None if positional else _parse_hhmm(rule.get("squareOff"))
+        reason = None
+        exit_res: list[bool] = []
+        if pos.get("forceExit"):
+            reason = "unwind (a leg failed to close)" if pos.get("unwind") else "kill"
+        elif X.stop_hit(ev):
+            reason = X.stop_reason(rule, ev)
+        elif X.target_hit(rule, ev):
+            reason = X.target_reason(rule, ev)
+        elif not positional and (not open_mkt or (sq and now.time() >= sq)):
+            reason = "square-off"
+        else:
+            cx = self._cx(ctx_cache, sym, rule)
+            conds = rule.get("exit", [])
+            st["live"] = cx.prev_candle_live(conds)
+            exit_res = [cx.eval_one(c) for c in conds]
+            logic = rule.get("exitLogic", "any")
+            if bool(conds) and (all(exit_res) if logic == "all" else any(exit_res)):
+                reason = "exit signal"
+        self._set_why(rid, {"phase": "open", "list": "exit", "logic": rule.get("exitLogic", "any"),
+                            "conds": exit_res, "reason": None, "stop": new_stop})
+        if not reason:
+            return changed
+
+        try:
+            await self._close(rule, pos, pos["lots"])
+        except PartialFill as pf:
+            self._book_partial(rule, st, pos, ev, pf.placed, day, ls, f"{reason} (partly filled)")
+            self._emit(rule, "error", f"exit only closed {pf.placed} lots, {pos['lots']} still open - will retry: {pf.cause}")
+            return True
+        except StructureBroken as sb:
+            self._structure_broken(rule, st, pos, sb, "exit")
+            return True
+        except Exception as exc:  # noqa: BLE001
+            self._emit(rule, "error", f"exit order failed: {exc}")
+            return changed
+        marks = self._marks(sym, pos)
+        # after a broken multi-leg exit the entry premium no longer matches the legs left, so a
+        # P&L computed against it would be nonsense; say so instead of booking a wrong number
+        pnl = 0.0 if pos.get("unwind") else X.pnl_rs(ev, pos["lots"], ls)
+        self.daily_pnl += pnl
+        self._emit(rule, "exit", f"CLOSE {label} @~{ltp:.1f} ({reason}) "
+                                 + ("P&L not tracked for a broken exit - check the broker" if pos.get("unwind") else f"P&L~{pnl:+.0f}"))
+        self._record_trade(rule, pos, lots=pos["lots"], exit_px=ltp, pnl=pnl, reason=reason,
+                           partial=False, day=day, marks=marks)
+        st["open"] = None
+        st["lastExitTs"] = time.time()
+        self._after_exit(rule, st, day, pnl, pos.get("realized", 0.0) + pnl)
+        return True
+
+    def _book_partial(self, rule: dict, st: dict, pos: dict, ev: X.ExitEval, lots: int, day: str,
+                      ls: int, reason: str, pnl: float | None = None) -> None:
+        """Record `lots` closed lots against an open position that stays open."""
+        if lots <= 0:
+            return
+        pnl = X.pnl_rs(ev, lots, ls) if pnl is None else pnl
+        self.daily_pnl += pnl
+        st["dayPnl"] = st.get("dayPnl", 0.0) + pnl
+        pos["lots"] -= lots
+        pos["realized"] = pos.get("realized", 0.0) + pnl
+        sym = (rule.get("symbol") or "").upper()
+        self._record_trade(rule, pos, lots=lots, exit_px=ev.ltp, pnl=pnl, reason=reason, partial=True,
+                           day=day, marks=self._marks(sym, pos))
+
+    def _structure_broken(self, rule: dict, st: dict, pos: dict, sb: StructureBroken, what: str) -> None:
+        """Some legs of a multi-leg order went through and one failed: keep managing only the
+        legs that are still open, and shout, because the book is now lopsided."""
+        closed = {(lg["strike"], lg["ot"]) for lg in sb.done}
+        if what == "exit":
+            pos["legs"] = [lg for lg in _legs_of(pos) if (lg["strike"], lg["ot"]) not in closed]
+            pos["forceExit"] = pos["unwind"] = True   # finish unwinding what's left on the next tick
+        self._emit(
+            rule, "error",
+            f"{what} of {_pos_label(pos)} broke after {len(sb.done)} leg(s) ({sb.cause}) - "
+            f"{'closing the remaining legs next tick' if what == 'exit' else 'check the broker'}",
+        )
+
+    def _after_exit(self, rule: dict, st: dict, day: str, final_pnl: float, trade_pnl: float) -> None:
+        """Book-keeping once a trade has fully closed: the day's P&L for this rule, the
+        losing streak, and the safety pauses that hang off both. `final_pnl` is the last
+        exit alone (any scale-out was booked to the day already); `trade_pnl` is the whole
+        round trip and is what decides win or loss for the streak."""
+        st["dayPnl"] = st.get("dayPnl", 0.0) + final_pnl
+        st["lossStreak"] = st.get("lossStreak", 0) + 1 if trade_pnl < 0 else 0
+        n = int(_num_or_none(rule.get("maxConsecLosses")) or 0)
+        cap = _num_or_none(rule.get("ruleMaxLoss")) or 0.0
+        why = None
+        if n and st["lossStreak"] >= n:
+            why = f"{n} losing trades in a row"
+        elif cap and st.get("dayPnl", 0.0) <= -abs(cap):
+            why = f"rule loss cap of ₹{abs(cap):,.0f} hit"
+        if why:
+            st["pausedDay"] = day
+            st["pauseWhy"] = f"Paused for today: {why}"
+            self._emit(rule, "stop", f"paused for the rest of today - {why}")
+
+    # ---- looking for an entry ------------------------------------------ #
+    async def _look_for_entry(self, rule: dict, st: dict, now: datetime, day: str, open_mkt: bool,
+                              loss_lock: bool, ctx_cache: dict) -> bool:
+        rid = rule.get("id", "")
+        sym = (rule.get("symbol") or "").upper()
+
+        def blocked(msg: str, **extra) -> bool:
+            self._set_why(rid, {"phase": "blocked", "reason": msg, **extra})
+            return False
+
+        # ---- gates, cheapest first --------------------------------------- #
+        if not open_mkt:
+            return blocked("market closed")
+        if loss_lock:
+            return blocked(f"daily loss cap reached (₹{self.max_loss_per_day:,.0f})")
+        if st.get("pausedDay") == day:
+            return blocked(st.get("pauseWhy") or "paused for today")
+        max_pd = int(rule.get("maxTradesPerDay", 3))
+        if st.get("tradesToday", 0) >= max_pd:
+            return blocked(f"max trades today reached ({st.get('tradesToday', 0)}/{max_pd})")
+        wk_cap = int(_num_or_none(rule.get("maxTradesPerWeek")) or 0)
+        if wk_cap and st.get("weekTrades", 0) >= wk_cap:
+            return blocked(f"weekly trade cap reached ({st.get('weekTrades', 0)}/{wk_cap})")
+        left = float(rule.get("cooldownMin", 5)) * 60 - (time.time() - st.get("lastExitTs", 0))
+        if left > 0:
+            return blocked(f"cooling down after the last exit ({int(left // 60)}m {int(left % 60)}s left)")
+        nea, neb = _parse_hhmm(rule.get("noEntryAfter")), _parse_hhmm(rule.get("noEntryBefore"))
+        if (nea and now.time() >= nea) or (neb and now.time() < neb):
+            return blocked(f"outside the entry window ({rule.get('noEntryBefore') or 'open'} to {rule.get('noEntryAfter') or 'close'})")
+
+        # ---- the signal ---------------------------------------------------- #
+        conds = rule.get("entry", [])
+        logic = rule.get("entryLogic", "all")
+        cx = self._cx(ctx_cache, sym, rule)
+        st["live"] = cx.prev_candle_live(conds)
+        if cx.n < 5:
+            return blocked("warming up: not enough price history yet")
+        results = [cx.eval_one(c) for c in conds]
+        fired = bool(conds) and (any(results) if logic == "any" else all(results))
+        watching = {"list": "entry", "logic": logic, "conds": results}
+        if not fired:
+            self._set_why(rid, {"phase": "watching", "reason": None, **watching})
+            return False
+
+        def held_back(msg: str) -> bool:
+            return blocked(f"signal fired but {msg}", **watching)
+
+        chain = store.get_chain(sym, rule.get("expiry"))
+        if not chain or not chain.get("atmStrike"):
+            self._emit(rule, "warn", "entry signal but no chain")
+            return held_back("there is no option chain")
+        dte_days = int(chain.get("dte") or 0)
+        lo, hi = _num_or_none(rule.get("minDte")), _num_or_none(rule.get("maxDte"))
+        if (lo is not None and dte_days < lo) or (hi is not None and dte_days > hi):
+            return held_back(f"the expiry is {dte_days} day(s) away and this rule trades {_dte_band(lo, hi)}")
+
+        strike, ot = _resolve_instrument(
+            rule.get("instrument", "ATM_CE"), chain["atmStrike"], chain.get("strikeStep") or 50,
+        )
+        exp = chain["expiry"]
+        entry_px = store._mark_price(sym, exp, strike, ot)
+        if not entry_px:
+            self._emit(rule, "warn", f"no LTP for {strike}{ot}")
+            return held_back(f"{strike:g}{ot} has no price")
+
+        # ---- premium / delta entry filter --------------------------------- #
+        crow = next((r for r in chain.get("rows", []) if r["strike"] == strike), None)
+        leg = (crow or {}).get("call" if ot == "CE" else "put", {}) if crow else {}
+        ef_ok, ef_why = _entry_filter_ok(
+            rule.get("entryFilter") or {}, float(entry_px),
+            abs(float(leg.get("delta") or 0)),
+            float(leg.get("chg") or 0),
+            float(leg.get("chgPct") or 0),
+        )
+        if not ef_ok:
+            return held_back(f"the entry filter says no ({ef_why})")
+
+        # ---- liquidity guard: a wide spread is a cost paid on the way in AND the way out ---- #
+        max_spread = _num_or_none(rule.get("maxSpreadPct")) or 0.0
+        if max_spread > 0:
+            bid, ask = float(leg.get("bid") or 0), float(leg.get("ask") or 0)
+            if bid > 0 and ask > 0:
+                spread = (ask - bid) / ((ask + bid) / 2) * 100
+                if spread > max_spread:
+                    return held_back(f"{strike:g}{ot} spread is {spread:.1f}% (limit {max_spread:g}%)")
+
+        side = rule.get("side", "BUY")
+        lots = int(rule.get("lots", 1))
+        placed = lots
+        partial_err = None
+        try:
+            res = await self._place(rule, side, strike, ot, exp, lots)
+        except PartialFill as pf:
+            placed, partial_err = pf.placed, pf
+            res = {"mode": "live"}
+        except Exception as exc:  # noqa: BLE001
+            self._emit(rule, "error", f"entry order failed: {exc}")
+            return held_back(f"the entry order failed ({exc})")
+        now_ts = time.time()
+        st["open"] = {
+            "side": side, "strike": strike, "ot": ot, "expiry": exp, "label": f"{strike:g}{ot}",
+            "entryPx": float(entry_px), "lots": placed, "entryLots": placed,
+            "lotSize": chain.get("lotSize", 1), "ts": now_ts, "tid": str(int(now_ts * 1000)),
+            "mode": res.get("mode", "paper"),
+            "peak": float(entry_px), "stopPx": None,
+        }
+        st["tradesToday"] = st.get("tradesToday", 0) + 1
+        st["weekTrades"] = st.get("weekTrades", 0) + 1
+        self._emit(rule, "entry", f"{side} {strike:g}{ot} x{placed} @~{float(entry_px):.1f} [{res.get('mode')}]")
+        if partial_err:
+            self._emit(rule, "error", f"entry only got {placed} of {lots} lots away: {partial_err.cause}")
+        self._set_why(rid, {"phase": "open", "list": "exit", "conds": [], "logic": rule.get("exitLogic", "any"), "reason": None})
+        return True
 
 
 autobot = AutoBot()

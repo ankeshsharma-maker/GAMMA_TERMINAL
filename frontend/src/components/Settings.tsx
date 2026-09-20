@@ -68,6 +68,7 @@ const off = "border-term-dim/70 text-term-dim hover:text-term-text";
 function AlertDeliverySection() {
   const [enabled, setEnabled] = useState(false);
   const [minSeverity, setMinSeverity] = useState<"info" | "warning" | "critical">("warning");
+  const [autobotAlerts, setAutobotAlerts] = useState<"all" | "important" | "off">("all");
   const [webhookSet, setWebhookSet] = useState(false);
   const [telegramSet, setTelegramSet] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState("");
@@ -119,6 +120,7 @@ function AlertDeliverySection() {
     api.alertDeliveryGet().then((d) => {
       setEnabled(d.enabled);
       setMinSeverity(d.minSeverity);
+      setAutobotAlerts(d.autobotAlerts ?? "all");
       setWebhookSet(d.webhookUrlSet);
       setTelegramSet(d.telegramSet);
     }, () => {});
@@ -184,6 +186,30 @@ function AlertDeliverySection() {
             className={`${SEG} ${minSeverity === s ? on : off}`}
           >
             {s}
+          </button>
+        ))}
+      </Row>
+
+      <Row
+        label="Auto-trading events"
+        hint="Entries, exits, errors and safety stops from the Auto tab. They are info-level, so 'Minimum severity' would otherwise drop every entry and exit."
+      >
+        {(
+          [
+            ["all", "All"],
+            ["important", "Exits, errors & stops"],
+            ["off", "Off"],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            onClick={() => {
+              setAutobotAlerts(k);
+              save({ autobotAlerts: k });
+            }}
+            className={`${SEG} ${autobotAlerts === k ? on : off}`}
+          >
+            {label}
           </button>
         ))}
       </Row>

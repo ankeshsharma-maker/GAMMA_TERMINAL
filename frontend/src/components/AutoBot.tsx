@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
-import { nf } from "../lib/format";
-import type { AutoCondition, AutoRule } from "../types";
+import { nf, signColor } from "../lib/format";
+import type { AutoCondition, AutoRule, AutoStats } from "../types";
 import { RuleBacktest } from "./RuleBacktest";
 import { SelectMenu } from "./SelectMenu";
 
@@ -673,6 +673,38 @@ function EntryFilterEditor({
 /* ------------------------------------------------------------------ */
 /* rule editor                                                         */
 /* ------------------------------------------------------------------ */
+/** blank-able number box for the safety fields (blank = off, so it is omitted from the saved rule) */
+function SafetyNum({
+  label,
+  title,
+  value,
+  onChange,
+  placeholder = "off",
+  w = "md:w-20",
+}: {
+  label: string;
+  title: string;
+  value: number | null | undefined;
+  onChange: (v: number | undefined) => void;
+  placeholder?: string;
+  w?: string;
+}) {
+  return (
+    <label className="flex flex-col text-[10px] text-term-dim" title={title}>
+      {label}
+      <input
+        type="number"
+        min={0}
+        step="any"
+        value={value ?? ""}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)))}
+        className={`num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text ${w}`}
+      />
+    </label>
+  );
+}
+
 function RuleEditor({
   seed,
   symbols,
@@ -985,6 +1017,84 @@ function RuleEditor({
         </label>
       </div>
 
+      {/* ---- safety: brakes that hold a rule back when the day is going wrong ---- */}
+      <div className="rounded border border-term-border/70 p-2">
+        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-term-dim">Safety</span>
+          <span className="text-[10px] text-term-dim">
+            blank = off. These only ever stop a rule from trading; they never open a position.
+          </span>
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <SafetyNum
+            label="max trades/week"
+            title="Stop opening new trades for the rest of the week once this many have been taken (Mon-Fri, resets each week)."
+            value={r.maxTradesPerWeek}
+            onChange={(v) => set({ maxTradesPerWeek: v })}
+          />
+          <SafetyNum
+            label="stop after N losses"
+            title="Pause this rule for the rest of the day after this many losing trades in a row. A win resets the count."
+            value={r.maxConsecLosses}
+            onChange={(v) => set({ maxConsecLosses: v })}
+          />
+          <SafetyNum
+            label="rule loss cap ₹"
+            title="Pause this rule for the rest of the day once it has lost this many rupees today (separate from the engine-wide daily loss cap)."
+            value={r.ruleMaxLoss}
+            onChange={(v) => set({ ruleMaxLoss: v })}
+            w="md:w-24"
+          />
+          <SafetyNum
+            label="max spread %"
+            title="Skip the entry when the option's bid-ask spread is wider than this % of its price. A wide spread is paid on the way in and again on the way out."
+            value={r.maxSpreadPct}
+            onChange={(v) => set({ maxSpreadPct: v })}
+          />
+          <SafetyNum
+            label="max lots/order"
+            title="Largest single live order. Anything bigger is split into orders of this size so none is rejected for breaching the exchange freeze quantity. Blank = the engine default (20)."
+            value={r.maxLotsPerOrder}
+            onChange={(v) => set({ maxLotsPerOrder: v })}
+            placeholder="20"
+          />
+          <div className="flex flex-col gap-0.5 text-[10px] text-term-dim">
+            <span title="Whole days between now and the expiry. 0 = expiry day.">days to expiry</span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <SafetyNum
+                label=""
+                title="Trade only when the expiry is at least this many days away"
+                value={r.minDte}
+                placeholder="from"
+                onChange={(v) => set({ minDte: v })}
+                w="md:w-14"
+              />
+              <SafetyNum
+                label=""
+                title="Trade only when the expiry is at most this many days away"
+                value={r.maxDte}
+                placeholder="to"
+                onChange={(v) => set({ maxDte: v })}
+                w="md:w-14"
+              />
+              <button className="chipbtn" title="Trade only on expiry day" onClick={() => set({ minDte: 0, maxDte: 0 })}>
+                expiry day only
+              </button>
+              <button
+                className="chipbtn"
+                title="Never trade on expiry day"
+                onClick={() => set({ minDte: 1, maxDte: undefined })}
+              >
+                skip expiry day
+              </button>
+              <button className="chipbtn" onClick={() => set({ minDte: undefined, maxDte: undefined })}>
+                any
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="flex items-center gap-2">
         <button className="btn btn-buy" onClick={() => onSave(r)}>
           Save rule
@@ -1003,6 +1113,175 @@ function RuleEditor({
 }
 
 /* ------------------------------------------------------------------ */
+/* why did / didn't it fire                                            */
+/* ------------------------------------------------------------------ */
+function WhyLine({ r, masterOn }: { r: AutoRule; masterOn: boolean }) {
+  const w = r._why;
+  const dim = "mt-1.5 text-[10px] text-term-dim";
+  if (!r.enabled) return <div className={dim}>Rule is off - it isn't being checked.</div>;
+  if (!masterOn) return <div className={dim}>Engine is off - nothing will fire until it's switched on.</div>;
+  if (r._state?.paused) return <div className="mt-1.5 text-[10px] text-amber-400">⏸ {r._state.paused}</div>;
+  if (!w) return <div className={dim}>Waiting for the next check…</div>;
+
+  const list = (w.list === "exit" ? r.exit : r.entry) ?? [];
+  const age = Math.max(0, Math.round(Date.now() / 1000 - w.ts));
+  const chips = (w.conds ?? []).map((ok, i) => (
+    <span key={i} className={`rounded border px-1 py-px ${ok ? "border-up/50 text-up" : "border-down/50 text-down"}`}>
+      {ok ? "✓" : "✗"} {list[i] ? describe(list[i]) : `#${i + 1}`}
+    </span>
+  ));
+  const logic = w.logic === "any" ? "any one is enough" : "all must be true";
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
+      {w.phase === "blocked" ? (
+        <span className="text-amber-400">⛔ {w.reason}</span>
+      ) : w.phase === "open" ? (
+        <span className="text-term-text">
+          In trade{w.stop != null ? ` · stop ${w.stop.toFixed(1)}` : ""}
+          {chips.length ? " · exit signals" : ""}
+        </span>
+      ) : (
+        <span className="text-term-text">Watching for an entry ({logic})</span>
+      )}
+      {chips}
+      <span className="text-term-dim" title="How long ago the engine last evaluated this rule">
+        checked {age}s ago
+      </span>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* performance tab                                                     */
+/* ------------------------------------------------------------------ */
+const rs = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}₹${Math.abs(Math.round(v)).toLocaleString("en-IN")}`;
+
+function Stat({ label, value, cls = "", title }: { label: string; value: string; cls?: string; title?: string }) {
+  return (
+    <div className="flex min-w-[92px] flex-col rounded border border-term-border px-2.5 py-1.5" title={title}>
+      <span className="text-[9px] uppercase tracking-wide text-term-dim">{label}</span>
+      <span className={`num text-sm font-semibold ${cls}`}>{value}</span>
+    </div>
+  );
+}
+
+function AutoPerformance() {
+  const [data, setData] = useState<AutoStats | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      api.autobotStats(80).then(
+        (d) => alive && (setData(d), setErr(null)),
+        (e) => alive && setErr(String(e?.message ?? e))
+      );
+    load();
+    const id = setInterval(() => !document.hidden && load(), 30000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  if (err && !data) return <div className="p-4 text-xs text-down">Couldn't load performance: {err}</div>;
+  if (!data) return <div className="p-4 text-xs text-term-dim">Loading…</div>;
+  const o = data.overall;
+  if (!o.count)
+    return (
+      <div className="p-6 text-center text-xs text-term-dim">
+        No closed trades yet. Once a rule completes a trade (paper or live) its result shows up here, net of estimated
+        charges.
+      </div>
+    );
+  const rows = Object.entries(data.rules).sort((a, b) => b[1].total - a[1].total);
+  const th = (h: string) => (
+    <th key={h} className="border-b border-term-border px-2 py-1 font-medium">
+      {h}
+    </th>
+  );
+  return (
+    <div className="flex flex-col gap-3 p-3 md:min-h-0 md:flex-1 md:overflow-y-auto">
+      <div className="flex flex-wrap gap-2">
+        <Stat label="Net P&L" value={rs(o.total)} cls={signColor(o.total)} title="After estimated brokerage, STT, exchange and GST charges" />
+        <Stat label="Trades" value={`${o.count}`} title={`${o.wins} won, ${o.losses} lost`} />
+        <Stat label="Win rate" value={`${nf(o.winRate, 1)}%`} />
+        <Stat label="Expectancy" value={rs(o.expectancy)} cls={signColor(o.expectancy)} title="Average net P&L per trade" />
+        <Stat label="Profit factor" value={o.profitFactor != null ? nf(o.profitFactor, 2) : "–"} title="Total won divided by total lost. Above 1 is profitable." />
+        <Stat label="Payoff" value={o.payoff != null ? nf(o.payoff, 2) : "–"} title="Average win divided by average loss" />
+        <Stat label="Max drawdown" value={rs(o.maxDrawdown)} cls="text-down" />
+        <Stat label="Charges" value={rs(-o.charges)} cls="text-term-dim" title="Estimated brokerage + STT + exchange + GST, already deducted" />
+      </div>
+
+      <section className="min-w-0 rounded border border-term-border bg-term-bg/20 p-3">
+        <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-term-text">By rule</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full whitespace-nowrap text-2xs">
+            <thead>
+              <tr className="text-left text-[10px] uppercase text-term-dim">
+                {["Rule", "Trades", "Win %", "Net P&L", "Expectancy", "Profit factor", "Max DD", "Losing streak"].map(th)}
+              </tr>
+            </thead>
+            <tbody className="num">
+              {rows.map(([id, x]) => (
+                <tr key={id} className="border-b border-term-border/50">
+                  <td className="px-2 py-1 text-term-text">{x.name}</td>
+                  <td className="px-2 py-1">{x.count}</td>
+                  <td className="px-2 py-1">{nf(x.winRate, 0)}%</td>
+                  <td className={`px-2 py-1 font-semibold ${signColor(x.total)}`}>{rs(x.total)}</td>
+                  <td className={`px-2 py-1 ${signColor(x.expectancy)}`}>{rs(x.expectancy)}</td>
+                  <td className="px-2 py-1">{x.profitFactor != null ? nf(x.profitFactor, 2) : "–"}</td>
+                  <td className="px-2 py-1 text-down">{rs(x.maxDrawdown)}</td>
+                  <td className="px-2 py-1">{x.maxLossStreak}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="min-w-0 rounded border border-term-border bg-term-bg/20 p-3">
+        <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-term-text">Recent fills</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full whitespace-nowrap text-2xs">
+            <thead>
+              <tr className="text-left text-[10px] uppercase text-term-dim">
+                {["When", "Rule", "Position", "Lots", "Entry", "Exit", "P&L", "Why"].map(th)}
+              </tr>
+            </thead>
+            <tbody className="num">
+              {data.recent.map((t, i) => (
+                <tr key={i} className="border-b border-term-border/50">
+                  <td className="px-2 py-1 text-term-dim">
+                    {new Date(t.exitTs * 1000).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                  </td>
+                  <td className="px-2 py-1 text-term-text">{t.ruleName}</td>
+                  <td className="px-2 py-1">
+                    {t.side === "BUY" ? "B" : "S"} {t.label}
+                    {t.mode === "live" ? " · live" : ""}
+                  </td>
+                  <td className="px-2 py-1">{t.lots}</td>
+                  <td className="px-2 py-1">{nf(t.entryPx, 2)}</td>
+                  <td className="px-2 py-1">{nf(t.exitPx, 2)}</td>
+                  <td className={`px-2 py-1 font-semibold ${signColor(t.pnl - t.charges)}`}>{rs(t.pnl - t.charges)}</td>
+                  <td className="px-2 py-1 text-term-dim">
+                    {t.reason}
+                    {t.partial ? " (part)" : ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-1.5 text-[10px] text-term-dim">
+          P&amp;L is estimated from the market price at the moment the engine acted (a live order's true fill isn't known to it)
+          less estimated charges. The broker's contract note is the source of truth.
+        </p>
+      </section>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* main view                                                           */
 /* ------------------------------------------------------------------ */
 export function AutoBotView() {
@@ -1014,6 +1293,7 @@ export function AutoBotView() {
   const enableRule = useStore((s) => s.autobotEnableRule);
   const deleteRule = useStore((s) => s.autobotDeleteRule);
   const kill = useStore((s) => s.autobotKill);
+  const resumeRule = useStore((s) => s.autobotResume);
   const storeSymbol = useStore((s) => s.symbol);
   const symClass = useStore((s) => s.symClass);
   const symClassOk = useStore((s) => s.symClassOk);
@@ -1036,7 +1316,7 @@ export function AutoBotView() {
       return n;
     });
   const [lossDraft, setLossDraft] = useState("");
-  const [tab, setTab] = useState<"rules" | "backtest">("rules");
+  const [tab, setTab] = useState<"rules" | "performance" | "backtest">("rules");
 
   useEffect(() => {
     load();
@@ -1110,6 +1390,7 @@ export function AutoBotView() {
         {(
           [
             ["rules", "Rules"],
+            ["performance", "Performance"],
             ["backtest", "⏱ Backtest"],
           ] as const
         ).map(([k, label]) => (
@@ -1128,6 +1409,8 @@ export function AutoBotView() {
         <span className="ml-2 text-term-dim">
           {tab === "backtest"
             ? "Replay a rule's indicator / OI conditions against Upstox daily history"
+            : tab === "performance"
+            ? "How the rules have actually done, net of charges"
             : `${rules.length} rule${rules.length === 1 ? "" : "s"}`}
         </span>
 
@@ -1153,6 +1436,8 @@ export function AutoBotView() {
           </button>
         </div>
       </div>
+
+      {tab === "performance" && <AutoPerformance />}
 
       {tab === "backtest" && (
         <AutoBacktestTab rules={rules} onDone={() => setTab("rules")} />
@@ -1226,8 +1511,7 @@ export function AutoBotView() {
                   </span>
                   {open && (
                     <span className="rounded bg-up/15 px-1.5 py-0.5 text-2xs text-up">
-                      IN TRADE {open.side} {open.strike}
-                      {open.ot} @{open.entryPx.toFixed(1)}
+                      IN TRADE {open.side} {open.label ?? `${open.strike}${open.ot}`} @{open.entryPx.toFixed(1)}
                       {open.peak != null && ` · peak ${open.peak.toFixed(1)}`}
                       {open.stopPx != null && (
                         <span className="text-amber-400"> · stop {open.stopPx.toFixed(1)}</span>
@@ -1235,9 +1519,34 @@ export function AutoBotView() {
                     </span>
                   )}
                   <span className="text-2xs text-term-dim">
-                    {r._state?.tradesToday ?? 0}/{r.maxTradesPerDay} today ·{" "}
+                    {r._state?.tradesToday ?? 0}/{r.maxTradesPerDay} today
+                    {r.maxTradesPerWeek ? ` · ${r._state?.weekTrades ?? 0}/${r.maxTradesPerWeek} this week` : ""} ·{" "}
                     {(r.entry ?? []).length} entry · {(r.exit ?? []).length} exit
                   </span>
+                  {r._state?.paused && (
+                    <span className="flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-2xs text-amber-400">
+                      ⏸ paused
+                      <button
+                        className="chipbtn"
+                        onClick={() => resumeRule(r.id)}
+                        title={`${r._state.paused} - click to let it trade again today`}
+                      >
+                        Resume
+                      </button>
+                    </span>
+                  )}
+                  {r._stats && r._stats.trades > 0 && (
+                    <span className="text-2xs text-term-dim" title="From this rule's closed trades, net of estimated charges">
+                      {r._stats.trades} trades · {nf(r._stats.winRate, 0)}% win ·{" "}
+                      <span className={signColor(r._stats.net)}>{rs(r._stats.net)}</span>
+                      {r._stats.today ? (
+                        <>
+                          {" "}
+                          (today <span className={signColor(r._stats.today)}>{rs(r._stats.today)}</span>)
+                        </>
+                      ) : null}
+                    </span>
+                  )}
 
                   <div className="ml-auto flex items-center gap-1">
                     <button
@@ -1269,6 +1578,8 @@ export function AutoBotView() {
                     </button>
                   </div>
                 </div>
+
+                <WhyLine r={r} masterOn={!!bot?.master} />
 
                 {btId === r.id && <RuleBacktest rule={r} onClose={() => setBtId(null)} />}
 
@@ -1359,6 +1670,8 @@ export function AutoBotView() {
                       ? "text-amber-400"
                       : e.level === "error"
                       ? "text-down"
+                      : e.level === "stop"
+                      ? "text-amber-400"
                       : "text-term-dim"
                   }
                 >

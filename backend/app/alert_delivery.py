@@ -12,6 +12,10 @@ Config lives in the kv_store table (key "alert_delivery"), as one JSON blob:
       "telegramChatId": null,
       "minSeverity": "warning",   # info | warning | critical -- only
                                    # alerts at or above this go out
+      "autobotAlerts": "all",     # all | important | off -- the auto-trading engine's own
+                                   # events (entries, exits, errors, safety stops). They are
+                                   # info-level by nature, so minSeverity would silently drop
+                                   # every entry and exit; this is their own switch instead.
     }
 """
 from __future__ import annotations
@@ -33,7 +37,11 @@ _DEFAULT = {
     "telegramBotToken": None,
     "telegramChatId": None,
     "minSeverity": "warning",
+    "autobotAlerts": "all",
 }
+_AUTOBOT_MODES = ("all", "important", "off")
+# "important" = the events you must act on or know happened: exits, errors, safety stops
+_AUTOBOT_IMPORTANT = ("autobot-exit", "autobot-error", "autobot-stop")
 
 
 def _load() -> dict:
@@ -52,6 +60,7 @@ def get_config() -> dict:
     out = {
         "enabled": cfg["enabled"],
         "minSeverity": cfg["minSeverity"],
+        "autobotAlerts": cfg["autobotAlerts"],
         "webhookUrlSet": bool(cfg.get("webhookUrl")),
         "telegramSet": bool(cfg.get("telegramBotToken") and cfg.get("telegramChatId")),
     }
@@ -66,6 +75,8 @@ def set_config(patch: dict) -> dict:
             cfg[k] = v or None
     if patch.get("minSeverity") in _SEV_ORDER:
         cfg["minSeverity"] = patch["minSeverity"]
+    if patch.get("autobotAlerts") in _AUTOBOT_MODES:
+        cfg["autobotAlerts"] = patch["autobotAlerts"]
     if "enabled" in patch:
         cfg["enabled"] = bool(patch["enabled"])
     _save(cfg)
@@ -116,9 +127,14 @@ def deliver(alert: dict) -> None:
     cfg = _load()
     if not cfg.get("enabled"):
         return
-    sev = alert.get("severity") or "info"
-    if _SEV_ORDER.get(sev, 0) < _SEV_ORDER.get(cfg.get("minSeverity", "warning"), 1):
-        return
+    if alert.get("category") == "autobot":
+        mode = cfg.get("autobotAlerts", "all")
+        if mode == "off" or (mode == "important" and alert.get("kind") not in _AUTOBOT_IMPORTANT):
+            return
+    else:
+        sev = alert.get("severity") or "info"
+        if _SEV_ORDER.get(sev, 0) < _SEV_ORDER.get(cfg.get("minSeverity", "warning"), 1):
+            return
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:

@@ -184,6 +184,7 @@ interface State {
   autobotEnableRule: (id: string, on: boolean) => Promise<void>;
   autobotDeleteRule: (id: string) => Promise<void>;
   autobotKill: () => Promise<void>;
+  autobotResume: (id: string) => Promise<void>;
 }
 
 export const useStore = create<State>((set, get) => ({
@@ -446,6 +447,7 @@ export const useStore = create<State>((set, get) => ({
       /* ignore */
     }
   },
+  autobotResume: async (id) => set({ autobot: await api.autobotResume(id) }),
   autobotMaster: async (on) => set({ autobot: await api.autobotMaster(on) }),
   autobotMaxLoss: async (v) => set({ autobot: await api.autobotMaxLoss(v) }),
   autobotSaveRule: async (r) => set({ autobot: await api.autobotSaveRule(r) }),
