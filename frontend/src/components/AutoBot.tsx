@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, signColor } from "../lib/format";
-import type { AutoCondition, AutoRule, AutoStats } from "../types";
+import type { AutoCondition, AutoRule, AutoStats, AutoStructureDef, StructurePreview } from "../types";
+import { LineChart } from "./LineChart";
 import { RuleBacktest } from "./RuleBacktest";
 import { SelectMenu } from "./SelectMenu";
 
@@ -705,6 +706,130 @@ function SafetyNum({
   );
 }
 
+/** what a rule is trading, in words: a structure's name, or the single option + side */
+const ruleWhat = (r: Partial<AutoRule>, defs?: AutoStructureDef[]) =>
+  r.structure && r.structure !== "single"
+    ? defs?.find((d) => d.key === r.structure)?.title ?? r.structure.replace(/_/g, " ")
+    : `${r.instrument} ${r.side}`;
+
+const rsP = (v: number) => `₹${Math.abs(Math.round(v)).toLocaleString("en-IN")}`;
+
+/** Multi-leg structure picker with a live preview of the legs it would open right now. */
+function StructureBlock({
+  r,
+  set,
+  defs,
+}: {
+  r: Partial<AutoRule>;
+  set: (p: Partial<AutoRule>) => void;
+  defs: AutoStructureDef[];
+}) {
+  const key = r.structure && r.structure !== "single" ? r.structure : "";
+  const def = defs.find((d) => d.key === key);
+  const [pv, setPv] = useState<StructurePreview | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!key || !r.symbol) {
+      setPv(null);
+      return;
+    }
+    let alive = true;
+    setErr(null);
+    const id = setTimeout(() => {
+      api
+        .autobotStructurePreview({ symbol: r.symbol!, structure: key, offset: r.offset, width: r.width, expiry: r.expiry })
+        .then(
+          (d) => alive && setPv(d),
+          (e) => alive && (setPv(null), setErr(String(e?.message ?? e)))
+        );
+    }, 350);
+    return () => {
+      alive = false;
+      clearTimeout(id);
+    };
+  }, [key, r.symbol, r.expiry, r.offset, r.width]);
+
+  if (!key || !def) return null;
+  const lots = r.lots ?? 1;
+  return (
+    <div className="rounded border border-term-accent/40 bg-term-bg/40 p-2 text-[10px]">
+      <div className="flex flex-wrap items-end gap-3">
+        {def.hasOffset && (
+          <label className="flex flex-col text-term-dim" title="How many strikes out from ATM the first leg(s) sit">
+            strikes from ATM
+            <input
+              type="number"
+              min={0}
+              max={30}
+              value={r.offset ?? def.offset}
+              onChange={(e) => set({ offset: Math.max(0, Math.min(30, parseInt(e.target.value) || 0)) })}
+              className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-16"
+            />
+          </label>
+        )}
+        {def.hasWidth && (
+          <label className="flex flex-col text-term-dim" title="How many strikes beyond that the protective / far leg sits">
+            width (strikes)
+            <input
+              type="number"
+              min={1}
+              max={30}
+              value={r.width ?? def.width}
+              onChange={(e) => set({ width: Math.max(1, Math.min(30, parseInt(e.target.value) || 1)) })}
+              className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-16"
+            />
+          </label>
+        )}
+        <span className="max-w-[460px] text-term-dim">
+          {def.blurb} One stop-loss, target, breakeven and trail for the whole position, measured on its <b>net premium</b>. Scale-out isn't
+          available for structures.
+        </span>
+      </div>
+
+      {err && <div className="mt-1.5 text-amber-400">Couldn't preview: {err}</div>}
+      {pv && (
+        <div className="mt-1.5">
+          <div className="flex flex-wrap gap-x-4 gap-y-0.5">
+            {[...pv.legs]
+              .sort((a, b) => (a.side === b.side ? a.ot.localeCompare(b.ot) || a.strike - b.strike : a.side === "BUY" ? -1 : 1))
+              .map((lg, i) => (
+                <span key={i} className="num">
+                  <span className={lg.side === "BUY" ? "text-up" : "text-down"}>{lg.side}</span> {lg.strike} {lg.ot}{" "}
+                  <span className="text-term-dim">@ {lg.price ? lg.price.toFixed(1) : "–"}</span>
+                  {!lg.inChain && <span className="text-amber-400" title="This strike is outside the loaded option chain"> ⚠</span>}
+                </span>
+              ))}
+          </div>
+          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-term-dim">
+            <span>
+              Net {pv.kind === "CREDIT" ? "credit" : "debit"}{" "}
+              <b className="num text-term-text">{Math.abs(pv.net).toFixed(1)}</b> pts = {rsP(pv.perLot)}/lot
+              {lots > 1 ? ` · ${rsP(pv.perLot * lots)} for ${lots} lots` : ""}
+            </span>
+            <span>
+              Max profit at expiry{" "}
+              <b className="num text-up">{pv.maxProfit == null ? "unlimited" : rsP(pv.maxProfit * lots)}</b>
+            </span>
+            <span>
+              Max loss at expiry{" "}
+              <b className="num text-down">{pv.maxLoss == null ? "unlimited" : rsP(pv.maxLoss * lots)}</b>
+            </span>
+            <span>
+              {pv.symbol} {pv.expiry} · ATM {pv.atmStrike}
+            </span>
+          </div>
+          {pv.missing.length > 0 && (
+            <div className="mt-1 text-amber-400">
+              {pv.missing.join(", ")} isn't in the loaded chain window — the legs there have no live price, so this rule would skip its entry.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RuleEditor({
   seed,
   symbols,
@@ -718,6 +843,11 @@ function RuleEditor({
 }) {
   const [r, setR] = useState<Partial<AutoRule>>(seed);
   const set = (patch: Partial<AutoRule>) => setR((prev) => ({ ...prev, ...patch }));
+  const [defs, setDefs] = useState<AutoStructureDef[]>([]);
+  useEffect(() => {
+    api.autobotStructures().then((d) => setDefs(d.structures), () => {});
+  }, []);
+  const isStruct = !!r.structure && r.structure !== "single";
   const num = (v: string) => (v === "" ? undefined : parseFloat(v));
 
   // the rule's own expiry list — independent of whatever symbol/expiry the
@@ -840,26 +970,57 @@ function RuleEditor({
             width={130}
           />
         </label>
-        <label className="flex flex-col text-[10px] text-term-dim">
-          instrument
+        <label
+          className="flex flex-col text-[10px] text-term-dim"
+          title="Trade one option, or open a whole multi-leg structure (straddle, strangle, iron condor, spreads) as a single trade with one combined stop and target."
+        >
+          trade
           <SelectMenu
-            value={r.instrument}
-            options={INSTRUMENTS.map((s) => [s, s] as [string, string])}
-            onChange={(v) => set({ instrument: v })}
-            title="Instrument"
-            width={120}
+            value={isStruct ? (r.structure as string) : "single"}
+            options={[
+              ["One option", "single"],
+              ...defs.map((d) => [d.title, d.key] as [string, string]),
+            ]}
+            onChange={(v) =>
+              set(
+                v === "single"
+                  ? { structure: null, offset: undefined, width: undefined }
+                  : {
+                      structure: v,
+                      offset: defs.find((d) => d.key === v)?.offset,
+                      width: defs.find((d) => d.key === v)?.width || undefined,
+                      target1Pct: undefined,
+                    }
+              )
+            }
+            title="What to trade"
+            width={150}
           />
         </label>
-        <label className="flex flex-col text-[10px] text-term-dim">
-          side
-          <SelectMenu
-            value={r.side}
-            options={[["BUY", "BUY"], ["SELL", "SELL"]] as const}
-            onChange={(v) => set({ side: v as "BUY" | "SELL" })}
-            title="Side"
-            width={90}
-          />
-        </label>
+        {!isStruct && (
+          <>
+            <label className="flex flex-col text-[10px] text-term-dim">
+              instrument
+              <SelectMenu
+                value={r.instrument}
+                options={INSTRUMENTS.map((s) => [s, s] as [string, string])}
+                onChange={(v) => set({ instrument: v })}
+                title="Instrument"
+                width={120}
+              />
+            </label>
+            <label className="flex flex-col text-[10px] text-term-dim">
+              side
+              <SelectMenu
+                value={r.side}
+                options={[["BUY", "BUY"], ["SELL", "SELL"]] as const}
+                onChange={(v) => set({ side: v as "BUY" | "SELL" })}
+                title="Side"
+                width={90}
+              />
+            </label>
+          </>
+        )}
         <label className="flex flex-col text-[10px] text-term-dim">
           lots
           <input
@@ -905,6 +1066,8 @@ function RuleEditor({
         </label>
       </div>
 
+      <StructureBlock r={r} set={set} defs={defs} />
+
       <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
         <div className="flex flex-col text-[10px] text-term-dim">
           SL / target / trail unit
@@ -937,7 +1100,7 @@ function RuleEditor({
             ["beArmPct", `breakeven arm ${u}`, "move the stop to breakeven once the trade is this far in profit. 0 = off."],
             ["target1Pct", `scale-out ${u}`, "0/blank = off. Book part of the position once it's this far in profit, let the rest ride to the full target/trail above."],
           ];
-          return fields.map(([k, label, title]) => (
+          return fields.filter(([k]) => !(isStruct && k === "target1Pct")).map(([k, label, title]) => (
             <label key={k} className="flex flex-col text-[10px] text-term-dim" title={title}>
               {label}
               <input
@@ -950,6 +1113,7 @@ function RuleEditor({
             </label>
           ));
         })()}
+        {!isStruct && (
         <label
           className="flex flex-col text-[10px] text-term-dim"
           title="What share of the position to close at the scale-out level above (rounded to whole lots, always leaves at least 1 lot open)."
@@ -964,6 +1128,7 @@ function RuleEditor({
             className="num w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text md:w-20"
           />
         </label>
+        )}
         <label className="flex flex-col text-[10px] text-term-dim">
           max trades/day
           <input
@@ -1212,6 +1377,35 @@ function AutoPerformance() {
         <Stat label="Charges" value={rs(-o.charges)} cls="text-term-dim" title="Estimated brokerage + STT + exchange + GST, already deducted" />
       </div>
 
+      {o.equity.length >= 2 && (
+        <section className="min-w-0 rounded border border-term-border bg-term-bg/20 p-3">
+          <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-term-text">
+            Equity curve <span className="font-normal normal-case text-term-dim">· running net P&amp;L, one point per closed trade</span>
+          </h3>
+          <LineChart
+            height={170}
+            series={[
+              {
+                key: "eq",
+                label: "Net P&L",
+                color: o.total >= 0 ? "#22c55e" : "#ef4444",
+                width: 1.6,
+                points: [{ x: 0, y: 0 }, ...o.equity.map((v, i) => ({ x: i + 1, y: v }))],
+              },
+            ]}
+            xFormat={(x) => (x === 0 ? "start" : `trade ${x}`)}
+            xTicks={(() => {
+              // whole trade numbers only, at most ~6 of them
+              const n = o.equity.length;
+              const step = Math.max(1, Math.ceil(n / 5));
+              return Array.from({ length: Math.floor(n / step) + 1 }, (_, i) => i * step);
+            })()}
+            yFormat={(y) => rs(y)}
+            hlines={[{ value: 0, color: "#94a3b8", dashed: true }]}
+          />
+        </section>
+      )}
+
       <section className="min-w-0 rounded border border-term-border bg-term-bg/20 p-3">
         <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-term-text">By rule</h3>
         <div className="overflow-x-auto">
@@ -1386,7 +1580,7 @@ export function AutoBotView() {
       )}
 
       {/* tabs */}
-      <div className="flex items-center gap-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs">
+      <div className="flex flex-wrap items-center gap-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs">
         {(
           [
             ["rules", "Rules"],
@@ -1406,7 +1600,7 @@ export function AutoBotView() {
             {label}
           </button>
         ))}
-        <span className="ml-2 text-term-dim">
+        <span className={`ml-2 text-term-dim ${tab === "rules" ? "" : "hidden md:inline"}`}>
           {tab === "backtest"
             ? "Replay a rule's indicator / OI conditions against Upstox daily history"
             : tab === "performance"
@@ -1498,7 +1692,7 @@ export function AutoBotView() {
                   <span className="text-sm font-semibold text-term-text">{r.name}</span>
                   <span className="rounded bg-term-bg px-1.5 py-0.5 text-2xs text-term-dim">
                     {r.symbol}
-                    {r.expiry ? ` ${r.expiry}` : ""} · {r.instrument} · {r.side} ×{r.lots}
+                    {r.expiry ? ` ${r.expiry}` : ""} · {ruleWhat(r)} ×{r.lots}
                   </span>
                   <span
                     className={`rounded px-1.5 py-0.5 text-2xs ${
@@ -1580,6 +1774,16 @@ export function AutoBotView() {
                 </div>
 
                 <WhyLine r={r} masterOn={!!bot?.master} />
+                {open?.legs && (
+                  <div className="mt-1 flex flex-wrap gap-x-3 text-[10px] text-term-dim">
+                    {open.unwind && <span className="text-down">unwinding — a leg failed to close</span>}
+                    {open.legs.map((lg, i) => (
+                      <span key={i} className="num">
+                        <span className={lg.side === "BUY" ? "text-up" : "text-down"}>{lg.side}</span> {lg.strike} {lg.ot} @{lg.entryPx.toFixed(1)}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 {btId === r.id && <RuleBacktest rule={r} onClose={() => setBtId(null)} />}
 
@@ -1678,6 +1882,7 @@ export function AutoBotView() {
                   [{e.level}]
                 </span>{" "}
                 <span className="text-term-text">{e.ruleName}</span>: {e.msg}
+                {(e.count ?? 1) > 1 && <span className="num text-term-dim"> ×{e.count}</span>}
               </div>
             ))}
           </div>
@@ -1715,7 +1920,7 @@ function AutoBacktestTab({
         <SelectMenu
           value={id || rule?.id || ""}
           options={rules.map(
-            (r) => [`${r.name} · ${r.symbol} · ${r.instrument} ${r.side}`, r.id] as [string, string]
+            (r) => [`${r.name} · ${r.symbol} · ${ruleWhat(r)}`, r.id] as [string, string]
           )}
           onChange={setId}
           title="Rule"

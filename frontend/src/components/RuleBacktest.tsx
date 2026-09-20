@@ -287,7 +287,8 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
           )}
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-term-dim">
             <span>
-              {res.symbol} {res.expiry ?? "—"} · {res.instrument} {res.side} ·{" "}
+              {res.symbol} {res.expiry ?? "—"} · {res.instrument}
+              {String(res.instrument).includes("_") && !/_(CE|PE)$/.test(String(res.instrument)) ? "" : ` ${res.side}`} ·{" "}
               {res.candles != null
                 ? `${res.candles} × ${(res.interval ?? 300) / 60}m (${res.days}d)`
                 : `${res.days} days`}{" "}
@@ -362,9 +363,8 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
                       <td className="num whitespace-nowrap py-0.5 text-term-dim">
                         {t.exitTime ? hhmmss(t.exitTime) : "—"}
                       </td>
-                      <td className="num py-0.5">
-                        {t.strike}
-                        {t.ot}
+                      <td className="num py-0.5" title={t.legs?.map((l) => `${l.side} ${l.strike}${l.ot}`).join(" · ")}>
+                        {t.label ?? `${t.strike}${t.ot}`}
                       </td>
                       <td className="num py-0.5 text-right">{nf(t.entryPx)}</td>
                       <td className="num py-0.5 text-right">{nf(t.exitPx)}</td>

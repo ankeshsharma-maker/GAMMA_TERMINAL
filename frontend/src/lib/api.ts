@@ -530,6 +530,15 @@ export const api = {
   liveOrderLog: () => j<{ orders: any[] }>("/api/order/live-log"),
 
   autobot: () => j<import("../types").AutoBotState>("/api/autobot"),
+  autobotStructures: () =>
+    j<{ structures: import("../types").AutoStructureDef[] }>("/api/autobot/structures"),
+  autobotStructurePreview: (q: { symbol: string; structure: string; offset?: number; width?: number; expiry?: string | null }) =>
+    j<import("../types").StructurePreview>(
+      `/api/autobot/structure-preview?symbol=${encodeURIComponent(q.symbol)}&structure=${encodeURIComponent(q.structure)}` +
+        (q.offset != null ? `&offset=${q.offset}` : "") +
+        (q.width != null ? `&width=${q.width}` : "") +
+        (q.expiry ? `&expiry=${encodeURIComponent(q.expiry)}` : "")
+    ),
   autobotStats: (limit = 60) => j<import("../types").AutoStats>(`/api/autobot/stats?limit=${limit}`),
   autobotResume: (id: string) =>
     j<import("../types").AutoBotState>(`/api/autobot/rules/${encodeURIComponent(id)}/resume`, { method: "POST" }),
@@ -657,6 +666,10 @@ export const api = {
         ot: string;
         entryPx: number;
         exitPx: number;
+        /** a structure's summary and legs (absent for a single option) */
+        label?: string;
+        structure?: string;
+        legs?: { ot: string; strike: number; side: string }[];
         pnlPct: number;
         /** NET of charges and slippage when costs are on */
         pnlRs: number;

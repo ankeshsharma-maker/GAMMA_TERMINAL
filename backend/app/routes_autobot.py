@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
+from . import autobot_structures as ST
 from .autobot import autobot
 
 router = APIRouter(prefix="/api/autobot")
@@ -50,6 +51,49 @@ def resume(rid: str):
 def stats(limit: int = 60):
     """Performance of every rule from the closed-trade ledger, net of estimated charges."""
     return autobot.stats(max(1, min(int(limit), 500)))
+
+
+@router.get("/structures")
+def structures():
+    """The multi-leg structures a rule can trade, with their default strike offset / width."""
+    return {"structures": ST.catalog()}
+
+
+@router.get("/structure-preview")
+async def structure_preview(
+    symbol: str, structure: str, offset: int | None = None, width: int | None = None,
+    expiry: str | None = None,
+):
+    """The concrete legs a structure would open right now, their prices, the net premium and
+    the payoff limits per lot -- so a rule can be checked before it is saved."""
+    from .routes import _ensure_chain
+
+    if structure not in ST.STRUCTURES:
+        raise HTTPException(status_code=422, detail=f"unknown structure {structure!r}")
+    chain = await _ensure_chain(symbol, expiry)
+    k, w = ST.clamp_params(structure, offset, width)
+    legs = ST.legs_for(structure, chain["atmStrike"], chain["strikeStep"], k, w)
+    rows = {r["strike"]: r for r in chain["rows"]}
+    prices = []
+    for lg in legs:
+        r = rows.get(lg["strike"])
+        leg = (r or {}).get("call" if lg["ot"] == "CE" else "put") or {}
+        bid, ask = float(leg.get("bid") or 0), float(leg.get("ask") or 0)
+        prices.append(float(leg.get("ltp") or 0) or ((bid + ask) / 2 if bid and ask else 0.0))
+    out_legs = [{**lg, "price": round(p, 2), "inChain": lg["strike"] in rows} for lg, p in zip(legs, prices)]
+    net = ST.net_premium(legs, prices)
+    pay = ST.payoff_limits(legs, prices)
+    ls = chain.get("lotSize", 1)
+    return {
+        "symbol": chain["symbol"], "expiry": chain["expiry"], "atmStrike": chain["atmStrike"],
+        "strikeStep": chain["strikeStep"], "lotSize": ls, "dte": chain.get("dte"),
+        "params": {"offset": k, "width": w}, "legs": out_legs, "label": ST.label(structure, legs),
+        "net": round(net, 2), "kind": "DEBIT" if net > 0 else "CREDIT",
+        "perLot": round(abs(net) * ls, 0),
+        "maxProfit": None if pay["maxProfit"] is None else round(pay["maxProfit"] * ls, 0),
+        "maxLoss": None if pay["maxLoss"] is None else round(pay["maxLoss"] * ls, 0),
+        "missing": [lg["strike"] for lg in out_legs if not lg["inChain"]],
+    }
 
 
 @router.post("/kill")

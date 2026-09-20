@@ -317,11 +317,17 @@ export interface AutoRule {
   maxSpreadPct?: number;
   /** largest single live order in lots; bigger orders are split (blank = the engine default) */
   maxLotsPerOrder?: number;
+  /** open ALL the legs of a structure as one trade (instrument / side are then ignored);
+   *  absent or "single" = the usual one option */
+  structure?: string | null;
+  /** strikes from ATM to the first leg(s), and the wing / spread width, in whole strike steps */
+  offset?: number;
+  width?: number;
   _state?: {
     open: null | {
       side: Side;
       strike: number;
-      ot: "CE" | "PE";
+      ot: "CE" | "PE" | "STR";
       expiry: string;
       entryPx: number;
       lots: number;
@@ -330,6 +336,11 @@ export interface AutoRule {
       stopPx?: number | null;
       /** e.g. "23350CE", or a structure's summary */
       label?: string;
+      structure?: string;
+      /** a structure's legs, with the price each was opened at */
+      legs?: { ot: "CE" | "PE"; strike: number; side: Side; mult?: number; entryPx: number }[];
+      /** a leg failed to close and the rest are being unwound */
+      unwind?: boolean;
     };
     tradesToday: number;
     weekTrades?: number;
@@ -366,6 +377,41 @@ export interface AutoLogEntry {
   ruleName: string;
   level: string;
   msg: string;
+  /** how many times this same message repeated (folded into one line) */
+  count?: number;
+}
+
+/** GET /api/autobot/structures */
+export interface AutoStructureDef {
+  key: string;
+  title: string;
+  offset: number;
+  width: number;
+  blurb: string;
+  legs: number;
+  hasOffset: boolean;
+  hasWidth: boolean;
+}
+
+/** GET /api/autobot/structure-preview -- the legs a structure would open right now */
+export interface StructurePreview {
+  symbol: string;
+  expiry: string;
+  atmStrike: number;
+  strikeStep: number;
+  lotSize: number;
+  dte: number | null;
+  params: { offset: number; width: number };
+  label: string;
+  legs: { ot: "CE" | "PE"; strike: number; side: Side; mult: number; price: number; inChain: boolean }[];
+  /** points; negative = credit */
+  net: number;
+  kind: "DEBIT" | "CREDIT";
+  perLot: number;
+  /** rupees per lot at expiry; null = unlimited */
+  maxProfit: number | null;
+  maxLoss: number | null;
+  missing: number[];
 }
 
 /** GET /api/autobot/stats -- every P&L is net of estimated charges unless named gross */

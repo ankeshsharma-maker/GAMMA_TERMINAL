@@ -37,6 +37,7 @@ import asyncio
 import math
 from datetime import datetime
 
+from . import autobot_structures as ST
 from . import charges as chg
 from . import nse_bhavcopy, upstox_data
 from .autobot import _Ctx, _entry_filter_ok, _parse_hhmm, _resolve_instrument
@@ -126,11 +127,51 @@ def _round_trip_costs(cfg: dict, side: str, base: float, lots: int, lot: int,
     return charges, slip
 
 
+def _struct_meta(pos: dict) -> dict:
+    """Extra trade-row fields for a multi-leg structure."""
+    if not pos.get("legs"):
+        return {}
+    return {
+        "structure": pos["structure"], "label": ST.label(pos["structure"], pos["legs"]),
+        "legs": [{"ot": lg["ot"], "strike": lg["strike"], "side": lg["side"]} for lg in pos["legs"]],
+    }
+
+
+def _pos_px(pos: dict, price_fn) -> tuple[float, list[float]]:
+    """Current premium of a position on the footing autobot_exit expects, plus each leg's price.
+    A structure's value is its net; a credit structure reports what it would cost to close."""
+    if pos.get("legs"):
+        prices = [price_fn(lg["strike"], lg["ot"]) for lg in pos["legs"]]
+        net = ST.net_premium(pos["legs"], prices)
+        return (net if pos["side"] == "BUY" else -net), prices
+    px = price_fn(pos["k"], pos["ot"])
+    return px, [px]
+
+
+def _leg_costs(cfg: dict, pos: dict, exit_prices: list[float] | None, lots: int, lot: int):
+    """(charges, slippage) for a structure, leg by leg: each leg is its own order both ways, and
+    the STT / stamp duty depend on each leg's own side. None for a single option."""
+    if not pos.get("legs") or exit_prices is None:
+        return None
+    if not cfg["enabled"]:
+        return 0.0, 0.0
+    charges = slip = 0.0
+    for lg, ep, xp in zip(pos["legs"], pos["entry_px"], exit_prices):
+        q = lots * lot * int(lg.get("mult", 1))
+        exit_side = "SELL" if lg["side"] == "BUY" else "BUY"
+        charges += chg.order_charges(ep * q, lg["side"], brokerage=cfg["brokerage"])
+        charges += chg.order_charges(xp * q, exit_side, brokerage=cfg["brokerage"])
+        # a leg's spread doesn't grow with its intrinsic value: a wing that finishes deep in the
+        # money is priced for slippage at no more than twice what it cost to open
+        slip += (ep + min(xp, 2.0 * ep)) * q * cfg["slippagePct"] / 100.0
+    return charges, slip
+
+
 def _finish_trade(*, rule_side: str, base: float, lots: int, lot: int, ev: dict, sim, cfg: dict,
-                  meta: dict, hold_min: float | None) -> dict:
+                  meta: dict, hold_min: float | None, leg_costs=None) -> dict:
     """One row per ROUND TRIP (a trade that scaled out is one trade)."""
     gross = ev["gross"]
-    charges, slip = _round_trip_costs(cfg, rule_side, base, lots, lot, sim.fills)
+    charges, slip = leg_costs if leg_costs is not None else _round_trip_costs(cfg, rule_side, base, lots, lot, sim.fills)
     net = gross - charges - slip
     invested = base * lots * lot
     return {
@@ -372,6 +413,8 @@ async def backtest_rule(
     # 4. walk the days
     side = (rule.get("side") or "BUY").upper()
     buy = side == "BUY"
+    if ST.is_structure(rule):   # a structure has no single side and doesn't scale out (see autobot_structures)
+        rule = {**rule, "target1Pct": 0}
     lots0 = int(rule.get("lots", 1) or 1)
     cfg = _costs_cfg(costs)
     gates = _Gates(rule)
@@ -385,12 +428,12 @@ async def backtest_rule(
     open_pos = None
     cooldown_until = -1
 
-    def _close(pos: dict, ev: dict, d: str) -> None:
+    def _close(pos: dict, ev: dict, d: str, exit_prices: list[float] | None = None) -> None:
         nonlocal open_pos, cooldown_until
         t = _finish_trade(
-            rule_side=side, base=pos["entry"], lots=lots0, lot=lot, ev=ev, sim=pos["sim"], cfg=cfg,
-            meta={"entryDate": pos["date"], "exitDate": d, "strike": pos["k"], "ot": pos["ot"]},
-            hold_min=None,
+            rule_side=pos["side"], base=pos["entry"], lots=lots0, lot=lot, ev=ev, sim=pos["sim"], cfg=cfg,
+            meta={"entryDate": pos["date"], "exitDate": d, "strike": pos["k"], "ot": pos["ot"], **_struct_meta(pos)},
+            hold_min=None, leg_costs=_leg_costs(cfg, pos, exit_prices, lots0, lot),
         )
         trades.append(t)
         gates.closed(d, t["grossRs"])
@@ -403,15 +446,15 @@ async def backtest_rule(
         last = i == len(dates) - 1
 
         if open_pos:
-            k, ot, ei = open_pos["k"], open_pos["ot"], open_pos["i"]
-            px = _premium(k, ot, d, by_date[d], i - ei)
+            ei = open_pos["i"]
+            px, leg_px = _pos_px(open_pos, lambda k, ot: _premium(k, ot, d, by_date[d], i - ei))
             sig = bool(exit_conds) and ctx.eval_conds(exit_conds, rule.get("exitLogic", "any"))
             evs = open_pos["sim"].step(px, exit_signal=sig)
             if not open_pos["sim"].closed and last:
                 evs += open_pos["sim"].force_close(px, "range end")
             fin = next((e for e in evs if e["kind"] == "exit"), None)
             if fin:
-                _close(open_pos, fin, d)
+                _close(open_pos, fin, d, leg_px)
                 cooldown_until = i + cooldown_d
             continue
 
@@ -424,18 +467,32 @@ async def backtest_rule(
         if not ctx.eval_conds(entry_conds, rule.get("entryLogic", "all")):
             continue
         base = round(by_date[d] / step) * step
-        strike, ot = _resolve_instrument(rule.get("instrument", "ATM_CE"), base, step)
-        px = _premium(strike, ot, d, by_date[d], 0)
+        legs, entry_px_legs = None, None
+        if ST.is_structure(rule):
+            legs = ST.legs_for(rule["structure"], base, step, rule.get("offset"), rule.get("width"))
+            entry_px_legs = [_premium(lg["strike"], lg["ot"], d, by_date[d], 0) for lg in legs]
+            if any(p <= 0 for p in entry_px_legs):
+                continue
+            net = ST.net_premium(legs, entry_px_legs)
+            if net == 0:
+                continue
+            strike, ot, px, pos_side = base, "STR", abs(net), ("BUY" if net > 0 else "SELL")
+            ef_use = {k: v for k, v in (rule.get("entryFilter") or {}).items() if k in ("premOp", "premVal", "premTol")}
+        else:
+            strike, ot = _resolve_instrument(rule.get("instrument", "ATM_CE"), base, step)
+            px = _premium(strike, ot, d, by_date[d], 0)
+            pos_side, ef_use = side, (rule.get("entryFilter") or {})
         if px <= 0:
             continue
-        ef_ok, _ = _entry_filter_ok(rule.get("entryFilter") or {}, px, 0.5, 0.0, 0.0)
+        ef_ok, _ = _entry_filter_ok(ef_use, px, 0.5, 0.0, 0.0)
         if not ef_ok:
             continue
         gates.opened(d)
         if positional:
             open_pos = {
-                "k": strike, "ot": ot, "entry": px, "date": d, "i": i,
-                "sim": SimPosition(rule, buy=buy, base=px, lots=lots0, lot_size=lot),
+                "k": strike, "ot": ot, "entry": px, "date": d, "i": i, "side": pos_side,
+                "sim": SimPosition(rule, buy=(pos_side == "BUY"), base=px, lots=lots0, lot_size=lot),
+                **({"legs": legs, "structure": rule["structure"], "entry_px": entry_px_legs} if legs else {}),
             }
         else:
             # Intraday: a daily bar is a single end-of-day price, so there's no way to simulate an
@@ -455,7 +512,7 @@ async def backtest_rule(
     pricing = "historical" if syn_hits == 0 else "synthetic" if real_hits == 0 else "mixed"
     return {
         "symbol": symbol, "expiry": expiry or None, "from": from_date, "to": to_date,
-        "instrument": rule.get("instrument"), "side": side, "lots": rule.get("lots", 1),
+        "instrument": rule.get("structure") if ST.is_structure(rule) else rule.get("instrument"), "side": side, "lots": rule.get("lots", 1),
         "lot": lot, "days": len(win),
         "pricing": pricing, "hasChain": have_chain, "hasGreeksHistory": have_greeks,
         "synIV": round(syn_iv, 3), "synDTE": syn_dte,
@@ -517,6 +574,8 @@ async def _backtest_intraday(
 
     side = (rule.get("side") or "BUY").upper()
     buy = side == "BUY"
+    if ST.is_structure(rule):
+        rule = {**rule, "target1Pct": 0}
     lots0 = int(rule.get("lots", 1) or 1)
     cfg = _costs_cfg(costs)
     gates = _Gates(rule)
@@ -536,14 +595,14 @@ async def _backtest_intraday(
     def _clock(ts: int) -> str:
         return datetime.fromtimestamp(ts, IST).strftime("%H:%M:%S")
 
-    def _close(pos: dict, ev: dict, c: dict) -> None:
+    def _close(pos: dict, ev: dict, c: dict, exit_prices: list[float] | None = None) -> None:
         nonlocal open_pos
         hold = (c["time"] - pos["ts"]) / 60.0
         t = _finish_trade(
-            rule_side=side, base=pos["entry"], lots=lots0, lot=lot, ev=ev, sim=pos["sim"], cfg=cfg,
+            rule_side=pos["side"], base=pos["entry"], lots=lots0, lot=lot, ev=ev, sim=pos["sim"], cfg=cfg,
             meta={"entryDate": pos["d"], "exitDate": _dstr(c["time"]), "strike": pos["k"], "ot": pos["ot"],
-                  "entryTime": pos["t"], "exitTime": _clock(c["time"])},
-            hold_min=hold,
+                  "entryTime": pos["t"], "exitTime": _clock(c["time"]), **_struct_meta(pos)},
+            hold_min=hold, leg_costs=_leg_costs(cfg, pos, exit_prices, lots0, lot),
         )
         trades.append(t)
         gates.closed(_dstr(c["time"]), t["grossRs"])
@@ -559,16 +618,17 @@ async def _backtest_intraday(
         last = i == len(series) - 1
 
         if open_pos:
-            k, ot, ei = open_pos["k"], open_pos["ot"], open_pos["i"]
+            ei = open_pos["i"]
             held = (i - ei) * interval / 86400.0
 
-            def prem(s):
-                return _syn_premium(ot, s, k, held, syn_iv, syn_dte)
+            def value_at(s_):
+                return _pos_px(open_pos, lambda k, ot: _syn_premium(ot, s_, k, held, syn_iv, syn_dte))
 
             # premium at the bar's own open / low / high / close -- the extremes are what let a stop
             # or target be hit INSIDE the bar instead of only being noticed at its close
-            ps = [prem(c["open"]), prem(c["low"]), prem(c["high"]), prem(spot)]
+            ps = [value_at(c["open"])[0], value_at(c["low"])[0], value_at(c["high"])[0], value_at(spot)[0]]
             px = ps[3]
+            leg_px = value_at(spot)[1]
             sig = bool(exit_conds) and ctx.eval_conds(exit_conds, rule.get("exitLogic", "any"))
             evs = open_pos["sim"].step(
                 px, lo=min(ps), hi=max(ps), opn=ps[0], exit_signal=sig,
@@ -578,7 +638,7 @@ async def _backtest_intraday(
                 evs += open_pos["sim"].force_close(px, "range end")
             fin = next((e for e in evs if e["kind"] == "exit"), None)
             if fin:
-                _close(open_pos, fin, c)
+                _close(open_pos, fin, c, leg_px)
                 cd_until = i + cd_bars
             continue
 
@@ -597,16 +657,30 @@ async def _backtest_intraday(
         if not ctx.eval_conds(entry_conds, rule.get("entryLogic", "all")):
             continue
         base = round(spot / step) * step
-        strike, ot = _resolve_instrument(rule.get("instrument", "ATM_CE"), base, step)
-        px = _syn_premium(ot, spot, strike, 0.0, syn_iv, syn_dte)
+        legs, entry_px_legs = None, None
+        if ST.is_structure(rule):
+            legs = ST.legs_for(rule["structure"], base, step, rule.get("offset"), rule.get("width"))
+            entry_px_legs = [_syn_premium(lg["ot"], spot, lg["strike"], 0.0, syn_iv, syn_dte) for lg in legs]
+            if any(p <= 0 for p in entry_px_legs):
+                continue
+            net = ST.net_premium(legs, entry_px_legs)
+            if net == 0:
+                continue
+            strike, ot, px, pos_side = base, "STR", abs(net), ("BUY" if net > 0 else "SELL")
+            ef_use = {k: v for k, v in (rule.get("entryFilter") or {}).items() if k in ("premOp", "premVal", "premTol")}
+        else:
+            strike, ot = _resolve_instrument(rule.get("instrument", "ATM_CE"), base, step)
+            px = _syn_premium(ot, spot, strike, 0.0, syn_iv, syn_dte)
+            pos_side, ef_use = side, (rule.get("entryFilter") or {})
         if px <= 0:
             continue
-        ok, _ = _entry_filter_ok(rule.get("entryFilter") or {}, px, 0.5, 0.0, 0.0)
+        ok, _ = _entry_filter_ok(ef_use, px, 0.5, 0.0, 0.0)
         if not ok:
             continue
         open_pos = {
-            "k": strike, "ot": ot, "entry": px, "d": dkey, "t": _clock(ts), "ts": ts, "i": i,
-            "sim": SimPosition(rule, buy=buy, base=px, lots=lots0, lot_size=lot),
+            "k": strike, "ot": ot, "entry": px, "d": dkey, "t": _clock(ts), "ts": ts, "i": i, "side": pos_side,
+            "sim": SimPosition(rule, buy=(pos_side == "BUY"), base=px, lots=lots0, lot_size=lot),
+            **({"legs": legs, "structure": rule["structure"], "entry_px": entry_px_legs} if legs else {}),
         }
         day_count[dkey] = day_count.get(dkey, 0) + 1
         gates.opened(dkey)
@@ -614,7 +688,7 @@ async def _backtest_intraday(
     summary, equity = _summarize_trades(trades)
     return {
         "symbol": symbol, "expiry": None, "from": from_date, "to": to_date,
-        "instrument": rule.get("instrument"), "side": side, "lots": rule.get("lots", 1),
+        "instrument": rule.get("structure") if ST.is_structure(rule) else rule.get("instrument"), "side": side, "lots": rule.get("lots", 1),
         "lot": lot, "days": len({_dstr(c["time"]) for c in in_win}),
         "interval": interval, "candles": len(in_win),
         "pricing": "synthetic", "hasChain": False,

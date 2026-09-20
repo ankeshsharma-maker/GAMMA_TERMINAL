@@ -94,6 +94,7 @@ already use):
 from __future__ import annotations
 
 import asyncio
+import itertools
 import logging
 import time
 from collections import deque
@@ -101,6 +102,7 @@ from datetime import datetime, time as dtime
 from zoneinfo import ZoneInfo
 
 from . import autobot_exit as X
+from . import autobot_structures as ST
 from . import charges as chg
 from . import config, db
 from .autobot_stats import summarize
@@ -915,6 +917,8 @@ def _resolve_instrument(inst: str, atm: float, step: float) -> tuple[float, str]
 _ALERT_LEVELS = {"entry": "info", "exit": "info", "error": "critical", "stop": "warning"}
 # A failing order retries every tick; alert once per this long per distinct message, not every 9 s.
 _ALERT_THROTTLE_S = 600.0
+_REPEATING_LEVELS = {"warn", "error", "stop"}   # levels that can repeat every tick
+_LOG_REPEAT_S = 600.0                          # ...and are folded into one line within this window
 
 
 class PartialFill(Exception):
@@ -1008,12 +1012,27 @@ class AutoBot:
 
     # -- events / alerts ------------------------------------------------- #
     def _emit(self, rule: dict, level: str, msg: str) -> None:
+        now = time.time()
         rec = {
-            "ts": time.time(), "ruleId": rule.get("id"),
+            "ts": now, "ruleId": rule.get("id"),
             "ruleName": rule.get("name", rule.get("id", "?")), "level": level, "msg": msg,
         }
+        # a condition that persists (no chain, a rejected order) is logged on every tick;
+        # fold repeats of the same message into one line with a count so they can't flush
+        # the real entries and exits out of the bounded log
+        prev = None
+        if level in _REPEATING_LEVELS:
+            for old in itertools.islice(self.log, 30):
+                if (old.get("ruleId") == rec["ruleId"] and old.get("level") == level
+                        and old.get("msg") == msg and now - old["ts"] < _LOG_REPEAT_S):
+                    prev = old
+                    break
+        if prev is not None:
+            self.log.remove(prev)
+            rec["count"] = int(prev.get("count", 1)) + 1
         self.log.appendleft(rec)
-        log.info("[%s] %s", rec["ruleName"], msg)
+        if prev is None:
+            log.info("[%s] %s", rec["ruleName"], msg)
         sev = _ALERT_LEVELS.get(level)
         if sev:
             self._alert(rule, level, msg, sev)
@@ -1183,6 +1202,10 @@ class AutoBot:
         rule.setdefault("maxTradesPerDay", 3)
         rule.setdefault("cooldownMin", 5)
         rule.setdefault("squareOff", "15:20")
+        if ST.is_structure(rule):
+            rule["offset"], rule["width"] = ST.clamp_params(rule["structure"], rule.get("offset"), rule.get("width"))
+        else:
+            rule.pop("structure", None)
         for i, r in enumerate(self.rules):
             if r.get("id") == rid:
                 self.rules[i] = rule
@@ -1389,7 +1412,7 @@ class AutoBot:
         # remainder ride to the existing SL / target / trail. Peak-tracking is NOT reset on a
         # partial -- it's a price level, not a size, so trailing / breakeven keep protecting
         # the smaller remainder with no extra code.
-        close_lots = X.partial_close_lots(
+        close_lots = 0 if pos.get("legs") else X.partial_close_lots(   # single-option positions only
             rule, ev, entry_lots=int(pos.get("entryLots") or pos["lots"]), lots=pos["lots"],
             done=bool(pos.get("partial1Done")),
         )
@@ -1568,6 +1591,9 @@ class AutoBot:
         if (lo is not None and dte_days < lo) or (hi is not None and dte_days > hi):
             return held_back(f"the expiry is {dte_days} day(s) away and this rule trades {_dte_band(lo, hi)}")
 
+        if ST.is_structure(rule):
+            return await self._enter_structure(rule, st, chain, held_back)
+
         strike, ot = _resolve_instrument(
             rule.get("instrument", "ATM_CE"), chain["atmStrike"], chain.get("strikeStep") or 50,
         )
@@ -1625,6 +1651,109 @@ class AutoBot:
             self._emit(rule, "error", f"entry only got {placed} of {lots} lots away: {partial_err.cause}")
         self._set_why(rid, {"phase": "open", "list": "exit", "conds": [], "logic": rule.get("exitLogic", "any"), "reason": None})
         return True
+
+    # ---- multi-leg structures ------------------------------------------- #
+    async def _open_structure(self, rule: dict, legs: list[dict], exp: str, lots: int):
+        """Place every leg, protective (bought) legs first so the margin they provide is in
+        place before the shorts go on. Returns (legs placed, failure or None, mode)."""
+        placed: list[dict] = []
+        mode = "paper"
+        for lg in sorted(legs, key=lambda l: 0 if l["side"] == "BUY" else 1):
+            try:
+                res = await self._place(rule, lg["side"], lg["strike"], lg["ot"], exp, lots * int(lg.get("mult", 1)))
+            except Exception as exc:  # noqa: BLE001
+                return placed, exc, mode
+            mode = res.get("mode", mode)
+            placed.append(lg)
+        return placed, None, mode
+
+    async def _unwind_legs(self, rule: dict, legs: list[dict], exp: str, lots: int):
+        """Reverse legs that are already at the broker (shorts bought back first). Returns the
+        legs that could NOT be reversed."""
+        stuck: list[dict] = []
+        for lg in sorted(legs, key=lambda l: 0 if l["side"] == "SELL" else 1):
+            try:
+                await self._place(rule, "SELL" if lg["side"] == "BUY" else "BUY", lg["strike"], lg["ot"],
+                                  exp, lots * int(lg.get("mult", 1)))
+            except Exception:  # noqa: BLE001
+                stuck.append(lg)
+        return stuck
+
+    async def _enter_structure(self, rule: dict, st: dict, chain: dict, held_back) -> bool:
+        key = rule["structure"]
+        sym = (rule.get("symbol") or "").upper()
+        exp = chain["expiry"]
+        legs = ST.legs_for(key, chain["atmStrike"], chain.get("strikeStep") or 50, rule.get("offset"), rule.get("width"))
+        prices: list[float] = []
+        for lg in legs:
+            px = store._mark_price(sym, exp, lg["strike"], lg["ot"])
+            if not px:
+                self._emit(rule, "warn", f"no LTP for {lg['strike']:g}{lg['ot']}")
+                return held_back(f"{lg['strike']:g}{lg['ot']} has no price")
+            prices.append(float(px))
+        net = ST.net_premium(legs, prices)
+        if net == 0:
+            return held_back("the legs net to zero premium")
+        side = "BUY" if net > 0 else "SELL"      # a debit structure is long premium, a credit one is short
+        base = abs(net)
+
+        # only the premium band applies to a structure: delta / %-change bands describe one option
+        ef = {k: v for k, v in (rule.get("entryFilter") or {}).items() if k in ("premOp", "premVal", "premTol")}
+        ef_ok, ef_why = _entry_filter_ok(ef, base, 0.5, 0.0, 0.0)
+        if not ef_ok:
+            return held_back(f"the entry filter says no ({ef_why})")
+
+        max_spread = _num_or_none(rule.get("maxSpreadPct")) or 0.0
+        if max_spread > 0:
+            for lg in legs:
+                crow = next((r for r in chain.get("rows", []) if r["strike"] == lg["strike"]), None)
+                q = (crow or {}).get("call" if lg["ot"] == "CE" else "put", {}) if crow else {}
+                bid, ask = float(q.get("bid") or 0), float(q.get("ask") or 0)
+                if bid > 0 and ask > 0 and (ask - bid) / ((ask + bid) / 2) * 100 > max_spread:
+                    return held_back(f"{lg['strike']:g}{lg['ot']} spread is {(ask - bid) / ((ask + bid) / 2) * 100:.1f}% (limit {max_spread:g}%)")
+
+        lots = int(rule.get("lots", 1))
+        placed, failure, mode = await self._open_structure(rule, legs, exp, lots)
+        for lg, px in zip(legs, prices):
+            lg["entryPx"] = px
+        if failure is not None:
+            name = ST.title(key)
+            if not placed:
+                self._emit(rule, "error", f"{name} entry failed on the first leg: {failure}")
+                return held_back(f"the entry order failed ({failure})")
+            stuck = await self._unwind_legs(rule, placed, exp, lots)
+            if not stuck:
+                self._emit(rule, "error", f"{name} entry aborted - a leg failed ({failure}); the {len(placed)} leg(s) already "
+                                          f"placed were reversed")
+                return held_back(f"the {name.lower()} entry aborted after a leg failed ({failure})")
+            # some legs can't be reversed: they ARE open, so track them and keep trying to close them
+            now_ts = time.time()
+            st["open"] = {
+                "side": side, "strike": stuck[0]["strike"], "ot": "STR", "expiry": exp, "structure": key,
+                "legs": stuck, "label": ST.label(key, stuck), "entryPx": base, "lots": lots, "entryLots": lots,
+                "lotSize": chain.get("lotSize", 1), "ts": now_ts, "tid": str(int(now_ts * 1000)), "mode": mode,
+                "peak": base, "stopPx": None, "forceExit": True, "unwind": True,
+            }
+            stuck_txt = ", ".join("%g%s" % (lg["strike"], lg["ot"]) for lg in stuck)
+            self._emit(rule, "error", f"{name} entry failed ({failure}) AND {len(stuck)} placed leg(s) could not be reversed "
+                                      f"({stuck_txt}) - the rule will keep trying to close them; CHECK THE BROKER")
+            return True
+
+        now_ts = time.time()
+        label = ST.label(key, legs)
+        st["open"] = {
+            "side": side, "strike": chain["atmStrike"], "ot": "STR", "expiry": exp, "structure": key,
+            "legs": legs, "label": label, "entryPx": base, "lots": lots, "entryLots": lots,
+            "lotSize": chain.get("lotSize", 1), "ts": now_ts, "tid": str(int(now_ts * 1000)), "mode": mode,
+            "peak": base, "stopPx": None,
+        }
+        st["tradesToday"] = st.get("tradesToday", 0) + 1
+        st["weekTrades"] = st.get("weekTrades", 0) + 1
+        self._emit(rule, "entry", f"{label} x{lots} net {'debit' if side == 'BUY' else 'credit'} ~{base:.1f} [{mode}]")
+        self._set_why(rule.get("id", ""), {"phase": "open", "list": "exit", "conds": [],
+                                           "logic": rule.get("exitLogic", "any"), "reason": None})
+        return True
+
 
 
 autobot = AutoBot()
