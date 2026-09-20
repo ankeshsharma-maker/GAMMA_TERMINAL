@@ -161,3 +161,51 @@ def fav_to_px(rule: dict, v: float, *, base: float, qty: int, buy: bool) -> floa
     v = abs(float(v))
     pts = v if basis == "pts" else v / max(1, int(qty)) if basis == "rs" else base * v / 100.0
     return base + pts if buy else base - pts
+
+
+# --------------------------------------------------------------------------- #
+# the open trade as an exit CONDITION                                          #
+# --------------------------------------------------------------------------- #
+# Two condition kinds an Exit list can hold, judged on the open trade itself rather than on the
+# market: "trade_stoploss" is true once the trade is DOWN by `value`, "trade_target" once it is UP
+# by `value`, measured in `unit` -- "%" of the entry premium, premium "pts", or "₹" on the whole
+# position. Same footing as everything above (`buy`, `base`, `ltp`, `qty`), so a credit structure
+# works too. Unlike the always-on SL / target boxes they combine with other conditions through the
+# list's AND / OR, e.g. "loss >= 20% AND RSI < 30" or "profit >= 30% OR time after 15:00".
+# Outside an open trade (an Entry list) they are simply False.
+TRADE_KINDS = {"trade_stoploss": "loss", "trade_target": "profit"}
+_UNITS = {"%": "pct", "pct": "pct", "pts": "pts", "₹": "rs", "rs": "rs"}
+
+
+def trade_move(trade: dict, unit: str) -> float | None:
+    """How far the trade is IN FAVOUR, in `unit` (negative = against it). None if there is no
+    usable entry price to measure from."""
+    base = float(trade.get("base") or 0.0)
+    if base <= 0:
+        return None
+    ltp = float(trade["ltp"])
+    fav_pts = (ltp - base) if trade.get("buy", True) else (base - ltp)
+    if unit == "pts":
+        return fav_pts
+    if unit == "rs":
+        return fav_pts * max(1, int(trade.get("qty") or 1))
+    return fav_pts / base * 100.0
+
+
+def trade_condition(cond: dict, trade: dict | None) -> bool:
+    """True when the open `trade` has reached this stop-loss / target condition. Fails closed: no
+    trade, a `value` that isn't a positive number, or an unknown `unit` all give False, so a
+    half-filled condition can never close a position by accident."""
+    if not trade:
+        return False
+    mode = TRADE_KINDS.get((cond or {}).get("kind"))
+    value = float(cond.get("value"))          # missing / non-numeric -> raises -> False upstream
+    if mode is None or not value > 0:
+        return False
+    unit = _UNITS.get(str(cond.get("unit") or "%"))
+    if unit is None:
+        return False
+    move = trade_move(trade, unit)
+    if move is None:
+        return False
+    return -move >= value if mode == "loss" else move >= value

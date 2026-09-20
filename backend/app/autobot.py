@@ -16,7 +16,8 @@ poller after ``store.check_stops``).  Every rule is a small JSON document:
       "mode": "paper",              # paper | live  (live also needs global LIVE + broker)
       "holdType": "intraday",       # intraday (default) | positional
       "entry": [ {condition}, ... ], # ALL must be true to enter
-      "exit":  [ {condition}, ... ], # ANY true -> exit
+      "exit":  [ {condition}, ... ], # ANY true -> exit (exitLogic "all" = every one; also market conditions,
+                                     #   plus trade_stoploss / trade_target: judged on the open trade itself)
       "slPct": 30,                   # stop-loss % on option premium (signed by side)
       "targetPct": 60,              # take-profit % on option premium
       "maxTradesPerDay": 3,
@@ -880,26 +881,33 @@ class _Ctx:
         "time_of_day": _time_of_day, "day_of_week": _day_of_week,
     }
 
-    def eval_one(self, cond: dict) -> bool:
-        fn = self._DISPATCH.get((cond or {}).get("kind", ""))
-        if not fn:
-            return False
+    def eval_one(self, cond: dict, trade: dict | None = None) -> bool:
+        """One condition. `trade` is the OPEN position ({buy, base, ltp, qty}) when an Exit list is
+        being judged; only the trade_stoploss / trade_target kinds read it, and they are False without
+        one. It is passed in rather than stored on the context because contexts are shared between
+        rules on the same symbol within a tick."""
+        kind = (cond or {}).get("kind", "")
         try:
+            if kind in X.TRADE_KINDS:
+                return bool(X.trade_condition(cond, trade))
+            fn = self._DISPATCH.get(kind)
+            if not fn:
+                return False
             return bool(fn(self, cond))
         except Exception as exc:  # noqa: BLE001
             log.debug("condition %s failed: %s", cond, exc)
             return False
 
-    def eval_all(self, conds: list) -> bool:
+    def eval_all(self, conds: list, trade: dict | None = None) -> bool:
         conds = conds or []
-        return bool(conds) and all(self.eval_one(c) for c in conds)
+        return bool(conds) and all(self.eval_one(c, trade) for c in conds)
 
-    def eval_any(self, conds: list) -> bool:
-        return any(self.eval_one(c) for c in (conds or []))
+    def eval_any(self, conds: list, trade: dict | None = None) -> bool:
+        return any(self.eval_one(c, trade) for c in (conds or []))
 
-    def eval_conds(self, conds: list, logic: str = "all") -> bool:
+    def eval_conds(self, conds: list, logic: str = "all", trade: dict | None = None) -> bool:
         """AND ('all') or OR ('any') over the condition list."""
-        return self.eval_any(conds) if (logic or "all") == "any" else self.eval_all(conds)
+        return self.eval_any(conds, trade) if (logic or "all") == "any" else self.eval_all(conds, trade)
 
 
 # --------------------------------------------------------------------------- #
@@ -1511,7 +1519,10 @@ class AutoBot:
             cx = self._cx(ctx_cache, sym, rule)
             conds = rule.get("exit", [])
             st["live"] = cx.prev_candle_live(conds)
-            exit_res = [cx.eval_one(c) for c in conds]
+            # the open trade, for the trade_stoploss / trade_target conditions: the same numbers the
+            # fixed SL / target above were just judged on
+            trade = {"buy": buy, "base": pos["entryPx"] or 1.0, "ltp": ltp, "qty": qty}
+            exit_res = [cx.eval_one(c, trade=trade) for c in conds]
             logic = rule.get("exitLogic", "any")
             if bool(conds) and (all(exit_res) if logic == "all" else any(exit_res)):
                 reason = "exit signal"

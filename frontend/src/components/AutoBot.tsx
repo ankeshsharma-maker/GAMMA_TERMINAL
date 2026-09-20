@@ -43,10 +43,22 @@ function dayLabel(days: number[]): string {
   return parts.join(", ");
 }
 
-type CondGroup = "indicator" | "oi" | "smart" | "trend" | "greeks" | "time";
+type CondGroup = "indicator" | "oi" | "smart" | "trend" | "greeks" | "time" | "trade";
 
 /** `help` is a visible one-liner shown under the condition -- tooltips don't exist on a phone. */
-const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field[]; help?: (c: AutoCondition) => string }> = {
+/** what a trade_stoploss / trade_target amount reads as: "30%", "15 points", "₹1000" */
+const tradeAmt = (c: AutoCondition) => {
+  const u = String(c.unit || "%");
+  return u === "%" ? `${c.value}%` : u === "pts" ? `${c.value} points` : `₹${c.value}`;
+};
+const TRADE_HELP =
+  " It looks at the trade's own result, not the market. On OR it is simply another way out; on AND it must hold together with the other conditions.";
+const TRADE_UNIT_HINT = "% = of the price you entered at · pts = points of the option's own price (₹ per share) · ₹ = rupees on the whole position";
+
+const COND_DEFS: Record<
+  string,
+  { label: string; group: CondGroup; fields: Field[]; help?: (c: AutoCondition) => string; exitOnly?: boolean }
+> = {
   rsi: {
     label: "RSI",
     group: "indicator",
@@ -493,6 +505,28 @@ const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field
         : "True only on the days ticked (IST). All five ticked means every weekday.";
     },
   },
+
+  /* ---- the open trade itself: judged on its own profit / loss, so only meaningful in the Exit list ---- */
+  trade_stoploss: {
+    label: "Trade stop-loss hit",
+    group: "trade",
+    exitOnly: true,
+    fields: [
+      { key: "value", label: "loss of", type: "num", def: 30 },
+      { key: "unit", label: "in", type: "sel", def: "%", opts: ["%", "pts", "₹"], hint: TRADE_UNIT_HINT },
+    ],
+    help: (c) => `True once this trade is down ${tradeAmt(c)} from where it entered.${TRADE_HELP}`,
+  },
+  trade_target: {
+    label: "Trade target (profit) hit",
+    group: "trade",
+    exitOnly: true,
+    fields: [
+      { key: "value", label: "profit of", type: "num", def: 40 },
+      { key: "unit", label: "in", type: "sel", def: "%", opts: ["%", "pts", "₹"], hint: TRADE_UNIT_HINT },
+    ],
+    help: (c) => `True once this trade is up ${tradeAmt(c)} from where it entered.${TRADE_HELP}`,
+  },
 };
 
 const GROUP_LABEL: Record<CondGroup, string> = {
@@ -502,6 +536,7 @@ const GROUP_LABEL: Record<CondGroup, string> = {
   trend: "Trend / price action (Supertrend, Pivots, Candles, ATR)",
   greeks: "Greeks (Δ delta / gamma)",
   time: "Time / day of week",
+  trade: "This trade (Exit list only)",
 };
 
 const INSTRUMENTS = [
@@ -564,10 +599,13 @@ function CondRow({
   cond,
   onChange,
   onRemove,
+  isExit = false,
 }: {
   cond: AutoCondition;
   onChange: (c: AutoCondition) => void;
   onRemove: () => void;
+  /** true in the Exit list: only there can a condition look at the open trade */
+  isExit?: boolean;
 }) {
   const def = COND_DEFS[cond.kind];
   const help = def?.help?.(cond);
@@ -579,17 +617,22 @@ function CondRow({
           onChange={(e) => onChange(mkCond(e.target.value))}
           className="rounded border border-term-border bg-term-panel px-1 py-0.5 text-2xs"
         >
-          {(["indicator", "oi", "smart", "trend", "greeks", "time"] as CondGroup[]).map((g) => (
-            <optgroup key={g} label={GROUP_LABEL[g]}>
-              {Object.entries(COND_DEFS)
-                .filter(([, v]) => v.group === g)
-                .map(([k, v]) => (
+          {(["indicator", "oi", "smart", "trend", "greeks", "time", "trade"] as CondGroup[]).map((g) => {
+            // exit-only kinds are offered only in the Exit list (a kind already chosen always stays listed)
+            const items = Object.entries(COND_DEFS).filter(
+              ([k, v]) => v.group === g && (!v.exitOnly || isExit || k === cond.kind)
+            );
+            if (!items.length) return null;
+            return (
+              <optgroup key={g} label={GROUP_LABEL[g]}>
+                {items.map(([k, v]) => (
                   <option key={k} value={k}>
                     {v.label}
                   </option>
                 ))}
-            </optgroup>
-          ))}
+              </optgroup>
+            );
+          })}
         </select>
 
         {def?.fields
@@ -667,6 +710,7 @@ function CondList({
   onChange,
   logic = "all",
   onLogic,
+  isExit = false,
 }: {
   title: string;
   hint: string;
@@ -674,6 +718,7 @@ function CondList({
   onChange: (l: AutoCondition[]) => void;
   logic?: "all" | "any";
   onLogic?: (l: "all" | "any") => void;
+  isExit?: boolean;
 }) {
   return (
     <div className="space-y-1.5">
@@ -710,6 +755,7 @@ function CondList({
         <CondRow
           key={i}
           cond={c}
+          isExit={isExit}
           onChange={(nc) => onChange(list.map((x, j) => (j === i ? nc : x)))}
           onRemove={() => onChange(list.filter((_, j) => j !== i))}
         />
@@ -1073,6 +1119,7 @@ function RuleEditor({
         <CondList
           title="Exit"
           hint="(SL / target / square-off always apply)"
+          isExit
           list={r.exit ?? []}
           onChange={(l) => set({ exit: l })}
           logic={r.exitLogic ?? "any"}
@@ -2154,6 +2201,10 @@ function describe(c: AutoCondition): string {
       const op = g("op") || "between";
       return op === "after" ? `time after ${f}` : op === "before" ? `time before ${t}` : op === "outside" ? `time outside ${f}–${t}` : `time ${f}–${t}`;
     }
+    case "trade_stoploss":
+      return `trade stop-loss: down ≥ ${tradeAmt(c)}`;
+    case "trade_target":
+      return `trade target: up ≥ ${tradeAmt(c)}`;
     case "day_of_week": {
       const days = Array.isArray(c.days) ? (c.days as number[]) : [];
       return `day ${g("op") === "is_not" ? "is not" : "is"} ${dayLabel(days)}`;

@@ -37,6 +37,7 @@ import asyncio
 import math
 from datetime import datetime
 
+from . import autobot_exit as X
 from . import autobot_structures as ST
 from . import charges as chg
 from . import nse_bhavcopy, upstox_data
@@ -135,6 +136,13 @@ def _struct_meta(pos: dict) -> dict:
         "structure": pos["structure"], "label": ST.label(pos["structure"], pos["legs"]),
         "legs": [{"ot": lg["ot"], "strike": lg["strike"], "side": lg["side"]} for lg in pos["legs"]],
     }
+
+
+def _trade_of(sim, px: float) -> dict:
+    """The open trade as the trade_stoploss / trade_target exit conditions see it. Judged on the bar's
+    CLOSE premium (they are conditions, so like every other exit signal they act at the close; the
+    fixed SL / target boxes are the ones that also catch a touch inside the bar)."""
+    return {"buy": sim.buy, "base": sim.base, "ltp": px, "qty": sim.qty}
 
 
 def _pos_px(pos: dict, price_fn) -> tuple[float, list[float]]:
@@ -241,6 +249,9 @@ def _not_simulated(rule: dict) -> list[str]:
         out.append("days-to-expiry gate (a backtest has no real expiry calendar)")
     if _f(rule.get("maxSpreadPct"), 0.0) > 0:
         out.append("spread guard (no historical quotes)")
+    if any((c or {}).get("kind") in X.TRADE_KINDS for c in (rule.get("exit") or [])):
+        out.append("trade stop-loss / target conditions are judged at each bar's close, not on a touch inside it "
+                   "(the SL / target boxes do catch touches inside a bar)")
     return out
 
 
@@ -448,7 +459,7 @@ async def backtest_rule(
         if open_pos:
             ei = open_pos["i"]
             px, leg_px = _pos_px(open_pos, lambda k, ot: _premium(k, ot, d, by_date[d], i - ei))
-            sig = bool(exit_conds) and ctx.eval_conds(exit_conds, rule.get("exitLogic", "any"))
+            sig = bool(exit_conds) and ctx.eval_conds(exit_conds, rule.get("exitLogic", "any"), trade=_trade_of(open_pos["sim"], px))
             evs = open_pos["sim"].step(px, exit_signal=sig)
             if not open_pos["sim"].closed and last:
                 evs += open_pos["sim"].force_close(px, "range end")
@@ -629,7 +640,7 @@ async def _backtest_intraday(
             ps = [value_at(c["open"])[0], value_at(c["low"])[0], value_at(c["high"])[0], value_at(spot)[0]]
             px = ps[3]
             leg_px = value_at(spot)[1]
-            sig = bool(exit_conds) and ctx.eval_conds(exit_conds, rule.get("exitLogic", "any"))
+            sig = bool(exit_conds) and ctx.eval_conds(exit_conds, rule.get("exitLogic", "any"), trade=_trade_of(open_pos["sim"], px))
             evs = open_pos["sim"].step(
                 px, lo=min(ps), hi=max(ps), opn=ps[0], exit_signal=sig,
                 square_off=bool(not positional and sq and clk >= sq),
