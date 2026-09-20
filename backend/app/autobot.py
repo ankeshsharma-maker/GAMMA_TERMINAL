@@ -310,17 +310,43 @@ class _Ctx:
         return mv > v if c.get("op", ">") == ">" else mv < v
 
     def _time_of_day(self, c) -> bool:
-        """True while the current bar's IST clock time sits inside [from, to]
-        (both "HH:MM", inclusive). A pure time gate -- combines via AND with
-        whatever else is in entry/exit, e.g. "RSI < 30 AND time 09:20-09:45"
-        to only take a signal in a specific window, or exclude the first/last
-        few minutes of the session."""
+        """The current bar's IST clock time against a window, by `op`:
+             between (default)  from <= t <= to        (what this condition always did)
+             outside            not between from and to  (skip a window, e.g. lunchtime)
+             after              t >= from
+             before             t <= to
+        Bounds are "HH:MM" and inclusive. A pure time gate -- combines via AND with whatever
+        else is in entry/exit, e.g. "RSI < 30 AND time between 09:20-09:45" to only take a
+        signal in a specific window. An unknown `op` is False (fails closed)."""
         if not self.ts:
             return False
         now = datetime.fromtimestamp(self.ts[-1], IST).time()
         frm = _parse_hhmm(c.get("from")) or dtime(9, 15)
         to = _parse_hhmm(c.get("to")) or dtime(15, 30)
-        return frm <= now <= to
+        op = c.get("op") or "between"
+        if op == "after":
+            return now >= frm
+        if op == "before":
+            return now <= to
+        if op == "between":
+            return frm <= now <= to
+        if op == "outside":
+            return not (frm <= now <= to)
+        return False
+
+    def _day_of_week(self, c) -> bool:
+        """True when the current bar's IST weekday is one of `days` (op "is", the default) or is
+        not (op "is_not"). `days` is a list of 0..6 with Monday = 0. With no day chosen this is
+        False, so a half-configured filter can neither let an entry through nor fire an exit --
+        the same fail-closed rule as every other condition."""
+        if not self.ts:
+            return False
+        days = {int(d) for d in (c.get("days") or [])}
+        days = {d for d in days if 0 <= d <= 6}
+        if not days:
+            return False
+        inside = datetime.fromtimestamp(self.ts[-1], IST).weekday() in days
+        return (not inside) if (c.get("op") or "is") == "is_not" else inside
 
     # -- OI / chain conditions -------------------------------------------- #
     def _pcr(self, c) -> bool:
@@ -782,6 +808,37 @@ class _Ctx:
         s = self.ce_gamma if c.get("leg", "call") == "call" else self.pe_gamma
         return self._greek_change(c, s)
 
+    def _gamma_vs_delta(self, c) -> bool:
+        """Is gamma growing faster than delta (or slower)? Both are compared as a % change over the
+        last `bars` readings -- their raw sizes differ ~100x (gamma ~0.001, delta ~0.5), so raw
+        changes can't be compared. Delta is taken by SIZE (|delta|), so a put's delta (negative)
+        counts as growing when it moves further from zero, the same way a call's does.
+
+            op "gamma_faster":  gamma %chg - delta %chg  >  value   (percentage points)
+            op "delta_faster":  delta %chg - gamma %chg  >  value
+
+        A "reading" is one recorded history sample (about one per refresh), not a candle of the
+        rule's timeframe -- the same unit delta_change / gamma_change use. False until there are
+        bars+1 readings, or when either starting value is too small to take a % of."""
+        call = c.get("leg", "call") == "call"
+        dl = self.ce_delta if call else self.pe_delta
+        gm = self.ce_gamma if call else self.pe_gamma
+        bars = max(1, int(c.get("bars", 5)))
+        if len(dl) < bars + 1 or len(gm) < bars + 1:
+            return False
+        d_then, g_then = abs(dl[-1 - bars]), gm[-1 - bars]
+        if d_then < 0.05 or g_then < 1e-6:
+            return False
+        d_pct = (abs(dl[-1]) - d_then) / d_then * 100.0
+        g_pct = (gm[-1] - g_then) / g_then * 100.0
+        margin = abs(float(c.get("value", 5)))
+        op = c.get("op", "gamma_faster")
+        if op == "gamma_faster":
+            return g_pct - d_pct > margin
+        if op == "delta_faster":
+            return d_pct - g_pct > margin
+        return False
+
     def _greek_level(self, c, series: list[float]) -> bool:
         if len(series) < 2:
             return False
@@ -817,10 +874,10 @@ class _Ctx:
         "maxpain_shift": _maxpain_shift, "pcr_roc": _pcr_roc, "iv_skew": _iv_skew,
         "gamma_flip": _gamma_flip,
         "oi_state": _oi_state, "supertrend": _supertrend, "pivot": _pivot,
-        "delta_change": _delta_change, "gamma_change": _gamma_change,
+        "delta_change": _delta_change, "gamma_change": _gamma_change, "gamma_vs_delta": _gamma_vs_delta,
         "theta_level": _theta_level, "vega_level": _vega_level, "blast_score": _blast_score,
         "candle": _candle, "atr": _atr, "prev_candle": _prev_candle, "gap": _gap,
-        "time_of_day": _time_of_day,
+        "time_of_day": _time_of_day, "day_of_week": _day_of_week,
     }
 
     def eval_one(self, cond: dict) -> bool:

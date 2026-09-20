@@ -55,7 +55,7 @@ _STEP = {
 # upstox_data.fetch_history_greeks) -- gated separately from the cheap
 # pcr/maxPain fetch below since this one does real IV-solving + a second
 # full round of Upstox calls, so only pay for it when a rule actually uses it.
-_GREEK_KINDS = {"gamma_flip", "net_gex", "delta_change", "gamma_change"}
+_GREEK_KINDS = {"gamma_flip", "net_gex", "delta_change", "gamma_change", "gamma_vs_delta"}
 
 
 def _rule_uses_greeks(rule: dict) -> bool:
@@ -317,7 +317,7 @@ async def backtest_rule(
         except Exception:  # noqa: BLE001
             have_chain = False
 
-    # 2b. Greeks/GEX history (gamma_flip / net_gex / delta_change / gamma_change)
+    # 2b. Greeks/GEX history (gamma_flip / net_gex / delta_change / gamma_change / gamma_vs_delta)
     # -- only fetched when the rule actually uses one of these, since this does
     # real Black-Scholes IV-solving plus a real round of network calls either way.
     #

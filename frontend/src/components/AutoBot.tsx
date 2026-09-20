@@ -11,14 +11,42 @@ import { SelectMenu } from "./SelectMenu";
 /* ------------------------------------------------------------------ */
 /* condition catalogue                                                 */
 /* ------------------------------------------------------------------ */
+type FieldBase = {
+  key: string;
+  label: string;
+  hint?: string;
+  /** hide the field unless the condition's other values call for it (e.g. no "to" time when op = after) */
+  show?: (c: AutoCondition) => boolean;
+  /** a label that follows the condition's values */
+  labelFor?: (c: AutoCondition) => string;
+};
 type Field =
-  | { key: string; label: string; type: "num"; def: number; hint?: string }
-  | { key: string; label: string; type: "sel"; def: string; opts: string[]; hint?: string }
-  | { key: string; label: string; type: "time"; def: string; hint?: string };
+  | (FieldBase & { type: "num"; def: number })
+  | (FieldBase & { type: "sel"; def: string; opts: string[] })
+  | (FieldBase & { type: "time"; def: string })
+  | (FieldBase & { type: "days"; def: number[] });
+
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+const DAY_ALL = [...DAY_NAMES, "Sat", "Sun"];
+
+/** [0,1,2,3,4] -> "Mon–Fri", [0,2,4] -> "Mon, Wed, Fri", [0,1,2,4] -> "Mon–Wed, Fri" */
+function dayLabel(days: number[]): string {
+  const d = [...new Set(days)].filter((x) => x >= 0 && x < DAY_ALL.length).sort((a, b) => a - b);
+  if (!d.length) return "none picked";
+  const parts: string[] = [];
+  for (let i = 0; i < d.length; ) {
+    let j = i;
+    while (j + 1 < d.length && d[j + 1] === d[j] + 1) j++;
+    parts.push(j - i >= 2 ? `${DAY_ALL[d[i]]}–${DAY_ALL[d[j]]}` : d.slice(i, j + 1).map((x) => DAY_ALL[x]).join(", "));
+    i = j + 1;
+  }
+  return parts.join(", ");
+}
 
 type CondGroup = "indicator" | "oi" | "smart" | "trend" | "greeks" | "time";
 
-const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field[] }> = {
+/** `help` is a visible one-liner shown under the condition -- tooltips don't exist on a phone. */
+const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field[]; help?: (c: AutoCondition) => string }> = {
   rsi: {
     label: "RSI",
     group: "indicator",
@@ -371,20 +399,38 @@ const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field
     group: "greeks",
     fields: [
       { key: "leg", label: "leg", type: "sel", def: "call", opts: ["call", "put"] },
-      { key: "bars", label: "bars", type: "num", def: 5 },
+      { key: "bars", label: "readings", type: "num", def: 5, hint: "How many refreshes back to compare with (one reading per refresh, not a candle)" },
       { key: "op", label: "op", type: "sel", def: ">", opts: [">", "<", "abs"] },
       { key: "value", label: "value", type: "num", def: 0.05 },
     ],
+    help: () =>
+      "Delta now minus delta N readings ago (a reading is one refresh, not a candle). “>” = it rose by more than the value, “<” = it fell by more than the value, “abs” = it moved that much either way.",
   },
   gamma_change: {
     label: "Δ gamma (ATM leg)",
     group: "greeks",
     fields: [
       { key: "leg", label: "leg", type: "sel", def: "call", opts: ["call", "put"] },
-      { key: "bars", label: "bars", type: "num", def: 5 },
+      { key: "bars", label: "readings", type: "num", def: 5, hint: "How many refreshes back to compare with (one reading per refresh, not a candle)" },
       { key: "op", label: "op", type: "sel", def: ">", opts: [">", "<", "abs"] },
       { key: "value", label: "value", type: "num", def: 0.0005 },
     ],
+    help: () =>
+      "Gamma now minus gamma N readings ago (a reading is one refresh, not a candle). Gamma numbers are small, about 0.001, so the value is small too.",
+  },
+  gamma_vs_delta: {
+    label: "Gamma vs delta (ATM leg)",
+    group: "greeks",
+    fields: [
+      { key: "leg", label: "leg", type: "sel", def: "call", opts: ["call", "put"] },
+      { key: "bars", label: "readings", type: "num", def: 5, hint: "How many refreshes back to compare with (one reading per refresh, not a candle)" },
+      { key: "op", label: "op", type: "sel", def: "gamma_faster", opts: ["gamma_faster", "delta_faster"] },
+      { key: "value", label: "by at least (% pts)", type: "num", def: 5, hint: "How many percentage points ahead the faster one must be" },
+    ],
+    help: (c) =>
+      c.op === "delta_faster"
+        ? "Delta's % growth beats gamma's by at least this many points over the last N readings. Percentages, because gamma is about 100× smaller than delta. A put's delta counts by size."
+        : "Gamma's % growth beats delta's by at least this many points over the last N readings. Percentages, because gamma is about 100× smaller than delta. A put's delta counts by size.",
   },
   theta_level: {
     label: "Theta level (ATM leg)",
@@ -408,9 +454,44 @@ const COND_DEFS: Record<string, { label: string; group: CondGroup; fields: Field
     label: "Time of day",
     group: "time",
     fields: [
-      { key: "from", label: "from", type: "time", def: "09:15", hint: "IST, inclusive" },
-      { key: "to", label: "to", type: "time", def: "15:30", hint: "IST, inclusive" },
+      {
+        key: "op",
+        label: "op",
+        type: "sel",
+        def: "between",
+        opts: ["between", "outside", "after", "before"],
+        hint: "between = inside the window · outside = anywhere except the window · after = from that time on · before = up to that time",
+      },
+      { key: "from", label: "from", type: "time", def: "09:15", hint: "IST, inclusive", show: (c) => c.op !== "before", labelFor: (c) => (c.op === "after" ? "time" : "from") },
+      { key: "to", label: "to", type: "time", def: "15:30", hint: "IST, inclusive", show: (c) => c.op !== "after", labelFor: (c) => (c.op === "before" ? "time" : "to") },
     ],
+    help: (c) => {
+      const f = String(c.from || "09:15");
+      const t = String(c.to || "15:30");
+      const op = String(c.op || "between");
+      return op === "after"
+        ? `True from ${f} (IST) onwards, that minute included.`
+        : op === "before"
+        ? `True until ${t} (IST), that minute included.`
+        : op === "outside"
+        ? `True at any time except from ${f} to ${t} (IST). Use it to skip a stretch of the day.`
+        : `True from ${f} to ${t} (IST), both ends included.`;
+    },
+  },
+  day_of_week: {
+    label: "Day of week",
+    group: "time",
+    fields: [
+      { key: "op", label: "op", type: "sel", def: "is", opts: ["is", "is_not"] },
+      { key: "days", label: "days", type: "days", def: [0, 1, 2, 3, 4] },
+    ],
+    help: (c) => {
+      const days = Array.isArray(c.days) ? (c.days as number[]) : [];
+      if (!days.length) return "No day is ticked, so this is never true. Tick at least one day.";
+      return c.op === "is_not"
+        ? "True on every day except the ones ticked (IST)."
+        : "True only on the days ticked (IST). All five ticked means every weekday.";
+    },
   },
 };
 
@@ -420,7 +501,7 @@ const GROUP_LABEL: Record<CondGroup, string> = {
   smart: "Smart money / structure",
   trend: "Trend / price action (Supertrend, Pivots, Candles, ATR)",
   greeks: "Greeks (Δ delta / gamma)",
-  time: "Time of day",
+  time: "Time / day of week",
 };
 
 const INSTRUMENTS = [
@@ -438,7 +519,7 @@ const INSTRUMENTS = [
 
 function mkCond(kind: string): AutoCondition {
   const d: AutoCondition = { kind };
-  for (const f of COND_DEFS[kind].fields) d[f.key] = f.def;
+  for (const f of COND_DEFS[kind].fields) d[f.key] = Array.isArray(f.def) ? [...f.def] : f.def;
   return d;
 }
 
@@ -489,63 +570,92 @@ function CondRow({
   onRemove: () => void;
 }) {
   const def = COND_DEFS[cond.kind];
+  const help = def?.help?.(cond);
   return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded border border-term-border bg-term-bg px-2 py-1.5">
-      <select
-        value={cond.kind}
-        onChange={(e) => onChange(mkCond(e.target.value))}
-        className="rounded border border-term-border bg-term-panel px-1 py-0.5 text-2xs"
-      >
-        {(["indicator", "oi", "smart", "trend", "greeks", "time"] as CondGroup[]).map((g) => (
-          <optgroup key={g} label={GROUP_LABEL[g]}>
-            {Object.entries(COND_DEFS)
-              .filter(([, v]) => v.group === g)
-              .map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v.label}
-                </option>
-              ))}
-          </optgroup>
-        ))}
-      </select>
-
-      {def?.fields.map((f) => (
-        <label
-          key={f.key}
-          title={f.hint}
-          className="flex items-center gap-1 text-[10px] text-term-dim"
+    <div className="rounded border border-term-border bg-term-bg px-2 py-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <select
+          value={cond.kind}
+          onChange={(e) => onChange(mkCond(e.target.value))}
+          className="rounded border border-term-border bg-term-panel px-1 py-0.5 text-2xs"
         >
-          {f.label}
-          {f.type === "num" ? (
-            <input
-              type="number"
-              step="any"
-              value={Number(cond[f.key] ?? f.def)}
-              onChange={(e) => onChange({ ...cond, [f.key]: parseFloat(e.target.value) })}
-              className="num w-16 rounded border border-term-border bg-term-panel px-1 py-0.5 text-2xs text-term-text"
-            />
-          ) : f.type === "time" ? (
-            <input
-              value={String(cond[f.key] ?? f.def)}
-              onChange={(e) => onChange({ ...cond, [f.key]: e.target.value })}
-              placeholder={f.def}
-              className="num w-16 rounded border border-term-border bg-term-panel px-1 py-0.5 text-2xs text-term-text"
-            />
-          ) : (
-            <SelectMenu
-              value={String(cond[f.key] ?? f.def)}
-              options={f.opts.map((o: string) => [o, o] as [string, string])}
-              onChange={(o) => onChange({ ...cond, [f.key]: o })}
-              title={f.label}
-              width={120}
-            />
-          )}
-        </label>
-      ))}
+          {(["indicator", "oi", "smart", "trend", "greeks", "time"] as CondGroup[]).map((g) => (
+            <optgroup key={g} label={GROUP_LABEL[g]}>
+              {Object.entries(COND_DEFS)
+                .filter(([, v]) => v.group === g)
+                .map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v.label}
+                  </option>
+                ))}
+            </optgroup>
+          ))}
+        </select>
 
-      <button onClick={onRemove} className="ml-auto text-term-dim hover:text-down" title="remove">
-        ✕
-      </button>
+        {def?.fields
+          .filter((f) => f.show?.(cond) !== false)
+          .map((f) => {
+            const label = f.labelFor ? f.labelFor(cond) : f.label;
+            if (f.type === "days") {
+              const cur = Array.isArray(cond[f.key]) ? (cond[f.key] as number[]) : f.def;
+              return (
+                <div key={f.key} className="flex flex-wrap items-center gap-1 text-[10px] text-term-dim" title={f.hint}>
+                  {label}
+                  {DAY_NAMES.map((d, i) => {
+                    const on = cur.includes(i);
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        aria-pressed={on}
+                        className={`chipbtn ${on ? "on" : ""}`}
+                        onClick={() =>
+                          onChange({ ...cond, [f.key]: (on ? cur.filter((x) => x !== i) : [...cur, i]).sort((x, y) => x - y) })
+                        }
+                      >
+                        {d}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            }
+            return (
+              <label key={f.key} title={f.hint} className="flex items-center gap-1 text-[10px] text-term-dim">
+                {label}
+                {f.type === "num" ? (
+                  <input
+                    type="number"
+                    step="any"
+                    value={Number(cond[f.key] ?? f.def)}
+                    onChange={(e) => onChange({ ...cond, [f.key]: parseFloat(e.target.value) })}
+                    className="num w-16 rounded border border-term-border bg-term-panel px-1 py-0.5 text-2xs text-term-text"
+                  />
+                ) : f.type === "time" ? (
+                  <input
+                    value={String(cond[f.key] ?? f.def)}
+                    onChange={(e) => onChange({ ...cond, [f.key]: e.target.value })}
+                    placeholder={f.def}
+                    className="num w-16 rounded border border-term-border bg-term-panel px-1 py-0.5 text-2xs text-term-text"
+                  />
+                ) : (
+                  <SelectMenu
+                    value={String(cond[f.key] ?? f.def)}
+                    options={f.opts.map((o: string) => [o, o] as [string, string])}
+                    onChange={(o) => onChange({ ...cond, [f.key]: o })}
+                    title={f.label}
+                    width={120}
+                  />
+                )}
+              </label>
+            );
+          })}
+
+        <button onClick={onRemove} className="ml-auto text-term-dim hover:text-down" title="remove">
+          ✕
+        </button>
+      </div>
+      {help && <p className="mt-1 text-[11px] leading-snug text-term-dim">{help}</p>}
     </div>
   );
 }
@@ -2015,6 +2125,10 @@ function describe(c: AutoCondition): string {
       return `Δdelta ${g("leg")} ${g("op")} ${g("value")} over ${g("bars")} bars`;
     case "gamma_change":
       return `Δgamma ${g("leg")} ${g("op")} ${g("value")} over ${g("bars")} bars`;
+    case "gamma_vs_delta": {
+      const dFirst = g("op") === "delta_faster";
+      return `${dFirst ? "delta" : "gamma"} outpaces ${dFirst ? "gamma" : "delta"} by ≥${g("value")} pts over ${g("bars")} readings (${g("leg")})`;
+    }
     case "theta_level":
       return `theta ${g("leg")} ${g("op")} ${g("value")}`;
     case "vega_level":
@@ -2034,8 +2148,16 @@ function describe(c: AutoCondition): string {
       const bF = String(g("bField") || "close");
       return `${aC} ${aF} ${g("op")} ${bC} ${bF}`;
     }
-    case "time_of_day":
-      return `time ${g("from") || "09:15"}–${g("to") || "15:30"}`;
+    case "time_of_day": {
+      const f = g("from") || "09:15";
+      const t = g("to") || "15:30";
+      const op = g("op") || "between";
+      return op === "after" ? `time after ${f}` : op === "before" ? `time before ${t}` : op === "outside" ? `time outside ${f}–${t}` : `time ${f}–${t}`;
+    }
+    case "day_of_week": {
+      const days = Array.isArray(c.days) ? (c.days as number[]) : [];
+      return `day ${g("op") === "is_not" ? "is not" : "is"} ${dayLabel(days)}`;
+    }
     default:
       return c.kind;
   }

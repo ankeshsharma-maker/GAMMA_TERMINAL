@@ -16,7 +16,7 @@ const ddmmyy = (d: string) => {
 /** "HH:MM:SS" -> "HH-MM-SS" for display. */
 const hhmmss = (t: string) => t.replace(/:/g, "-");
 type Res = Awaited<ReturnType<typeof api.autobotBacktest>>;
-const _GREEK_KINDS = new Set(["gamma_flip", "net_gex", "delta_change", "gamma_change"]);
+const _GREEK_KINDS = new Set(["gamma_flip", "net_gex", "delta_change", "gamma_change", "gamma_vs_delta"]);
 const usesGreeks = (rule: AutoRule) =>
   [...(rule.entry ?? []), ...(rule.exit ?? [])].some((c) => _GREEK_KINDS.has((c as { kind?: string }).kind ?? ""));
 
@@ -44,7 +44,7 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // gamma_flip / net_gex / delta_change / gamma_change only have historical
+  // gamma_flip / net_gex / delta_change / gamma_change / gamma_vs_delta only have historical
   // data reconstructed for the daily-bar path -- intraday backtests can never
   // fire these, so warn (but don't block) when this rule is off 1D.
   const dailyOnly = usesGreeks(rule);
@@ -143,7 +143,7 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
         {dailyOnly && tf < 86400 && (
           <span
             className="text-[9px] text-amber-400"
-            title="gamma_flip / net_gex / delta_change / gamma_change only have historical data on daily bars — this timeframe will show 0 trades for this rule regardless of range"
+            title="gamma_flip / net_gex / delta_change / gamma_change / gamma_vs_delta only have historical data on daily bars — this timeframe will show 0 trades for this rule regardless of range"
           >
             heads up: this rule's gamma/delta conditions won't fire outside 1D
           </span>
@@ -274,7 +274,7 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
             {usesGreeks(rule) && !res.hasGreeksHistory && (
               <span
                 className="rounded bg-amber-500/20 px-1.5 py-0.5 text-amber-400"
-                title="couldn't reconstruct historical gamma/delta/GEX for this range (fetch failed or too few days) — gamma_flip / net_gex / delta_change / gamma_change conditions never fired, so this result is not a real 'no signal' — re-run to retry the fetch"
+                title="couldn't reconstruct historical gamma/delta/GEX for this range (fetch failed or too few days) — gamma_flip / net_gex / delta_change / gamma_change / gamma_vs_delta conditions never fired, so this result is not a real 'no signal' — re-run to retry the fetch"
               >
                 no Greeks history — signal conditions inert
               </span>
