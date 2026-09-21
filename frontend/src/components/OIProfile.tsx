@@ -4,6 +4,7 @@ import { ClassFilter } from "./Header";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { compact, crores, nf, sk } from "../lib/format";
+import { PcrChart } from "./PcrChart";
 import { SelectMenu } from "./SelectMenu";
 import { useIsMobile } from "../lib/useIsMobile";
 import { computeGammaFlip } from "../lib/gammaFlip";
@@ -91,7 +92,6 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const [tools, setTools] = useState(false); // mobile: show the extra control rows
   const [metric, setMetric] = useState<Metric>("combined");
   const [layout, setLayout] = useState<"chart" | "ladder" | "pcr" | "gex" | "dex">("chart");
-  const [pcrPts, setPcrPts] = useState<{ t: number; pcr: number; spot: number }[]>([]);
   const [gexPts, setGexPts] = useState<
     { date: string; spot: number; netGex: number; gammaFlip: number }[]
   >([]);
@@ -173,30 +173,6 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       window.clearInterval(id);
     };
   }, [tf, symbol, expiry, chain?.symbol, chain?.expiry]);
-
-  // session PCR series for the PCR chart
-  useEffect(() => {
-    if (layout !== "pcr" || !symbol) return;
-    let alive = true;
-    const load = () =>
-      api.history(symbol).then(
-        (d) => {
-          if (!alive) return;
-          setPcrPts(
-            d.points
-              .filter((p) => p.pcr != null)
-              .map((p) => ({ t: p.t, pcr: p.pcr as number, spot: p.spot }))
-          );
-        },
-        () => {}
-      );
-    load();
-    const id = window.setInterval(load, 20000);
-    return () => {
-      alive = false;
-      window.clearInterval(id);
-    };
-  }, [layout, symbol]);
 
   // today's intraday netGex/gammaFlip — same in-memory session history the
   // PCR chart above already polls (store.py records both on every chain
@@ -852,103 +828,6 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   })();
 
   // ---- the Sensibull-style data table ----
-  // ---- session PCR line chart (with the underlying price overlaid on a right axis) ----
-  const pcrEl = (() => {
-    const W = 1000;
-    const H = 320;
-    const pad = { l: 44, r: 52, t: 16, b: 26 };
-    if (pcrPts.length < 2)
-      return (
-        <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-xs text-term-dim">
-          collecting PCR history for {symbol}…
-        </div>
-      );
-    const ts = pcrPts.map((p) => p.t);
-    const vs = pcrPts.map((p) => p.pcr);
-    const ss = pcrPts.map((p) => p.spot);
-    const t0 = ts[0];
-    const t1 = ts[ts.length - 1] || t0 + 1;
-    let lo = Math.min(...vs, 1);
-    let hi = Math.max(...vs, 1);
-    const padY = (hi - lo) * 0.12 || 0.1;
-    lo -= padY;
-    hi += padY;
-    let slo = Math.min(...ss);
-    let shi = Math.max(...ss);
-    const sPad = (shi - slo) * 0.15 || 1;
-    slo -= sPad;
-    shi += sPad;
-    const x = (t: number) => pad.l + ((t - t0) / (t1 - t0 || 1)) * (W - pad.l - pad.r);
-    const y = (v: number) => pad.t + (1 - (v - lo) / (hi - lo || 1)) * (H - pad.t - pad.b);
-    const ys = (v: number) => pad.t + (1 - (v - slo) / (shi - slo || 1)) * (H - pad.t - pad.b);
-    const path = pcrPts.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.pcr).toFixed(1)}`).join(" ");
-    const spotPath = pcrPts.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${ys(p.spot).toFixed(1)}`).join(" ");
-    const last = pcrPts[pcrPts.length - 1];
-    const first = pcrPts[0];
-    const bullish = last.pcr >= 1;
-    const yGrid = [lo, (lo + hi) / 2, hi].concat(lo < 1 && hi > 1 ? [1] : []);
-    const fmtT = (t: number) =>
-      new Date(t * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-    return (
-      <div className={`overflow-hidden p-3 ${isMobile ? "h-[68vh]" : "min-h-0 flex-1"}`}>
-        <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
-          <span className="font-semibold text-term-text">{symbol} · Session PCR vs Price</span>
-          <span className={`num text-lg font-bold ${bullish ? "text-up" : "text-down"}`}>
-            {nf(last.pcr, 2)}
-          </span>
-          <span className="num text-term-dim">
-            open {nf(first.pcr, 2)} · lo {nf(Math.min(...vs), 2)} · hi {nf(Math.max(...vs), 2)} · avg{" "}
-            {nf(vs.reduce((a, b) => a + b, 0) / vs.length, 2)}
-          </span>
-          <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${bullish ? "bg-up text-white" : "bg-down text-white"}`}>
-            {bullish ? "PUT-HEAVY / supportive" : "CALL-HEAVY / heavy"}
-          </span>
-          <span className="num text-sky-400">
-            ── {symbol} {nf(last.spot, 1)}
-          </span>
-        </div>
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-[calc(100%-2rem)] w-full">
-          {yGrid.map((v, i) => (
-            <g key={i}>
-              <line
-                x1={pad.l}
-                x2={W - pad.r}
-                y1={y(v)}
-                y2={y(v)}
-                stroke={Math.abs(v - 1) < 1e-6 ? "#eab308" : "currentColor"}
-                strokeOpacity={Math.abs(v - 1) < 1e-6 ? 0.9 : 0.15}
-                strokeDasharray={Math.abs(v - 1) < 1e-6 ? "4 3" : undefined}
-                className="text-term-dim"
-              />
-              <text x={4} y={y(v) + 3} fontSize={11} className="fill-term-dim">
-                {v.toFixed(2)}
-              </text>
-            </g>
-          ))}
-          {/* right axis: price */}
-          {[slo + (shi - slo) * 0.15, (slo + shi) / 2, shi - (shi - slo) * 0.15].map((v, i) => (
-            <text key={"s" + i} x={W - pad.r + 4} y={ys(v) + 3} fontSize={10} className="fill-sky-400/80">
-              {nf(v, 0)}
-            </text>
-          ))}
-          {[t0, (t0 + t1) / 2, t1].map((t, i) => (
-            <text key={i} x={x(t)} y={H - 8} fontSize={11} textAnchor="middle" className="fill-term-dim">
-              {fmtT(t)}
-            </text>
-          ))}
-          <path
-            d={`${path} L${x(t1).toFixed(1)},${(H - pad.b).toFixed(1)} L${x(t0).toFixed(1)},${(H - pad.b).toFixed(1)} Z`}
-            fill={bullish ? "rgba(34,197,94,0.12)" : "rgba(239,68,68,0.12)"}
-          />
-          <path d={spotPath} fill="none" stroke="#38bdf8" strokeWidth={1.5} strokeOpacity={0.9} />
-          <path d={path} fill="none" stroke={bullish ? "#22c55e" : "#ef4444"} strokeWidth={2} />
-          <circle cx={x(last.t)} cy={y(last.pcr)} r={3.5} fill={bullish ? "#22c55e" : "#ef4444"} />
-          <circle cx={x(last.t)} cy={ys(last.spot)} r={3} fill="#38bdf8" />
-        </svg>
-      </div>
-    );
-  })();
-
   const frameToggle = (
     <div className="seg">
       <button onClick={() => setGexFrame("daily")} className={gexFrame === "daily" ? "on" : ""}>
@@ -1749,7 +1628,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         </div>
       )}
       {layout === "ladder" && ladderEl}
-      {layout === "pcr" && pcrEl}
+      {layout === "pcr" && <PcrChart symbol={symbol} isMobile={isMobile} />}
       {layout === "gex" && gexEl}
       {layout === "dex" && dexEl}
 

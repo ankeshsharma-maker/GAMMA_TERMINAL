@@ -4,6 +4,7 @@ import type {
   BrokerStatus,
   Chain,
   FlowData,
+  PcrSeries,
   JournalStats,
   JournalTrade,
   PaperState,
@@ -90,6 +91,9 @@ export const api = {
         peVol?: number | null;
       }[];
     }>(`/api/history/${symbol}`),
+
+  pcr: (symbol: string, day: string | null, bucket: number) =>
+    j<PcrSeries>(`/api/pcr/${symbol}?bucket=${bucket}` + (day ? `&day=${encodeURIComponent(day)}` : "")),
 
   flow: (symbol: string, expiry: string | undefined, window: string) =>
     j<FlowData>(

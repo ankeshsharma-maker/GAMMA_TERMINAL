@@ -614,6 +614,23 @@ export interface Analysis {
   margin: { estimate: number; basis: string };
 }
 
+/** GET /api/pcr/{symbol}: one trading day of PCR + spot, points as arrays in `fields` order */
+export interface PcrSeries {
+  symbol: string;
+  /** the trading day shown (IST, YYYY-MM-DD); null when nothing has been recorded yet */
+  day: string | null;
+  /** days that have data, newest first (indices keep whole days; other symbols only what is in memory) */
+  days: string[];
+  bucketMin: number;
+  source: "archive" | "live" | "archive+live" | null;
+  /** the chosen day is today, so the chart keeps polling */
+  live: boolean;
+  expiries: string[];
+  fields: string[];
+  points: (number | null)[][];
+  asOf: number | null;
+}
+
 /** GET /api/volatility/{symbol} */
 export interface VolExpiry {
   expiry: string;

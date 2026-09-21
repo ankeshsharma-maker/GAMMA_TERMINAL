@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 
 from .config import DATA_DIR
@@ -75,3 +76,38 @@ def record(symbol: str, row: dict) -> None:
             _prune(day)
     except Exception as exc:  # noqa: BLE001
         log.debug("history archive write failed: %s", exc)
+
+
+# ---------------------------------------------------------------- reading it back (the PCR chart)
+_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def days(symbol: str) -> list[str]:
+    """Trading days that have an archive file for `symbol`, newest first (empty for a symbol that is not archived)."""
+    sym = (symbol or "").upper()
+    if sym not in SYMBOLS:
+        return []
+    try:
+        return sorted((f.stem for f in (_DIR / sym).glob("*.jsonl") if _DAY_RE.match(f.stem)), reverse=True)
+    except OSError:
+        return []
+
+
+def read(symbol: str, day: str) -> list[dict]:
+    """One archived day's rows, oldest first. A torn last line (a crash mid-write) or any bad line is skipped."""
+    sym = (symbol or "").upper()
+    if sym not in SYMBOLS or not _DAY_RE.match(day or ""):
+        return []
+    rows: list[dict] = []
+    try:
+        with open(_DIR / sym / f"{day}.jsonl", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(r, dict) and r.get("t"):
+                    rows.append(r)
+    except OSError:
+        return []
+    return rows

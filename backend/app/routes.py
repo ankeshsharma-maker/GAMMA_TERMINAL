@@ -6,7 +6,7 @@ from collections import OrderedDict
 
 from fastapi import APIRouter, HTTPException, Query
 
-from . import candle_sources, flow, portfolio_scenario, volatility
+from . import candle_sources, flow, pcr_series, portfolio_scenario, volatility
 from . import screener as scr
 from . import strategy as strat
 from . import strategy_chart
@@ -200,6 +200,13 @@ async def portfolio_scenario_grid(body: ScenarioIn):
 @router.get("/history/{symbol}")
 def history(symbol: str):
     return {"symbol": symbol.upper(), "points": store.get_history(symbol)}
+
+
+@router.get("/pcr/{symbol}")
+def pcr_view(symbol: str, day: str | None = Query(None), bucket: int = Query(5, ge=1, le=30)):
+    """PCR + spot for one trading day, for the OI tab's PCR chart. Indices carry whole days (and earlier days) from the
+    history archive; every other symbol carries what the live ring holds (roughly the last 2-3 hours)."""
+    return pcr_series.build(symbol, day, bucket, store.get_history(symbol))
 
 
 @router.get("/oi-change/{symbol}")
