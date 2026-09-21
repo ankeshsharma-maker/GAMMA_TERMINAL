@@ -85,6 +85,11 @@ export class DrawingPrimitive implements ISeriesPrimitive {
   private _series: ISeriesApi<any> | null = null;
   private _requestUpdate: (() => void) | null = null;
 
+  /** Maps an anchor time onto a bar time that exists on the chart. A drawing saved before the 30m-4h bars moved to
+   *  the 09:15 grid holds times that no longer match a bar, and `timeToCoordinate` returns null for those -- so the
+   *  drawing would silently vanish. Snapping (to the bar that contains the time) keeps it in place. */
+  snap: ((t: number) => number) | null = null;
+
   constructor(public drawing: LineDrawing) {
     this._paneViews = [new DrawingPaneView(this)];
   }
@@ -118,7 +123,7 @@ export class DrawingPrimitive implements ISeriesPrimitive {
     if (!this._chart || !this._series) return [];
     const ts = this._chart.timeScale();
     const toXY = (p: Point) => ({
-      x: ts.timeToCoordinate(p.time as Time),
+      x: ts.timeToCoordinate((this.snap ? this.snap(p.time) : p.time) as Time),
       y: this._series!.priceToCoordinate(p.price),
     });
     const a = toXY(this.drawing.p1);

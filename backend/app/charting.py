@@ -7,6 +7,27 @@ lightweight-charts expects.
 """
 from __future__ import annotations
 
+_IST_S = 19800                    # IST = UTC+5:30
+_OPEN_S = 9 * 3600 + 15 * 60      # the 09:15 session open, in seconds after IST midnight
+
+
+def bucket_start(t: float, interval_s: int) -> int:
+    """Start time of the candle that contains `t` (UNIX seconds).
+
+    Up to 15 minutes, plain epoch alignment already lands on the market's own grid (IST is UTC+5:30, a multiple of
+    15 minutes), so those are unchanged. From 30 minutes up to (not including) a day the bars are anchored to the
+    09:15 open, the way NSE / Kite charts draw them:
+        30m: 09:15, 09:45 ...          1h: 09:15, 10:15 ... 15:15
+        2h: 09:15, 11:15, 13:15, 15:15   4h: 09:15, 13:15
+    Epoch alignment put all of these 15 minutes off (a 09:00 / 08:30 / 07:30 / 05:30 first bar holding only 15
+    minutes of trading). Daily and longer keep epoch alignment. The frontend's `bucketStart` (lib/istTime.ts) must
+    match this exactly."""
+    t = int(t)
+    if 1800 <= interval_s < 86400:
+        open_ = (t + _IST_S) // 86400 * 86400 - _IST_S + _OPEN_S
+        return open_ + (t - open_) // interval_s * interval_s
+    return t // interval_s * interval_s
+
 
 def _candles(hist: list[dict], interval_s: int) -> list[dict]:
     buckets: dict[int, dict] = {}
@@ -16,7 +37,7 @@ def _candles(hist: list[dict], interval_s: int) -> list[dict]:
         t = h.get("t")
         if s is None or t is None:
             continue
-        b = int(t // interval_s) * interval_s
+        b = bucket_start(t, interval_s)
         c = buckets.get(b)
         if c is None:
             buckets[b] = {"time": b, "open": s, "high": s, "low": s, "close": s}
@@ -69,7 +90,7 @@ def build_chart(
         buckets: dict[int, dict] = {}
         order: list[int] = []
         for c in sorted(base_candles, key=lambda c: c["time"]):
-            b = int(c["time"] // interval_s) * interval_s
+            b = bucket_start(c["time"], interval_s)
             cur = buckets.get(b)
             if cur is None:
                 buckets[b] = {

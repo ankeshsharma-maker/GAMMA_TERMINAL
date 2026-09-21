@@ -16,6 +16,7 @@ import { SelectMenu } from "./SelectMenu";
 import { getDataSrc, getIntervalS } from "../lib/prefs";
 import { computeGammaFlip } from "../lib/gammaFlip";
 import { DrawingPrimitive, describeDrawing, type Drawing, type Point } from "../lib/chartDrawings";
+import { bucketStart } from "../lib/istTime";
 import {
   bollinger,
   ema,
@@ -130,7 +131,7 @@ function resampleCandles(cs: Candle[], sec: number): Candle[] {
   let cur: Candle | null = null;
   let key = -1;
   for (const c of cs) {
-    const k = Math.floor((c.time as number) / sec);
+    const k = bucketStart(c.time as number, sec);
     if (k !== key) {
       if (cur) out.push(cur);
       cur = { ...c };
@@ -233,6 +234,8 @@ export function Chart() {
   const reframeRef = useRef(false);
   const dataRef = useRef<ChartData | null>(null); // mirror of `data`, readable inside the fetch loop
   const degradedRef = useRef(0); // consecutive refreshes refused as degraded
+  const priceCandlesRef = useRef<Candle[]>([]); // the candles on screen, readable from drawing primitives
+  const intervalRef = useRef(0);
   const [feedLimited, setFeedLimited] = useState(false);
   const [intervalS, setIntervalS] = useState(getIntervalS); // default from Settings
   const [rangeD, setRangeD] = useState(1); // visible-history window in days (1 = intraday / 1D); 0 = all
@@ -690,6 +693,9 @@ export function Chart() {
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
+  useEffect(() => {
+    intervalRef.current = intervalS;
+  }, [intervalS]);
 
   const candles = useMemo(() => data?.candles ?? [], [data]);
 
@@ -717,6 +723,26 @@ export function Chart() {
     };
   }, [priceCandles]);
   const prevPriceRef = useRef<{ key: string; candles: Candle[] }>({ key: "", candles: [] });
+  useEffect(() => {
+    priceCandlesRef.current = priceCandles;
+  }, [priceCandles]);
+
+  /** The time of the bar that contains `t`, so a drawing anchored to a time that is no longer exactly a bar (saved
+   *  before the 30m-4h bars moved to the 09:15 grid) still lands on the right bar instead of disappearing. Times
+   *  outside the loaded candles are left alone. */
+  const snapToBar = (t: number): number => {
+    const cs = priceCandlesRef.current;
+    if (!cs.length) return t;
+    if (t < (cs[0].time as number) || t > (cs[cs.length - 1].time as number) + intervalRef.current) return t;
+    let lo = 0;
+    let hi = cs.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if ((cs[mid].time as number) <= t) lo = mid;
+      else hi = mid - 1;
+    }
+    return cs[lo].time as number;
+  };
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -1102,6 +1128,7 @@ export function Chart() {
     for (const [id, d] of wanted) {
       if (!live.has(id)) {
         const prim = new DrawingPrimitive(d as any);
+        prim.snap = snapToBar;
         cs.attachPrimitive(prim);
         live.set(id, prim);
       }
