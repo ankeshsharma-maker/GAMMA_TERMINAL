@@ -21,7 +21,8 @@ Every position is stepped through `autobot_sim.SimPosition`, which asks the live
 exit code (`autobot_exit`) what to do -- so stop, breakeven, trail, target and scale-out behave
 here exactly as they do with real money. Intraday bars are judged on their high / low as well
 as their close (a stop touched inside a bar exits at the stop, and beats a target hit in the
-same bar). Results are net of estimated brokerage / STT / exchange charges and slippage
+same bar). An intraday (non-positional) rule is always flat by the end of its trading day, at
+every timeframe: the bar that contains the square-off time (or the day's last bar) closes it. Results are net of estimated brokerage / STT / exchange charges and slippage
 (`charges.py`; switch off or tune with the `costs` argument), and the trade-count safety gates
 (weekly cap, losing-streak pause, per-rule loss cap) are replayed.
 
@@ -243,8 +244,15 @@ class _Gates:
             self.paused_days.add(day)
 
 
-def _not_simulated(rule: dict) -> list[str]:
+def _not_simulated(rule: dict, interval: int | None = None) -> list[str]:
     out = []
+    if interval and interval >= 900 and str(rule.get("holdType", "intraday")).lower() != "positional":
+        m = interval // 60
+        sq = rule.get("squareOff")
+        out.append(
+            f"intraday square-off at {sq} is applied at the close of the {m}-minute bar that contains it, so it can fire up to {m} minutes late"
+            if sq else f"intraday trades are closed at the close of each day's last {m}-minute bar"
+        )
     if rule.get("minDte") not in (None, "") or rule.get("maxDte") not in (None, ""):
         out.append("days-to-expiry gate (a backtest has no real expiry calendar)")
     if _f(rule.get("maxSpreadPct"), 0.0) > 0:
@@ -627,6 +635,13 @@ async def _backtest_intraday(
         tradable = ts >= first_ts
         ctx = _Ctx(symbol, hist[: i + 1], tf=int(rule.get("entryTf") or 0))
         last = i == len(series) - 1
+        # The trading day's last bar: the next bar is on another date. (The range's own final bar is left to
+        # "range end" -- a cut-off range says nothing about the session.)
+        eod = i + 1 < len(series) and _dstr(series[i + 1]["time"]) != dkey
+        # A bar that CONTAINS the square-off time: it starts before it and ends after it. At 15m / 30m / 1h no
+        # bar starts exactly at 15:20, so this used to never fire and an intraday trade rode into the next day
+        # (and, being still open, blocked every later entry).
+        spans_sq = bool(sq and clk < sq < datetime.fromtimestamp(ts + interval, IST).time())
 
         if open_pos:
             ei = open_pos["i"]
@@ -643,7 +658,7 @@ async def _backtest_intraday(
             sig = bool(exit_conds) and ctx.eval_conds(exit_conds, rule.get("exitLogic", "any"), trade=_trade_of(open_pos["sim"], px))
             evs = open_pos["sim"].step(
                 px, lo=min(ps), hi=max(ps), opn=ps[0], exit_signal=sig,
-                square_off=bool(not positional and sq and clk >= sq),
+                square_off=bool(not positional and ((sq and clk >= sq) or spans_sq or eod)),
             )
             if not open_pos["sim"].closed and last:
                 evs += open_pos["sim"].force_close(px, "range end")
@@ -655,6 +670,8 @@ async def _backtest_intraday(
 
         if not tradable or i <= cd_until:
             continue
+        if not positional and (eod or spans_sq):
+            continue  # entered at this bar's close it would already be past the square-off / the day's end
         if day_count.get(dkey, 0) >= max_pd:
             continue
         if neb and clk < neb:
@@ -704,7 +721,7 @@ async def _backtest_intraday(
         "interval": interval, "candles": len(in_win),
         "pricing": "synthetic", "hasChain": False,
         "synIV": round(syn_iv, 3), "synDTE": syn_dte,
-        "costs": cfg, "notSimulated": _not_simulated(rule),
+        "costs": cfg, "notSimulated": _not_simulated(rule, interval),
         "trades": trades, "equity": equity,
         "summary": summary,
     }
