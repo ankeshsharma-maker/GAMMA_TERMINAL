@@ -1314,6 +1314,7 @@ export function Chart() {
                 ["chain", "Chain"],
                 ["scrip", "OI"],
                 ["trendingoi", "Trend OI"],
+                ["flow", "Flow"],
                 ["oiprofile", "OI Profile"],
               ] as const
             ).map(([v, label]) => (

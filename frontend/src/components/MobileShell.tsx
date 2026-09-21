@@ -175,6 +175,7 @@ import { Watchlist } from "./Watchlist";
 import { ExpiryTabs } from "./ExpiryTabs";
 import { OptionChain } from "./OptionChain";
 import { ScripView } from "./ScripView";
+import { FlowView } from "./Flow";
 import { TrendingOI } from "./TrendingOI";
 import { ScannerView } from "./ScannerView";
 import { Chart } from "./Chart";
@@ -197,6 +198,7 @@ import { LogoMark } from "./Logo";
 const TOP_NAV: { v: View; label: string }[] = [
   { v: "scrip", label: "OI" },
   { v: "trendingoi", label: "Trend OI" },
+  { v: "flow", label: "Flow" },
   { v: "vol", label: "Vol" },
   { v: "scanner", label: "Screener" },
   { v: "auto", label: "Auto" },
@@ -232,6 +234,8 @@ function MobileBody({ view }: { view: View }) {
       return <ScripView />;
     case "trendingoi":
       return <TrendingOI />;
+    case "flow":
+      return <FlowView />;
     case "vol":
       return <VolatilityView />;
     case "oiprofile":

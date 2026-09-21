@@ -7,7 +7,7 @@ import time
 from datetime import datetime, time as dtime
 from zoneinfo import ZoneInfo
 
-from . import scanner, screener, upstox_data
+from . import flow, scanner, screener, upstox_data
 from .brokers.upstox import get_upstox
 from .config import (
     FO_UNIVERSE,
@@ -93,6 +93,12 @@ async def _refresh(symbol: str, expiry: str) -> None:
             payload = await client.option_chain(symbol, expiry)
         events = store.put_raw(symbol, expiry, payload)
         await hub.broadcast(symbol, expiry)
+        try:
+            # option-flow tracker: a confirmed reversal alerts like every other source
+            if _flow_step(symbol, expiry):
+                await hub.broadcast_all({"type": "alerts", "data": store.get_alerts(50)})
+        except Exception as exc:  # noqa: BLE001 - the tracker must never take the poll loop down
+            log.debug("flow tracker failed for %s %s: %s", symbol, expiry, exc)
         if events:
             for e in events:
                 log.info("UNUSUAL %s", e["message"])
@@ -123,6 +129,21 @@ async def _backfill_spot(symbols: list[str]) -> None:
         except Exception as exc:  # noqa: BLE001
             log.debug("intraday backfill skipped for %s: %s", sym, exc)
         await asyncio.sleep(0.5)
+
+
+def _flow_step(symbol: str, expiry: str) -> list[dict]:
+    """Feed the option-flow tracker the snapshot just stored; returns the alerts a confirmed reversal raised. Only the
+    nearest live expiry alerts (a far expiry's flow is not what moves the market), and one per symbol per 10 minutes."""
+    out: list[dict] = []
+    if not flow.due(symbol, expiry):
+        return out
+    for ev in flow.record(symbol, expiry, store.get_chain(symbol, expiry)):
+        a = flow.alert_for(symbol, ev)
+        if a and expiry == _nearest_live_expiry(symbol) and not store.recent_alert(a["symbol"], a["kind"], 600):
+            store.add_alert(a)
+            out.append(a)
+            log.info("ALERT %s", a["message"])
+    return out
 
 
 def _nearest_live_expiry(symbol: str) -> str | None:

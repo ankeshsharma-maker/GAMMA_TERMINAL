@@ -6,7 +6,7 @@ from collections import OrderedDict
 
 from fastapi import APIRouter, HTTPException, Query
 
-from . import candle_sources, portfolio_scenario, volatility
+from . import candle_sources, flow, portfolio_scenario, volatility
 from . import screener as scr
 from . import strategy as strat
 from . import strategy_chart
@@ -211,6 +211,23 @@ async def oi_change(
     chain = await _ensure_chain(symbol, expiry)
     return {"symbol": symbol.upper(), "expiry": chain["expiry"], "minutes": minutes,
             **store.oi_change_window(symbol, chain["expiry"], minutes)}
+
+
+@router.get("/flow/{symbol}")
+async def option_flow(
+    symbol: str,
+    expiry: str | None = Query(None),
+    window: str = Query(flow.DEFAULT_WINDOW),
+):
+    """Put / call writing and buying near the money, the direction they add up to and the reversals, for the Flow tab.
+    window: "5" | "15" | "30" (rolling minutes) or "day" (since the previous close)."""
+    chain = await _ensure_chain(symbol, expiry)
+    ex = chain["expiry"]
+    out = flow.view(symbol, ex, window, spot=chain.get("spot"))
+    if out["trackingSince"] is None:            # first look at this symbol: seed the tracker so the DAY window reads at once
+        flow.record(symbol, ex, chain)
+        out = flow.view(symbol, ex, window, spot=chain.get("spot"))
+    return out
 
 
 @router.get("/scan")

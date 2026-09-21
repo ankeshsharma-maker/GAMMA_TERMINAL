@@ -223,6 +223,83 @@ export interface ScanRow {
   reasons: string[];
 }
 
+/* ---- option flow (put / call writing, call / put buying) ---- */
+export type FlowDir = "bull" | "bear" | "mixed";
+export type FlowKey = "pw" | "cw" | "cb" | "pb" | "cs" | "ps" | "cu" | "pu";
+
+export interface FlowEvent {
+  t: number;
+  kind: "start" | "turn" | "reversal" | "fade" | "lead";
+  from: FlowDir | null;
+  to: FlowDir | null;
+  bias: number;
+  spot: number;
+  window: string;
+  /** minutes the direction that was lost had lasted (reversals) */
+  heldMin: number | null;
+  drivers: { strike: number; side: "CE" | "PE"; label: string; dOi: number }[];
+  text: string;
+  leadFrom?: FlowKey;
+  leadTo?: FlowKey;
+}
+
+export interface FlowLeg {
+  key: FlowKey | null;
+  label: string | null;
+  dOi: number;
+  dPx: number;
+  oi: number;
+  ltp: number;
+}
+
+export interface FlowPoint {
+  t: number;
+  spot: number;
+  /** what the state machine saw (0 when the market had not moved enough) */
+  bias: number | null;
+  /** the flows' own lean, before the movement gate */
+  raw: number | null;
+  sm: number | null;
+  st: FlowDir | null;
+  pw: number;
+  cw: number;
+  cb: number;
+  pb: number;
+}
+
+export interface FlowData {
+  symbol: string;
+  expiry: string;
+  window: string;
+  windows: string[];
+  spot: number | null;
+  asOf: number | null;
+  trackingSince: number | null;
+  coverageMin: number;
+  warming: boolean;
+  warmupMin: number;
+  quiet: boolean;
+  lean: number | null;
+  move: number | null;
+  needMove: number;
+  flat: boolean;
+  state: {
+    dir: FlowDir | null;
+    since: number | null;
+    heldMin: number | null;
+    bias: number | null;
+    strength: number | null;
+    leader: FlowKey | null;
+  };
+  flows: Record<FlowKey, number>;
+  bull: number;
+  bear: number;
+  top: Partial<Record<FlowKey, { strike: number; chg: number }>>;
+  series: FlowPoint[];
+  events: FlowEvent[];
+  strikes: { strike: number; atm: boolean; ce?: FlowLeg; pe?: FlowLeg }[];
+}
+
 export interface Alert {
   ts: number;
   symbol: string;
@@ -233,6 +310,7 @@ export interface Alert {
 }
 
 export type View =
+  | "flow"
   | "chain"
   | "scrip"
   | "oiprofile"

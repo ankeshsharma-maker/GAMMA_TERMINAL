@@ -3,6 +3,7 @@ import type {
   Analysis,
   BrokerStatus,
   Chain,
+  FlowData,
   JournalStats,
   JournalTrade,
   PaperState,
@@ -89,6 +90,12 @@ export const api = {
         peVol?: number | null;
       }[];
     }>(`/api/history/${symbol}`),
+
+  flow: (symbol: string, expiry: string | undefined, window: string) =>
+    j<FlowData>(
+      `/api/flow/${symbol}?window=${encodeURIComponent(window)}` +
+        (expiry ? `&expiry=${encodeURIComponent(expiry)}` : "")
+    ),
 
   oiChange: (symbol: string, expiry: string | undefined, minutes: number) =>
     j<{
