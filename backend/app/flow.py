@@ -27,6 +27,7 @@ trade-side data. Pure functions where possible; `now` is a parameter so it can b
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from collections import OrderedDict, deque
@@ -36,6 +37,7 @@ from zoneinfo import ZoneInfo
 from .history_archive import in_session
 
 IST = ZoneInfo("Asia/Kolkata")
+log = logging.getLogger("flow")
 
 WINDOWS = (5, 15, 30)                      # rolling minutes
 DAY = "day"                                # since the previous close (the chain's own change fields)
@@ -341,6 +343,7 @@ def record(symbol: str, expiry: str, chain: dict | None, now: float | None = Non
         if bk is None or bk.day != _day_of(now):
             bk = Book(key[0], expiry, now)
             _BOOKS[key] = bk
+            log.info("option-flow tracking started: %s %s", key[0], expiry)
             while len(_BOOKS) > BOOKS_MAX:
                 _BOOKS.popitem(last=False)
         else:
@@ -403,8 +406,9 @@ def alert_for(symbol: str, ev: dict) -> dict | None:
 # --------------------------------------------------------------------------- #
 # the read side                                                                #
 # --------------------------------------------------------------------------- #
-def _empty_view(symbol: str, expiry: str, window: str, spot: float | None) -> dict:
+def _empty_view(symbol: str, expiry: str, window: str, spot: float | None, closed: bool = False) -> dict:
     return {"symbol": symbol.upper(), "expiry": expiry, "window": window, "windows": list(WINDOW_KEYS), "spot": spot,
+            "closed": closed,
             "asOf": None, "trackingSince": None, "coverageMin": 0.0, "warming": window != DAY, "warmupMin": _wmin(window),
             "quiet": False, "lean": None, "move": None, "needMove": 0.0, "flat": False,
             "state": {"dir": None, "since": None, "heldMin": None, "bias": None, "strength": None, "leader": None},
@@ -422,10 +426,11 @@ def view(symbol: str, expiry: str, window: str = DEFAULT_WINDOW, spot: float | N
     window = window if window in WINDOW_KEYS else DEFAULT_WINDOW
     with _LOCK:
         bk = _BOOKS.get((symbol.upper(), expiry))
+        closed = not in_session(now)                       # the tracker only samples 09:15-15:30 IST, Mon-Fri
         if bk is None:
-            return _empty_view(symbol, expiry, window, spot)
+            return _empty_view(symbol, expiry, window, spot, closed)
         tr = bk.trackers[window]
-        out = _empty_view(symbol, expiry, window, spot)
+        out = _empty_view(symbol, expiry, window, spot, closed)
         last = tr.series[-1] if tr.series else None
         out["spot"] = last[1] if last else spot
         out["asOf"] = bk.last_sample

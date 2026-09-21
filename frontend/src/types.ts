@@ -272,6 +272,8 @@ export interface FlowData {
   expiry: string;
   window: string;
   windows: string[];
+  /** the market is shut: the tracker only samples 09:15-15:30 IST, Mon-Fri */
+  closed: boolean;
   spot: number | null;
   asOf: number | null;
   trackingSince: number | null;

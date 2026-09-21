@@ -176,6 +176,7 @@ export function FlowView() {
             </button>
           ))}
         </div>
+        {data?.closed && data.trackingSince ? <span className="rounded bg-term-bg px-1.5 py-0.5 text-term-dim">market closed — last reading</span> : null}
         {data?.trackingSince ? (
           <span className="ml-auto text-term-dim">
             tracking since {istTime(data.trackingSince)}
@@ -217,7 +218,9 @@ function StateBand({ d }: { d: FlowData }) {
   const st = d.state;
   const dir = st.dir;
   const pill =
-    d.warming && dir == null
+    d.closed && !d.trackingSince
+      ? { txt: "MARKET CLOSED", cls: "border-term-border bg-term-bg text-term-dim" }
+      : d.warming && dir == null
       ? { txt: "WARMING UP", cls: "border-term-border bg-term-bg text-term-dim" }
       : dir === "bull"
         ? { txt: "▲ BULLISH", cls: "border-emerald-500/50 bg-emerald-500/15 text-emerald-400" }
@@ -229,7 +232,9 @@ function StateBand({ d }: { d: FlowData }) {
 
   const lead = st.leader ? KINDS[st.leader] : null;
   let why: React.ReactNode = null;
-  if (d.warming) {
+  if (d.closed && !d.trackingSince) {
+    why = <>The market is closed. Option flow is tracked 09:15–15:30 IST, Monday to Friday — it starts by itself when the market opens.</>;
+  } else if (d.warming) {
     why = (
       <>
         Needs {d.warmupMin} min of data to compare against — {dur(d.coverageMin)} so far. The <b>Prev close</b> view works
