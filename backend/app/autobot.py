@@ -107,6 +107,7 @@ from . import autobot_structures as ST
 from . import charges as chg
 from . import config, db
 from .autobot_stats import summarize
+from .charting import bucket_start
 from .store import store
 
 log = logging.getLogger("autobot")
@@ -204,7 +205,7 @@ class _Ctx:
         if self.tf > 0 and rows:
             b: dict[int, dict] = {}
             for t, sp, o, hi, lo, cl in rows:
-                k = int(t // self.tf) * self.tf
+                k = bucket_start(t, self.tf)
                 cur = b.get(k)
                 if cur is None:
                     b[k] = {"t": k, "o": o, "h": hi, "l": lo, "c": cl}

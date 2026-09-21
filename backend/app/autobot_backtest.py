@@ -46,6 +46,7 @@ from .autobot import _Ctx, _entry_filter_ok, _parse_hhmm, _resolve_instrument
 from .autobot_sim import SimPosition
 from .autobot_stats import summarize
 from .brokers.upstox import get_upstox
+from .charting import bucket_start
 from .greeks import bs_price
 from .processing import IST, lot_size
 
@@ -85,7 +86,7 @@ def _resample(cands: list[dict], interval_s: int) -> list[dict]:
         return cands
     buckets: dict[int, dict] = {}
     for c in cands:
-        b = int(c["time"] // interval_s) * interval_s
+        b = bucket_start(c["time"], interval_s)
         cur = buckets.get(b)
         if cur is None:
             buckets[b] = {
