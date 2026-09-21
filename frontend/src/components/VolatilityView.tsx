@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { ago, nf, sk } from "../lib/format";
-import type { RvCone, VolatilityData, VolExpiry } from "../types";
+import type { RvCone, VolatilityData, VolExpiry, VolSummary } from "../types";
 import { LineChart, niceTicks, type LineSeries } from "./LineChart";
 import { SelectMenu } from "./SelectMenu";
 import { ClassFilter } from "./Header";
@@ -59,6 +59,44 @@ function Stat({ label, value, sub, title }: { label: string; value: string; sub?
 
 /** min..max band with the middle half boxed, the current reading marked and, if given,
  *  a second marker (the implied vol being compared with it). */
+const VERDICT_STYLE = {
+  expensive: { word: "EXPENSIVE", cls: "border-amber-500/50 bg-amber-500/15 text-amber-300" },
+  cheap: { word: "CHEAP", cls: "border-emerald-500/50 bg-emerald-500/15 text-emerald-300" },
+  fair: { word: "FAIR", cls: "border-term-border bg-term-bg text-term-text" },
+} as const;
+
+/** The whole tab in a few plain sentences: are options expensive or cheap, the range expected, what it fears. */
+function SummaryCard({ s }: { s: VolSummary }) {
+  const v = s.verdict ? VERDICT_STYLE[s.verdict] : null;
+  return (
+    <div className="mx-3 mt-3 rounded-lg border border-term-border bg-term-panel">
+      <div className="flex flex-wrap items-start gap-3 px-3 py-2.5">
+        <span
+          className={`shrink-0 rounded-md border px-2.5 py-1 text-xs font-bold tracking-wide ${v ? v.cls : "border-term-border bg-term-bg text-term-dim"}`}
+        >
+          {v ? v.word : "NO READ"}
+        </span>
+        <p className="min-w-0 flex-1 basis-64 text-sm font-semibold leading-snug text-term-text">{s.headline}</p>
+      </div>
+      {s.points.length > 0 && (
+        <ul className="grid gap-x-4 gap-y-1.5 border-t border-term-border/60 px-3 py-2 text-[11px] leading-snug md:grid-cols-2">
+          {s.points.map((p) => (
+            <li key={p.key} className={p.tone === "warn" ? "md:col-span-2" : ""}>
+              <span
+                className={`mr-1.5 text-[10px] font-semibold uppercase tracking-wide ${p.tone === "warn" ? "text-amber-400" : "text-term-dim"}`}
+              >
+                {p.title}
+              </span>
+              <span className={p.tone === "warn" ? "text-amber-200" : "text-term-text"}>{p.text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="border-t border-term-border/60 px-3 py-1.5 text-[10px] text-term-dim">{s.note}</div>
+    </div>
+  );
+}
+
 function ConeBar({ cone, iv }: { cone: RvCone; iv?: number | null }) {
   const lo = Math.min(cone.min, iv ?? cone.min);
   const hi = Math.max(cone.max, iv ?? cone.max);
@@ -260,6 +298,8 @@ export function VolatilityView() {
     <div className="flex flex-col min-[901px]:min-h-0 min-[901px]:flex-1 min-[901px]:overflow-y-auto">
       {toolbar}
 
+      {data.summary && <SummaryCard s={data.summary} />}
+
       {/* headline numbers */}
       <div className="flex flex-wrap gap-2 p-3 pb-0">
         <Stat label="Spot" value={nf(data.spot, 1)} sub={data.symbol} />
@@ -300,7 +340,7 @@ export function VolatilityView() {
         />
       </div>
 
-      {data.vrp && (
+      {data.vrp && !data.summary && (
         <div className="mx-3 mt-2 rounded border border-term-accent/40 bg-term-accent/10 px-3 py-1.5 text-xs text-term-text">
           <span className="font-semibold">Implied vs realized:</span> {data.vrp.read}. 30-day IV{" "}
           <span className="num">{pctFmt(data.vrp.iv30)}</span> against 20-day realized{" "}

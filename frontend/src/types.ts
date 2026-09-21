@@ -642,6 +642,15 @@ export interface RvCone {
   n: number;
 }
 
+/** The Vol tab in plain words (backend volatility.summarize) */
+export interface VolSummary {
+  verdict: "expensive" | "cheap" | "fair" | null;
+  lean: "sell" | "buy" | "none" | null;
+  headline: string;
+  points: { key: string; title: string; text: string; tone: "info" | "warn" }[];
+  note: string;
+}
+
 export interface VolatilityData {
   symbol: string;
   spot: number;
@@ -667,6 +676,7 @@ export interface VolatilityData {
     lastDate?: string;
   };
   vrp: { iv30: number; rv20: number; spread: number; ratio: number; read: string } | null;
+  summary?: VolSummary | null;
   skipped: string[];
 }
 

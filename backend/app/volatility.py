@@ -7,7 +7,10 @@
   constant-maturity 30-day IV interpolated in total variance;
 * implied vs realized -- close-to-close realized vol over 5/10/20/30 days, where
   today's 20-day figure sits against the past year (a "cone"), and the gap
-  between 30-day IV and 20-day realized vol.
+  between 30-day IV and 20-day realized vol;
+* summary -- all of the above in plain words: are options expensive or cheap,
+  the range the market expects, what it is afraid of, whether a near-term event
+  is priced in. Rules of thumb for reading the numbers, not a trading signal.
 
 Everything is derived from data the app already holds (the processed option
 chains and the underlying's candles); the only extra fetches are the chains of
@@ -292,6 +295,112 @@ def implied_vs_realized(term: list[dict], rv: dict) -> dict | None:
             "ratio": round(ratio, 2), "read": read}
 
 
+# ---------------------------------------------------------------- the plain-words summary
+# Rules of thumb, deliberately simple and untuned. The first two are the cut-offs implied_vs_realized() already reads with.
+EXPENSIVE_RATIO, CHEAP_RATIO = 1.5, 0.95      # 30-day IV / 20-day realized
+QUIET_PCT, BUSY_PCT = 20.0, 80.0              # percentile of today's 20-day realized within the past year
+FEAR_STRONG, FEAR_MILD, CHASE = -0.35, -0.10, 0.10   # 25-delta risk reversal as a fraction of ATM IV
+INVERTED = 1.08                               # front-expiry ATM IV vs the 30-day IV (near richer / cheaper than a month out)
+TODAY_HOT, TODAY_CALM = 1.2, 0.7              # today's realized vs the front ATM IV
+TODAY_MIN_BARS = 24                           # 5-min returns needed before "today" means anything (2 hours)
+NOTE = "How traders read these numbers - not a recommendation. Selling options can lose far more than you collect."
+
+
+def summarize(symbol: str, spot: float, term: list[dict], iv30: float | None, rv: dict, vrp: dict | None) -> dict | None:
+    """The Vol tab in a few plain sentences. Every piece is optional: a missing input drops its line instead of
+    guessing. Returns None when there is nothing at all to say."""
+    front = next((t for t in term if t.get("atmIV")), None)
+    cone = (rv.get("cone") or {}).get("20") if rv.get("available") else None
+    points: list[dict] = []
+
+    # ---- 1. expensive or cheap? (what options charge vs what the market actually did)
+    verdict = lean = None
+    if vrp:
+        ratio, iv, rv20 = vrp["ratio"], vrp["iv30"], vrp["rv20"]
+        if ratio >= EXPENSIVE_RATIO:
+            verdict, lean = "expensive", "sell"
+            headline = (f"Options look EXPENSIVE: 30-day IV is {iv:.1f}% but only {rv20:.1f}% has actually been realized "
+                        f"(x{ratio:.1f}). Traders lean toward SELLING premium, with defined risk (spreads).")
+        elif ratio < CHEAP_RATIO:
+            verdict, lean = "cheap", "buy"
+            headline = (f"Options look CHEAP: 30-day IV is {iv:.1f}%, below the {rv20:.1f}% actually realized. "
+                        f"Traders lean toward BUYING options.")
+        else:
+            verdict, lean = "fair", "none"
+            headline = (f"Options look FAIRLY priced: 30-day IV is {iv:.1f}% against {rv20:.1f}% realized. "
+                        f"Volatility gives no clear edge, so direction matters more.")
+        # a ratio can look extreme only because the last 20 days were unusually quiet / busy
+        if cone and verdict == "expensive" and cone["pct"] <= QUIET_PCT:
+            points.append({"key": "caveat", "title": "Careful", "tone": "warn",
+                           "text": f"The last 20 days were unusually quiet (quieter than {100 - cone['pct']:.0f}% of the past year), "
+                                   f"which makes IV look high by comparison. Quiet spells can end abruptly."})
+        elif cone and verdict == "cheap" and cone["pct"] >= BUSY_PCT:
+            points.append({"key": "caveat", "title": "Careful", "tone": "warn",
+                           "text": f"The last 20 days were unusually busy (busier than {cone['pct']:.0f}% of the past year), "
+                                   f"which makes IV look low by comparison. Busy spells tend to calm down."})
+    else:
+        headline = "Can't tell whether options are cheap or expensive right now: realized volatility isn't available."
+
+    # ---- 2. the range the market expects to expiry
+    if front and front.get("sigmaMovePct") and spot:
+        s = front["sigmaMovePct"]
+        d = front.get("dte") or 0
+        points.append({"key": "range", "title": "Expected range", "tone": "info",
+                       "text": f"Until {front['expiry']} ({d:.0f} day{'' if round(d) == 1 else 's'}): {spot * (1 - s / 100):,.0f} to "
+                               f"{spot * (1 + s / 100):,.0f} (±{s:.1f}%), about two times out of three. Sellers put strikes outside it; "
+                               f"buyers need a bigger move than that."})
+
+    # ---- 3. what is the market afraid of?
+    if front and front.get("rr25") is not None and front.get("atmIV"):
+        rr, rel = front["rr25"], front["rr25"] / front["atmIV"]
+        if rel <= FEAR_STRONG:
+            text = f"Puts are much pricier than calls (risk reversal {rr:+.1f}): the market is paying up for downside protection."
+        elif rel <= FEAR_MILD:
+            text = f"Puts are a little pricier than calls ({rr:+.1f}): the usual tilt, no unusual fear."
+        elif rel >= CHASE:
+            text = f"Calls are pricier than puts ({rr:+.1f}): the market is paying up for the upside."
+        else:
+            text = f"Puts and calls are priced about evenly ({rr:+.1f}): no strong lean either way."
+        points.append({"key": "fear", "title": "What it fears", "tone": "info", "text": text})
+
+    # ---- 4. is a near-term event priced in?
+    if front and iv30 and front.get("dte") and 1 <= front["dte"] <= 25:
+        r = front["atmIV"] / iv30
+        if r >= INVERTED:
+            points.append({"key": "term", "title": "Near-term event", "tone": "info",
+                           "text": f"The nearest expiry ({front['expiry']}) is priced richer than a month out ({front['atmIV']:.1f}% vs "
+                                   f"{iv30:.1f}%): the market expects something soon. IV often drops once it has passed."})
+        elif r <= 1 / INVERTED:
+            points.append({"key": "term", "title": "Near-term event", "tone": "info",
+                           "text": f"The nearest expiry is cheaper than a month out ({front['atmIV']:.1f}% vs {iv30:.1f}%): "
+                                   f"the normal, calm shape, with nothing big priced in soon."})
+
+    # ---- 5. today against what is priced
+    today = rv.get("today") if rv else None
+    if front and today and today.get("rv") and today.get("bars", 0) >= TODAY_MIN_BARS and front.get("atmIV"):
+        r = today["rv"] / front["atmIV"]
+        if r >= TODAY_HOT:
+            points.append({"key": "today", "title": "Today", "tone": "info",
+                           "text": f"Moving faster than options are pricing ({today['rv']:.1f}% vs {front['atmIV']:.1f}%): good for buyers, bad for sellers."})
+        elif r <= TODAY_CALM:
+            points.append({"key": "today", "title": "Today", "tone": "info",
+                           "text": f"Calmer than options are pricing ({today['rv']:.1f}% vs {front['atmIV']:.1f}%): good for sellers, slow for buyers."})
+
+    # ---- 6. recent movement in context of the past year
+    if cone:
+        p = cone["pct"]
+        word = "unusually busy" if p >= BUSY_PCT else "unusually quiet" if p <= QUIET_PCT else "about normal"
+        points.append({"key": "context", "title": "Recent movement", "tone": "info",
+                       "text": f"20-day realized is {cone['current']:.1f}%: {word} for the past year "
+                               f"(higher than {p:.0f}% of it; the middle half was {cone['p25']:.1f}% to {cone['p75']:.1f}%)."})
+
+    if verdict is None and not points:
+        return None
+    order = {"caveat": 0, "range": 1, "fear": 2, "term": 3, "today": 4, "context": 5}
+    points.sort(key=lambda p: order.get(p["key"], 9))
+    return {"verdict": verdict, "lean": lean, "headline": headline, "points": points, "note": NOTE}
+
+
 # ---------------------------------------------------------------- chains
 async def _chain(symbol: str, expiry: str, front: bool) -> tuple[dict | None, bool]:
     """(chain, stale). The front expiry is kept fresh by the poller; the others are
@@ -347,6 +456,13 @@ async def build(symbol: str, base_chain: dict, max_expiries: int = MAX_EXPIRIES)
 
     term = [{k: v for k, v in r.items() if k != "smile"} for r in rows]
     rv = await realized_block(symbol)
+    iv30 = _r(constant_maturity_iv(term, 30.0), 2)
+    vrp = implied_vs_realized(term, rv)
+    try:
+        summary = summarize(symbol, base_chain["spot"], term, iv30, rv, vrp)
+    except Exception as exc:  # noqa: BLE001 - the summary is a nicety, never the reason the tab fails
+        log.warning("vol summary %s failed: %s", symbol, exc)
+        summary = None
     out = {
         "symbol": symbol,
         "spot": base_chain["spot"],
@@ -354,10 +470,11 @@ async def build(symbol: str, base_chain: dict, max_expiries: int = MAX_EXPIRIES)
         "asOf": time.time(),
         "expiries": rows,
         "term": term,
-        "iv30": _r(constant_maturity_iv(term, 30.0), 2),
+        "iv30": iv30,
         "iv7": _r(constant_maturity_iv(term, 7.0), 2),
         "rv": rv,
-        "vrp": implied_vs_realized(term, rv),
+        "vrp": vrp,
+        "summary": summary,
         "skipped": skipped,
     }
     _CACHE[symbol] = (time.time(), out)
