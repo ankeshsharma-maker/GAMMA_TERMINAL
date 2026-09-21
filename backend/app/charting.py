@@ -20,9 +20,15 @@ def bucket_start(t: float, interval_s: int) -> int:
         30m: 09:15, 09:45 ...          1h: 09:15, 10:15 ... 15:15
         2h: 09:15, 11:15, 13:15, 15:15   4h: 09:15, 13:15
     Epoch alignment put all of these 15 minutes off (a 09:00 / 08:30 / 07:30 / 05:30 first bar holding only 15
-    minutes of trading). Daily and longer keep epoch alignment. The frontend's `bucketStart` (lib/istTime.ts) must
-    match this exactly."""
+    minutes of trading).
+
+    A daily candle sits on IST midnight of its trading date. Upstox stamps its daily bars 00:00 +05:30, which is
+    18:30 UTC the day BEFORE; bucketing on epoch days filed every one of them under the previous date (Monday's
+    candle drawn on Sunday, and a month's first candle counted in the month before). Weekly and longer keep epoch
+    alignment. The frontend's `bucketStart` (lib/istTime.ts) must match this exactly."""
     t = int(t)
+    if interval_s == 86400:
+        return (t + _IST_S) // 86400 * 86400 - _IST_S
     if 1800 <= interval_s < 86400:
         open_ = (t + _IST_S) // 86400 * 86400 - _IST_S + _OPEN_S
         return open_ + (t - open_) // interval_s * interval_s
