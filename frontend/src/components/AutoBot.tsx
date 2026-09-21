@@ -1,6 +1,21 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
+import {
+  MAX_GROUPS,
+  addCond,
+  addGroup,
+  grpOf,
+  members,
+  moveCond,
+  readout,
+  removeCond,
+  removeGroup,
+  setCond,
+  setGroupLogic,
+  type CondListState,
+  type Logic,
+} from "../lib/condGroups";
 import { nf, signColor } from "../lib/format";
 import type { AutoCondition, AutoRule, AutoStats, AutoStructureDef, StructurePreview } from "../types";
 import { FigureBoard, TONE_TEXT, money, tone, tradeTicks } from "./Figures";
@@ -600,12 +615,19 @@ function CondRow({
   onChange,
   onRemove,
   isExit = false,
+  groupCount = 1,
+  group = 0,
+  onGroup,
 }: {
   cond: AutoCondition;
   onChange: (c: AutoCondition) => void;
   onRemove: () => void;
   /** true in the Exit list: only there can a condition look at the open trade */
   isExit?: boolean;
+  /** with mixed AND / OR: how many groups the list has, which one this condition is in, and how to move it */
+  groupCount?: number;
+  group?: number;
+  onGroup?: (k: number) => void;
 }) {
   const def = COND_DEFS[cond.kind];
   const help = def?.help?.(cond);
@@ -694,7 +716,26 @@ function CondRow({
             );
           })}
 
-        <button onClick={onRemove} className="ml-auto text-term-dim hover:text-down" title="remove">
+        {groupCount > 1 && onGroup && (
+          <select
+            value={group}
+            onChange={(e) => onGroup(Number(e.target.value))}
+            title="Move this condition to another group"
+            aria-label="group"
+            className="ml-auto rounded border border-term-border bg-term-panel px-1 py-0.5 text-[10px] text-term-dim"
+          >
+            {Array.from({ length: groupCount }, (_, k) => (
+              <option key={k} value={k}>
+                Group {k + 1}
+              </option>
+            ))}
+          </select>
+        )}
+        <button
+          onClick={onRemove}
+          className={`${groupCount > 1 && onGroup ? "" : "ml-auto"} text-term-dim hover:text-down`}
+          title="remove"
+        >
           ✕
         </button>
       </div>
@@ -703,63 +744,155 @@ function CondRow({
   );
 }
 
+/** AND / OR switch */
+function AndOr({ value, onChange }: { value: Logic; onChange: (l: Logic) => void }) {
+  return (
+    <span className="seg text-[10px]">
+      <button onClick={() => onChange("all")} className={value === "all" ? "on" : ""}>
+        AND
+      </button>
+      <button onClick={() => onChange("any")} className={value === "any" ? "on" : ""}>
+        OR
+      </button>
+    </span>
+  );
+}
+
 function CondList({
   title,
   hint,
-  list,
+  state,
   onChange,
-  logic = "all",
-  onLogic,
+  joinDefault,
   isExit = false,
 }: {
   title: string;
   hint: string;
-  list: AutoCondition[];
-  onChange: (l: AutoCondition[]) => void;
-  logic?: "all" | "any";
-  onLogic?: (l: "all" | "any") => void;
+  state: CondListState;
+  onChange: (s: CondListState) => void;
+  /** how a second group is joined to the first the moment it is added: Entry = AND, Exit = OR */
+  joinDefault: Logic;
   isExit?: boolean;
 }) {
+  const { list, groups, logic } = state;
+  const newGroup = () => onChange(addGroup(state, mkCond("rsi"), joinDefault));
+  const canAddGroup = (groups?.length ?? 1) < MAX_GROUPS;
+  const row = (i: number) => (
+    <CondRow
+      key={i}
+      cond={list[i]}
+      isExit={isExit}
+      groupCount={groups?.length ?? 1}
+      group={groups ? grpOf(list[i], groups.length) : 0}
+      onGroup={(k) => onChange(moveCond(state, i, k))}
+      onChange={(nc) => onChange(setCond(state, i, nc))}
+      onRemove={() => onChange(removeCond(state, i))}
+    />
+  );
+
+  /* ---- one flat list: exactly what it always was, plus a way into groups ---- */
+  if (!groups) {
+    return (
+      <div className="space-y-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-1">
+          <span className="flex items-center gap-2 text-2xs font-semibold uppercase tracking-wide text-term-dim">
+            {title}
+            {list.length > 1 && <AndOr value={logic} onChange={(l) => onChange({ ...state, logic: l })} />}
+            <span className="normal-case text-[10px] text-term-dim/70">
+              · {logic === "any" ? "any one true" : "all true"} {hint}
+            </span>
+          </span>
+          <span className="flex gap-1">
+            <button
+              className="btn px-1.5 py-0.5 text-2xs"
+              onClick={newGroup}
+              title="Split the conditions into groups, each with its own AND / OR"
+            >
+              + group
+            </button>
+            <button className="btn px-1.5 py-0.5 text-2xs" onClick={() => onChange(addCond(state, 0, mkCond("rsi")))}>
+              + condition
+            </button>
+          </span>
+        </div>
+        {list.length === 0 && (
+          <div className="rounded border border-dashed border-term-border px-2 py-1.5 text-[10px] text-term-dim">none</div>
+        )}
+        {list.map((_, i) => row(i))}
+        {list.length > 1 && (
+          <p className="text-[10px] leading-snug text-term-dim/80">
+            Want some of these joined by AND and the others by OR? Press <b>+ group</b>.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  /* ---- groups: each has its own AND / OR, and one more switch joins the groups ---- */
+  const ix = members(state);
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center justify-between">
-        <span className="flex items-center gap-2 text-2xs font-semibold uppercase tracking-wide text-term-dim">
+      <div className="flex flex-wrap items-center justify-between gap-1">
+        <span className="flex flex-wrap items-center gap-2 text-2xs font-semibold uppercase tracking-wide text-term-dim">
           {title}
-          {onLogic && list.length > 1 && (
-            <span className="seg text-[10px]">
-              <button onClick={() => onLogic("all")} className={logic === "all" ? "on" : ""}>
-                AND
-              </button>
-              <button onClick={() => onLogic("any")} className={logic === "any" ? "on" : ""}>
-                OR
-              </button>
-            </span>
-          )}
+          <AndOr value={logic} onChange={(l) => onChange({ ...state, logic: l })} />
           <span className="normal-case text-[10px] text-term-dim/70">
-            · {logic === "any" ? "any one true" : "all true"} {hint}
+            · {logic === "any" ? "any one group is enough" : "every group must hold"} {hint}
           </span>
         </span>
-        <button
-          className="btn px-1.5 py-0.5 text-2xs"
-          onClick={() => onChange([...list, mkCond("rsi")])}
-        >
-          + condition
-        </button>
+        {canAddGroup && (
+          <button className="btn px-1.5 py-0.5 text-2xs" onClick={newGroup} title="Add another group of conditions">
+            + group
+          </button>
+        )}
       </div>
-      {list.length === 0 && (
-        <div className="rounded border border-dashed border-term-border px-2 py-1.5 text-[10px] text-term-dim">
-          none
+      {groups.map((g, k) => (
+        <div key={k} className="space-y-1.5">
+          <div className="space-y-1.5 rounded-md border border-term-border bg-term-panel/60 p-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-2xs font-semibold uppercase tracking-wide text-term-text">Group {k + 1}</span>
+              {ix[k].length > 1 && <AndOr value={g.logic} onChange={(l) => onChange(setGroupLogic(state, k, l))} />}
+              <span className="text-[10px] text-term-dim/80">
+                {ix[k].length > 1 ? (g.logic === "any" ? "any one of these" : "all of these") : ix[k].length === 1 ? "this condition" : "empty - ignored"}
+              </span>
+              <span className="ml-auto flex gap-1">
+                <button className="btn px-1.5 py-0.5 text-2xs" onClick={() => onChange(addCond(state, k, mkCond("rsi")))}>
+                  + condition
+                </button>
+                <button
+                  className="btn px-1.5 py-0.5 text-2xs hover:text-down"
+                  title="Remove this group and its conditions"
+                  onClick={() =>
+                    (ix[k].length < 2 || window.confirm(`Remove Group ${k + 1} and its ${ix[k].length} conditions?`)) &&
+                    onChange(removeGroup(state, k))
+                  }
+                >
+                  ✕ group
+                </button>
+              </span>
+            </div>
+            {ix[k].length === 0 && (
+              <div className="rounded border border-dashed border-term-border px-2 py-1.5 text-[10px] text-term-dim">
+                no conditions - add one, or move one here from another group
+              </div>
+            )}
+            {ix[k].map((i) => row(i))}
+          </div>
+          {k < groups.length - 1 && (
+            <div className="flex items-center gap-2 text-[10px] text-term-dim" aria-label={logic === "any" ? "or" : "and"}>
+              <span className="h-px flex-1 bg-term-border" />
+              <span className="rounded-full border border-term-border bg-term-bg px-2.5 py-px font-semibold tracking-wide text-term-text">
+                {logic === "any" ? "OR" : "AND"}
+              </span>
+              <span className="h-px flex-1 bg-term-border" />
+            </div>
+          )}
         </div>
-      )}
-      {list.map((c, i) => (
-        <CondRow
-          key={i}
-          cond={c}
-          isExit={isExit}
-          onChange={(nc) => onChange(list.map((x, j) => (j === i ? nc : x)))}
-          onRemove={() => onChange(list.filter((_, j) => j !== i))}
-        />
       ))}
+      <p className="rounded border border-term-border/60 bg-term-bg px-2 py-1 text-[11px] leading-snug text-term-dim">
+        <span className="font-semibold uppercase tracking-wide">{isExit ? "Exit when" : "Enter when"}</span>{" "}
+        <span className="text-term-text">{readout(state, describe) || "-"}</span>
+      </p>
     </div>
   );
 }
@@ -1111,19 +1244,17 @@ function RuleEditor({
         <CondList
           title="Entry"
           hint="to open"
-          list={r.entry ?? []}
-          onChange={(l) => set({ entry: l })}
-          logic={r.entryLogic ?? "all"}
-          onLogic={(l) => set({ entryLogic: l })}
+          state={{ list: r.entry ?? [], groups: r.entryGroups, logic: r.entryLogic ?? "all" }}
+          onChange={(s) => set({ entry: s.list, entryGroups: s.groups, entryLogic: s.logic })}
+          joinDefault="all"
         />
         <CondList
           title="Exit"
           hint="(SL / target / square-off always apply)"
           isExit
-          list={r.exit ?? []}
-          onChange={(l) => set({ exit: l })}
-          logic={r.exitLogic ?? "any"}
-          onLogic={(l) => set({ exitLogic: l })}
+          state={{ list: r.exit ?? [], groups: r.exitGroups, logic: r.exitLogic ?? "any" }}
+          onChange={(s) => set({ exit: s.list, exitGroups: s.groups, exitLogic: s.logic })}
+          joinDefault="any"
         />
 
         {/* premium / delta entry filter — gates the resolved option */}
@@ -1496,12 +1627,38 @@ function WhyLine({ r, masterOn }: { r: AutoRule; masterOn: boolean }) {
 
   const list = (w.list === "exit" ? r.exit : r.entry) ?? [];
   const age = Math.max(0, Math.round(Date.now() / 1000 - w.ts));
-  const chips = (w.conds ?? []).map((ok, i) => (
+  const chip = (ok: boolean, i: number) => (
     <span key={i} className={`rounded border px-1 py-px ${ok ? "border-up/50 text-up" : "border-down/50 text-down"}`}>
       {ok ? "✓" : "✗"} {list[i] ? describe(list[i]) : `#${i + 1}`}
     </span>
-  ));
-  const logic = w.logic === "any" ? "any one is enough" : "all must be true";
+  );
+  const conds = w.conds ?? [];
+  const joinWord = w.logic === "any" ? "OR" : "AND";
+  // mixed AND / OR: draw the chips inside their groups, with the join word between the groups
+  const clusters =
+    w.groups && w.grp
+      ? w.groups
+          .map((gl, k) => ({ gl, k, idx: conds.map((_, i) => i).filter((i) => (w.grp?.[i] ?? 0) === k) }))
+          .filter((c) => c.idx.length)
+      : null;
+  const chips = clusters
+    ? clusters.map((c, n) => (
+        <span key={c.k} className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+          {n > 0 && <span className="font-semibold text-term-dim">{joinWord}</span>}
+          <span className="inline-flex flex-wrap items-center gap-1 rounded-md border border-term-border px-1 py-px">
+            {c.idx.length > 1 && <span className="text-term-dim">{c.gl === "any" ? "any of" : "all of"}</span>}
+            {c.idx.map((i) => chip(conds[i], i))}
+          </span>
+        </span>
+      ))
+    : conds.map((ok, i) => chip(ok, i));
+  const logic = clusters
+    ? w.logic === "any"
+      ? "any one group is enough"
+      : "every group must hold"
+    : w.logic === "any"
+      ? "any one is enough"
+      : "all must be true";
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
       {w.phase === "blocked" ? (
@@ -1509,7 +1666,7 @@ function WhyLine({ r, masterOn }: { r: AutoRule; masterOn: boolean }) {
       ) : w.phase === "open" ? (
         <span className="text-term-text">
           In trade{w.stop != null ? ` · stop ${w.stop.toFixed(1)}` : ""}
-          {chips.length ? " · exit signals" : ""}
+          {conds.length ? " · exit signals" : ""}
         </span>
       ) : (
         <span className="text-term-text">Watching for an entry ({logic})</span>
@@ -1972,7 +2129,7 @@ export function AutoBotView() {
                 <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
                   <div>
                     <span className="uppercase tracking-wide text-term-dim">
-                      entry ({r.entryLogic === "any" ? "any" : "all"}) ·{" "}
+                      entry ({r.entryGroups?.length ? `groups: ${r.entryLogic === "any" ? "any" : "all"}` : r.entryLogic === "any" ? "any" : "all"}) ·{" "}
                       {r.entryTf
                         ? r.entryTf < 3600
                           ? `${r.entryTf / 60}m`
@@ -1980,24 +2137,19 @@ export function AutoBotView() {
                         : "tick"}{" "}
                       candles
                     </span>
-                    <ul className="mt-0.5 space-y-0.5">
-                      {(r.entry ?? []).map((c, i) => (
-                        <li key={i} className="text-term-text">
-                          • {describe(c)}
-                          {i === entryLiveIdx && r._live && (
-                            <span className="ml-1 text-term-accent">{fmtLive(r._live)}</span>
-                          )}
-                        </li>
-                      ))}
-                      {(r.entry ?? []).length === 0 && <li className="text-term-dim">—</li>}
-                    </ul>
+                    <CondBullets
+                      state={{ list: r.entry ?? [], groups: r.entryGroups, logic: r.entryLogic ?? "all" }}
+                      liveIdx={entryLiveIdx}
+                      live={r._live}
+                      empty="—"
+                    />
                   </div>
                   <div>
                     {(() => {
                       const u = r.slBasis === "pts" ? "pts" : r.slBasis === "rs" ? "₹" : "%";
                       return (
                         <span className="uppercase tracking-wide text-term-dim">
-                          exit (any) · SL {r.slPct ?? "–"}
+                          exit ({r.exitGroups?.length ? `groups: ${r.exitLogic === "all" ? "all" : "any"}` : r.exitLogic === "all" ? "all" : "any"}) · SL {r.slPct ?? "–"}
                           {u} · tgt {r.targetPct ?? "–"}
                           {u}
                           {r.trailPct
@@ -2014,19 +2166,12 @@ export function AutoBotView() {
                         </span>
                       );
                     })()}
-                    <ul className="mt-0.5 space-y-0.5">
-                      {(r.exit ?? []).map((c, i) => (
-                        <li key={i} className="text-term-text">
-                          • {describe(c)}
-                          {i === exitLiveIdx && r._live && (
-                            <span className="ml-1 text-term-accent">{fmtLive(r._live)}</span>
-                          )}
-                        </li>
-                      ))}
-                      {(r.exit ?? []).length === 0 && (
-                        <li className="text-term-dim">SL / target / square-off only</li>
-                      )}
-                    </ul>
+                    <CondBullets
+                      state={{ list: r.exit ?? [], groups: r.exitGroups, logic: r.exitLogic ?? "any" }}
+                      liveIdx={exitLiveIdx}
+                      live={r._live}
+                      empty="SL / target / square-off only"
+                    />
                   </div>
                 </div>
                 )}
@@ -2216,6 +2361,56 @@ function describe(c: AutoCondition): string {
 
 /** "Prev high 24,530 (5m) · spot 24,545 (+15.0)" -- the live prev_candle
  *  readout shown next to its condition on the rule card. */
+/** The conditions of a rule card as bullets; with mixed AND / OR each group gets its own block and the join word sits between them. */
+function CondBullets({
+  state,
+  liveIdx,
+  live,
+  empty,
+}: {
+  state: CondListState;
+  liveIdx: number;
+  live: AutoRule["_live"];
+  empty: string;
+}) {
+  const { list, groups, logic } = state;
+  const bullet = (i: number) => (
+    <li key={i} className="text-term-text">
+      • {describe(list[i])}
+      {i === liveIdx && live && <span className="ml-1 text-term-accent">{fmtLive(live)}</span>}
+    </li>
+  );
+  if (!groups) {
+    return (
+      <ul className="mt-0.5 space-y-0.5">
+        {list.map((_, i) => bullet(i))}
+        {list.length === 0 && <li className="text-term-dim">{empty}</li>}
+      </ul>
+    );
+  }
+  const blocks = members(state)
+    .map((ix, k) => ({ ix, k }))
+    .filter((b) => b.ix.length);
+  if (!blocks.length) return <ul className="mt-0.5"><li className="text-term-dim">{empty}</li></ul>;
+  return (
+    <div className="mt-0.5 space-y-0.5">
+      {blocks.map((b, n) => (
+        <div key={b.k} className="space-y-0.5">
+          {n > 0 && <div className="text-[9px] font-semibold tracking-wide text-term-dim">{logic === "any" ? "OR" : "AND"}</div>}
+          <div className="rounded border border-term-border/70 px-1.5 py-0.5">
+            {b.ix.length > 1 && (
+              <div className="text-[9px] uppercase tracking-wide text-term-dim">
+                {groups[b.k].logic === "any" ? "any of" : "all of"}
+              </div>
+            )}
+            <ul className="space-y-0.5">{b.ix.map(bullet)}</ul>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function fmtLive(live: NonNullable<AutoRule["_live"]>): string {
   const tf = live.tf
     ? live.tf < 3600

@@ -15,9 +15,12 @@ poller after ``store.check_stops``).  Every rule is a small JSON document:
       "product": "NRML",            # NRML | MIS
       "mode": "paper",              # paper | live  (live also needs global LIVE + broker)
       "holdType": "intraday",       # intraday (default) | positional
-      "entry": [ {condition}, ... ], # ALL must be true to enter
+      "entry": [ {condition}, ... ], # ALL must be true to enter (entryLogic "any" = one is enough)
       "exit":  [ {condition}, ... ], # ANY true -> exit (exitLogic "all" = every one; also market conditions,
                                      #   plus trade_stoploss / trade_target: judged on the open trade itself)
+      "entryGroups": [ {"logic": "all"}, {"logic": "any"} ],   # optional: MIXED and/or. Each condition then carries
+                                     #   "grp": <index>; a group is all-of / any-of its own conditions and entryLogic
+                                     #   becomes how the groups combine. Same for exitGroups. See autobot_groups.
       "slPct": 30,                   # stop-loss % on option premium (signed by side)
       "targetPct": 60,              # take-profit % on option premium
       "maxTradesPerDay": 3,
@@ -103,6 +106,7 @@ from datetime import datetime, time as dtime
 from zoneinfo import ZoneInfo
 
 from . import autobot_exit as X
+from . import autobot_groups as G
 from . import autobot_structures as ST
 from . import charges as chg
 from . import config, db
@@ -906,9 +910,10 @@ class _Ctx:
     def eval_any(self, conds: list, trade: dict | None = None) -> bool:
         return any(self.eval_one(c, trade) for c in (conds or []))
 
-    def eval_conds(self, conds: list, logic: str = "all", trade: dict | None = None) -> bool:
-        """AND ('all') or OR ('any') over the condition list."""
-        return self.eval_any(conds, trade) if (logic or "all") == "any" else self.eval_all(conds, trade)
+    def eval_conds(self, conds: list, logic: str = "all", trade: dict | None = None, groups: list[str] | None = None) -> bool:
+        """AND ('all') or OR ('any') over the condition list -- or, when `groups` is given, over each group first
+        and then over the groups (see autobot_groups)."""
+        return G.evaluate(conds, groups, (logic or "all"), lambda i: self.eval_one(conds[i], trade))
 
 
 # --------------------------------------------------------------------------- #
@@ -1268,6 +1273,7 @@ class AutoBot:
         rule.setdefault("maxTradesPerDay", 3)
         rule.setdefault("cooldownMin", 5)
         rule.setdefault("squareOff", "15:20")
+        G.normalize(rule)
         if ST.is_structure(rule):
             rule["offset"], rule["width"] = ST.clamp_params(rule["structure"], rule.get("offset"), rule.get("width"))
         else:
@@ -1508,6 +1514,7 @@ class AutoBot:
         sq = None if positional else _parse_hhmm(rule.get("squareOff"))
         reason = None
         exit_res: list[bool] = []
+        why_grp: dict = {}
         if pos.get("forceExit"):
             reason = "unwind (a leg failed to close)" if pos.get("unwind") else "kill"
         elif X.stop_hit(ev):
@@ -1524,11 +1531,12 @@ class AutoBot:
             # fixed SL / target above were just judged on
             trade = {"buy": buy, "base": pos["entryPx"] or 1.0, "ltp": ltp, "qty": qty}
             exit_res = [cx.eval_one(c, trade=trade) for c in conds]
-            logic = rule.get("exitLogic", "any")
-            if bool(conds) and (all(exit_res) if logic == "all" else any(exit_res)):
+            exit_logic, exit_groups = G.spec(rule, "exit")
+            why_grp = G.why_fields(conds, exit_groups)
+            if G.evaluate(conds, exit_groups, exit_logic, exit_res.__getitem__):
                 reason = "exit signal"
-        self._set_why(rid, {"phase": "open", "list": "exit", "logic": rule.get("exitLogic", "any"),
-                            "conds": exit_res, "reason": None, "stop": new_stop})
+        self._set_why(rid, {"phase": "open", "list": "exit", "logic": G.spec(rule, "exit")[0],
+                            "conds": exit_res, "reason": None, "stop": new_stop, **why_grp})
         if not reason:
             return changed
 
@@ -1636,14 +1644,14 @@ class AutoBot:
 
         # ---- the signal ---------------------------------------------------- #
         conds = rule.get("entry", [])
-        logic = rule.get("entryLogic", "all")
+        logic, groups = G.spec(rule, "entry")
         cx = self._cx(ctx_cache, sym, rule)
         st["live"] = cx.prev_candle_live(conds)
         if cx.n < 5:
             return blocked("warming up: not enough price history yet")
         results = [cx.eval_one(c) for c in conds]
-        fired = bool(conds) and (any(results) if logic == "any" else all(results))
-        watching = {"list": "entry", "logic": logic, "conds": results}
+        fired = G.evaluate(conds, groups, logic, results.__getitem__)
+        watching = {"list": "entry", "logic": logic, "conds": results, **G.why_fields(conds, groups)}
         if not fired:
             self._set_why(rid, {"phase": "watching", "reason": None, **watching})
             return False

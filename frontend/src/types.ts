@@ -249,7 +249,13 @@ export type View =
   | "vol"
   | "journal";
 
-export type AutoCondition = Record<string, unknown> & { kind: string };
+/** `grp` = which condition group it sits in, when the list has been split into groups (see lib/condGroups.ts) */
+export type AutoCondition = Record<string, unknown> & { kind: string; grp?: number };
+
+/** One group of conditions: they hold when ALL of them do, or when ANY one does */
+export interface LogicGroup {
+  logic: "all" | "any";
+}
 
 export interface AutoRule {
   id: string;
@@ -268,8 +274,12 @@ export interface AutoRule {
   holdType?: "intraday" | "positional";
   entry: AutoCondition[];
   exit: AutoCondition[];
+  /** no groups: whether ALL or ANY of the whole list must hold. With groups: how the groups combine. */
   entryLogic?: "all" | "any";
   exitLogic?: "all" | "any";
+  /** mixed AND / OR: split the Entry (Exit) list into groups, each with its own AND / OR; absent = one flat list */
+  entryGroups?: LogicGroup[];
+  exitGroups?: LogicGroup[];
   entryFilter?: {
     premOp?: "" | "gt" | "lt" | "near";
     premVal?: number;
@@ -356,6 +366,9 @@ export interface AutoRule {
     list?: "entry" | "exit";
     logic?: "all" | "any";
     conds?: boolean[];
+    /** with mixed AND / OR: each group's logic, and the group each chip in `conds` belongs to */
+    groups?: ("all" | "any")[];
+    grp?: number[];
     stop?: number | null;
     ts: number;
   } | null;

@@ -39,6 +39,7 @@ import math
 from datetime import datetime
 
 from . import autobot_exit as X
+from . import autobot_groups as G
 from . import autobot_structures as ST
 from . import charges as chg
 from . import nse_bhavcopy, upstox_data
@@ -443,6 +444,8 @@ async def backtest_rule(
     cooldown_d = 1 if _f(rule.get("cooldownMin") or 0) > 0 else 0
     entry_conds = rule.get("entry", [])
     exit_conds = rule.get("exit", [])
+    entry_logic, entry_groups = G.spec(rule, "entry")
+    exit_logic, exit_groups = G.spec(rule, "exit")
 
     trades: list[dict] = []
     open_pos = None
@@ -468,7 +471,7 @@ async def backtest_rule(
         if open_pos:
             ei = open_pos["i"]
             px, leg_px = _pos_px(open_pos, lambda k, ot: _premium(k, ot, d, by_date[d], i - ei))
-            sig = bool(exit_conds) and ctx.eval_conds(exit_conds, rule.get("exitLogic", "any"), trade=_trade_of(open_pos["sim"], px))
+            sig = bool(exit_conds) and ctx.eval_conds(exit_conds, exit_logic, trade=_trade_of(open_pos["sim"], px), groups=exit_groups)
             evs = open_pos["sim"].step(px, exit_signal=sig)
             if not open_pos["sim"].closed and last:
                 evs += open_pos["sim"].force_close(px, "range end")
@@ -484,7 +487,7 @@ async def backtest_rule(
             continue
         if not gates.allows(d):
             continue
-        if not ctx.eval_conds(entry_conds, rule.get("entryLogic", "all")):
+        if not ctx.eval_conds(entry_conds, entry_logic, groups=entry_groups):
             continue
         base = round(by_date[d] / step) * step
         legs, entry_px_legs = None, None
@@ -606,6 +609,8 @@ async def _backtest_intraday(
     neb = _parse_hhmm(rule.get("noEntryBefore"))
     nea = _parse_hhmm(rule.get("noEntryAfter"))
     entry_conds, exit_conds = rule.get("entry", []), rule.get("exit", [])
+    entry_logic, entry_groups = G.spec(rule, "entry")
+    exit_logic, exit_groups = G.spec(rule, "exit")
 
     trades: list[dict] = []
     open_pos = None
@@ -656,7 +661,7 @@ async def _backtest_intraday(
             ps = [value_at(c["open"])[0], value_at(c["low"])[0], value_at(c["high"])[0], value_at(spot)[0]]
             px = ps[3]
             leg_px = value_at(spot)[1]
-            sig = bool(exit_conds) and ctx.eval_conds(exit_conds, rule.get("exitLogic", "any"), trade=_trade_of(open_pos["sim"], px))
+            sig = bool(exit_conds) and ctx.eval_conds(exit_conds, exit_logic, trade=_trade_of(open_pos["sim"], px), groups=exit_groups)
             evs = open_pos["sim"].step(
                 px, lo=min(ps), hi=max(ps), opn=ps[0], exit_signal=sig,
                 square_off=bool(not positional and ((sq and clk >= sq) or spans_sq or eod)),
@@ -683,7 +688,7 @@ async def _backtest_intraday(
             continue
         if not gates.allows(dkey):
             continue
-        if not ctx.eval_conds(entry_conds, rule.get("entryLogic", "all")):
+        if not ctx.eval_conds(entry_conds, entry_logic, groups=entry_groups):
             continue
         base = round(spot / step) * step
         legs, entry_px_legs = None, None
