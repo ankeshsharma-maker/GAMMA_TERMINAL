@@ -91,6 +91,15 @@ def _f(v) -> float:
         return 0.0
 
 
+def _spot_of(ch: dict) -> float:
+    """The underlying's price for a chain: the live tick when there is one, else the chain's own snapshot.
+    NB chain["liveSpot"] is the store's tick RECORD ({ltp, chgPct, ts}), not a number -- using it as one
+    crashed every scenario request (HTTP 500) whenever a live tick existed, i.e. throughout market hours."""
+    live = ch.get("liveSpot")
+    ltp = live.get("ltp") if isinstance(live, dict) else live
+    return _f(ltp) or _f(ch["spot"])
+
+
 # ---------------------------------------------------------------- pricing
 def _price(kind: str, s: float, k: float, t_years: float, sigma: float) -> float:
     if t_years <= 0:
@@ -166,7 +175,7 @@ async def build(
                 unpriced += 1
                 legs_out.append(row)
                 continue
-            spot = ch.get("liveSpot") or ch["spot"]
+            spot = _spot_of(ch)
             u["spot"] = spot
             u["atmIV"] = ch.get("atmIV")
             atm_iv = (ch.get("atmIV") or 15.0) / 100.0
