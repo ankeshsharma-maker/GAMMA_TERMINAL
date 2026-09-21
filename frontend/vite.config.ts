@@ -34,7 +34,7 @@ export default defineConfig({
         // precache only the built app shell; live data (/api, /ws) is never cached
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/api/, /^\/ws/],
+        navigateFallbackDenylist: [/^\/api/, /^\/ws/, /^\/GammaTerminal\.apk/],
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         // adds push / notificationclick listeners to the generated SW

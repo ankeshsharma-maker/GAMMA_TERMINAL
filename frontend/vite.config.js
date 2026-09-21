@@ -33,7 +33,7 @@ export default defineConfig({
                 // precache only the built app shell; live data (/api, /ws) is never cached
                 globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
                 navigateFallback: "/index.html",
-                navigateFallbackDenylist: [/^\/api/, /^\/ws/],
+                navigateFallbackDenylist: [/^\/api/, /^\/ws/, /^\/GammaTerminal\.apk/],
                 cleanupOutdatedCaches: true,
                 clientsClaim: true,
                 // adds push / notificationclick listeners to the generated SW
@@ -45,8 +45,8 @@ export default defineConfig({
     server: {
         port: 5173,
         proxy: {
-            "/api": { target: "http://localhost:8000", changeOrigin: true },
-            "/ws": { target: "ws://localhost:8000", ws: true },
+            "/api": { target: "http://localhost:8001", changeOrigin: true },
+            "/ws": { target: "ws://localhost:8001", ws: true },
         },
     },
 });
