@@ -176,6 +176,11 @@ const MTF_INDS: [string, string][] = [
 // MTF indicators whose values sit off the price scale — drawn on a hidden axis
 const MTF_OSC = new Set(["rsi", "macd", "macdsig"]);
 
+/** How many days of history a fresh intraday timeframe opens on. One day is plenty of bars from 1m to 15m
+ *  (375 down to 25) but only 13 at 30m and 7 at 1h -- a handful of giant candles with two axis labels -- so those
+ *  open on a week / a fortnight (about 65 / 75 bars). The range menu still overrides it until the timeframe changes. */
+const defaultRangeDays = (intervalS: number): number => (intervalS >= 3600 ? 15 : intervalS >= 1800 ? 7 : 1);
+
 export function Chart() {
   const symbol = useStore((s) => s.symbol);
   const chain = useStore((s) => s.chain);
@@ -238,7 +243,7 @@ export function Chart() {
   const intervalRef = useRef(0);
   const [feedLimited, setFeedLimited] = useState(false);
   const [intervalS, setIntervalS] = useState(getIntervalS); // default from Settings
-  const [rangeD, setRangeD] = useState(1); // visible-history window in days (1 = intraday / 1D); 0 = all
+  const [rangeD, setRangeD] = useState(() => defaultRangeDays(intervalS)); // visible-history window in days; 0 = all
   const [split, setSplit] = useState(false);
   const [cmpInstrument, setCmpInstrument] = useState<string>("STRADDLE");
   const [ctype, setCtype] = useState<"candle" | "heikin" | "line" | "area" | "bar">("candle");
@@ -1019,9 +1024,9 @@ export function Chart() {
   // mirror case: coming back down to an intraday timeframe while the window
   // is still sized for daily browsing (left over from the case above, or a
   // manual pick) would try to cram months of intraday bars on screen --
-  // snap back to the 1-day default.
+  // snap back to that timeframe's default window.
   useEffect(() => {
-    if (intervalS < 86400 && rangeD !== 1) setRangeD(1);
+    if (intervalS < 86400) setRangeD(defaultRangeDays(intervalS));
   }, [intervalS]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -1460,6 +1465,8 @@ export function Chart() {
           options={
             [
               ["1D", 1],
+              ["7D", 7],
+              ["15D", 15],
               ["1M", 30],
               ["3M", 90],
               ["6M", 180],
