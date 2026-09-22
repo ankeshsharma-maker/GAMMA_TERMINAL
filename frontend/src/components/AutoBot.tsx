@@ -260,6 +260,16 @@ const COND_DEFS: Record<
       { key: "value", label: "score", type: "num", def: 60 },
     ],
   },
+  iv_rank: {
+    label: "IV rank",
+    group: "smart",
+    fields: [
+      { key: "op", label: "op", type: "sel", def: ">", opts: ["<", ">", "cross_up", "cross_down"] },
+      { key: "value", label: "rank", type: "num", def: 70 },
+    ],
+    help: () =>
+      "Session-only rank (0-100) of current ATM IV against today's own range -- same figure as the Screener's IV Rank column / \"High IV\" preset. Needs the symbol to be in the background scanner's universe (watchlist + defaults + FO majors); an obscure symbol may never get a value.",
+  },
   gamma_flip: {
     label: "Gamma flip (spot vs zero-γ)",
     group: "smart",
@@ -2351,6 +2361,8 @@ function describe(c: AutoCondition): string {
       return `vega ${g("leg")} ${g("op")} ${g("value")}`;
     case "blast_score":
       return `Gamma Blast score ${g("op")} ${g("value")}`;
+    case "iv_rank":
+      return `IV rank ${g("op")} ${g("value")}`;
     case "prev_candle": {
       const raw = g("lookback");
       const n = Number.isFinite(Number(raw)) ? Number(raw) : 1;

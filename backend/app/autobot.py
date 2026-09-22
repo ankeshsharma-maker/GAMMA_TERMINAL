@@ -112,6 +112,7 @@ from . import charges as chg
 from . import config, db
 from .autobot_stats import summarize
 from .charting import bucket_start
+from .screener import iv_rank as _iv_rank_calc
 from .store import store
 
 log = logging.getLogger("autobot")
@@ -256,6 +257,20 @@ class _Ctx:
         self.blast = [
             float(h["score"]) for h in store.get_scan_history(symbol) if h.get("score") is not None
         ]
+        # IV rank -- same screener.iv_rank() the Screener tab's "High IV" preset
+        # uses, sampled independently of `hist` from store.iv_history (only
+        # populated for symbols the universe scanner walks, poller.py's
+        # run_universe_scan -- same coverage gate blast_score above has).
+        # Session-only rank (resets each run), not a true 1-year rank -- see
+        # screener.py's module docstring. Rolled into a per-sample series (each
+        # point's rank against the history up to and including it) so cross_up/
+        # cross_down can reuse the plain-series _greek_level below.
+        self._iv_series = list(store.iv_history.get(symbol, []))
+        self.iv_rank_series: list[float] = []
+        for i in range(len(self._iv_series)):
+            r, _ = _iv_rank_calc(self._iv_series[: i + 1], self._iv_series[i])
+            if r is not None:
+                self.iv_rank_series.append(r)
 
     # -- indicator conditions ------------------------------------------------ #
     def _rsi(self, c) -> bool:
@@ -871,6 +886,9 @@ class _Ctx:
     def _blast_score(self, c) -> bool:
         return self._greek_level(c, self.blast)
 
+    def _iv_rank(self, c) -> bool:
+        return self._greek_level(c, self.iv_rank_series)
+
     _DISPATCH = {
         "rsi": _rsi, "ema_cross": _ema_cross, "price_vs_ema": _price_vs_ema,
         "macd": _macd, "spot_move_pct": _spot_move_pct, "pcr": _pcr,
@@ -882,6 +900,7 @@ class _Ctx:
         "oi_state": _oi_state, "supertrend": _supertrend, "pivot": _pivot,
         "delta_change": _delta_change, "gamma_change": _gamma_change, "gamma_vs_delta": _gamma_vs_delta,
         "theta_level": _theta_level, "vega_level": _vega_level, "blast_score": _blast_score,
+        "iv_rank": _iv_rank,
         "candle": _candle, "atr": _atr, "prev_candle": _prev_candle, "gap": _gap,
         "time_of_day": _time_of_day, "day_of_week": _day_of_week,
     }
