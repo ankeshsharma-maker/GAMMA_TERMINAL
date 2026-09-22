@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
-import { api, type BrokerBracket } from "../lib/api";
+import { api } from "../lib/api";
 import { nf, signColor, hhmm, sk } from "../lib/format";
 import { StopEditor } from "./StopEditor";
 import { useLiveMtm } from "../lib/useLiveMtm";
@@ -8,6 +8,7 @@ import { useIsMobile } from "../lib/useIsMobile";
 import { LegBracketBadge, findBracket, type LegRule } from "./LegBracketBadge";
 import { ScenarioGrid } from "./ScenarioGrid";
 import { PortfolioSummary } from "./PortfolioSummary";
+import { AutoSquareOff } from "./AutoSquareOff";
 
 type Tab = "broker" | "scenario" | "holdings" | "orders";
 const TABS: [Tab, string][] = [
@@ -51,14 +52,6 @@ function BrokerTab() {
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const loadRef = useRef<() => void>(() => {});
 
-  // portfolio-level auto square-off bracket
-  const [bracket, setBracket] = useState<BrokerBracket | null>(null);
-  const [slAmt, setSlAmt] = useState("");
-  const [tgtAmt, setTgtAmt] = useState("");
-  const [trailAmt, setTrailAmt] = useState("");
-  const [floorAmt, setFloorAmt] = useState("");
-  const [bBasis, setBBasis] = useState<"today" | "mtm">("today");
-
   // per-position target/SL brackets (leg rules attached to an already-open position)
   const [legRules, setLegRules] = useState<LegRule[]>([]);
   const loadLegRules = () =>
@@ -72,7 +65,6 @@ function BrokerTab() {
         (d) => alive && (setRows(d.positions || []), setErr(null)),
         (e) => alive && setErr(String(e.message || e))
       );
-      api.brokerBracket().then((b) => alive && setBracket(b), () => {});
       loadLegRules();
     };
     loadRef.current = load;
@@ -172,49 +164,6 @@ function BrokerTab() {
     setSelected(new Set());
   };
 
-  const armBracket = async () => {
-    const sl = parseFloat(slAmt) || 0;
-    const tgt = parseFloat(tgtAmt) || 0;
-    const trail = parseFloat(trailAmt) || 0;
-    const floor = parseFloat(floorAmt) || 0;
-    if (sl <= 0 && tgt <= 0 && trail <= 0 && floor <= 0) return;
-    const lbl = bBasis === "today" ? "today's P&L" : "open MTM";
-    const parts = [
-      sl > 0 ? `≤ −₹${nf(sl, 0)}` : "",
-      trail > 0 ? `₹${nf(trail, 0)} back off its peak` : "",
-      floor > 0 ? `back down to ₹${nf(floor, 0)} (once it's gone above that)` : "",
-      tgt > 0 ? `≥ +₹${nf(tgt, 0)}` : "",
-    ].filter(Boolean);
-    const cond = parts.join(" or ");
-    if (
-      !window.confirm(
-        `Auto square-off: flatten ALL broker positions with MARKET orders when ${lbl} is ${cond}.\nRuns on the server. Arm it now?`
-      )
-    )
-      return;
-    try {
-      setBracket(
-        await api.brokerBracketSet({
-          enabled: true,
-          slAmount: sl,
-          targetAmount: tgt,
-          trailAmount: trail,
-          floorAmount: floor,
-          basis: bBasis,
-        })
-      );
-    } catch (e: any) {
-      alert(String(e?.message || e));
-    }
-  };
-  const disarmBracket = async () => {
-    try {
-      setBracket(await api.brokerBracketClear());
-    } catch (e: any) {
-      alert(String(e?.message || e));
-    }
-  };
-
   return (
     <div className="flex min-h-0 flex-1 flex-col p-3">
       {/* summary header */}
@@ -229,91 +178,6 @@ function BrokerTab() {
             <div className={`num text-base font-bold ${signColor(val)}`}>₹{nf(val, 0)}</div>
           </div>
         ))}
-      </div>
-
-      {/* portfolio auto square-off */}
-      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded border border-term-border bg-term-bg/40 px-2 py-1.5 text-2xs">
-        <span className="font-semibold uppercase tracking-wide text-term-dim">⛨ Auto square-off</span>
-        <div className="seg">
-          {(["today", "mtm"] as const).map((b) => (
-            <button key={b} onClick={() => setBBasis(b)} className={bBasis === b ? "on" : ""}>
-              {b === "today" ? "Today P&L" : "MTM"}
-            </button>
-          ))}
-        </div>
-        <label className="flex items-center gap-1 text-term-dim">
-          SL ₹
-          <input
-            value={slAmt}
-            onChange={(e) => setSlAmt(e.target.value.replace(/[^\d.]/g, ""))}
-            placeholder="0"
-            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-down"
-          />
-        </label>
-        <label className="flex items-center gap-1 text-term-dim">
-          Target ₹
-          <input
-            value={tgtAmt}
-            onChange={(e) => setTgtAmt(e.target.value.replace(/[^\d.]/g, ""))}
-            placeholder="0"
-            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-up"
-          />
-        </label>
-        <label className="flex items-center gap-1 text-term-dim">
-          Trail ₹
-          <input
-            value={trailAmt}
-            onChange={(e) => setTrailAmt(e.target.value.replace(/[^\d.]/g, ""))}
-            placeholder="0"
-            title="Stop rises with the peak P&L and fires this many rupees off it"
-            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent"
-          />
-        </label>
-        <label className="flex items-center gap-1 text-term-dim">
-          Floor ₹
-          <input
-            value={floorAmt}
-            onChange={(e) => setFloorAmt(e.target.value.replace(/[^\d.]/g, ""))}
-            placeholder="0"
-            title="Fixed profit floor — once P&L first rises above this, exits if it ever drops back down to it, no matter how high it peaked"
-            className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent"
-          />
-        </label>
-        {bracket?.enabled ? (
-          <button onClick={disarmBracket} className="btn ml-auto font-semibold text-amber-400">
-            Disarm
-          </button>
-        ) : (
-          <button
-            onClick={armBracket}
-            disabled={!parseFloat(slAmt) && !parseFloat(tgtAmt) && !parseFloat(trailAmt) && !parseFloat(floorAmt)}
-            className="btn btn-sell ml-auto font-semibold disabled:opacity-40"
-          >
-            Arm
-          </button>
-        )}
-        <span className="w-full text-[10px] text-term-dim">
-          {bracket?.enabled
-            ? `ARMED — flattens ALL when ${
-                bracket.basis === "today" ? "today's P&L" : "MTM"
-              } ${[
-                bracket.slAmount > 0 ? `≤ −₹${nf(bracket.slAmount, 0)}` : "",
-                bracket.trailAmount > 0 ? `₹${nf(bracket.trailAmount, 0)} back off its peak` : "",
-                bracket.targetAmount > 0 ? `≥ +₹${nf(bracket.targetAmount, 0)}` : "",
-                bracket.floorAmount > 0 ? `back to ₹${nf(bracket.floorAmount, 0)} (once above it)` : "",
-              ]
-                .filter(Boolean)
-                .join(" or ")}${
-                (bracket.trailAmount > 0 || bracket.floorAmount > 0) && bracket.peakPnl != null
-                  ? ` · peak ₹${nf(bracket.peakPnl, 0)}`
-                  : ""
-              }${
-                bracket.lastPnl != null ? ` · now ₹${nf(bracket.lastPnl, 0)}` : ""
-              }`
-            : bracket?.triggeredAt
-            ? `⚠ ${bracket.lastReason}`
-            : "server-side: MARKET-flattens every position when the P&L threshold is crossed (works with the app closed)."}
-        </span>
       </div>
 
       <div className="mb-2 flex items-center gap-2 text-2xs">
@@ -776,6 +640,7 @@ export function OrdersTab() {
 
 export function PositionsView({ initialTab }: { initialTab?: Tab } = {}) {
   const isMobile = useIsMobile();
+  const broker = useStore((s) => s.broker);
   // the mobile app has a dedicated Orders bottom-tab, so drop the sub-tab here
   const tabs = isMobile ? TABS.filter(([k]) => k !== "orders") : TABS;
   const [tab, setTab] = useState<Tab>(
@@ -797,6 +662,7 @@ export function PositionsView({ initialTab }: { initialTab?: Tab } = {}) {
             {label}
           </button>
         ))}
+        {tab === "broker" && broker?.authed && <AutoSquareOff />}
       </div>
       <PortfolioSummary />
       {tab === "broker" && <BrokerTab />}
