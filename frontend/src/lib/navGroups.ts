@@ -27,6 +27,7 @@ export const NAV_GROUPS: NavGroup[] = [
       ["scrip", "OI"],
       ["trendingoi", "Trend OI"],
       ["flow", "Flow"],
+      ["orderflow", "OrderFlow"],
       ["vol", "Vol"],
     ],
   },
