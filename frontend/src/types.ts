@@ -313,6 +313,7 @@ export interface Alert {
 
 export type View =
   | "flow"
+  | "orderflow"
   | "chain"
   | "scrip"
   | "oiprofile"

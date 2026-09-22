@@ -176,6 +176,7 @@ import { ExpiryTabs } from "./ExpiryTabs";
 import { OptionChain } from "./OptionChain";
 import { ScripView } from "./ScripView";
 import { FlowView } from "./Flow";
+import { OrderFlowView } from "./OrderFlow";
 import { TrendingOI } from "./TrendingOI";
 import { ScannerView } from "./ScannerView";
 import { Chart } from "./Chart";
@@ -199,6 +200,7 @@ const TOP_NAV: { v: View; label: string }[] = [
   { v: "scrip", label: "OI" },
   { v: "trendingoi", label: "Trend OI" },
   { v: "flow", label: "Flow" },
+  { v: "orderflow", label: "OrderFlow" },
   { v: "vol", label: "Vol" },
   { v: "scanner", label: "Screener" },
   { v: "auto", label: "Auto" },
@@ -236,6 +238,8 @@ function MobileBody({ view }: { view: View }) {
       return <TrendingOI />;
     case "flow":
       return <FlowView />;
+    case "orderflow":
+      return <OrderFlowView />;
     case "vol":
       return <VolatilityView />;
     case "oiprofile":
