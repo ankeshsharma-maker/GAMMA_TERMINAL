@@ -446,6 +446,14 @@ export const api = {
   portfolioGreeks: () =>
     j<{
       paper: { delta: number; gamma: number; theta: number; vega: number; positions: number };
+      paperBySymbol: {
+        symbol: string;
+        delta: number;
+        gamma: number;
+        theta: number;
+        vega: number;
+        positions: number;
+      }[];
       live: { delta: number; gamma: number; theta: number; vega: number; positions: number };
       liveBySymbol: {
         symbol: string;
@@ -456,6 +464,16 @@ export const api = {
         positions: number;
       }[];
     }>("/api/portfolio-greeks"),
+
+  /** Rough pre-trade margin check (not real SPAN) for a prospective live
+   *  order -- OrderConfirm.tsx compares this against actual available
+   *  margin so a shortfall is caught before submitting, not from a broker
+   *  rejection after the fact. */
+  marginEstimate: (legs: { side: "BUY" | "SELL"; strike: number; lots: number; price: number }[], lotSize: number) =>
+    j<{ estimated: number }>("/api/margin-estimate", {
+      method: "POST",
+      body: JSON.stringify({ legs, lotSize }),
+    }),
 
   alertDeliveryGet: () =>
     j<{

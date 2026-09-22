@@ -11,7 +11,7 @@ from . import screener as scr
 from . import strategy as strat
 from . import strategy_chart
 from .charting import build_chart
-from .config import DEFAULT_SYMBOLS, FO_UNIVERSE, INDEX_SYMBOLS
+from .config import DEFAULT_SYMBOLS, FO_UNIVERSE, INDEX_SYMBOLS, SHORT_OPTION_MARGIN_PCT
 from .models import (
     AnalyzeIn,
     FromBrokerIn,
@@ -987,16 +987,19 @@ async def portfolio_greeks():
         for k in ("delta", "gamma", "theta", "vega"):
             bucket[k] += _fnum(leg.get(k)) * qty
 
-    def _accumulate(bucket: dict, symbol: str, expiry: str, strike: float, ot: str, qty: float) -> None:
-        if not qty:
-            return
-        leg = _chain_leg(store, symbol, expiry, strike, ot)
-        if leg:
-            _add(bucket, leg, qty)
-
     paper = _empty()
+    paper_by_symbol: dict[str, dict] = {}
     for p in store.paper["positions"]:
-        _accumulate(paper, p["symbol"], p["expiry"], p["strike"], p["optionType"], _fnum(p.get("qty")))
+        qty = _fnum(p.get("qty"))
+        if not qty:
+            continue
+        leg = _chain_leg(store, p["symbol"], p["expiry"], p["strike"], p["optionType"])
+        if not leg:
+            continue
+        # one chain lookup feeds both the portfolio total and that symbol's
+        # own subtotal, same as the live loop below
+        _add(paper, leg, qty)
+        _add(paper_by_symbol.setdefault(p["symbol"], _empty()), leg, qty)
 
     live = _empty()
     live_by_symbol: dict[str, dict] = {}
@@ -1024,16 +1027,42 @@ async def portfolio_greeks():
             _add(live, leg, netqty)
             _add(live_by_symbol.setdefault(parsed["symbol"], _empty()), leg, netqty)
 
-    for bucket in (paper, live, *live_by_symbol.values()):
+    for bucket in (paper, live, *paper_by_symbol.values(), *live_by_symbol.values()):
         for k in ("delta", "gamma", "theta", "vega"):
             bucket[k] = round(bucket[k], 4)
-    live_symbols = [
-        {"symbol": sym, **bucket}
-        for sym, bucket in sorted(
-            live_by_symbol.items(), key=lambda kv: -abs(kv[1]["delta"])
-        )
+    by_symbol = lambda d: [  # noqa: E731
+        {"symbol": sym, **bucket} for sym, bucket in sorted(d.items(), key=lambda kv: -abs(kv[1]["delta"]))
     ]
-    return {"paper": paper, "live": live, "liveBySymbol": live_symbols}
+    return {
+        "paper": paper,
+        "paperBySymbol": by_symbol(paper_by_symbol),
+        "live": live,
+        "liveBySymbol": by_symbol(live_by_symbol),
+    }
+
+
+@router.post("/margin-estimate")
+def margin_estimate(body: dict):
+    """Rough pre-trade margin check for a prospective LIVE order, using the
+    same heuristic store.paper_state() already uses for blocked margin on
+    paper positions: SHORT_OPTION_MARGIN_PCT of strike notional per lot for
+    a short leg, full premium for a long one. Not real SPAN+exposure -- a
+    same-order-of-magnitude warning before submitting, not a broker-accurate
+    figure; OrderConfirm.tsx compares this against the account's actual
+    available margin so a shortfall is caught before the order is sent,
+    instead of discovering it from a broker rejection after the fact."""
+    legs = (body or {}).get("legs") or []
+    lot_size = _fnum((body or {}).get("lotSize")) or 1
+    total = 0.0
+    for leg in legs:
+        qty = _fnum(leg.get("lots")) * lot_size
+        if not qty:
+            continue
+        if str(leg.get("side") or "").upper() == "SELL":
+            total += SHORT_OPTION_MARGIN_PCT * _fnum(leg.get("strike")) * qty
+        else:
+            total += _fnum(leg.get("price")) * qty
+    return {"estimated": round(total, 2)}
 
 
 # ---- alert delivery (webhook / Telegram) ----

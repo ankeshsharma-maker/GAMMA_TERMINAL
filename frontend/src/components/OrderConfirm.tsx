@@ -1,11 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
+import { api } from "../lib/api";
 import { nf, sk } from "../lib/format";
+
+const rupee = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
 
 export function OrderConfirm() {
   const { pending, chain, confirmPending, cancelPending } = useStore();
+  const funds = useStore((s) => s.brokerFunds);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [marginEst, setMarginEst] = useState<number | null>(null);
 
   const legs = useMemo(() => {
     if (!pending) return [];
@@ -34,7 +39,30 @@ export function OrderConfirm() {
     return s + (l.side === "BUY" ? 1 : -1) * px * l.lots * lotSize;
   }, 0);
 
+  // rough pre-trade margin check -- not real SPAN, just enough to warn
+  // before submitting instead of finding out from a broker rejection after
+  useEffect(() => {
+    if (!legs.length) {
+      setMarginEst(null);
+      return;
+    }
+    let alive = true;
+    api
+      .marginEstimate(
+        legs.map((l) => ({ side: l.side, strike: l.strike, lots: l.lots, price: priceFor(l.strike, l.optionType, l.price) })),
+        lotSize
+      )
+      .then((d) => alive && setMarginEst(d.estimated), () => alive && setMarginEst(null));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [legs, lotSize]);
+
   if (!pending) return null;
+
+  const shortfall =
+    marginEst != null && funds?.available != null ? marginEst - funds.available : null;
 
   const go = async () => {
     setBusy(true);
@@ -88,6 +116,14 @@ export function OrderConfirm() {
           <span className="text-term-dim">Est. {net >= 0 ? "debit" : "credit"} · MKT order</span>
           <span className="num font-semibold">₹{nf(Math.abs(net), 0)}</span>
         </div>
+
+        {shortfall != null && shortfall > 0 && (
+          <div className="mb-3 rounded border border-down/50 bg-down/10 px-2.5 py-2 text-2xs text-down">
+            ⚠ Est. margin needed ≈ {rupee(marginEst!)}, but only {rupee(funds!.available!)} is available —
+            likely short by ≈ {rupee(shortfall)}. This is a rough estimate (not real SPAN); the broker may
+            still accept or reject it, but expect a possible margin rejection.
+          </div>
+        )}
 
         {err && <p className="mb-2 text-2xs text-down">{err}</p>}
 
