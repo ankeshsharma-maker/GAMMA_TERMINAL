@@ -622,6 +622,36 @@ class _Ctx:
             return flips[-1] != flips[-2] and flips[-1] == want_up
         return flips[-1] == want_up
 
+    def _candle_streak(self, c) -> bool:
+        """N consecutive candles (this rule's own timeframe) all closing the
+        same direction -- a momentum/consistency check, distinct from any
+        single pattern in _candle below."""
+        n = max(1, int(c.get("count", 3)))
+        cs = self.candles
+        if len(cs) < n:
+            return False
+        want_up = c.get("dir", "up") == "up"
+        return all((cd["c"] > cd["o"]) == want_up for cd in cs[-n:])
+
+    def _candle_range(self, c) -> bool:
+        """The CURRENT candle's high-low range vs the average range of the
+        preceding `bars` candles -- an immediate breakout (wide) or squeeze
+        (narrow) read. Distinct from ATR (_atr below), which smooths over
+        many bars rather than singling out how today's candle compares to
+        its own recent past."""
+        bars = max(2, int(c.get("bars", 10)))
+        cs = self.candles
+        if len(cs) < bars + 1:
+            return False
+        cur_range = cs[-1]["h"] - cs[-1]["l"]
+        prev = cs[-1 - bars : -1]
+        avg_range = sum(cd["h"] - cd["l"] for cd in prev) / len(prev)
+        if avg_range <= 0:
+            return False
+        mult = float(c.get("mult", 1.5))
+        ratio = cur_range / avg_range
+        return ratio >= mult if c.get("mode", "wide") == "wide" else ratio <= 1.0 / mult
+
     def _candle(self, c) -> bool:
         """Single / two-candle candlestick pattern on the current timeframe."""
         cs = self.candles
@@ -902,6 +932,7 @@ class _Ctx:
         "theta_level": _theta_level, "vega_level": _vega_level, "blast_score": _blast_score,
         "iv_rank": _iv_rank,
         "candle": _candle, "atr": _atr, "prev_candle": _prev_candle, "gap": _gap,
+        "candle_streak": _candle_streak, "candle_range": _candle_range,
         "time_of_day": _time_of_day, "day_of_week": _day_of_week,
     }
 

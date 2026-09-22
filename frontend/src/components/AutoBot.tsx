@@ -331,6 +331,26 @@ const COND_DEFS: Record<
       },
     ],
   },
+  candle_streak: {
+    label: "Candle streak",
+    group: "trend",
+    fields: [
+      { key: "count", label: "candles", type: "num", def: 3 },
+      { key: "dir", label: "dir", type: "sel", def: "up", opts: ["up", "down"] },
+    ],
+    help: () => "The last N candles (on Entry candles' timeframe) all closed the same direction — a momentum/consistency check.",
+  },
+  candle_range: {
+    label: "Candle range vs recent",
+    group: "trend",
+    fields: [
+      { key: "bars", label: "vs last N", type: "num", def: 10 },
+      { key: "mult", label: "×", type: "num", def: 1.5 },
+      { key: "mode", label: "mode", type: "sel", def: "wide", opts: ["wide", "narrow"] },
+    ],
+    help: () =>
+      "Compares the CURRENT candle's high-low range to the average range of the N candles before it — \"wide\" catches a breakout candle, \"narrow\" catches a squeeze. Different from ATR, which smooths over many bars instead of singling out how today's candle compares to its own recent past.",
+  },
   atr: {
     label: "ATR (volatility)",
     group: "trend",
@@ -2376,6 +2396,10 @@ function describe(c: AutoCondition): string {
       const bF = String(g("bField") || "close");
       return `${aC} ${aF} ${g("op")} ${bC} ${bF}`;
     }
+    case "candle_streak":
+      return `last ${g("count")} candles all ${g("dir")}`;
+    case "candle_range":
+      return `candle range ${g("mode")} ≥${g("mult")}× last ${g("bars")}`;
     case "time_of_day": {
       const f = g("from") || "09:15";
       const t = g("to") || "15:30";
