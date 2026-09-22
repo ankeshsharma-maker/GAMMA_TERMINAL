@@ -1,4 +1,5 @@
 /** Sound notifications for order execution. Uses Web Audio API to generate tones. */
+import { getSoundEnabled } from "./prefs";
 
 // Buy: ascending tone (high energy)
 function playBuySound() {
@@ -67,6 +68,7 @@ function playSellSound() {
 }
 
 export function playOrderSound(side: "BUY" | "SELL") {
+  if (!getSoundEnabled()) return;
   try {
     if (side === "BUY") {
       playBuySound();

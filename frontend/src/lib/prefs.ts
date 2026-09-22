@@ -42,6 +42,11 @@ export const getIntervalS = () => {
 };
 export const setIntervalS = (n: number) => write("gt.intervalS", String(n));
 
+/* ---- notifications ---- */
+/** sound on order entry/exit (manual orders + AutoBot fills); on by default */
+export const getSoundEnabled = () => read("gt.soundEnabled") !== "0";
+export const setSoundEnabled = (v: boolean) => write("gt.soundEnabled", v ? "1" : "0");
+
 /* ---- security ---- */
 /** auto-lock delay in minutes; 0 = never */
 export const getAutolockMin = () => {

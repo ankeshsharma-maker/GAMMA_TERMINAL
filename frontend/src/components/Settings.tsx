@@ -31,6 +31,8 @@ import {
   setIntervalS,
   getAutolockMin,
   setAutolockMin,
+  getSoundEnabled,
+  setSoundEnabled,
 } from "../lib/prefs";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -411,6 +413,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const [ivl, setIvl] = useState(getIntervalS());
   const [zoom, setZoom] = useState(getUiZoom());
   const [autolock, setAutolock] = useState(getAutolockMin());
+  const [soundOn, setSoundOn] = useState(getSoundEnabled());
   const accent = getAccent();
   const ground = getGround();
   const pin = hasPin();
@@ -616,6 +619,21 @@ export function Settings({ onClose }: { onClose: () => void }) {
             >
               {orderMode === "live" ? "LIVE" : "PAPER"}
             </span>
+          </Row>
+          <Row label="Order sound" hint="Tone on manual order placement and AutoBot entries/exits">
+            {(["on", "off"] as const).map((k) => (
+              <button
+                key={k}
+                onClick={() => {
+                  const v = k === "on";
+                  setSoundEnabled(v);
+                  setSoundOn(v);
+                }}
+                className={`${SEG} ${(k === "on") === soundOn ? on : off}`}
+              >
+                {k === "on" ? "On" : "Muted"}
+              </button>
+            ))}
           </Row>
         </Section>
 
