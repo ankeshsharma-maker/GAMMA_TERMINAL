@@ -56,6 +56,12 @@ OI_MIN_TOTAL_PCT = 0.006   # >= 0.6% of that side's total OI (material to the ch
 OI_MIN_OWN_PCT = 0.10      # >= 10% of the strike's own OI (material to the strike)
 OI_STAND_OUT = 2.5         # >= 2.5x the median |change| of the near-ATM legs
 
+# "total OI surge" alert: whole-chain OI (calls+puts) moving fast, over
+# WIN_LONG_S (20m -- OI builds slower than IV/straddle, so this needs a
+# longer window than the other 5m checks below to not fire on poll noise)
+OI_TOTAL_CHG_PCT_20M = 3.0  # >= 3% combined CE+PE OI change in 20m
+OI_TOTAL_DEDUP_S = 900      # one per symbol per 15 min
+
 
 def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, x))
@@ -143,6 +149,20 @@ def evaluate(symbol: str, chain: dict, hist: list[dict], now: float | None = Non
     if pe_oi_chg < 0 and abs(pe_oi_chg) > 0.4 * tot:
         reasons.append("PE OI unwinding")
 
+    # --- total OI change (calls+puts combined) over WIN_LONG_S ---
+    ce_oi = chain["totals"].get("ceOI") or 0.0
+    pe_oi = chain["totals"].get("peOI") or 0.0
+    oi_base = _at(hist, t_ref - WIN_LONG_S)
+    ce_oi_20m = (oi_base or {}).get("ceOI") or 0.0
+    pe_oi_20m = (oi_base or {}).get("peOI") or 0.0
+    tot_oi_now = ce_oi + pe_oi
+    tot_oi_20m = ce_oi_20m + pe_oi_20m
+    oi_chg_pct_20m = (100 * (tot_oi_now - tot_oi_20m) / tot_oi_20m) if (oi_base and tot_oi_20m) else 0.0
+    ce_oi_chg_pct_20m = (100 * (ce_oi - ce_oi_20m) / ce_oi_20m) if (oi_base and ce_oi_20m) else 0.0
+    pe_oi_chg_pct_20m = (100 * (pe_oi - pe_oi_20m) / pe_oi_20m) if (oi_base and pe_oi_20m) else 0.0
+    if abs(oi_chg_pct_20m) >= 2.0:
+        reasons.append(f"Total OI {oi_chg_pct_20m:+.1f}% in 20m")
+
     # --- pin break vs max pain ---
     mp_dist = (abs(spot - max_pain) / spot) if spot else 0.0
     g_pin = _clamp(mp_dist / MP_REF_PCT)
@@ -184,6 +204,9 @@ def evaluate(symbol: str, chain: dict, hist: list[dict], now: float | None = Non
         "maxPain": max_pain,
         "mpDistPct": round(mp_dist * 100, 2),
         "oiImbalance": round(imb, 2),
+        "oiChgPct20m": round(oi_chg_pct_20m, 2),
+        "ceOiChgPct20m": round(ce_oi_chg_pct_20m, 2),
+        "peOiChgPct20m": round(pe_oi_chg_pct_20m, 2),
         "components": {k: round(v, 2) for k, v in comp.items()},
         "reasons": reasons[:5],
     }
@@ -309,6 +332,16 @@ def _emit_alerts(store, row: dict, prev: dict | None, chain: dict | None = None)
         fire("iv-spike", "warning", f"{sym}: ATM IV {row['ivChg5m']:+.1f} pts in 5m")
     if row["straddlePct5m"] >= 20:
         fire("straddle-exp", "warning", f"{sym}: ATM straddle {row['straddlePct5m']:+.0f}% in 5m")
+    oi_chg = row.get("oiChgPct20m") or 0.0
+    if abs(oi_chg) >= OI_TOTAL_CHG_PCT_20M:
+        direction = "building" if oi_chg > 0 else "unwinding"
+        fire(
+            "oi-surge",
+            "warning",
+            f"{sym}: total OI {direction} {oi_chg:+.1f}% in 20m "
+            f"(calls {row.get('ceOiChgPct20m', 0):+.1f}%, puts {row.get('peOiChgPct20m', 0):+.1f}%)",
+            dedup=OI_TOTAL_DEDUP_S,
+        )
     return fired
 
 
