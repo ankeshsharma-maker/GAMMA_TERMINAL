@@ -668,6 +668,15 @@ export interface VolSummary {
   note: string;
 }
 
+/** how far the expiry curve reaches (backend volatility.curve_reach): the 7-day / 30-day IV are copied, not measured, beyond it */
+export interface VolCurve {
+  n: number;
+  minDte: number | null;
+  maxDte: number | null;
+  covers7: boolean;
+  covers30: boolean;
+}
+
 export interface VolatilityData {
   symbol: string;
   spot: number;
@@ -677,6 +686,7 @@ export interface VolatilityData {
   term: VolExpiry[];
   iv30: number | null;
   iv7: number | null;
+  curve?: VolCurve | null;
   rv: {
     available: boolean;
     source?: string;

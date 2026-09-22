@@ -181,6 +181,22 @@ def constant_maturity_iv(term: list[dict], days: float) -> float | None:
     return None
 
 
+HORIZON_SLACK_DAYS = 5.0   # a "30-day" figure counts as measured when the curve reaches within this many days of it
+
+
+def curve_reach(term: list[dict]) -> dict:
+    """How far the expiry curve actually reaches. constant_maturity_iv() stays flat beyond the last expiry, so with one
+    near expiry (SENSEX often has just the weekly) the "30-day IV" is really that expiry's IV. covers30 / covers7 say
+    whether those two horizons are measured or merely copied."""
+    dtes = sorted(t["dte"] for t in term if t.get("atmIV") and t["dte"] > 0)
+    if not dtes:
+        return {"n": 0, "minDte": None, "maxDte": None, "covers7": False, "covers30": False}
+    lo, hi = dtes[0], dtes[-1]
+    return {"n": len(dtes), "minDte": _r(lo, 1), "maxDte": _r(hi, 1),
+            "covers7": len(dtes) >= 2 and lo <= 7.0 <= hi,
+            "covers30": lo <= 30.0 <= hi + HORIZON_SLACK_DAYS}
+
+
 # ---------------------------------------------------------------- realized vol
 def _daily_closes(candles: list[dict]) -> list[tuple]:
     """(date, close) per IST trading day from candles of ANY resolution (the last
@@ -306,10 +322,16 @@ TODAY_MIN_BARS = 24                           # 5-min returns needed before "tod
 NOTE = "How traders read these numbers - not a recommendation. Selling options can lose far more than you collect."
 
 
-def summarize(symbol: str, spot: float, term: list[dict], iv30: float | None, rv: dict, vrp: dict | None) -> dict | None:
+def summarize(symbol: str, spot: float, term: list[dict], iv30: float | None, rv: dict, vrp: dict | None,
+              curve: dict | None = None) -> dict | None:
     """The Vol tab in a few plain sentences. Every piece is optional: a missing input drops its line instead of
-    guessing. Returns None when there is nothing at all to say."""
+    guessing. Returns None when there is nothing at all to say. `curve` (curve_reach) says whether "30-day IV" is a
+    real month-out reading; without it the summary assumes it is."""
     front = next((t for t in term if t.get("atmIV")), None)
+    measured = True if curve is None else bool(curve.get("covers30"))
+    far = max((t for t in term if t.get("atmIV") and (t.get("dte") or 0) > 0), key=lambda t: t["dte"], default=None)
+    # when the curve stops short of a month, name what the number really is instead of calling it "30-day IV"
+    iv_name = "30-day IV" if measured or not far else f"IV to {far['expiry']} ({far['dte']:.0f}d)"
     cone = (rv.get("cone") or {}).get("20") if rv.get("available") else None
     points: list[dict] = []
 
@@ -317,17 +339,22 @@ def summarize(symbol: str, spot: float, term: list[dict], iv30: float | None, rv
     verdict = lean = None
     if vrp:
         ratio, iv, rv20 = vrp["ratio"], vrp["iv30"], vrp["rv20"]
+        if not measured and far:
+            points.append({"key": "reach", "title": "Careful", "tone": "warn",
+                           "text": f"Only expiries up to {far['dte']:.0f} day{'' if round(far['dte']) == 1 else 's'} out have data for {symbol}, "
+                                   f"so this compares nearer-dated IV, not a true 30-day figure, with 20 days of movement. "
+                                   f"Treat it as a rough read."})
         if ratio >= EXPENSIVE_RATIO:
             verdict, lean = "expensive", "sell"
-            headline = (f"Options look EXPENSIVE: 30-day IV is {iv:.1f}% but only {rv20:.1f}% has actually been realized "
+            headline = (f"Options look EXPENSIVE: {iv_name} is {iv:.1f}% but only {rv20:.1f}% has actually been realized "
                         f"(x{ratio:.1f}). Traders lean toward SELLING premium, with defined risk (spreads).")
         elif ratio < CHEAP_RATIO:
             verdict, lean = "cheap", "buy"
-            headline = (f"Options look CHEAP: 30-day IV is {iv:.1f}%, below the {rv20:.1f}% actually realized. "
+            headline = (f"Options look CHEAP: {iv_name} is {iv:.1f}%, below the {rv20:.1f}% actually realized. "
                         f"Traders lean toward BUYING options.")
         else:
             verdict, lean = "fair", "none"
-            headline = (f"Options look FAIRLY priced: 30-day IV is {iv:.1f}% against {rv20:.1f}% realized. "
+            headline = (f"Options look FAIRLY priced: {iv_name} is {iv:.1f}% against {rv20:.1f}% realized. "
                         f"Volatility gives no clear edge, so direction matters more.")
         # a ratio can look extreme only because the last 20 days were unusually quiet / busy
         if cone and verdict == "expensive" and cone["pct"] <= QUIET_PCT:
@@ -364,7 +391,7 @@ def summarize(symbol: str, spot: float, term: list[dict], iv30: float | None, rv
         points.append({"key": "fear", "title": "What it fears", "tone": "info", "text": text})
 
     # ---- 4. is a near-term event priced in?
-    if front and iv30 and front.get("dte") and 1 <= front["dte"] <= 25:
+    if front and iv30 and measured and front.get("dte") and 1 <= front["dte"] <= 25:
         r = front["atmIV"] / iv30
         if r >= INVERTED:
             points.append({"key": "term", "title": "Near-term event", "tone": "info",
@@ -396,7 +423,7 @@ def summarize(symbol: str, spot: float, term: list[dict], iv30: float | None, rv
 
     if verdict is None and not points:
         return None
-    order = {"caveat": 0, "range": 1, "fear": 2, "term": 3, "today": 4, "context": 5}
+    order = {"reach": 0, "caveat": 1, "range": 2, "fear": 3, "term": 4, "today": 5, "context": 6}
     points.sort(key=lambda p: order.get(p["key"], 9))
     return {"verdict": verdict, "lean": lean, "headline": headline, "points": points, "note": NOTE}
 
@@ -458,8 +485,9 @@ async def build(symbol: str, base_chain: dict, max_expiries: int = MAX_EXPIRIES)
     rv = await realized_block(symbol)
     iv30 = _r(constant_maturity_iv(term, 30.0), 2)
     vrp = implied_vs_realized(term, rv)
+    curve = curve_reach(term)
     try:
-        summary = summarize(symbol, base_chain["spot"], term, iv30, rv, vrp)
+        summary = summarize(symbol, base_chain["spot"], term, iv30, rv, vrp, curve)
     except Exception as exc:  # noqa: BLE001 - the summary is a nicety, never the reason the tab fails
         log.warning("vol summary %s failed: %s", symbol, exc)
         summary = None
@@ -472,6 +500,7 @@ async def build(symbol: str, base_chain: dict, max_expiries: int = MAX_EXPIRIES)
         "term": term,
         "iv30": iv30,
         "iv7": _r(constant_maturity_iv(term, 7.0), 2),
+        "curve": curve,
         "rv": rv,
         "vrp": vrp,
         "summary": summary,

@@ -6,6 +6,7 @@ import type { RvCone, VolatilityData, VolExpiry, VolSummary } from "../types";
 import { LineChart, niceTicks, type LineSeries } from "./LineChart";
 import { SelectMenu } from "./SelectMenu";
 import { ClassFilter } from "./Header";
+import { VERDICT_STYLE, VolHeadline } from "./VolHeadline";
 
 /** Volatility dashboard for the active underlying: the IV smile per expiry, the ATM
  *  term structure with skew, and implied vs realized volatility. One backend call
@@ -47,24 +48,6 @@ function Card({
   );
 }
 
-function Stat({ label, value, sub, title }: { label: string; value: string; sub?: string; title?: string }) {
-  return (
-    <div className="flex min-w-[96px] flex-col rounded border border-term-border px-2.5 py-1.5" title={title}>
-      <span className="text-[9px] uppercase tracking-wide text-term-dim">{label}</span>
-      <span className="num text-sm font-semibold text-term-text">{value}</span>
-      {sub && <span className="num text-[10px] text-term-dim">{sub}</span>}
-    </div>
-  );
-}
-
-/** min..max band with the middle half boxed, the current reading marked and, if given,
- *  a second marker (the implied vol being compared with it). */
-const VERDICT_STYLE = {
-  expensive: { word: "EXPENSIVE", cls: "border-amber-500/50 bg-amber-500/15 text-amber-300" },
-  cheap: { word: "CHEAP", cls: "border-emerald-500/50 bg-emerald-500/15 text-emerald-300" },
-  fair: { word: "FAIR", cls: "border-term-border bg-term-bg text-term-text" },
-} as const;
-
 /** The whole tab in a few plain sentences: are options expensive or cheap, the range expected, what it fears. */
 function SummaryCard({ s }: { s: VolSummary }) {
   const v = s.verdict ? VERDICT_STYLE[s.verdict] : null;
@@ -97,6 +80,8 @@ function SummaryCard({ s }: { s: VolSummary }) {
   );
 }
 
+/** min..max band with the middle half boxed, the current reading marked and, if given,
+ *  a second marker (the implied vol being compared with it). */
 function ConeBar({ cone, iv }: { cone: RvCone; iv?: number | null }) {
   const lo = Math.min(cone.min, iv ?? cone.min);
   const hi = Math.max(cone.max, iv ?? cone.max);
@@ -247,7 +232,6 @@ export function VolatilityView() {
     return n ? niceTicks(0, n - 1, 5).map(Math.round) : [];
   }, [rv]);
 
-  const front = data?.term[0];
   const cone20 = rv?.cone?.["20"];
 
   const toolbar = (
@@ -300,45 +284,7 @@ export function VolatilityView() {
 
       {data.summary && <SummaryCard s={data.summary} />}
 
-      {/* headline numbers */}
-      <div className="flex flex-wrap gap-2 p-3 pb-0">
-        <Stat label="Spot" value={nf(data.spot, 1)} sub={data.symbol} />
-        <Stat
-          label="Front ATM IV"
-          value={front?.atmIV != null ? pctFmt(front.atmIV) : "–"}
-          sub={front ? `${front.expiry} · ${nf(front.dte, 0)}d` : undefined}
-        />
-        <Stat
-          label="30-day IV"
-          value={data.iv30 != null ? pctFmt(data.iv30) : "–"}
-          sub={data.iv7 != null ? `7-day ${pctFmt(data.iv7)}` : undefined}
-          title="ATM IV interpolated to a 30-day horizon (in total variance) across the expiries below"
-        />
-        <Stat
-          label="20-day realized"
-          value={rv?.rv20 != null ? pctFmt(rv.rv20) : "–"}
-          sub={rv?.today?.rv != null ? `today ${pctFmt(rv.today.rv)} (5m)` : undefined}
-          title="Close-to-close realized volatility over the last 20 trading days, annualized"
-        />
-        <Stat
-          label="IV − RV"
-          value={data.vrp ? `${data.vrp.spread >= 0 ? "+" : ""}${nf(data.vrp.spread, 1)}` : "–"}
-          sub={data.vrp ? `IV is ×${nf(data.vrp.ratio, 2)} of RV` : undefined}
-          title="30-day IV minus 20-day realized vol: the premium options carry over recent movement"
-        />
-        <Stat
-          label="25Δ risk reversal"
-          value={front?.rr25 != null ? `${front.rr25 >= 0 ? "+" : ""}${nf(front.rr25, 1)}` : "–"}
-          sub={front?.rr25 != null ? (front.rr25 < 0 ? "puts bid over calls" : "calls bid over puts") : undefined}
-          title="25-delta call IV minus 25-delta put IV for the front expiry. Negative = downside protection costs more"
-        />
-        <Stat
-          label="±1σ to expiry"
-          value={front?.sigmaMovePct != null ? `±${nf(front.sigmaMovePct, 2)}%` : "–"}
-          sub={front?.sigmaMovePct != null ? `${sk(data.spot * (1 - front.sigmaMovePct / 100))} – ${sk(data.spot * (1 + front.sigmaMovePct / 100))}` : undefined}
-          title="One standard deviation move implied by the front expiry's ATM IV"
-        />
-      </div>
+      <VolHeadline data={data} />
 
       {data.vrp && !data.summary && (
         <div className="mx-3 mt-2 rounded border border-term-accent/40 bg-term-accent/10 px-3 py-1.5 text-xs text-term-text">
