@@ -103,8 +103,60 @@ export function VolHeadline({ data }: { data: VolatilityData }) {
   const skew = skewRead(front?.rr25, front?.atmIV);
   const range = rangeBar(data.spot, front?.sigmaMovePct);
 
+  // Build warning badges from summary points
+  const warnings: { key: string; icon: string; label: string }[] = [];
+  if (data.summary?.points) {
+    for (const p of data.summary.points) {
+      if (p.key === "reach") warnings.push({ key: "reach", icon: "📊", label: "Short curve" });
+      if (p.key === "caveat") warnings.push({ key: "caveat", icon: "⚠️", label: "Quiet spell" });
+      if (p.key === "today" && /good for sellers/.test(p.text)) warnings.push({ key: "today-calm", icon: "🟢", label: "Calm today" });
+      if (p.key === "today" && /good for buyers/.test(p.text)) warnings.push({ key: "today-hot", icon: "🔴", label: "Hot today" });
+    }
+  }
+
+  const bestFor = tone === "expensive" ? "Sellers" : tone === "cheap" ? "Buyers" : "Mixed";
+
   return (
     <section className="mx-3 mt-3 shrink-0 overflow-hidden rounded-lg border border-term-border">
+      {/* Compact summary card */}
+      <div className="bg-term-panel px-3 py-2.5">
+        <div className="grid grid-cols-2 gap-3 min-[560px]:grid-cols-4">
+          {/* Verdict */}
+          <div className="flex flex-col items-center justify-center rounded border border-term-border/60 px-2 py-2">
+            <span className="text-[9px] uppercase tracking-wide text-term-dim">Verdict</span>
+            {tone && <span className={`mt-1 text-sm font-bold ${VERDICT_STYLE[tone].cls.includes("amber") ? "text-amber-300" : VERDICT_STYLE[tone].cls.includes("emerald") ? "text-emerald-300" : "text-term-text"}`}>{VERDICT_STYLE[tone].word}</span>}
+          </div>
+
+          {/* Warnings count */}
+          <div className="flex flex-col items-center justify-center rounded border border-term-border/60 px-2 py-2">
+            <span className="text-[9px] uppercase tracking-wide text-term-dim">Warnings</span>
+            <span className={`mt-1 text-lg font-bold ${warnings.length > 0 ? "text-amber-400" : "text-emerald-400"}`}>{warnings.length}</span>
+            {warnings.length > 0 && <div className="mt-1 flex flex-wrap justify-center gap-1">{warnings.map((w) => <span key={w.key} className="text-[10px]">{w.icon}</span>)}</div>}
+          </div>
+
+          {/* Best for */}
+          <div className="flex flex-col items-center justify-center rounded border border-term-border/60 px-2 py-2">
+            <span className="text-[9px] uppercase tracking-wide text-term-dim">Best for</span>
+            <span className="mt-1 text-sm font-semibold text-term-text">{bestFor}</span>
+          </div>
+
+          {/* Today vs pricing */}
+          <div className="flex flex-col items-center justify-center rounded border border-term-border/60 px-2 py-2">
+            <span className="text-[9px] uppercase tracking-wide text-term-dim">Today vs IV</span>
+            {today && (front?.atmIV ?? 0) > 0 ? (
+              <>
+                <span className="mt-1 text-sm font-semibold text-term-text">{nf(today, 1)}%</span>
+                <span className={`text-[9px] ${(today / (front?.atmIV ?? 1)) > 1.2 ? "text-amber-300" : "text-emerald-400"}`}>
+                  {(today / (front?.atmIV ?? 1)) > 1.2 ? "HOT" : "CALM"}
+                </span>
+              </>
+            ) : (
+              <span className="text-[9px] text-term-dim">N/A</span>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-[minmax(0,1fr)] gap-px bg-term-border/70 min-[560px]:grid-cols-2 min-[901px]:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">
         {/* who and when */}
         <div className="col-span-full flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 bg-term-panel px-3 py-2.5">
