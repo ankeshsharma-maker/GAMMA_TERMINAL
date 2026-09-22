@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useStore } from "../store";
 import { nf, sk } from "../lib/format";
+import { playOrderSound } from "../lib/soundNotif";
 
 interface Props {
   strike: number;
@@ -19,6 +20,7 @@ export function OrderTicket({ strike, optionType, ltp, onClose }: Props) {
     setBusy(true);
     try {
       await placeOrder({ strike, optionType, side, lots });
+      playOrderSound(side);
       onClose();
     } finally {
       setBusy(false);

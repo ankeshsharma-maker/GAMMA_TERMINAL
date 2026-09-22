@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import {
@@ -17,6 +17,7 @@ import {
   type Logic,
 } from "../lib/condGroups";
 import { nf, signColor } from "../lib/format";
+import { playOrderSound } from "../lib/soundNotif";
 import type { AutoCondition, AutoRule, AutoStats, AutoStructureDef, StructurePreview } from "../types";
 import { FigureBoard, TONE_TEXT, money, tone, tradeTicks } from "./Figures";
 import { LineChart } from "./LineChart";
@@ -1853,6 +1854,7 @@ export function AutoBotView() {
     });
   const [lossDraft, setLossDraft] = useState("");
   const [tab, setTab] = useState<"rules" | "performance" | "backtest">("rules");
+  const prevTradesRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     load();
@@ -1870,6 +1872,28 @@ export function AutoBotView() {
   useEffect(() => {
     if (bot) setLossDraft(String(bot.maxLossPerDay || ""));
   }, [bot?.maxLossPerDay]);
+
+  // Sound notifications for trade entry/exit
+  useEffect(() => {
+    const rules = bot?.rules ?? [];
+    rules.forEach((r) => {
+      const hasOpen = !!r._state?.open;
+      const hadOpen = prevTradesRef.current[r.id];
+
+      if (hasOpen && !hadOpen) {
+        // Trade just opened
+        const side = r._state?.open?.side;
+        if (side === "BUY" || side === "SELL") {
+          playOrderSound(side);
+        }
+      } else if (!hasOpen && hadOpen) {
+        // Trade just closed (exit sound)
+        playOrderSound("SELL");
+      }
+
+      prevTradesRef.current[r.id] = hasOpen;
+    });
+  }, [bot?.rules]);
 
   const rules = bot?.rules ?? [];
   const anyLive = useMemo(() => rules.some((r) => r.mode === "live" && r.enabled), [rules]);
