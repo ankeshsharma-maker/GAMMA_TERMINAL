@@ -216,7 +216,7 @@ function BrokerTab() {
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto p-3">
+    <div className="flex min-h-0 flex-1 flex-col p-3">
       {/* summary header */}
       <div className="mb-2 grid grid-cols-3 gap-2">
         {([
@@ -341,7 +341,7 @@ function BrokerTab() {
         </label>
       )}
 
-      <div className="overflow-hidden rounded-lg border border-term-border">
+      <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-term-border">
         {withPnl.length === 0 && (
           <div className="px-3 py-6 text-center text-2xs text-term-dim">
             No open broker positions.
@@ -356,20 +356,22 @@ function BrokerTab() {
             <div
               key={i}
               onClick={() => key && toggleOne(key)}
-              className={`cursor-pointer border-b border-term-border/50 px-3 py-2 last:border-b-0 ${
+              className={`cursor-pointer border-b border-term-border/50 px-3 py-1.5 last:border-b-0 ${
                 sel ? "bg-term-accent/10" : "hover:bg-term-panel/50"
               }`}
             >
-              <div className="flex items-center justify-between text-[10px] text-term-dim">
-                <span className="num">
-                  Qty. <span className="text-term-text">{qty}</span> · Avg.{" "}
-                  <span className="text-term-text">₹{nf(avg ?? 0, 2)}</span>
-                </span>
-                <span className="rounded bg-term-border/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-term-dim">
-                  {r.prd ?? "NRML"}
-                </span>
-              </div>
-              <div className="mt-0.5 flex items-center justify-between">
+              {!!qty && (
+                <div className="flex items-center justify-between text-[10px] text-term-dim">
+                  <span className="num">
+                    Qty. <span className="text-term-text">{qty}</span> · Avg.{" "}
+                    <span className="text-term-text">₹{nf(avg ?? 0, 2)}</span>
+                  </span>
+                  <span className="rounded bg-term-border/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-term-dim">
+                    {r.prd ?? "NRML"}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
                 <span className="num text-sm font-semibold text-term-text">
                   {r.dname ?? r.tsym ?? r.symname ?? "—"}
                 </span>
@@ -377,9 +379,9 @@ function BrokerTab() {
                   {nf(today, 2)}
                 </span>
               </div>
-              <div className="mt-0.5 flex items-center justify-between text-[10px] text-term-dim">
+              <div className="flex items-center justify-between text-[10px] text-term-dim">
                 <span className="uppercase tracking-wide">
-                  {(r.exch ?? "NFO")} · MKT · DAY
+                  {qty ? `${r.exch ?? "NFO"} · MKT · DAY` : `${r.exch ?? "NFO"} · closed`}
                 </span>
                 <span className="num">
                   LTP <span className="text-term-text">{nf(n(r.lp), 2)}</span>
@@ -387,28 +389,29 @@ function BrokerTab() {
               </div>
 
               {!!qty && (
-                <div className="mt-1" onClick={(e) => e.stopPropagation()}>
-                  <LegBracketBadge
-                    r={r}
-                    bracket={findBracket(r, legRules)}
-                    onChanged={loadLegRules}
-                  />
-                </div>
+                <>
+                  <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+                    <LegBracketBadge
+                      r={r}
+                      bracket={findBracket(r, legRules)}
+                      onChanged={loadLegRules}
+                    />
+                  </div>
+                  <div
+                    className="mt-1.5 flex items-center gap-1.5"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      disabled={isBusy}
+                      onClick={() => squareOff(r)}
+                      className="ml-auto rounded border border-down/50 px-2 py-0.5 text-[10px] font-semibold text-down hover:bg-down/10 disabled:opacity-30"
+                      title="Flatten this position with an opposite-side MARKET order"
+                    >
+                      {isBusy ? "…" : "Square off"}
+                    </button>
+                  </div>
+                </>
               )}
-
-              <div
-                className="mt-1.5 flex items-center gap-1.5"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <button
-                  disabled={isBusy || !qty}
-                  onClick={() => squareOff(r)}
-                  className="ml-auto rounded border border-down/50 px-2 py-0.5 text-[10px] font-semibold text-down hover:bg-down/10 disabled:opacity-30"
-                  title="Flatten this position with an opposite-side MARKET order"
-                >
-                  {isBusy ? "…" : "Square off"}
-                </button>
-              </div>
             </div>
           );
         })}
