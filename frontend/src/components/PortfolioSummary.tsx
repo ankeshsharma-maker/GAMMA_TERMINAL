@@ -9,22 +9,18 @@ const rupee = (n: number | null | undefined) =>
 type GreekBucket = { delta: number; gamma: number; theta: number; vega: number; positions: number };
 type GreekBySymbol = GreekBucket & { symbol: string };
 
-function Tile({
-  label,
-  value,
-  tone = "text-term-text",
-  title,
-}: {
-  label: string;
-  value: string;
-  tone?: string;
-  title?: string;
-}) {
+function TH({ children, right = false }: { children: React.ReactNode; right?: boolean }) {
   return (
-    <div className="flex min-w-0 flex-col items-center justify-center gap-1 bg-term-panel px-2 py-2.5" title={title}>
-      <span className="text-[9px] uppercase tracking-wide text-term-dim">{label}</span>
-      <span className={`num truncate text-sm font-bold ${tone}`}>{value}</span>
-    </div>
+    <th className={`px-3 py-1.5 text-[9px] font-semibold uppercase tracking-wide text-term-dim ${right ? "text-right" : "text-left"}`}>
+      {children}
+    </th>
+  );
+}
+function TD({ children, tone = "text-term-text", title }: { children: React.ReactNode; tone?: string; title?: string }) {
+  return (
+    <td className={`num px-3 py-1.5 text-right text-sm font-semibold ${tone}`} title={title}>
+      {children}
+    </td>
   );
 }
 
@@ -89,63 +85,54 @@ export function PortfolioSummary() {
           Live mode, but Flattrade isn't connected — connect it (header) to see live margin &amp; Greeks.
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-px bg-term-border/70 min-[560px]:grid-cols-4 min-[901px]:grid-cols-7">
-          <Tile
-            label="Margin free"
-            value={rupee(available)}
-            tone={available != null && available < 0 ? "text-down" : "text-up"}
-            title="Available margin, same figure as the Funds tab"
-          />
-          <Tile label="Margin used" value={rupee(used)} tone={used ? "text-amber-400" : "text-term-text"} />
-          <Tile
-            label="Deployed"
-            value={pctDeployed != null ? `${nf(pctDeployed, 0)}%` : "–"}
-            tone={deployedTone}
-          />
-          <Tile
-            label="Δ Delta"
-            value={greeks ? nf(greeks.delta, 1) : "–"}
-            tone={greeks ? signColor(greeks.delta) : "text-term-text"}
-            title="Net delta across every open position (per-leg delta × signed quantity)"
-          />
-          <Tile
-            label="Γ Gamma"
-            value={greeks ? nf(greeks.gamma, 3) : "–"}
-            tone={greeks ? signColor(greeks.gamma) : "text-term-text"}
-          />
-          <Tile
-            label="Θ Theta"
-            value={greeks ? nf(greeks.theta, 1) : "–"}
-            tone={greeks ? signColor(greeks.theta) : "text-term-text"}
-            title="Positive = net premium seller, decaying in your favour"
-          />
-          <Tile
-            label="V Vega"
-            value={greeks ? nf(greeks.vega, 1) : "–"}
-            tone={greeks ? signColor(greeks.vega) : "text-term-text"}
-          />
-        </div>
-      )}
-
-      {greeksBySymbol.length > 1 && (
-        <div className="border-t border-term-border bg-term-panel/60 px-3 py-2">
-          <div className="mb-1.5 text-[9px] uppercase tracking-wide text-term-dim">By symbol</div>
-          <div className="flex flex-wrap gap-2">
-            {greeksBySymbol.map((g) => (
-              <div
-                key={g.symbol}
-                className="flex items-center gap-2.5 rounded border border-term-accent/30 px-2 py-1 text-2xs"
-                title={`Net Greeks for ${g.symbol} alone`}
-              >
-                <span className="font-semibold text-term-accent">{g.symbol}</span>
-                <span className="num flex gap-2">
-                  <span className={signColor(g.delta)}>Δ {nf(g.delta, 1)}</span>
-                  <span className={signColor(g.theta)}>Θ {nf(g.theta, 1)}</span>
-                  <span className={signColor(g.vega)}>V {nf(g.vega, 1)}</span>
-                </span>
-              </div>
-            ))}
-          </div>
+        <div className="overflow-x-auto">
+          <table className="grid-table w-full">
+            <thead>
+              <tr className="bg-term-panel">
+                <TH>{greeksBySymbol.length > 1 ? "Symbol" : "Total"}</TH>
+                <TH right>Margin free</TH>
+                <TH right>Margin used</TH>
+                <TH right>Deployed</TH>
+                <TH right>Δ Delta</TH>
+                <TH right>Γ Gamma</TH>
+                <TH right>Θ Theta</TH>
+                <TH right>V Vega</TH>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="px-3 py-1.5 text-sm font-semibold text-term-text">
+                  {greeksBySymbol.length > 1 ? "All symbols" : "Portfolio"}
+                </td>
+                <TD tone={available != null && available < 0 ? "text-down" : "text-up"} title="Available margin, same figure as the Funds tab">
+                  {rupee(available)}
+                </TD>
+                <TD tone={used ? "text-amber-400" : "text-term-text"}>{rupee(used)}</TD>
+                <TD tone={deployedTone}>{pctDeployed != null ? `${nf(pctDeployed, 0)}%` : "–"}</TD>
+                <TD tone={greeks ? signColor(greeks.delta) : "text-term-text"} title="Net delta across every open position">
+                  {greeks ? nf(greeks.delta, 1) : "–"}
+                </TD>
+                <TD tone={greeks ? signColor(greeks.gamma) : "text-term-text"}>{greeks ? nf(greeks.gamma, 3) : "–"}</TD>
+                <TD tone={greeks ? signColor(greeks.theta) : "text-term-text"} title="Positive = net premium seller, decaying in your favour">
+                  {greeks ? nf(greeks.theta, 1) : "–"}
+                </TD>
+                <TD tone={greeks ? signColor(greeks.vega) : "text-term-text"}>{greeks ? nf(greeks.vega, 1) : "–"}</TD>
+              </tr>
+              {greeksBySymbol.length > 1 &&
+                greeksBySymbol.map((g) => (
+                  <tr key={g.symbol}>
+                    <td className="px-3 py-1.5 text-sm font-semibold text-term-accent">{g.symbol}</td>
+                    <TD tone="text-term-dim">–</TD>
+                    <TD tone="text-term-dim">–</TD>
+                    <TD tone="text-term-dim">–</TD>
+                    <TD tone={signColor(g.delta)}>{nf(g.delta, 1)}</TD>
+                    <TD tone={signColor(g.gamma)}>{nf(g.gamma, 3)}</TD>
+                    <TD tone={signColor(g.theta)}>{nf(g.theta, 1)}</TD>
+                    <TD tone={signColor(g.vega)}>{nf(g.vega, 1)}</TD>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
         </div>
       )}
     </section>
