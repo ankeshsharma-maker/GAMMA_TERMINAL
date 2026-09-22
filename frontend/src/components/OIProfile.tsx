@@ -7,7 +7,6 @@ import { compact, crores, nf, sk } from "../lib/format";
 import { PcrChart } from "./PcrChart";
 import { SelectMenu } from "./SelectMenu";
 import { useIsMobile } from "../lib/useIsMobile";
-import { computeGammaFlip } from "../lib/gammaFlip";
 import type { ChainRow } from "../types";
 
 type Metric = "oi" | "chg" | "combined";
@@ -278,9 +277,27 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     return { ceAdd, ceCut, peAdd, peCut, maxChg };
   }, [rows, win, tf]);
 
-  // gamma-flip: strike where cumulative dealer gamma exposure crosses zero
-  // (see lib/gammaFlip.ts — shared with Chart.tsx's price-line overlay).
-  const gammaFlip = useMemo(() => computeGammaFlip(rows), [rows]);
+  // gamma-flip: strike where cumulative dealer gamma exposure crosses zero.
+  // Read from the backend's chain.gammaFlip (computed over the full ATM±30
+  // window, same figure the GEX dashboard below and Chart.tsx's price-line
+  // use) rather than recomputing from `rows` -- `rows` is whatever strike
+  // slice the zoom control currently shows, and computing the crossing over
+  // a narrower/shifting window made the marker jump or vanish purely from
+  // zooming, not from any real change in dealer positioning. Mapped onto
+  // the visible columns' fractional index the same way spotMark is below;
+  // hidden (not clamped to an edge) when the flip strike is off-screen, so
+  // it never shows a false position.
+  const gammaFlip = useMemo(() => {
+    if (chain?.gammaFlip == null || rows.length < 2) return null;
+    const gf = chain.gammaFlip;
+    if (gf < rows[0].strike || gf > rows[rows.length - 1].strike) return null;
+    for (let i = 0; i < rows.length - 1; i++) {
+      const a = rows[i].strike;
+      const b = rows[i + 1].strike;
+      if (gf >= a && gf <= b) return { strike: gf, index: i + (gf - a) / (b - a || 1) };
+    }
+    return null;
+  }, [chain?.gammaFlip, rows]);
 
   // current spot / close: fractional column index for a vertical marker line
   const spotMark = useMemo(() => {

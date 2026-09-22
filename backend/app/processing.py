@@ -132,6 +132,35 @@ def _leg(raw: dict | None, kind: str, spot: float, strike: float, t: float) -> d
     }
 
 
+def _gamma_flip(rows: list[dict], spot: float, atm: float) -> float | None:
+    """The strike where cumulative dealer gamma exposure (put gamma*OI - call
+    gamma*OI, running over `rows` ascending by strike) crosses zero: below it
+    dealers are short gamma (moves amplified), above it long gamma (moves
+    dampened). `rows` need only have strike/call.gamma/call.oi/put.gamma/put.oi.
+
+    When call/put gamma exposure is roughly balanced near the money, the
+    cumulative curve can cross zero at SEVERAL strikes -- picking the first
+    one (ascending) is arbitrary and noise-sensitive: a small OI tick at any
+    strike in that band can relocate "first" to a different level between
+    polls even though nothing meaningful changed. The crossing nearest spot
+    is both the economically relevant one (the regime boundary AT the price
+    that matters) and far more stable, since noise in strikes away from spot
+    no longer relocates it. Falls back to ATM when the curve never crosses
+    (e.g. one-sided OI, or too few strikes)."""
+    cum = 0.0
+    pts: list[tuple[float, float]] = []
+    for r in rows:
+        cum += r["put"]["gamma"] * r["put"]["oi"] - r["call"]["gamma"] * r["call"]["oi"]
+        pts.append((r["strike"], cum))
+    crossings: list[float] = []
+    for (k0, v0), (k1, v1) in zip(pts, pts[1:]):
+        if (v0 <= 0 <= v1 or v0 >= 0 >= v1) and v0 != v1:
+            crossings.append(k0 + (-v0) / (v1 - v0) * (k1 - k0))
+    if crossings:
+        return round(min(crossings, key=lambda k: abs(k - spot)), 2)
+    return atm if rows else None
+
+
 def build_chain(
     raw: dict,
     symbol: str,
@@ -215,21 +244,7 @@ def build_chain(
     max_pain = min(strikes, key=lambda k: pain_ce[k] + pain_pe[k]) if strikes else atm
     pcr = round(tot_pe_oi / tot_ce_oi, 3) if tot_ce_oi else None
 
-    # gamma-flip / zero-gamma strike: where the running sum of
-    # (put gamma*OI - call gamma*OI) changes sign (dealer positioning flips
-    # from short-gamma / trend-amplifying to long-gamma / mean-reverting).
-    gamma_flip = None
-    cum = 0.0
-    _pts: list[tuple[float, float]] = []
-    for r in rows:
-        cum += r["put"]["gamma"] * r["put"]["oi"] - r["call"]["gamma"] * r["call"]["oi"]
-        _pts.append((r["strike"], cum))
-    for (k0, v0), (k1, v1) in zip(_pts, _pts[1:]):
-        if (v0 <= 0 <= v1 or v0 >= 0 >= v1) and v0 != v1:
-            gamma_flip = round(k0 + (-v0) / (v1 - v0) * (k1 - k0), 2)
-            break
-    if gamma_flip is None and rows:
-        gamma_flip = atm
+    gamma_flip = _gamma_flip(rows, spot, atm)
 
     atm_row = next((r for r in rows if r["strike"] == atm), None)
     atm_iv = None

@@ -1258,7 +1258,7 @@ export function Chart() {
       gfRef.current = null;
     }
     if (!eff.gammaFlip || !chain?.rows.length) return;
-    const gf = computeGammaFlip(chain.rows);
+    const gf = computeGammaFlip(chain.rows, chain.liveSpot?.ltp ?? chain.spot);
     if (!gf) return;
     gfRef.current = cs.createPriceLine({
       price: Number(gf.strike.toFixed(2)),
