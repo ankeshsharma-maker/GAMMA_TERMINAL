@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { ago, compact, nf } from "../lib/format";
@@ -13,9 +13,6 @@ const PROFILE_WINDOWS: [string, string][] = [
   ["15", "15 min"],
   ["60", "1 hour"],
 ];
-// not green / red -- those already mean buying / selling on this page
-const LINE_COLOR: Record<string, string> = { "5": "#38bdf8", "15": "#fbbf24", "60": "#c084fc" };
-
 type Pt = { t: number; v: number };
 
 /** Buying share (0-100%) per sample. Each series point already holds the flow over
@@ -45,8 +42,8 @@ function PressureChart({ lines }: { lines: { w: string; label: string; pts: Pt[]
   return (
     <div ref={box}>
       {all.length < 2 ? (
-        <div className="flex h-[200px] items-center justify-center text-[11px] text-term-dim">
-          Collecting flow… the lines fill in as the market is sampled (once a minute).
+        <div className="flex h-[196px] items-center justify-center text-[11px] text-term-dim">
+          Collecting flow… the rows fill in as the market is sampled (once a minute).
         </div>
       ) : (
         <PressureSvg lines={lines} all={all} wd={wd} />
@@ -55,48 +52,87 @@ function PressureChart({ lines }: { lines: { w: string; label: string; pts: Pt[]
   );
 }
 
+const UP = "#22c55e";
+const DOWN = "#ef4444";
+
+/** One row per window on a shared time axis (not three lines crossing each
+ *  other): fill is green above the 50% midline (more buying) and red below it
+ *  (more selling), so each row reads on its own. */
 function PressureSvg({ lines, all, wd }: { lines: { w: string; label: string; pts: Pt[] }[]; all: Pt[]; wd: number }) {
-  const H = 200;
-  const m = { l: 34, r: 10, t: 8, b: 20 };
+  const id = useId().replace(/:/g, "");
+  const rowH = 54;
+  const gap = 8;
+  const axisH = 18;
+  const H = lines.length * rowH + (lines.length - 1) * gap + axisH;
+  const m = { l: 44, r: 40 };
   const t0 = Math.min(...all.map((p) => p.t));
   const t1 = Math.max(...all.map((p) => p.t));
   const x = (t: number) => m.l + ((t - t0) / (t1 - t0 || 1)) * (wd - m.l - m.r);
-  const y = (v: number) => m.t + (1 - v / 100) * (H - m.t - m.b);
   const span = (t1 - t0) / 60;
   const step = (span <= 100 ? 15 : span <= 200 ? 30 : 60) * 60;
   const xt: number[] = [];
   for (let t = Math.ceil((t0 + 19800) / step) * step - 19800; t <= t1; t += step) xt.push(t);
-  // break the line across gaps (market closed, missed samples) instead of bridging them
-  const path = (pts: Pt[]) =>
-    pts.map((p, i) => `${i && p.t - pts[i - 1].t <= 300 ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join("");
+  const plotBottom = H - axisH;
 
   return (
-    <div>
-      <svg width={wd} height={H} className="block" role="img" aria-label="Buying share over time for the 5 min, 15 min and 1 hour windows">
-        <rect x={m.l} y={y(55)} width={wd - m.l - m.r} height={y(45) - y(55)} fill="currentColor" opacity={0.06} className="text-term-text" />
-        <line x1={m.l} x2={wd - m.r} y1={y(50)} y2={y(50)} stroke="#eab308" strokeOpacity={0.7} strokeDasharray="4 3" />
-        {[0, 25, 50, 75, 100].map((v) => (
-          <g key={v}>
-            {v !== 50 && <line x1={m.l} x2={wd - m.r} y1={y(v)} y2={y(v)} stroke="currentColor" strokeOpacity={0.08} className="text-term-dim" />}
-            <text x={m.l - 5} y={y(v) + 3} textAnchor="end" fontSize={10} fill="currentColor" className="text-term-dim">
-              {v}%
-            </text>
-          </g>
-        ))}
-        {xt.map((t) => (
-          <text key={t} x={x(t)} y={H - 5} textAnchor="middle" fontSize={10} fill="currentColor" className="text-term-dim">
+    <svg width={wd} height={H} className="block" role="img" aria-label="Buying share over time: one row each for the 5 min, 15 min and 1 hour windows">
+      {xt.map((t) => (
+        <g key={t}>
+          <line x1={x(t)} x2={x(t)} y1={0} y2={plotBottom} stroke="currentColor" strokeOpacity={0.07} className="text-term-dim" />
+          <text x={x(t)} y={H - 5} textAnchor="middle" fontSize={10} fill="currentColor" className="text-term-dim">
             {istTime(t)}
           </text>
-        ))}
-        {lines.map((l) => (
-          <path key={l.w} d={path(l.pts)} fill="none" stroke={LINE_COLOR[l.w]} strokeWidth={l.w === "5" ? 1.4 : 1.8} strokeLinejoin="round" />
-        ))}
-        {lines.map((l) => {
-          const last = l.pts[l.pts.length - 1];
-          return last ? <circle key={l.w} cx={x(last.t)} cy={y(last.v)} r={3} fill={LINE_COLOR[l.w]} /> : null;
-        })}
-      </svg>
-    </div>
+        </g>
+      ))}
+      {lines.map((l, r) => {
+        const top = r * (rowH + gap);
+        const y = (v: number) => top + (1 - v / 100) * rowH;
+        const mid = y(50);
+        // one closed area per unbroken run of samples; gaps (closed market, missed
+        // samples) stay empty instead of being bridged
+        const runs: Pt[][] = [];
+        l.pts.forEach((p, i) => {
+          if (!i || p.t - l.pts[i - 1].t > 300) runs.push([]);
+          runs[runs.length - 1].push(p);
+        });
+        const area = runs
+          .map((run) => `M${x(run[0].t).toFixed(1)},${mid}` + run.map((p) => `L${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join("") + `L${x(run[run.length - 1].t).toFixed(1)},${mid}Z`)
+          .join("");
+        const last = l.pts[l.pts.length - 1];
+        return (
+          <g key={l.w}>
+            <defs>
+              <clipPath id={`${id}u${r}`}>
+                <rect x={m.l} y={top} width={wd - m.l - m.r} height={mid - top} />
+              </clipPath>
+              <clipPath id={`${id}d${r}`}>
+                <rect x={m.l} y={mid} width={wd - m.l - m.r} height={top + rowH - mid} />
+              </clipPath>
+            </defs>
+            <rect x={m.l} y={top} width={wd - m.l - m.r} height={rowH} fill="currentColor" opacity={0.03} className="text-term-text" />
+            <rect x={m.l} y={y(55)} width={wd - m.l - m.r} height={y(45) - y(55)} fill="currentColor" opacity={0.06} className="text-term-text" />
+            <path d={area} fill={UP} fillOpacity={0.55} clipPath={`url(#${id}u${r})`} />
+            <path d={area} fill={DOWN} fillOpacity={0.55} clipPath={`url(#${id}d${r})`} />
+            <line x1={m.l} x2={wd - m.r} y1={mid} y2={mid} stroke="currentColor" strokeOpacity={0.35} strokeDasharray="3 3" className="text-term-dim" />
+            <text x={m.l - 6} y={mid + 3} textAnchor="end" fontSize={10} fontWeight={600} fill="currentColor" className="text-term-text">
+              {l.label}
+            </text>
+            {last && (
+              <text
+                x={wd - m.r + 5}
+                y={mid + 3}
+                fontSize={11}
+                fontWeight={700}
+                fill={last.v >= 55 ? UP : last.v <= 45 ? DOWN : "currentColor"}
+                className={last.v > 45 && last.v < 55 ? "text-term-dim" : undefined}
+              >
+                {nf(last.v, 0)}%
+              </text>
+            )}
+          </g>
+        );
+      })}
+    </svg>
   );
 }
 type Lean = "BUYING" | "SELLING" | "BALANCED";
@@ -272,31 +308,21 @@ export function OrderFlowView() {
           <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-term-dim">
             Buy vs Sell Pressure · 5 min / 15 min / 1 hour
           </h3>
-          <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px]">
-            {lines.map((l) => {
-              const last = l.pts[l.pts.length - 1];
-              return (
-                <span key={l.w} className="flex items-center gap-1 whitespace-nowrap">
-                  <span className="inline-block h-0.5 w-3.5 rounded" style={{ background: LINE_COLOR[l.w] }} />
-                  <span className="text-term-dim">{l.label}</span>
-                  <span
-                    className={`num font-semibold ${
-                      !last ? "text-term-dim" : last.v >= 55 ? "text-emerald-400" : last.v <= 45 ? "text-red-400" : "text-term-text"
-                    }`}
-                  >
-                    {last ? `${nf(last.v, 0)}%` : "–"}
-                  </span>
-                </span>
-              );
-            })}
+          <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-term-dim">
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#22c55e]/60" /> above the line = more buying
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#ef4444]/60" /> below = more selling
+            </span>
           </div>
           <div className="rounded border border-term-border/40 bg-term-panel p-1">
             <PressureChart lines={lines} />
           </div>
           <div className="mt-2 text-[10px] leading-snug text-term-dim">
-            Buying share of the flow in each window. Above 50% = more buying (call buying + put writing), below = more
-            selling (call writing + put buying). Shaded 45–55% = balanced. The 5 min line reacts first; the 1 hour line
-            shows the bigger picture.
+            Each row is one window, read on its own: the % on the right is its buying share now. Buying = call buying +
+            put writing; selling = call writing + put buying. The 5 min row flips first; the 1 hour row shows the bigger
+            picture.
           </div>
         </section>
 
