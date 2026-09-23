@@ -1,22 +1,104 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
-import { ago, compact, nf, sk } from "../lib/format";
+import { ago, compact, nf } from "../lib/format";
+import { istTime } from "../lib/istTime";
 import type { FlowData } from "../types";
 
-/** Order flow dashboard: cumulative delta (buy vs sell pressure) and volume profile (buy vs sell bars). */
-
-const BUY_COLOR = "#4ade80";  // green
-const SELL_COLOR = "#f87171"; // red
-const NEUTRAL_COLOR = "#94a3b8"; // gray
-
-const pctFmt = (v: number) => `${nf(v, 1)}%`;
+/** Order flow dashboard: buy vs sell pressure over time and the volume profile,
+ *  each compared across the 5 min / 15 min / 1 hour windows. */
 
 const PROFILE_WINDOWS: [string, string][] = [
   ["5", "5 min"],
   ["15", "15 min"],
   ["60", "1 hour"],
 ];
+// not green / red -- those already mean buying / selling on this page
+const LINE_COLOR: Record<string, string> = { "5": "#38bdf8", "15": "#fbbf24", "60": "#c084fc" };
+
+type Pt = { t: number; v: number };
+
+/** Buying share (0-100%) per sample. Each series point already holds the flow over
+ *  its whole window, so it is plotted as-is -- summing points would count the same
+ *  flow once per minute it stays inside the window. */
+const shareSeries = (d: FlowData | null): Pt[] =>
+  (d?.series ?? []).flatMap((p) => {
+    const bull = (p.pw ?? 0) + (p.cb ?? 0);
+    const bear = (p.cw ?? 0) + (p.pb ?? 0);
+    return bull + bear > 0 ? [{ t: p.t, v: (100 * bull) / (bull + bear) }] : [];
+  });
+
+function PressureChart({ lines }: { lines: { w: string; label: string; pts: Pt[] }[] }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [wd, setWd] = useState(560);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const set = () => setWd(Math.max(260, Math.round(el.clientWidth)));
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const all = lines.flatMap((l) => l.pts);
+  return (
+    <div ref={box}>
+      {all.length < 2 ? (
+        <div className="flex h-[200px] items-center justify-center text-[11px] text-term-dim">
+          Collecting flow… the lines fill in as the market is sampled (once a minute).
+        </div>
+      ) : (
+        <PressureSvg lines={lines} all={all} wd={wd} />
+      )}
+    </div>
+  );
+}
+
+function PressureSvg({ lines, all, wd }: { lines: { w: string; label: string; pts: Pt[] }[]; all: Pt[]; wd: number }) {
+  const H = 200;
+  const m = { l: 34, r: 10, t: 8, b: 20 };
+  const t0 = Math.min(...all.map((p) => p.t));
+  const t1 = Math.max(...all.map((p) => p.t));
+  const x = (t: number) => m.l + ((t - t0) / (t1 - t0 || 1)) * (wd - m.l - m.r);
+  const y = (v: number) => m.t + (1 - v / 100) * (H - m.t - m.b);
+  const span = (t1 - t0) / 60;
+  const step = (span <= 100 ? 15 : span <= 200 ? 30 : 60) * 60;
+  const xt: number[] = [];
+  for (let t = Math.ceil((t0 + 19800) / step) * step - 19800; t <= t1; t += step) xt.push(t);
+  // break the line across gaps (market closed, missed samples) instead of bridging them
+  const path = (pts: Pt[]) =>
+    pts.map((p, i) => `${i && p.t - pts[i - 1].t <= 300 ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join("");
+
+  return (
+    <div>
+      <svg width={wd} height={H} className="block" role="img" aria-label="Buying share over time for the 5 min, 15 min and 1 hour windows">
+        <rect x={m.l} y={y(55)} width={wd - m.l - m.r} height={y(45) - y(55)} fill="currentColor" opacity={0.06} className="text-term-text" />
+        <line x1={m.l} x2={wd - m.r} y1={y(50)} y2={y(50)} stroke="#eab308" strokeOpacity={0.7} strokeDasharray="4 3" />
+        {[0, 25, 50, 75, 100].map((v) => (
+          <g key={v}>
+            {v !== 50 && <line x1={m.l} x2={wd - m.r} y1={y(v)} y2={y(v)} stroke="currentColor" strokeOpacity={0.08} className="text-term-dim" />}
+            <text x={m.l - 5} y={y(v) + 3} textAnchor="end" fontSize={10} fill="currentColor" className="text-term-dim">
+              {v}%
+            </text>
+          </g>
+        ))}
+        {xt.map((t) => (
+          <text key={t} x={x(t)} y={H - 5} textAnchor="middle" fontSize={10} fill="currentColor" className="text-term-dim">
+            {istTime(t)}
+          </text>
+        ))}
+        {lines.map((l) => (
+          <path key={l.w} d={path(l.pts)} fill="none" stroke={LINE_COLOR[l.w]} strokeWidth={l.w === "5" ? 1.4 : 1.8} strokeLinejoin="round" />
+        ))}
+        {lines.map((l) => {
+          const last = l.pts[l.pts.length - 1];
+          return last ? <circle key={l.w} cx={x(last.t)} cy={y(last.v)} r={3} fill={LINE_COLOR[l.w]} /> : null;
+        })}
+      </svg>
+    </div>
+  );
+}
 type Lean = "BUYING" | "SELLING" | "BALANCED";
 // anything between 45% and 55% buying is too close to call a side
 const leanOf = (buy: number, sell: number): Lean | null => {
@@ -51,11 +133,9 @@ export function OrderFlowView() {
   const symClassOk = useStore((s) => s.symClassOk);
   const symClass = useStore((s) => s.symClass);
 
-  const [data, setData] = useState<FlowData | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [win, setWin] = useState("day");
 
   const [symChoices, setSymChoices] = useState<string[]>([]);
   useEffect(() => {
@@ -75,51 +155,30 @@ export function OrderFlowView() {
     [symChoices, symbol, symClass]
   );
 
+  // the 5 min / 15 min / 1 hour windows feed both the pressure chart and the
+  // volume profile, so the page compares them instead of one window at a time
+  const [profiles, setProfiles] = useState<Record<string, FlowData | null>>({});
   useEffect(() => {
     let alive = true;
     setErr(null);
     const load = () => {
       setBusy(true);
-      return api
-        .flow(symbol, expiry || undefined, win)
-        .then((d) => {
+      let firstErr: string | null = null;
+      return Promise.all(
+        PROFILE_WINDOWS.map(([w]) =>
+          api.flow(symbol, expiry || undefined, w).catch((e) => {
+            firstErr ??= String(e?.message ?? e);
+            return null;
+          })
+        )
+      )
+        .then((rs) => {
           if (!alive) return;
-          setData(d);
-          setErr(null);
+          setProfiles(Object.fromEntries(PROFILE_WINDOWS.map(([w], i) => [w, rs[i]])));
+          setErr(rs.every((r) => r == null) ? firstErr : null);
         })
-        .catch((e) => alive && setErr(String(e?.message ?? e)))
         .finally(() => alive && setBusy(false));
     };
-    load();
-    const id = setInterval(() => {
-      if (!document.hidden) load();
-    }, 60000);
-    return () => {
-      alive = false;
-      clearInterval(id);
-    };
-  }, [symbol, expiry, win, tick]);
-
-  // Calculate delta from flow series data
-  const deltaData = useMemo(() => {
-    if (!data?.series) return [];
-    let cumulativeDelta = 0;
-    return data.series.slice(-120).map((p) => {
-      const delta = (p.cb ?? 0) + (p.pw ?? 0) - (p.cw ?? 0) - (p.pb ?? 0);
-      cumulativeDelta += delta;
-      return { time: p.t, delta: cumulativeDelta, label: new Date(p.t * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) };
-    });
-  }, [data]);
-
-  // volume profile for 5 min / 15 min / 1 hour side by side -- independent of
-  // the window dropdown, which still drives the cumulative-delta chart
-  const [profiles, setProfiles] = useState<Record<string, FlowData | null>>({});
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      Promise.all(PROFILE_WINDOWS.map(([w]) => api.flow(symbol, expiry || undefined, w).catch(() => null))).then(
-        (rs) => alive && setProfiles(Object.fromEntries(PROFILE_WINDOWS.map(([w], i) => [w, rs[i]])))
-      );
     load();
     const id = setInterval(() => {
       if (!document.hidden) load();
@@ -134,6 +193,12 @@ export function OrderFlowView() {
     const p = profiles[w];
     return p && p.symbol === symbol.toUpperCase() ? p : null;
   };
+  const base = freshProfile("15") ?? freshProfile("5") ?? freshProfile("60");
+  const lines = useMemo(
+    () => PROFILE_WINDOWS.map(([w, label]) => ({ w, label, pts: shareSeries(freshProfile(w)) })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [profiles, symbol]
+  );
   const leans = PROFILE_WINDOWS.map(([w]) => {
     const p = freshProfile(w);
     return p && !p.warming ? leanOf(p.bull, p.bear) : null;
@@ -163,26 +228,15 @@ export function OrderFlowView() {
           </option>
         ))}
       </select>
-      <select
-        value={win}
-        onChange={(e) => setWin(e.target.value)}
-        className="rounded border border-term-border bg-term-panel px-2 py-0.5 text-2xs text-term-text"
-        title="Time window"
-      >
-        <option value="5">5 min ago</option>
-        <option value="15">15 min ago</option>
-        <option value="30">30 min ago</option>
-        <option value="60">1 hour ago</option>
-        <option value="day">Prev close</option>
-      </select>
+      <span>5 min · 15 min · 1 hour</span>
       <button className="btn !px-2 !py-0.5 !text-2xs" onClick={() => setTick((t) => t + 1)} disabled={busy}>
         <span className={busy ? "inline-block animate-spin" : ""}>⟳</span> Refresh
       </button>
-      <span className="ml-auto">{data ? `updated ${ago(data.asOf)}` : ""}</span>
+      <span className="ml-auto">{base?.asOf ? `updated ${ago(base.asOf)}` : ""}</span>
     </div>
   );
 
-  if (!data) {
+  if (!base) {
     return (
       <div className="flex flex-col min-[901px]:min-h-0 min-[901px]:flex-1">
         {toolbar}
@@ -213,51 +267,36 @@ export function OrderFlowView() {
       {toolbar}
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-3 p-3 lg:grid-cols-2">
-        {/* Delta Flow Chart */}
+        {/* Buy vs sell pressure over time: 5 min / 15 min / 1 hour */}
         <section className="min-w-0 rounded border border-term-border bg-term-bg/20 p-3">
-          <h3 className="mb-3 text-[11px] font-bold uppercase tracking-wide text-term-dim">Cumulative Delta (Buy vs Sell Pressure)</h3>
-          <div className="h-[240px] bg-term-panel rounded border border-term-border/40 p-2">
-            {deltaData.length > 0 ? (
-              <svg viewBox={`0 0 600 200`} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
-                {/* Grid */}
-                <line x1="0" y1="100" x2="600" y2="100" stroke="#475569" strokeWidth="1" strokeDasharray="2,2" />
-
-                {/* Delta line */}
-                {deltaData.length > 1 && (
-                  <polyline
-                    points={deltaData
-                      .map((d, i) => {
-                        const x = (i / (deltaData.length - 1)) * 600;
-                        const y = 100 - (d.delta / Math.max(...deltaData.map((dd) => Math.abs(dd.delta)), 1)) * 80;
-                        return `${x},${y}`;
-                      })
-                      .join(" ")}
-                    fill="none"
-                    stroke={deltaData[deltaData.length - 1].delta > 0 ? BUY_COLOR : SELL_COLOR}
-                    strokeWidth="2"
-                  />
-                )}
-
-                {/* Latest value */}
-                {deltaData.length > 0 && (
-                  <text
-                    x="590"
-                    y="20"
-                    textAnchor="end"
-                    className="text-[12px] font-bold"
-                    fill={deltaData[deltaData.length - 1].delta > 0 ? BUY_COLOR : SELL_COLOR}
+          <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-term-dim">
+            Buy vs Sell Pressure · 5 min / 15 min / 1 hour
+          </h3>
+          <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px]">
+            {lines.map((l) => {
+              const last = l.pts[l.pts.length - 1];
+              return (
+                <span key={l.w} className="flex items-center gap-1 whitespace-nowrap">
+                  <span className="inline-block h-0.5 w-3.5 rounded" style={{ background: LINE_COLOR[l.w] }} />
+                  <span className="text-term-dim">{l.label}</span>
+                  <span
+                    className={`num font-semibold ${
+                      !last ? "text-term-dim" : last.v >= 55 ? "text-emerald-400" : last.v <= 45 ? "text-red-400" : "text-term-text"
+                    }`}
                   >
-                    {nf(deltaData[deltaData.length - 1].delta, 0)}
-                  </text>
-                )}
-              </svg>
-            ) : (
-              <div className="flex items-center justify-center h-full text-term-dim text-[11px]">No flow data yet</div>
-            )}
+                    {last ? `${nf(last.v, 0)}%` : "–"}
+                  </span>
+                </span>
+              );
+            })}
           </div>
-          <div className="mt-2 flex justify-between text-[10px] text-term-dim">
-            <span>🟢 Buying pressure (delta &gt; 0)</span>
-            <span>🔴 Selling pressure (delta &lt; 0)</span>
+          <div className="rounded border border-term-border/40 bg-term-panel p-1">
+            <PressureChart lines={lines} />
+          </div>
+          <div className="mt-2 text-[10px] leading-snug text-term-dim">
+            Buying share of the flow in each window. Above 50% = more buying (call buying + put writing), below = more
+            selling (call writing + put buying). Shaded 45–55% = balanced. The 5 min line reacts first; the 1 hour line
+            shows the bigger picture.
           </div>
         </section>
 
@@ -302,7 +341,7 @@ export function OrderFlowView() {
       </div>
 
       {/* Status indicator */}
-      {data.closed && (
+      {base.closed && (
         <div className="mx-3 mb-3 rounded border border-term-border/40 bg-term-accent/10 px-3 py-2 text-[11px] text-term-text">
           Order flow tracking ended at market close. Resumes 09:15 IST next trading day.
         </div>
