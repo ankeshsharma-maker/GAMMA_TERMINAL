@@ -1264,7 +1264,12 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const dexEl = (() => {
     if (!chain) return null;
     let dex = 0, theta = 0, vega = 0, itmOI = 0, otmOI = 0;
-    for (const r of rows) {
+    // chain.rows (the whole delivered chain), not the frontend "Strikes ±"
+    // window (`rows`) -- ΓGEX beside these three sits at chain.netGex, the
+    // backend's whole-chain figure, so DEX/Theta/Vega drifting with a
+    // window selector meant for the OI bar chart would silently mismatch
+    // their own neighbour in the same row.
+    for (const r of chain.rows) {
       // same "call − put" dealer-exposure convention as the backend's own
       // netGex (processing.py) — NOT the gammaFlip walk above, which nets
       // the opposite way for its own, different purpose (finding the
@@ -1281,7 +1286,11 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       ? spot * (chain.atmIV / 100) * Math.sqrt(Math.max(chain.dte, 0) / 365)
       : null;
     const shortGamma = gammaFlip ? spot < gammaFlip.strike : null;
-    const { ce, pe } = oiTotals;
+    // whole-chain Call/Put OI (same tot_ce_oi/tot_pe_oi the backend derives
+    // chain.pcr from), not oiTotals -- keeps this donut's Put/Call % in
+    // agreement with the PCR figure at its own center, and with DEX/GEX/
+    // Theta/Vega above now all reading the same whole-chain scope.
+    const { ceOI: ce, peOI: pe } = chain.totals;
     const oiTot = ce + pe;
     const itmTot = itmOI + otmOI;
 
@@ -1357,7 +1366,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
 
             <div
               className="grid grid-cols-4 gap-1.5"
-              title="Aggregate dealer exposure over the visible strike window: Σ(call·OI − put·OI) per greek, same sign convention as netGex — assumes dealers are net long puts / short calls from customer flow."
+              title="Aggregate dealer exposure across the whole chain: Σ(call·OI − put·OI) per greek, same sign convention as netGex — assumes dealers are net long puts / short calls from customer flow."
             >
               <Greek label="ΔDEX" value={compact(dex)} up={dex >= 0} />
               <Greek label="ΓGEX" value={compact(chain.netGex)} up={chain.netGex >= 0} />
