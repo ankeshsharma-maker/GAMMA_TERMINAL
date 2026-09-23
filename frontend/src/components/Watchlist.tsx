@@ -182,6 +182,7 @@ export function Watchlist() {
   const [renaming, setRenaming] = useState<number | null>(null);
   const [results, setResults] = useState<Awaited<ReturnType<typeof api.symbolSearch>>["results"]>([]);
   const [openSearch, setOpenSearch] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false); // phone: strike / future / preset tools folded away
   const [view, setView] = useState<WlView>(() => {
     try {
       return (localStorage.getItem("wlView") as WlView) || "list";
@@ -355,34 +356,41 @@ export function Watchlist() {
     { sym: 0, opt: 0 }
   );
 
+  const viewToggle = (
+    <div className="segx rounded-md">
+      {(["list", "grid"] as const).map((v) => (
+        <button
+          key={v}
+          onClick={() => setViewPersist(v)}
+          title={`${v} view`}
+          className={`px-2 py-1 text-[11px] transition ${
+            view === v ? "bg-term-accent text-white" : "text-term-dim hover:bg-term-border"
+          }`}
+        >
+          {v === "list" ? "☰" : "▦"}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div className="flex h-full flex-col bg-term-panel2">
-      {/* header */}
-      <div className="flex items-center justify-between px-3 pb-1.5 pt-2.5">
-        <div className="flex items-baseline gap-2">
-          <span className="text-[13px] font-semibold tracking-tight text-term-text">Watchlist</span>
-          <span className="text-[9px] text-term-dim">
-            {counts.sym} sym · {counts.opt} opt
-          </span>
+      {/* header -- on a phone its view toggle rides the sort bar instead, so the
+          rows start higher (Flattrade-style: 8+ symbols on screen) */}
+      {!isMobile && (
+        <div className="flex items-center justify-between px-3 pb-1.5 pt-2.5">
+          <div className="flex items-baseline gap-2">
+            <span className="text-[13px] font-semibold tracking-tight text-term-text">Watchlist</span>
+            <span className="text-[9px] text-term-dim">
+              {counts.sym} sym · {counts.opt} opt
+            </span>
+          </div>
+          {viewToggle}
         </div>
-        <div className="segx rounded-md">
-          {(["list", "grid"] as const).map((v) => (
-            <button
-              key={v}
-              onClick={() => setViewPersist(v)}
-              title={`${v} view`}
-              className={`px-2 py-1 text-[11px] transition ${
-                view === v ? "bg-term-accent text-white" : "text-term-dim hover:bg-term-border"
-              }`}
-            >
-              {v === "list" ? "☰" : "▦"}
-            </button>
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* sort bar */}
-      <div className="flex items-center gap-1 px-3 pb-1.5 text-[10px]">
+      <div className={`flex items-center gap-1 px-3 pb-1.5 text-[10px] ${isMobile ? "pt-1.5" : ""}`}>
         <span className="text-term-dim">Sort</span>
         {(
           [
@@ -408,11 +416,25 @@ export function Watchlist() {
         {sort.k !== "none" && (
           <button
             onClick={() => setSortPersist("none" as SortKey)}
-            className="ml-auto text-term-dim hover:text-down"
+            className={`${isMobile ? "" : "ml-auto"} text-term-dim hover:text-down`}
             title="Clear sort (list order)"
           >
             ✕
           </button>
+        )}
+        {isMobile && (
+          <div className="ml-auto flex items-center gap-1">
+            {viewToggle}
+            <button
+              onClick={() => setToolsOpen((o) => !o)}
+              title="Add strikes / future, clear strikes, load a preset"
+              className={`rounded border px-1.5 py-0.5 text-[11px] ${
+                toolsOpen ? "border-term-accent text-term-accent" : "border-term-dim/70 text-term-dim"
+              }`}
+            >
+              ⚙
+            </button>
+          </div>
         )}
       </div>
 
@@ -498,6 +520,8 @@ export function Watchlist() {
             +
           </button>
         </form>
+        {(!isMobile || toolsOpen) && (
+        <>
         <div className="mt-1.5 flex gap-1">
           <button
             type="button"
@@ -545,6 +569,8 @@ export function Watchlist() {
             width={200}
           />
         </div>
+        </>
+        )}
 
         {openSearch && results.length > 0 && (
           <div className="absolute left-3 right-3 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-md border border-term-border bg-term-panel shadow-xl">
