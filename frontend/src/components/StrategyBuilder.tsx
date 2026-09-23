@@ -149,6 +149,21 @@ export function StrategyBuilder() {
   });
   const [hedge, setHedge] = useState<Awaited<ReturnType<typeof api.findHedge>> | null>(null);
   const [hedgeBusy, setHedgeBusy] = useState(false);
+  // one-click delta-neutral hedge via the underlying future (delta=1/unit,
+  // no gamma/theta/vega drag) -- distinct from the loss-cap hedge finder
+  // above, which only treats delta as an optional filter, not the goal
+  const [deltaHedge, setDeltaHedge] = useState<{
+    leg: StrategyLeg;
+    label: string;
+    cost: number;
+    resultMaxLoss: number;
+    resultMaxProfit: number;
+    resultMaxProfitUnbounded: boolean;
+    resultPop: number | null;
+    resultGreeks: Record<string, number>;
+  } | null>(null);
+  const [deltaHedgeBusy, setDeltaHedgeBusy] = useState(false);
+  const [deltaHedgeNote, setDeltaHedgeNote] = useState<string | null>(null);
   const [fromBroker, setFromBroker] = useState(false);
   const [mult, setMult] = useState(1);
 
@@ -298,6 +313,7 @@ export function StrategyBuilder() {
   const update = (next: StrategyLeg[]) => {
     setLegs(next);
     setHedge(null);
+    setDeltaHedge(null);
     runAnalyze(scaled(next));
   };
 
@@ -360,6 +376,48 @@ export function StrategyBuilder() {
   const applyHedge = (leg: StrategyLeg | StrategyLeg[]) => {
     const add = Array.isArray(leg) ? leg : [leg];
     update([...legs, ...add.map((l) => ({ ...l }))]);
+  };
+
+  const findDeltaHedge = async () => {
+    if (!analysis || !chain || !legs.length) return;
+    const lotSize = chain.lotSize || 1;
+    // whole lots of the future (delta = 1/unit) that bring net delta to ~0
+    const neededLots = Math.round(-analysis.greeks.delta / lotSize);
+    if (neededLots === 0) {
+      setDeltaHedge(null);
+      setDeltaHedgeNote("Already ~delta-neutral — under one lot of the future either way, nothing to hedge.");
+      return;
+    }
+    setDeltaHedgeNote(null);
+    // `update()` runs every leg through scaled() (lots * mult) before
+    // sending it to the engine, so a leg computed against the already-
+    // scaled analysis.greeks.delta needs to be pre-divided by mult, or
+    // applying it would double the hedge size whenever mult > 1
+    const rawLots = Math.max(1, Math.round(Math.abs(neededLots) / Math.max(1, mult)));
+    const leg: StrategyLeg = { optionType: "FUT", strike: 0, side: neededLots > 0 ? "BUY" : "SELL", lots: rawLots };
+    setDeltaHedgeBusy(true);
+    try {
+      const result = await api.analyzeStrategy({
+        symbol,
+        expiry: expiry ?? undefined,
+        legs: scaled([...legs, leg]),
+      });
+      setDeltaHedge({
+        leg,
+        label: `${leg.side} ${Math.abs(neededLots)} lot${Math.abs(neededLots) > 1 ? "s" : ""} ${symbol} FUT`,
+        cost: (leg.side === "BUY" ? 1 : -1) * (chain.spot || 0) * lotSize * rawLots * Math.max(1, mult),
+        resultMaxLoss: result.maxLoss,
+        resultMaxProfit: result.maxProfit,
+        resultMaxProfitUnbounded: result.maxProfitUnbounded,
+        resultPop: result.pop,
+        resultGreeks: result.greeks,
+      });
+      setErr(null);
+    } catch (e: any) {
+      setErr(String(e?.message || e));
+    } finally {
+      setDeltaHedgeBusy(false);
+    }
   };
 
   useEffect(() => {
@@ -1133,6 +1191,48 @@ export function StrategyBuilder() {
                 ⚙
               </button>
             </div>
+
+            <button
+              onClick={findDeltaHedge}
+              disabled={deltaHedgeBusy || !analysis}
+              title="Buy/sell the underlying future to bring net delta to ~0 — no loss-cap number needed"
+              className="mt-1.5 w-full rounded border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-2xs font-semibold text-cyan-300 transition-colors hover:bg-cyan-500/20 disabled:opacity-40"
+            >
+              {deltaHedgeBusy ? "Calculating…" : `🎯 Neutralize Δ${analysis ? ` (now ${nf(analysis.greeks.delta, 0)})` : ""}`}
+            </button>
+            {deltaHedgeNote && <div className="mt-1 text-2xs text-term-dim">{deltaHedgeNote}</div>}
+            {deltaHedge && (
+              <div className="mt-1.5 rounded border border-cyan-500/40 bg-term-panel p-1.5 text-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-term-text">{deltaHedge.label}</span>
+                  <button
+                    onClick={() => {
+                      applyHedge(deltaHedge.leg);
+                      setDeltaHedge(null);
+                    }}
+                    className="btn btn-buy px-2 py-0.5 text-[10px]"
+                  >
+                    Apply
+                  </button>
+                </div>
+                <div className="num mt-0.5 text-[10px] text-term-dim">
+                  {deltaHedge.cost >= 0 ? "cost" : "credit"} ₹{nf(Math.abs(deltaHedge.cost), 0)} · max loss{" "}
+                  <span className="text-down">₹{nf(Math.abs(deltaHedge.resultMaxLoss), 0)}</span> · max profit{" "}
+                  <span className="text-up">
+                    {deltaHedge.resultMaxProfitUnbounded ? "∞" : `₹${nf(deltaHedge.resultMaxProfit, 0)}`}
+                  </span>{" "}
+                  · POP {deltaHedge.resultPop != null ? `${nf(deltaHedge.resultPop, 0)}%` : "–"}
+                </div>
+                <div className="num mt-0.5 text-[10px] text-term-dim">
+                  Δ {nf(deltaHedge.resultGreeks.delta, 1)} · Γ {nf(deltaHedge.resultGreeks.gamma, 3)} · Θ{" "}
+                  {nf(deltaHedge.resultGreeks.theta, 0)} · V {nf(deltaHedge.resultGreeks.vega, 0)}
+                </div>
+                <div className="mt-1 text-[10px] text-term-dim">
+                  Futures carry no gamma/theta/vega of their own, so this hedges delta only — the rest of the
+                  Greeks above are unchanged from your position before the hedge.
+                </div>
+              </div>
+            )}
 
             {hedgeAdvOpen && (
               <div className="mt-1.5 grid grid-cols-2 gap-x-2 gap-y-1 rounded border border-term-border bg-term-bg/50 p-1.5">
