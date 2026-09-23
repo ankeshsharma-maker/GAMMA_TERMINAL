@@ -762,7 +762,12 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
 
   // ---- OI donuts (total OI split + change-in-OI split) ----
   const donutEl = (() => {
-    const { ce, pe, pcr } = oiTotals;
+    const { ce, pe } = oiTotals;
+    // the donut's Call/Put split is intentionally windowed (±count strikes,
+    // matches the "Total OI · N±ATM" label), but PCR itself is always quoted
+    // across the whole chain (chain.pcr, same value as the header/top-bar) so
+    // it doesn't jump around as you change the strike window
+    const pcr = chain?.pcr ?? null;
     const tot = ce + pe;
     if (tot <= 0) return null;
 
