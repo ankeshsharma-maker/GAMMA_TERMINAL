@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { Chart } from "./Chart";
 import { MiniChart, MINI_IND_DEFAULT, type MiniInd } from "./MiniChart";
 import { SelectMenu } from "./SelectMenu";
+import { TrendCompass } from "./TrendCompass";
 
 const TF: [string, number][] = [
   ["1m", 60],
@@ -170,6 +171,9 @@ export function ScalpCharts() {
           {layout === 1 ? "full chart with indicators & split" : "each pane: symbol · TF · derivative · EMA/VWAP"}
         </span>
       </div>
+
+      {/* single layout: <Chart /> carries its own compass row */}
+      {layout > 1 && <TrendCompass symbol={storeSym} />}
 
       {layout === 1 ? (
         <Chart />

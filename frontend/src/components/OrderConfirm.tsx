@@ -2,8 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, sk } from "../lib/format";
+import { isDown, isUp, useTrend } from "./TrendCompass";
 
 const rupee = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
+
+// +1 = gains if the underlying rises, −1 = gains if it falls
+const lean = (ot: "CE" | "PE" | "FUT", side: "BUY" | "SELL") => (ot === "PE" ? -1 : 1) * (side === "BUY" ? 1 : -1);
 
 export function OrderConfirm() {
   const { pending, chain, confirmPending, cancelPending } = useStore();
@@ -11,6 +15,7 @@ export function OrderConfirm() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [marginEst, setMarginEst] = useState<number | null>(null);
+  const trend = useTrend(pending?.symbol);
 
   const legs = useMemo(() => {
     if (!pending) return [];
@@ -63,6 +68,18 @@ export function OrderConfirm() {
 
   const shortfall =
     marginEst != null && funds?.available != null ? marginEst - funds.available : null;
+
+  // only when every leg leans the wrong way -- a strangle / spread that is
+  // deliberately two-sided shouldn't nag
+  const leans = legs.map((l) => lean(l.optionType, l.side));
+  const against =
+    trend && leans.length > 0
+      ? isUp(trend.overall) && leans.every((x) => x < 0)
+        ? "UP"
+        : isDown(trend.overall) && leans.every((x) => x > 0)
+        ? "DOWN"
+        : null
+      : null;
 
   const go = async () => {
     setBusy(true);
@@ -122,6 +139,14 @@ export function OrderConfirm() {
             ⚠ Est. margin needed ≈ {rupee(marginEst!)}, but only {rupee(funds!.available!)} is available —
             likely short by ≈ {rupee(shortfall)}. This is a rough estimate (not real SPAN); the broker may
             still accept or reject it, but expect a possible margin rejection.
+          </div>
+        )}
+
+        {against && trend && (
+          <div className="mb-3 rounded border border-amber-500/60 bg-amber-500/10 px-2.5 py-2 text-2xs text-amber-300">
+            ⚠ Against the trend: {pending.symbol} reads <b>{against}</b> ({trend.up}↑ {trend.down}↓ of {trend.total}{" "}
+            signals across 5m / 15m / 1h + option flow). This order only makes money if the move{" "}
+            {against === "UP" ? "stops or reverses down" : "stops or reverses up"} from here.
           </div>
         )}
 

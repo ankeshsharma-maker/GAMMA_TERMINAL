@@ -17,6 +17,7 @@ import { getDataSrc, getIntervalS } from "../lib/prefs";
 import { computeGammaFlip } from "../lib/gammaFlip";
 import { DrawingPrimitive, describeDrawing, type Drawing, type Point } from "../lib/chartDrawings";
 import { bucketStart } from "../lib/istTime";
+import { TrendCompass } from "./TrendCompass";
 import {
   bollinger,
   ema,
@@ -1340,6 +1341,7 @@ export function Chart() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <TrendCompass symbol={symbol} />
       {!barOpen && (
         <div className="flex items-center gap-1 self-start rounded-br border-b border-r border-term-border bg-term-panel2 px-1.5 py-0.5 text-2xs">
           <button
