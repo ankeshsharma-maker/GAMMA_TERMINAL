@@ -15,6 +15,7 @@ const WINDOWS: readonly (readonly [string, string])[] = [
   ["5 min ago", "5"],
   ["15 min ago", "15"],
   ["30 min ago", "30"],
+  ["1 hour ago", "60"],
   ["Prev close", "day"],
 ];
 const WIN_LS = "flow.window";
@@ -672,7 +673,8 @@ function StrikeTable({ d }: { d: FlowData }) {
     <div className="rounded-lg border border-term-border bg-term-panel">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-term-border px-3 py-1.5">
         <span className="text-2xs font-semibold uppercase tracking-wide text-term-dim">
-          Strike by strike · change in OI and price{d.window === "day" ? " since yesterday's close" : ` over ${d.window} min`}
+          Strike by strike · change in OI and price
+          {d.window === "day" ? " since yesterday's close" : ` over ${d.window === "60" ? "1 hour" : `${d.window} min`}`}
         </span>
         <span className="text-[10px] text-term-dim">★ = the biggest for that flow</span>
       </div>
