@@ -238,6 +238,10 @@ export function Chart() {
   // a new symbol / instrument / interval just started loading: re-frame the view
   // once its first candles land, instead of trusting the previous chart's scroll position
   const reframeRef = useRef(false);
+  // the logical range we last applied ourselves (via fitContent/setVisibleRange), so a plain
+  // data refresh can tell "user zoomed/panned the view" apart from "new candles landed" and
+  // leave a manually-zoomed-out view alone instead of snapping it back every poll
+  const lastAppliedRangeRef = useRef<{ from: number; to: number } | null>(null);
   const dataRef = useRef<ChartData | null>(null); // mirror of `data`, readable inside the fetch loop
   const degradedRef = useRef(0); // consecutive refreshes refused as degraded
   const priceCandlesRef = useRef<Candle[]>([]); // the candles on screen, readable from drawing primitives
@@ -1042,20 +1046,29 @@ export function Chart() {
     if (!ts || priceCandles.length === 0) return;
     if (!force) {
       const vr = ts.getVisibleLogicalRange();
-      if (vr && vr.to < priceCandles.length - 2) return; // scrolled away from live edge
+      if (vr) {
+        const scrolledAway = vr.to < priceCandles.length - 2; // panned back from the live edge
+        const applied = lastAppliedRangeRef.current;
+        // zoomed in/out manually: bar count on screen no longer matches what we last set —
+        // width alone (not position) so the built-in realtime auto-scroll (which translates
+        // from/to together, same width) doesn't get mistaken for a manual zoom
+        const zoomed = !!applied && Math.abs(vr.to - vr.from - (applied.to - applied.from)) > 0.5;
+        if (scrolledAway || zoomed) return;
+      }
     }
     if (rangeD <= 0) {
       ts.fitContent();
-      return;
+    } else {
+      const last = priceCandles[priceCandles.length - 1].time as number;
+      const first = priceCandles[0].time as number;
+      const from = Math.max(first, last - rangeD * 86400);
+      try {
+        ts.setVisibleRange({ from: from as any, to: last as any });
+      } catch {
+        ts.fitContent();
+      }
     }
-    const last = priceCandles[priceCandles.length - 1].time as number;
-    const first = priceCandles[0].time as number;
-    const from = Math.max(first, last - rangeD * 86400);
-    try {
-      ts.setVisibleRange({ from: from as any, to: last as any });
-    } catch {
-      ts.fitContent();
-    }
+    lastAppliedRangeRef.current = ts.getVisibleLogicalRange();
   };
   // deliberate re-frames: window change, or instrument / interval switch
   useEffect(() => applyRange(true), [rangeD]); // eslint-disable-line react-hooks/exhaustive-deps
