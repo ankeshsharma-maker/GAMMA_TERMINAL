@@ -95,6 +95,7 @@ const TOGGLES = [
   ["fibpivot", "Fib Pivots"],
   ["straddle", "ATM Straddle"],
   ["score", "Blast Score"],
+  ["greeks", "Greeks"],
 ] as const;
 type ToggleKey = (typeof TOGGLES)[number][0];
 
@@ -302,6 +303,7 @@ export function Chart() {
     fibpivot: false,
     straddle: false, // ATM CE+PE price (a volatility proxy) — opt-in, it was crowding every chart
     score: false,
+    greeks: false,
   });
   // hide the time (x) axis labels for a cleaner chart
   const [showTime, setShowTime] = useState(() => {
@@ -337,6 +339,24 @@ export function Chart() {
     setIndHidden(v);
     try {
       localStorage.setItem("chart.indHidden", v ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  };
+  // which Greek the "Greeks" toggle plots -- ATM call + put, from the same
+  // per-poll history the live chain's own Greeks table reads
+  const [greekSel, setGreekSel] = useState<"delta" | "gamma" | "theta" | "vega">(() => {
+    try {
+      const v = localStorage.getItem("chart.greekSel");
+      return v === "gamma" || v === "theta" || v === "vega" ? v : "delta";
+    } catch {
+      return "delta";
+    }
+  });
+  const setGreek = (v: "delta" | "gamma" | "theta" | "vega") => {
+    setGreekSel(v);
+    try {
+      localStorage.setItem("chart.greekSel", v);
     } catch {
       /* ignore */
     }
@@ -556,6 +576,26 @@ export function Chart() {
     });
     chart.priceScale("straddle").applyOptions({ scaleMargins: { top: 0.74, bottom: 0.14 } });
     chart.priceScale("score").applyOptions({ scaleMargins: { top: 0.74, bottom: 0.14 } });
+
+    // ATM Greeks (call red / put green, matching this app's CE/PE colour
+    // convention elsewhere) -- which field each line reads is picked at
+    // render time by greekSel, both share one scale since delta/gamma/
+    // theta/vega for the same ATM pair are always on comparable magnitudes
+    c.greeksCe = chart.addLineSeries({
+      color: "#f87171",
+      lineWidth: 2,
+      priceScaleId: "greeks",
+      priceLineVisible: false,
+      lastValueVisible: true,
+    });
+    c.greeksPe = chart.addLineSeries({
+      color: "#4ade80",
+      lineWidth: 2,
+      priceScaleId: "greeks",
+      priceLineVisible: false,
+      lastValueVisible: true,
+    });
+    chart.priceScale("greeks").applyOptions({ scaleMargins: { top: 0.74, bottom: 0.14 } });
 
     c.rsi = chart.addLineSeries({
       color: "#e879f9",
@@ -879,6 +919,10 @@ export function Chart() {
     setLine("straddle", dedupe(data.series.straddle), eff.straddle);
     setLine("score", dedupe(data.series.score), eff.score);
 
+    const greekCap = greekSel[0].toUpperCase() + greekSel.slice(1);
+    setLine("greeksCe", dedupe(data.series[`ce${greekCap}`]), eff.greeks);
+    setLine("greeksPe", dedupe(data.series[`pe${greekCap}`]), eff.greeks);
+
     // OI overlay — total Call / Put OI lines + day ΔOI columns (from the
     // per-poll chain-history snapshots; dense during a session, sparse otherwise)
     setLine("callOI", dedupe(data.series.ceOI ?? []), eff.oi);
@@ -898,13 +942,14 @@ export function Chart() {
     //      or the straddle / blast-score overlays (which used to be pinned to
     //      the same bottom slot as RSI/MACD) ----
     {
-      type SubKey = "vol" | "oi" | "oichg" | "straddle" | "score" | "rsi" | "macd";
+      type SubKey = "vol" | "oi" | "oichg" | "straddle" | "score" | "greeks" | "rsi" | "macd";
       const sub: SubKey[] = [];
       if (showVol) sub.push("vol");
       if (eff.oi) sub.push("oi");
       if (eff.oichg) sub.push("oichg");
       if (eff.straddle) sub.push("straddle");
       if (eff.score) sub.push("score");
+      if (eff.greeks) sub.push("greeks");
       if (eff.rsi) sub.push("rsi");
       if (eff.macd) sub.push("macd");
       const n = sub.length;
@@ -983,7 +1028,7 @@ export function Chart() {
     if (reframe) reframeRef.current = false;
     applyRange(reframe);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [priceCandles, ctype, data, eff, mtf, indHidden, intervalS]);
+  }, [priceCandles, ctype, data, eff, mtf, indHidden, intervalS, greekSel]);
 
   // clamp the visible window to the chosen lookback (1D / 3M / 6M / 1Y / All).
   // `force` = a deliberate re-frame (window / instrument / interval change or the
@@ -1773,23 +1818,47 @@ export function Chart() {
                   )}
                 </div>
                 {TOGGLES.map(([k, lbl]) => {
-                  const dis = isOption && (k === "straddle" || k === "score");
+                  const dis = isOption && (k === "straddle" || k === "score" || k === "greeks");
                   return (
-                    <button
-                      key={k}
-                      disabled={dis}
-                      onClick={() => setOn((o) => ({ ...o, [k]: !o[k] }))}
-                      className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left ${
-                        dis
-                          ? "cursor-not-allowed text-term-dim/40"
-                          : on[k]
-                          ? "bg-term-accent/15 text-term-text"
-                          : "text-term-dim hover:bg-term-border hover:text-term-text"
-                      }`}
-                    >
-                      <span>{lbl}</span>
-                      {on[k] && <span className="text-term-accent">✓</span>}
-                    </button>
+                    <div key={k}>
+                      <button
+                        disabled={dis}
+                        onClick={() => setOn((o) => ({ ...o, [k]: !o[k] }))}
+                        className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left ${
+                          dis
+                            ? "cursor-not-allowed text-term-dim/40"
+                            : on[k]
+                            ? "bg-term-accent/15 text-term-text"
+                            : "text-term-dim hover:bg-term-border hover:text-term-text"
+                        }`}
+                      >
+                        <span>{lbl}</span>
+                        {on[k] && <span className="text-term-accent">✓</span>}
+                      </button>
+                      {k === "greeks" && on.greeks && !dis && (
+                        <div
+                          className="segx mb-1 mt-0.5 ml-2"
+                          title="ATM call (red) / put (green) — from the same per-poll history the live chain reads"
+                        >
+                          {(["delta", "gamma", "theta", "vega"] as const).map((g) => (
+                            <button
+                              key={g}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setGreek(g);
+                              }}
+                              className={`px-1.5 py-0.5 capitalize ${
+                                greekSel === g
+                                  ? "bg-term-accent/25 text-term-text"
+                                  : "text-term-dim hover:bg-term-border hover:text-term-text"
+                              }`}
+                            >
+                              {g}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
                 {indHidden && activeInd > 0 && (
