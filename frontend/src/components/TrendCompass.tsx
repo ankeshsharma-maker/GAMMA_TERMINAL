@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
 import { ema, supertrend, type Candle } from "../lib/indicators";
 import type { FlowDir } from "../types";
@@ -138,42 +138,54 @@ const arrow = (d: Dir | null) =>
     <span className="text-term-dim">·</span>
   );
 
+// a timeframe cell is tinted only when its two signals agree
+const tint = (a: Dir | null, b: Dir | null) =>
+  a && a === b ? (a === "up" ? "bg-up/10" : a === "down" ? "bg-down/10" : "") : "";
+
+const Cell = ({ className = "", children }: { className?: string; children: ReactNode }) => (
+  <span className={`whitespace-nowrap px-1 py-0.5 ${className}`}>{children}</span>
+);
+
 export function TrendCompass({ symbol }: { symbol: string }) {
   const t = useTrend(symbol);
   const tone = !t
-    ? "border-term-border text-term-dim"
+    ? "text-term-dim"
     : isUp(t.overall)
-    ? "border-up/50 bg-up/10 text-up"
+    ? "bg-up/15 text-up"
     : isDown(t.overall)
-    ? "border-down/50 bg-down/10 text-down"
-    : "border-term-dim/60 bg-term-border/30 text-term-text";
+    ? "bg-down/15 text-down"
+    : "bg-term-border/30 text-term-text";
   return (
+    // one row, always: nowrap + sideways scroll on very narrow screens rather
+    // than wrapping into a second line that eats chart height
     <div
-      className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-term-border bg-term-panel px-3 py-1 text-[10px]"
+      className="no-scrollbar flex items-center overflow-x-auto border-b border-term-border bg-term-panel px-1 py-1 text-[10px]"
       title="Trend compass — EMA 9/21 (first arrow) and Supertrend (second arrow) on 5m, 15m and 1h candles, plus the option-flow direction. Confirms a trend once it's under way; it lags at turning points and does not predict them."
     >
-      <span className="font-semibold uppercase tracking-wide text-term-dim">Trend · {symbol}</span>
-      <span className={`rounded border px-1.5 py-0.5 font-bold ${tone}`}>{t ? LABEL[t.overall] : "reading…"}</span>
-      {t && (
-        <>
-          <span className="num text-term-dim">
-            {t.up}↑ {t.down}↓ of {t.total}
-          </span>
-          {t.tfs.map((f) => (
-            <span key={f.label} className="num whitespace-nowrap">
-              <span className="text-term-dim">{f.label} </span>
-              {arrow(f.ema)}
-              {arrow(f.st)}
-            </span>
-          ))}
-          {t.flow && (
-            <span className="whitespace-nowrap">
-              <span className="text-term-dim">Flow </span>
-              {arrow(t.flow)}
-            </span>
-          )}
-        </>
-      )}
+      <div className="num flex shrink-0 divide-x divide-term-border/70 overflow-hidden rounded border border-term-border/70">
+        <Cell className="font-semibold uppercase tracking-wide text-term-dim">Trend · {symbol}</Cell>
+        <Cell className={`font-bold ${tone}`}>{t ? LABEL[t.overall] : "reading…"}</Cell>
+        {t && (
+          <>
+            <Cell className="text-term-dim">
+              {t.up}↑ {t.down}↓ of {t.total}
+            </Cell>
+            {t.tfs.map((f) => (
+              <Cell key={f.label} className={tint(f.ema, f.st)}>
+                <span className="text-term-dim">{f.label} </span>
+                {arrow(f.ema)}
+                {arrow(f.st)}
+              </Cell>
+            ))}
+            {t.flow && (
+              <Cell>
+                <span className="text-term-dim">Flow </span>
+                {arrow(t.flow)}
+              </Cell>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

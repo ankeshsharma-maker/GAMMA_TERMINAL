@@ -92,6 +92,13 @@ select:focus-visible {
 ::-webkit-scrollbar-thumb:hover {
   background: #33425a;
 }
+/* still scrollable by swipe, but no 9px bar eating the height of a one-row strip */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
 
 @layer components {
   .cell {
