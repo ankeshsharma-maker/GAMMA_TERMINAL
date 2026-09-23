@@ -75,6 +75,36 @@ function TopIndices() {
   );
 }
 
+/** current symbol's PCR + its change since this chip first saw it (session
+ *  baseline, resets on a symbol switch) — desktop shows this in the header
+ *  on every tab (Header.tsx's "zone 2" stats); mobile had no equivalent
+ *  persistent spot for it, so it was only reachable by opening OI Profile. */
+function PcrChip() {
+  const chain = useStore((s) => s.chain);
+  const baseRef = useRef<{ symbol: string; pcr: number } | null>(null);
+  if (chain?.symbol && chain.pcr != null && baseRef.current?.symbol !== chain.symbol) {
+    baseRef.current = { symbol: chain.symbol, pcr: chain.pcr };
+  }
+  if (!chain || chain.pcr == null) return null;
+  const base = baseRef.current?.symbol === chain.symbol ? baseRef.current.pcr : chain.pcr;
+  const chg = chain.pcr - base;
+  return (
+    <span
+      className="flex shrink-0 items-baseline gap-1 rounded border border-term-border bg-term-bg/60 px-1.5 py-0.5"
+      title={`${chain.symbol} put/call OI ratio — ${chg === 0 ? "unchanged" : chg > 0 ? "rising" : "falling"} since this screen opened`}
+    >
+      <span className="text-[8px] font-semibold uppercase tracking-tight text-term-dim">PCR</span>
+      <span className={`num text-[11px] font-semibold leading-none ${chain.pcr >= 1 ? "text-up" : "text-down"}`}>
+        {nf(chain.pcr, 2)}
+      </span>
+      <span className={`num text-[8px] leading-none ${chg === 0 ? "invisible" : chg > 0 ? "text-up" : "text-down"}`}>
+        {chg >= 0 ? "▲" : "▼"}
+        {nf(Math.abs(chg), 2)}
+      </span>
+    </span>
+  );
+}
+
 /** two big index quotes across the top of the mobile watchlist */
 function MobileIndexBand() {
   const [rows, setRows] = useState<
@@ -323,6 +353,7 @@ export function MobileShell() {
       >
         <LogoMark size={22} />
         <TopIndices />
+        <PcrChip />
         <button
           onClick={() => setBrokerOpen((o) => !o)}
           className={`relative ml-auto shrink-0 rounded border px-1.5 py-1 text-[11px] ${
