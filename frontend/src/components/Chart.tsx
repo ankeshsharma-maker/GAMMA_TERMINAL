@@ -1839,7 +1839,7 @@ export function Chart() {
                       </button>
                       {k === "greeks" && on.greeks && !dis && (
                         <div
-                          className="segx mb-1 mt-0.5 ml-2"
+                          className="mb-1 mt-0.5 ml-2 grid grid-cols-2 gap-1 overflow-hidden rounded border border-term-dim/70"
                           title="ATM call (red) / put (green) — from the same per-poll history the live chain reads"
                         >
                           {(["delta", "gamma", "theta", "vega"] as const).map((g) => (
