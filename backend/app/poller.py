@@ -379,6 +379,24 @@ async def run_poller(stop: asyncio.Event) -> None:
             log.warning("price-alert tick failed: %s", exc)
 
         try:
+            from . import indicator_alerts
+
+            iev = await indicator_alerts.tick()
+            for e in iev:
+                store.add_alert(
+                    {
+                        "ts": time.time(), "symbol": e.get("symbol", ""),
+                        "kind": e["kind"], "severity": "warning",
+                        "message": e["message"], "score": 0,
+                    }
+                )
+                log.info("INDICATOR-ALERT %s", e["message"])
+            if iev:
+                await hub.broadcast_all({"type": "alerts", "data": store.get_alerts(50)})
+        except Exception as exc:  # noqa: BLE001
+            log.warning("indicator-alert tick failed: %s", exc)
+
+        try:
             from . import mtm_alerts
 
             mev = await mtm_alerts.tick()

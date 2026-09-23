@@ -87,6 +87,7 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
             ["alerts", "Alerts", aNew],
             ["oiwatch", "OI Watch", 0],
             ["pricewatch", "Price Alerts", 0],
+            ["indicatorwatch", "EMA/RSI Alerts", 0],
             ["mtmwatch", "MTM Alerts", 0],
           ] as const
         ).map(([k, label, n]) => (
@@ -223,6 +224,8 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
           <OiWatchTab />
         ) : notifTab === "pricewatch" ? (
           <PriceAlertTab />
+        ) : notifTab === "indicatorwatch" ? (
+          <IndicatorAlertTab />
         ) : (
           <MtmAlertTab />
         )}
@@ -527,6 +530,216 @@ function PriceAlertTab() {
                 {r.status === "triggered" ? (
                   <span className="text-up">
                     fired{r.triggeredSpot != null && ` @ ${r.triggeredSpot.toLocaleString("en-IN")}`}
+                  </span>
+                ) : (
+                  "waiting"
+                )}
+              </div>
+            </div>
+            <button onClick={() => del(r.id)} className="shrink-0 px-1 text-term-dim hover:text-down" title="Remove">
+              ✕
+            </button>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------- *
+ *  Indicator Alerts — "tell me when spot is near its EMA9/21/50, or     *
+ *  RSI crosses a level" on a timeframe you pick. One-shot.              *
+ * -------------------------------------------------------------------- */
+const IND_TFS: [string, number][] = [
+  ["1m", 60], ["3m", 180], ["5m", 300], ["15m", 900], ["30m", 1800],
+  ["1h", 3600], ["4h", 14400], ["1D", 86400],
+];
+
+type IndicatorAlertRule = {
+  id: string;
+  symbol: string;
+  tf: number;
+  kind: "ema_near" | "rsi_level";
+  period: number;
+  tolerancePct?: number;
+  op?: "<" | ">" | "cross_up" | "cross_down";
+  value?: number;
+  note: string;
+  status: "active" | "triggered" | "cancelled";
+  triggeredAt: number | null;
+  triggeredValue: number | null;
+};
+
+function IndicatorAlertTab() {
+  const chain = useStore((s) => s.chain);
+  const [rules, setRules] = useState<IndicatorAlertRule[]>([]);
+  const [symbol, setSymbol] = useState("");
+  const [tf, setTf] = useState(300);
+  const [kind, setKind] = useState<"ema_near" | "rsi_level">("ema_near");
+  const [emaPeriod, setEmaPeriod] = useState<9 | 21 | 50>(9);
+  const [tolerancePct, setTolerancePct] = useState("0.15");
+  const [rsiPeriod, setRsiPeriod] = useState("14");
+  const [op, setOp] = useState<"<" | ">" | "cross_up" | "cross_down">("cross_down");
+  const [value, setValue] = useState("30");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    api.indicatorAlerts().then((d) => setRules((d.alerts || []) as IndicatorAlertRule[]), () => {});
+  };
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    if (chain?.symbol && !symbol) setSymbol(chain.symbol);
+  }, [chain?.symbol]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const create = async () => {
+    const sym = symbol.trim().toUpperCase();
+    if (!sym) return alert("Set a symbol");
+    setBusy(true);
+    try {
+      await api.indicatorAlertAdd(
+        kind === "ema_near"
+          ? { symbol: sym, tf, kind, period: emaPeriod, tolerancePct: Number(tolerancePct) || 0.15, note }
+          : { symbol: sym, tf, kind, period: Number(rsiPeriod) || 14, op, value: Number(value), note }
+      );
+      setNote("");
+      load();
+    } catch (e: any) {
+      alert(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const del = async (id: string) => {
+    await api.indicatorAlertDel(id);
+    load();
+  };
+
+  const SEG = "px-1.5 py-0.5 text-[10px]";
+  const on = "bg-term-accent text-white";
+  const off = "text-term-dim";
+  const active = rules.filter((r) => r.status !== "cancelled");
+  const opLabel: Record<string, string> = { "<": "<", ">": ">", cross_up: "crosses above", cross_down: "crosses below" };
+  const tfLabel = (v: number) => IND_TFS.find((t) => t[1] === v)?.[0] ?? `${v}s`;
+
+  return (
+    <div className="flex flex-col">
+      <div className="space-y-1.5 border-b border-term-border/60 p-2 text-[10px]">
+        <div className="flex flex-wrap items-center gap-1">
+          <input
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+            placeholder="symbol"
+            className="num w-20 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+          />
+          <select
+            value={tf}
+            onChange={(e) => setTf(Number(e.target.value))}
+            className="rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+            title="Timeframe the indicator is computed on"
+          >
+            {IND_TFS.map(([label, v]) => (
+              <option key={v} value={v}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <div className="segx">
+            {(["ema_near", "rsi_level"] as const).map((k) => (
+              <button key={k} onClick={() => setKind(k)} className={`${SEG} ${kind === k ? on : off}`}>
+                {k === "ema_near" ? "EMA near" : "RSI"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {kind === "ema_near" ? (
+          <div className="flex flex-wrap items-center gap-1">
+            <div className="segx">
+              {([9, 21, 50] as const).map((p) => (
+                <button key={p} onClick={() => setEmaPeriod(p)} className={`${SEG} ${emaPeriod === p ? on : off}`}>
+                  EMA{p}
+                </button>
+              ))}
+            </div>
+            <span className="text-term-dim">within</span>
+            <input
+              value={tolerancePct}
+              onChange={(e) => setTolerancePct(e.target.value.replace(/[^\d.]/g, ""))}
+              className="num w-14 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+            />
+            <span className="text-term-dim">%</span>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="text-term-dim">RSI</span>
+            <input
+              value={rsiPeriod}
+              onChange={(e) => setRsiPeriod(e.target.value.replace(/[^\d]/g, ""))}
+              className="num w-10 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+            />
+            <div className="segx">
+              {(["cross_down", "cross_up", "<", ">"] as const).map((o) => (
+                <button key={o} onClick={() => setOp(o)} className={`${SEG} ${op === o ? on : off}`}>
+                  {o === "cross_down" ? "↓" : o === "cross_up" ? "↑" : o}
+                </button>
+              ))}
+            </div>
+            <input
+              value={value}
+              onChange={(e) => setValue(e.target.value.replace(/[^\d.]/g, ""))}
+              className="num w-14 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+            />
+          </div>
+        )}
+
+        <div className="flex items-center gap-1">
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="note (optional)"
+            className="min-w-0 flex-1 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
+          />
+          <button
+            disabled={busy}
+            onClick={create}
+            className="rounded bg-term-accent px-2 py-0.5 text-[10px] font-semibold text-white disabled:opacity-40"
+          >
+            {busy ? "…" : "+ Alert"}
+          </button>
+        </div>
+      </div>
+
+      {active.length === 0 ? (
+        <div className="p-4 text-2xs text-term-dim">
+          No indicator alerts yet. Pick a symbol, timeframe and EMA proximity / RSI level above —
+          fires once into this Alerts feed (and webhook/Telegram/push, if set up) when it hits.
+        </div>
+      ) : (
+        active.map((r) => (
+          <div
+            key={r.id}
+            className={`flex items-center justify-between border-b border-term-border/40 px-3 py-2 text-2xs ${
+              r.status === "triggered" ? "opacity-60" : ""
+            }`}
+          >
+            <div className="min-w-0">
+              <div className="font-semibold">
+                {r.symbol} · {tfLabel(r.tf)} ·{" "}
+                {r.kind === "ema_near"
+                  ? `near EMA${r.period} (±${r.tolerancePct}%)`
+                  : `RSI${r.period} ${opLabel[r.op ?? "<"]} ${r.value}`}
+              </div>
+              <div className="text-term-dim">
+                {r.note && <>{r.note} · </>}
+                {r.status === "triggered" ? (
+                  <span className="text-up">
+                    fired{r.triggeredValue != null && ` @ ${r.triggeredValue.toLocaleString("en-IN")}`}
                   </span>
                 ) : (
                   "waiting"

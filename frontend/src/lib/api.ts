@@ -425,6 +425,15 @@ export const api = {
   priceAlertDel: (id: string) =>
     j<{ alerts: any[] }>(`/api/price-alerts/${id}`, { method: "DELETE" }),
 
+  indicatorAlerts: () => j<{ alerts: any[] }>("/api/indicator-alerts"),
+  indicatorAlertAdd: (body: Record<string, unknown>) =>
+    j<{ alert: any; alerts: any[] }>("/api/indicator-alerts", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  indicatorAlertDel: (id: string) =>
+    j<{ alerts: any[] }>(`/api/indicator-alerts/${id}`, { method: "DELETE" }),
+
   mtmAlerts: () => j<{ alerts: any[] }>("/api/mtm-alerts"),
   mtmAlertAdd: (body: Record<string, unknown>) =>
     j<{ alert: any; alerts: any[] }>("/api/mtm-alerts", {

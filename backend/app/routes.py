@@ -1192,6 +1192,42 @@ def price_alerts_clear():
     return {"alerts": price_alerts.clear_finished()}
 
 
+# ---- indicator alerts (fire once when EMA proximity / RSI level hits, on a chosen timeframe) ----
+@router.get("/indicator-alerts")
+def indicator_alerts_list():
+    from . import indicator_alerts
+
+    return {"alerts": indicator_alerts.list_alerts()}
+
+
+@router.post("/indicator-alerts")
+def indicator_alerts_add(body: dict):
+    from . import indicator_alerts
+
+    for k in ("symbol", "kind"):
+        if body.get(k) in (None, ""):
+            raise HTTPException(status_code=422, detail=f"{k} is required")
+    try:
+        row = indicator_alerts.add_alert(body)
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"alert": row, "alerts": indicator_alerts.list_alerts()}
+
+
+@router.delete("/indicator-alerts/{aid}")
+def indicator_alerts_del(aid: str):
+    from . import indicator_alerts
+
+    return {"alerts": indicator_alerts.cancel(aid)}
+
+
+@router.post("/indicator-alerts/clear")
+def indicator_alerts_clear():
+    from . import indicator_alerts
+
+    return {"alerts": indicator_alerts.clear_finished()}
+
+
 @router.get("/mtm-alerts")
 def mtm_alerts_list():
     from . import mtm_alerts
