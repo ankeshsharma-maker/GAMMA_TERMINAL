@@ -39,7 +39,7 @@ from .history_archive import in_session
 IST = ZoneInfo("Asia/Kolkata")
 log = logging.getLogger("flow")
 
-WINDOWS = (5, 15, 30)                      # rolling minutes
+WINDOWS = (5, 15, 30, 60)                  # rolling minutes
 DAY = "day"                                # since the previous close (the chain's own change fields)
 WINDOW_KEYS = tuple(str(w) for w in WINDOWS) + (DAY,)
 DEFAULT_WINDOW = "15"                      # the one that alerts
@@ -52,7 +52,7 @@ MIN_FLOW_PCT = 0.001                       # flow smaller than 0.1% of the chain
 MIN_LEG_OI_PCT = 0.0002                    # a leg's OI move under 0.02% of its own OI is reporting noise
 PX_EPS_ABS, PX_EPS_PCT = 0.05, 0.002       # a price move under one tick / 0.2% is "flat" (cannot classify)
 
-MOVE_MIN_PCT = {"5": 0.0007, "15": 0.0010, "30": 0.0015, DAY: 0.0030}   # spot move (fraction) that makes a direction real
+MOVE_MIN_PCT = {"5": 0.0007, "15": 0.0010, "30": 0.0015, "60": 0.0020, DAY: 0.0030}   # spot move (fraction) that makes a direction real
 OPEN_SPOT_WITHIN_S = 20 * 60               # the DAY window's reference is the spot recorded in the first 20 min of the session
 ENTER, EXIT = 0.25, 0.10                   # smoothed bias needed to call BULL/BEAR, and to drop back to MIXED
 SMOOTH_N = 3                               # samples averaged into the smoothed bias

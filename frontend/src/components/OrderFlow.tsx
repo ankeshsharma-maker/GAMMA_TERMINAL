@@ -116,6 +116,7 @@ export function OrderFlowView() {
         <option value="5">5 min ago</option>
         <option value="15">15 min ago</option>
         <option value="30">30 min ago</option>
+        <option value="60">1 hour ago</option>
         <option value="day">Prev close</option>
       </select>
       <button className="btn !px-2 !py-0.5 !text-2xs" onClick={() => setTick((t) => t + 1)} disabled={busy}>
