@@ -102,7 +102,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     { t: number; spot: number; netGex: number; gammaFlip: number | null }[]
   >([]);
   const [intraTf, setIntraTf] = useState(5); // minutes: bucket size for the intraday gex chart/table
-  const [count, setCount] = useState(10);
+  const [count, setCount] = useState(0); // strikes each side of ATM; 0 = All
   const [symChoices, setSymChoices] = useState<string[]>([]);
   const [zoom, setZoom] = useState(1);
   const [tf, setTf] = useState(5); // minutes; 0 = change since day open
@@ -793,7 +793,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         style={isMobile ? undefined : { width: donutW }}
       >
         <div className="text-center text-2xs font-semibold uppercase tracking-wide text-term-dim">
-          Total OI · {count}±ATM
+          Total OI · {count === 0 ? "all strikes" : `${count}±ATM`}
         </div>
         <MiniDonut
           aVal={ce}

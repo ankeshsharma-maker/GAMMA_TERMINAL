@@ -326,7 +326,7 @@ function ActivityCell({
 export function OptionChain({ paneNav }: { paneNav?: ReactNode } = {}) {
   const { chain, chainError } = useStore();
   const [tab, setTab] = useState<TabKey>("ltp");
-  const [count, setCount] = useState<number>(20);
+  const [count, setCount] = useState<number>(0); // strikes each side of ATM; 0 = All
   const [oiTf, setOiTf] = useState(0); // ΔOI window in minutes; 0 = day (since open)
   const [winMap, setWinMap] = useState<Record<string, { ce: number; pe: number }>>({});
 
@@ -386,6 +386,7 @@ export function OptionChain({ paneNav }: { paneNav?: ReactNode } = {}) {
   const visibleRows = useMemo(() => {
     if (!chain) return [];
     const rows = wRows;
+    if (count === 0) return rows;
     let atmIdx = rows.findIndex((r) => r.strike === chain.atmStrike);
     if (atmIdx < 0) atmIdx = Math.floor(rows.length / 2);
     return rows.slice(Math.max(0, atmIdx - count), atmIdx + count + 1);
@@ -659,9 +660,9 @@ export function OptionChain({ paneNav }: { paneNav?: ReactNode } = {}) {
 
         <span className="ml-1">Strikes</span>
         <div className="seg">
-          {[10, 20, 30].map((n) => (
+          {[10, 20, 30, 0].map((n) => (
             <button key={n} onClick={() => setCount(n)} className={count === n ? "on" : ""}>
-              {n}
+              {n === 0 ? "All" : n}
             </button>
           ))}
         </div>

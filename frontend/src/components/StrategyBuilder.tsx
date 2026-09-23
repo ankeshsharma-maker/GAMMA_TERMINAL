@@ -196,7 +196,7 @@ export function StrategyBuilder() {
     } catch {}
   }, [builderW]);
   const bumpBuilder = useCallback((dx: number) => setBuilderW((w) => clamp(w + dx, 260, 600)), []);
-  const [strikeSpan, setStrikeSpan] = useState(5); // ATM ± N strikes in the P&L table
+  const [strikeSpan, setStrikeSpan] = useState(0); // ATM ± N strikes in the P&L table; 0 = All
   const [tableInterval, setTableInterval] = useState(0); // 0 = chain strikes; else ₹ step
   const [showPct, setShowPct] = useState(true); // show the "Move %" column
   const [gMulLot, setGMulLot] = useState(true); // greeks × lot size
@@ -655,25 +655,37 @@ export function StrategyBuilder() {
     const spot = analysis.spot;
     const step = chain?.strikeStep || 50;
 
+    const ks = chain?.rows.length ? chain.rows.map((r) => r.strike).sort((a, b) => a - b) : [];
+    // "All" with nothing to bound it (no chain loaded) falls back to ±20 rows
+    const span = strikeSpan || 20;
     let strikes: number[];
     if (tableInterval > 0) {
       // fixed ₹ interval around spot (Sensibull "Target Interval")
-      const base = Math.round(spot / tableInterval) * tableInterval;
       strikes = [];
-      for (let i = -strikeSpan; i <= strikeSpan; i++) strikes.push(base + i * tableInterval);
-    } else if (chain && chain.rows.length) {
-      const ks = chain.rows.map((r) => r.strike).sort((a, b) => a - b);
-      let ai = ks.indexOf(chain.atmStrike);
-      if (ai < 0)
-        ai = ks.reduce(
-          (best, k, i) => (Math.abs(k - spot) < Math.abs(ks[best] - spot) ? i : best),
-          0
-        );
-      strikes = ks.slice(Math.max(0, ai - strikeSpan), ai + strikeSpan + 1);
+      if (strikeSpan === 0 && ks.length) {
+        // "All": the chain's own strike range, at the chosen ₹ step
+        for (let k = Math.floor(ks[0] / tableInterval) * tableInterval; k <= ks[ks.length - 1]; k += tableInterval)
+          strikes.push(k);
+      } else {
+        const base = Math.round(spot / tableInterval) * tableInterval;
+        for (let i = -span; i <= span; i++) strikes.push(base + i * tableInterval);
+      }
+    } else if (ks.length) {
+      if (strikeSpan === 0) {
+        strikes = ks;
+      } else {
+        let ai = ks.indexOf(chain!.atmStrike);
+        if (ai < 0)
+          ai = ks.reduce(
+            (best, k, i) => (Math.abs(k - spot) < Math.abs(ks[best] - spot) ? i : best),
+            0
+          );
+        strikes = ks.slice(Math.max(0, ai - strikeSpan), ai + strikeSpan + 1);
+      }
     } else {
       const base = Math.round(spot / step) * step;
       strikes = [];
-      for (let i = -strikeSpan; i <= strikeSpan; i++) strikes.push(base + i * step);
+      for (let i = -span; i <= span; i++) strikes.push(base + i * step);
     }
 
     // biggest Call / Put OI within the visible slice = wall / floor
@@ -1841,13 +1853,13 @@ export function StrategyBuilder() {
                   </span>
                   <div className="flex flex-wrap items-center gap-1">
                     <div className="seg text-[10px]">
-                      {[5, 10, 15, 20].map((n) => (
+                      {[5, 10, 15, 20, 0].map((n) => (
                         <button
                           key={n}
                           onClick={() => setStrikeSpan(n)}
                           className={strikeSpan === n ? "on" : ""}
                         >
-                          ±{n}
+                          {n === 0 ? "All" : `±${n}`}
                         </button>
                       ))}
                     </div>
