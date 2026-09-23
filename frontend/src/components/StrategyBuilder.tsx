@@ -164,6 +164,9 @@ export function StrategyBuilder() {
   } | null>(null);
   const [deltaHedgeBusy, setDeltaHedgeBusy] = useState(false);
   const [deltaHedgeNote, setDeltaHedgeNote] = useState<string | null>(null);
+  // which instrument neutralizes the delta: the future (pure delta=1/unit,
+  // no gamma/theta/vega drag) or the ATM call/put (adds its own gamma/theta/vega)
+  const [hedgeInstrument, setHedgeInstrument] = useState<"FUT" | "CE" | "PE">("FUT");
   const [fromBroker, setFromBroker] = useState(false);
   const [mult, setMult] = useState(1);
 
@@ -381,11 +384,29 @@ export function StrategyBuilder() {
   const findDeltaHedge = async () => {
     if (!analysis || !chain || !legs.length) return;
     const lotSize = chain.lotSize || 1;
-    // whole lots of the future (delta = 1/unit) that bring net delta to ~0
-    const neededLots = Math.round(-analysis.greeks.delta / lotSize);
-    if (neededLots === 0) {
+    const atmRow = chain.rows.find((r) => r.strike === chain.atmStrike);
+    // delta contributed per ONE lot of the chosen hedge instrument. Futures
+    // track the underlying 1:1; an ATM call/put's own per-share delta (from
+    // the live chain) scaled up by lot size -- much smaller than a future's,
+    // so it takes more lots, and it drags its own gamma/theta/vega along.
+    const perLotDelta =
+      hedgeInstrument === "FUT" ? lotSize : (atmRow?.[hedgeInstrument === "CE" ? "call" : "put"].delta ?? 0) * lotSize;
+    if (Math.abs(perLotDelta) < 0.01 * lotSize) {
       setDeltaHedge(null);
-      setDeltaHedgeNote("Already ~delta-neutral — under one lot of the future either way, nothing to hedge.");
+      setDeltaHedgeNote(
+        hedgeInstrument === "FUT"
+          ? "Couldn't read the future's delta."
+          : `The ATM ${hedgeInstrument}'s delta is ~0 right now — pick a different instrument.`
+      );
+      return;
+    }
+    // signed lot count: >0 = BUY that many, <0 = SELL that many, of whichever
+    // instrument is picked -- unifies FUT/CE/PE under one formula since a
+    // put's per-lot delta is itself negative
+    const signedLots = -analysis.greeks.delta / perLotDelta;
+    if (Math.round(signedLots) === 0) {
+      setDeltaHedge(null);
+      setDeltaHedgeNote("Already ~delta-neutral — under one lot either way, nothing to hedge.");
       return;
     }
     setDeltaHedgeNote(null);
@@ -393,8 +414,12 @@ export function StrategyBuilder() {
     // sending it to the engine, so a leg computed against the already-
     // scaled analysis.greeks.delta needs to be pre-divided by mult, or
     // applying it would double the hedge size whenever mult > 1
-    const rawLots = Math.max(1, Math.round(Math.abs(neededLots) / Math.max(1, mult)));
-    const leg: StrategyLeg = { optionType: "FUT", strike: 0, side: neededLots > 0 ? "BUY" : "SELL", lots: rawLots };
+    const rawLots = Math.max(1, Math.round(Math.abs(signedLots) / Math.max(1, mult)));
+    const side: "BUY" | "SELL" = signedLots > 0 ? "BUY" : "SELL";
+    const leg: StrategyLeg =
+      hedgeInstrument === "FUT"
+        ? { optionType: "FUT", strike: 0, side, lots: rawLots }
+        : { optionType: hedgeInstrument, strike: chain.atmStrike, side, lots: rawLots };
     setDeltaHedgeBusy(true);
     try {
       const result = await api.analyzeStrategy({
@@ -402,10 +427,15 @@ export function StrategyBuilder() {
         expiry: expiry ?? undefined,
         legs: scaled([...legs, leg]),
       });
+      const wholeLots = Math.round(Math.abs(signedLots));
+      const perUnitPrice =
+        hedgeInstrument === "FUT" ? chain.spot || 0 : atmRow?.[hedgeInstrument === "CE" ? "call" : "put"].ltp ?? 0;
       setDeltaHedge({
         leg,
-        label: `${leg.side} ${Math.abs(neededLots)} lot${Math.abs(neededLots) > 1 ? "s" : ""} ${symbol} FUT`,
-        cost: (leg.side === "BUY" ? 1 : -1) * (chain.spot || 0) * lotSize * rawLots * Math.max(1, mult),
+        label: `${side} ${wholeLots} lot${wholeLots > 1 ? "s" : ""} ${symbol}${
+          hedgeInstrument === "FUT" ? " FUT" : ` ${chain.atmStrike} ${hedgeInstrument}`
+        }`,
+        cost: (side === "BUY" ? 1 : -1) * perUnitPrice * lotSize * rawLots * Math.max(1, mult),
         resultMaxLoss: result.maxLoss,
         resultMaxProfit: result.maxProfit,
         resultMaxProfitUnbounded: result.maxProfitUnbounded,
@@ -1192,11 +1222,38 @@ export function StrategyBuilder() {
               </button>
             </div>
 
+            <div className="mt-1.5 flex items-center gap-1">
+              <span className="text-2xs text-term-dim">with</span>
+              <div className="segx">
+                {(["FUT", "CE", "PE"] as const).map((it) => (
+                  <button
+                    key={it}
+                    onClick={() => {
+                      setHedgeInstrument(it);
+                      setDeltaHedge(null);
+                      setDeltaHedgeNote(null);
+                    }}
+                    title={
+                      it === "FUT"
+                        ? "Underlying future — pure delta, no gamma/theta/vega drag"
+                        : `ATM ${it === "CE" ? "call" : "put"} — also adds its own gamma/theta/vega`
+                    }
+                    className={`px-1.5 py-0.5 text-[10px] ${hedgeInstrument === it ? "bg-term-accent text-white" : "text-term-dim"}`}
+                  >
+                    {it}
+                  </button>
+                ))}
+              </div>
+            </div>
             <button
               onClick={findDeltaHedge}
               disabled={deltaHedgeBusy || !analysis}
-              title="Buy/sell the underlying future to bring net delta to ~0 — no loss-cap number needed"
-              className="mt-1.5 w-full rounded border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-2xs font-semibold text-cyan-300 transition-colors hover:bg-cyan-500/20 disabled:opacity-40"
+              title={
+                hedgeInstrument === "FUT"
+                  ? "Buy/sell the underlying future to bring net delta to ~0 — no loss-cap number needed"
+                  : `Buy/sell the ATM ${hedgeInstrument === "CE" ? "call" : "put"} to bring net delta to ~0`
+              }
+              className="mt-1 w-full rounded border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-2xs font-semibold text-cyan-300 transition-colors hover:bg-cyan-500/20 disabled:opacity-40"
             >
               {deltaHedgeBusy ? "Calculating…" : `🎯 Neutralize Δ${analysis ? ` (now ${nf(analysis.greeks.delta, 0)})` : ""}`}
             </button>
@@ -1228,8 +1285,9 @@ export function StrategyBuilder() {
                   {nf(deltaHedge.resultGreeks.theta, 0)} · V {nf(deltaHedge.resultGreeks.vega, 0)}
                 </div>
                 <div className="mt-1 text-[10px] text-term-dim">
-                  Futures carry no gamma/theta/vega of their own, so this hedges delta only — the rest of the
-                  Greeks above are unchanged from your position before the hedge.
+                  {deltaHedge.leg.optionType === "FUT"
+                    ? "Futures carry no gamma/theta/vega of their own, so this hedges delta only — the rest of the Greeks above are unchanged from your position before the hedge."
+                    : `The ATM ${deltaHedge.leg.optionType === "CE" ? "call" : "put"} brings its own gamma/theta/vega along, so the Greeks above have shifted too — not delta alone.`}
                 </div>
               </div>
             )}
