@@ -963,13 +963,15 @@ export function Chart() {
       sub.forEach((p, i) => {
         const bottom = 0.02 + (n - 1 - i) * (band + gap); // i=0 sits highest
         const topFrac = 1 - bottom - band;
+        // oscillators (RSI / MACD / Greeks) get their own labelled axis, like
+        // a TradingView lower pane -- unlike straddle/score, a bare Greek
+        // number (0.51 delta, -14 theta) isn't self-explanatory without one
+        const labelled = p === "rsi" || p === "macd" || p === "greeks";
         chartRef.current!.priceScale(p).applyOptions({
           scaleMargins: { top: topFrac, bottom },
-          // oscillators (RSI / MACD) get their own axis, like a TradingView
-          // lower pane; the rest just read off the price grid
-          visible: p === "rsi" || p === "macd",
+          visible: labelled,
         });
-        if ((p === "rsi" || p === "macd") && (oscTopFrac == null || topFrac < oscTopFrac))
+        if (labelled && (oscTopFrac == null || topFrac < oscTopFrac))
           oscTopFrac = topFrac;
       });
       setOscTop(oscTopFrac);
