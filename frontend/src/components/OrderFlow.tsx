@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
-import { ago, nf, sk } from "../lib/format";
+import { ago, compact, nf, sk } from "../lib/format";
 import type { FlowData } from "../types";
 
 /** Order flow dashboard: cumulative delta (buy vs sell pressure) and volume profile (buy vs sell bars). */
@@ -11,6 +11,38 @@ const SELL_COLOR = "#f87171"; // red
 const NEUTRAL_COLOR = "#94a3b8"; // gray
 
 const pctFmt = (v: number) => `${nf(v, 1)}%`;
+
+const PROFILE_WINDOWS: [string, string][] = [
+  ["5", "5 min"],
+  ["15", "15 min"],
+  ["60", "1 hour"],
+];
+type Lean = "BUYING" | "SELLING" | "BALANCED";
+// anything between 45% and 55% buying is too close to call a side
+const leanOf = (buy: number, sell: number): Lean | null => {
+  const tot = buy + sell;
+  if (tot <= 0) return null;
+  const p = (buy / tot) * 100;
+  return p >= 55 ? "BUYING" : p <= 45 ? "SELLING" : "BALANCED";
+};
+const LEAN_CLS: Record<Lean, string> = {
+  BUYING: "bg-emerald-500/20 text-emerald-400",
+  SELLING: "bg-red-500/20 text-red-400",
+  BALANCED: "bg-term-border/40 text-term-dim",
+};
+
+const Bar = ({ label, pct, value, color }: { label: string; pct: number; value: number; color: string }) => (
+  <div>
+    <div className="flex items-baseline justify-between text-[10px]">
+      <span className="text-term-dim">{label}</span>
+      <span className="num font-semibold text-term-text">{nf(pct, 0)}%</span>
+    </div>
+    <div className="relative mt-0.5 h-2.5 rounded bg-term-border/40">
+      <div className={`absolute inset-y-0 left-0 rounded ${color}`} style={{ width: `${pct}%` }} />
+    </div>
+    <div className="num text-[9px] text-term-dim">{compact(value)}</div>
+  </div>
+);
 
 export function OrderFlowView() {
   const symbol = useStore((s) => s.symbol);
@@ -79,18 +111,42 @@ export function OrderFlowView() {
     });
   }, [data]);
 
-  // Calculate volume profile from latest point
-  const volumeProfile = useMemo(() => {
-    if (!data?.series || data.series.length === 0) return { buy: 0, sell: 0 };
-    const latest = data.series[data.series.length - 1];
-    const buyVol = (latest.cb ?? 0) + (latest.pw ?? 0);
-    const sellVol = (latest.cw ?? 0) + (latest.pb ?? 0);
-    return { buy: buyVol, sell: sellVol };
-  }, [data]);
+  // volume profile for 5 min / 15 min / 1 hour side by side -- independent of
+  // the window dropdown, which still drives the cumulative-delta chart
+  const [profiles, setProfiles] = useState<Record<string, FlowData | null>>({});
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      Promise.all(PROFILE_WINDOWS.map(([w]) => api.flow(symbol, expiry || undefined, w).catch(() => null))).then(
+        (rs) => alive && setProfiles(Object.fromEntries(PROFILE_WINDOWS.map(([w], i) => [w, rs[i]])))
+      );
+    load();
+    const id = setInterval(() => {
+      if (!document.hidden) load();
+    }, 60000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [symbol, expiry, tick]);
 
-  const maxVol = Math.max(volumeProfile.buy, volumeProfile.sell) || 1;
-  const totalVol = volumeProfile.buy + volumeProfile.sell || 1;
-  const buyPct = (volumeProfile.buy / totalVol) * 100;
+  const freshProfile = (w: string) => {
+    const p = profiles[w];
+    return p && p.symbol === symbol.toUpperCase() ? p : null;
+  };
+  const leans = PROFILE_WINDOWS.map(([w]) => {
+    const p = freshProfile(w);
+    return p && !p.warming ? leanOf(p.bull, p.bear) : null;
+  });
+  const [l5, , l60] = leans;
+  const profileSummary =
+    !l5 || !l60
+      ? null
+      : l5 !== "BALANCED" && leans.every((l) => l === l5)
+      ? `All three windows ${l5.toLowerCase()} — the pressure is consistent.`
+      : l5 !== "BALANCED" && l60 !== "BALANCED" && l5 !== l60
+      ? `Last 5 min ${l5.toLowerCase()}, but the last hour is ${l60.toLowerCase()} — the short-term move runs against the hour's flow.`
+      : null;
 
   const toolbar = (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
@@ -205,56 +261,43 @@ export function OrderFlowView() {
           </div>
         </section>
 
-        {/* Volume Profile */}
+        {/* Volume profile: 5 min / 15 min / 1 hour side by side */}
         <section className="min-w-0 rounded border border-term-border bg-term-bg/20 p-3">
-          <h3 className="mb-3 text-[11px] font-bold uppercase tracking-wide text-term-dim">Volume Profile (Latest)</h3>
-          <div className="space-y-4">
-            {/* Buy side */}
-            <div>
-              <div className="flex items-baseline justify-between gap-2 mb-1">
-                <span className="text-[11px] text-term-dim">Buying</span>
-                <span className="num text-sm font-semibold text-term-text">{nf(buyPct, 1)}%</span>
-              </div>
-              <div className="relative h-6 rounded bg-term-border/40">
-                <div
-                  className="absolute inset-y-0 left-0 rounded bg-emerald-500/80"
-                  style={{ width: `${(volumeProfile.buy / maxVol) * 100}%` }}
-                />
-                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-term-text">{volumeProfile.buy > 0 ? nf(volumeProfile.buy, 0) : "–"}</span>
-              </div>
-            </div>
-
-            {/* Sell side */}
-            <div>
-              <div className="flex items-baseline justify-between gap-2 mb-1">
-                <span className="text-[11px] text-term-dim">Selling</span>
-                <span className="num text-sm font-semibold text-term-text">{nf(100 - buyPct, 1)}%</span>
-              </div>
-              <div className="relative h-6 rounded bg-term-border/40">
-                <div
-                  className="absolute inset-y-0 left-0 rounded bg-red-500/80"
-                  style={{ width: `${(volumeProfile.sell / maxVol) * 100}%` }}
-                />
-                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-term-text">{volumeProfile.sell > 0 ? nf(volumeProfile.sell, 0) : "–"}</span>
-              </div>
-            </div>
-
-            {/* Summary */}
-            <div className="rounded border border-term-border/60 bg-term-panel/50 px-2.5 py-2">
-              <div className="text-[10px] text-term-dim space-y-0.5">
-                <div className="flex justify-between">
-                  <span>Total Volume:</span>
-                  <span className="num font-semibold text-term-text">{nf(totalVol, 0)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Imbalance:</span>
-                  <span className={`num font-semibold ${volumeProfile.buy > volumeProfile.sell ? "text-emerald-400" : "text-red-400"}`}>
-                    {nf(Math.abs(buyPct - 50), 1)}% {volumeProfile.buy > volumeProfile.sell ? "BUYING" : "SELLING"}
-                  </span>
-                </div>
-              </div>
-            </div>
+          <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-term-dim">
+            Volume Profile · 5 min / 15 min / 1 hour
+          </h3>
+          <div className="mb-3 text-[10px] text-term-dim">
+            Buying = call buying + put writing · Selling = call writing + put buying, over each window
           </div>
+          <div className="grid grid-cols-3 divide-x divide-term-border/60 rounded border border-term-border/60">
+            {PROFILE_WINDOWS.map(([w, label], i) => {
+              const p = freshProfile(w);
+              const tot = p ? p.bull + p.bear : 0;
+              const bp = p && tot ? (p.bull / tot) * 100 : 0;
+              const lean = leans[i];
+              return (
+                <div key={w} className="min-w-0 space-y-1.5 p-2">
+                  <div className="text-center text-[11px] font-semibold text-term-text">{label}</div>
+                  {!p ? (
+                    <div className="py-4 text-center text-[10px] text-term-dim">loading…</div>
+                  ) : p.warming ? (
+                    <div className="py-4 text-center text-[10px] text-term-dim">collecting… needs {p.warmupMin} min</div>
+                  ) : !tot || !lean ? (
+                    <div className="py-4 text-center text-[10px] text-term-dim">no flow yet</div>
+                  ) : (
+                    <>
+                      <Bar label="Buy" pct={bp} value={p.bull} color="bg-emerald-500/80" />
+                      <Bar label="Sell" pct={100 - bp} value={p.bear} color="bg-red-500/80" />
+                      <div className={`rounded px-1 py-0.5 text-center text-[10px] font-bold ${LEAN_CLS[lean]}`}>
+                        {lean}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {profileSummary && <div className="mt-2 text-[11px] text-term-text">→ {profileSummary}</div>}
         </section>
       </div>
 
