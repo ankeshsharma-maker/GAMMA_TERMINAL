@@ -98,28 +98,52 @@ def health():
 
 @app.get("/api/auth/status")
 def auth_status(request: Request):
+    from . import users
+
     h = request.headers.get("authorization") or ""
     tok = h[7:].strip() if h.lower().startswith("bearer ") else request.headers.get("x-app-token")
-    return {"required": auth_required(), "ok": token_ok(tok)}
+    if token_ok(tok):
+        return {"required": auth_required(), "ok": True, "role": "owner", "name": None}
+    viewer = users.resolve(tok)
+    if viewer:
+        return {"required": True, "ok": True, "role": "viewer", "name": viewer["name"]}
+    return {"required": auth_required(), "ok": False, "role": None, "name": None}
 
 
 @app.post("/api/auth/login")
 async def auth_login(body: dict):
+    """The owner: {password}. A view-only user: {name, password}."""
+    from . import users
+
     if not auth_required():
-        return {"token": "", "required": False}
+        return {"token": "", "required": False, "role": "owner"}
+    name = (body.get("name") or "").strip()
+    if name and name.lower() != "owner":
+        got = users.login(name, body.get("password") or "")
+        if not got:
+            raise HTTPException(status_code=401, detail="Wrong name or password")
+        return {"token": got[0], "required": True, "role": "viewer", "name": got[1]["name"]}
     if (body.get("password") or "").strip() != app_password():
         raise HTTPException(status_code=401, detail="Wrong password")
-    return {"token": expected_token(), "required": True}
+    return {"token": expected_token(), "required": True, "role": "owner"}
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
+    from . import users
+
+    viewer_id = None
     if auth_required():
         tok = ws.query_params.get("token") or ws.headers.get("x-app-token")
         if not token_ok(tok):
-            await ws.close(code=1008)
-            return
-    await hub.connect(ws)
+            viewer = users.resolve(tok)
+            if not viewer:
+                await ws.close(code=1008)
+                return
+            # a view-only socket: its own watchlist, market data only (hub filters)
+            viewer_id = viewer["id"]
+            users.current_user.set(viewer_id)
+    await hub.connect(ws, viewer_id)
     try:
         while True:
             msg = await ws.receive_json()

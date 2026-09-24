@@ -1,4 +1,5 @@
 import type { View } from "../types";
+import { isViewer } from "./auth";
 
 export type NavGroup = {
   key: string;
@@ -61,6 +62,21 @@ export const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+/** views a view-only user never gets: they place orders or show the owner's
+ *  book (the server refuses the data anyway -- this just keeps them out of the nav) */
+export const OWNER_ONLY_VIEWS: View[] = ["scalper", "positions", "orders", "auto", "journal", "funds"];
+
+/** the nav for whoever is signed in -- a viewer's has no trading / account views */
+export function navGroups(): NavGroup[] {
+  if (!isViewer()) return NAV_GROUPS;
+  return NAV_GROUPS.map((g) => ({ ...g, members: g.members.filter(([v]) => !OWNER_ONLY_VIEWS.includes(v)) })).filter(
+    (g) => g.members.length > 0
+  );
+}
+
+/** where a viewer lands instead of an owner-only view */
+export const viewFor = (v: View): View => (isViewer() && OWNER_ONLY_VIEWS.includes(v) ? "home" : v);
+
 export function groupForView(v: View): NavGroup | undefined {
-  return NAV_GROUPS.find((g) => g.members.some(([mv]) => mv === v));
+  return navGroups().find((g) => g.members.some(([mv]) => mv === v));
 }

@@ -1,23 +1,27 @@
 import { useEffect, useState } from "react";
 import { auth } from "../lib/api";
-import { getToken, setToken, onAuthChange } from "../lib/auth";
+import { getToken, setToken, setRole, onAuthChange } from "../lib/auth";
 import { LogoWordmark } from "./Logo";
 
 type Phase = "checking" | "login" | "ok";
 
 /** Wraps the whole app. When the backend has APP_PASSWORD set, nothing renders
- *  until the right password is entered once (token is then kept on the device). */
+ *  until the right password is entered once (token is then kept on the device).
+ *  The owner types the password alone; a view-only user types their name too. */
 export function LoginGate({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<Phase>("checking");
   const [pwd, setPwd] = useState("");
+  const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const check = async () => {
     try {
       const s = await auth.status();
-      if (!s.required || s.ok) setPhase("ok");
-      else setPhase("login");
+      if (!s.required || s.ok) {
+        setRole(s.role ?? "owner", s.name);
+        setPhase("ok");
+      } else setPhase("login");
     } catch {
       // can't verify the gate — fail CLOSED. Only let through someone who
       // already holds a session token (returning user during a backend blip);
@@ -41,12 +45,14 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
     setBusy(true);
     setErr(null);
     try {
-      const r = await auth.login(pwd);
+      const r = await auth.login(pwd, name.trim() || undefined);
+      setRole(r.role ?? "owner", r.name);
       setToken(r.token);
       setPwd("");
       setPhase("ok");
     } catch (x: any) {
-      setErr(x?.message === "Wrong password" ? "Wrong password" : "Login failed — check the connection");
+      const m = x?.message;
+      setErr(m === "Wrong password" || m === "Wrong name or password" ? m : "Login failed — check the connection");
     } finally {
       setBusy(false);
     }
@@ -68,6 +74,17 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
           </div>
           <div className="mb-6 text-sm text-term-dim">Enter the app password to continue.</div>
           <input
+            id="login-name"
+            type="text"
+            autoComplete="username"
+            autoCapitalize="off"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="name (view-only users)"
+            className="mb-2 w-full rounded-lg border border-term-border bg-term-bg px-4 py-3 text-base outline-none focus:border-term-accent"
+          />
+          <input
+            id="login-password"
             type="password"
             autoFocus
             value={pwd}

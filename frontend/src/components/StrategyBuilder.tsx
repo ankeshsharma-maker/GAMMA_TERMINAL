@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
+import { isViewer } from "../lib/auth";
 import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
 import {
@@ -123,6 +124,7 @@ export function StrategyBuilder() {
     );
   }, []);
   useEffect(() => {
+    if (isViewer()) return; // schedules place orders -- the owner's only
     loadSchedules();
     const id = window.setInterval(loadSchedules, 30000);
     return () => window.clearInterval(id);
@@ -286,6 +288,7 @@ export function StrategyBuilder() {
   }, [symbol, expiry]);
 
   useEffect(() => {
+    if (isViewer()) return; // the saved strategies are the owner's
     api.listStrategies().then((d) => setSaved(d.strategies), () => {});
   }, []);
 
@@ -938,9 +941,11 @@ export function StrategyBuilder() {
             width={180}
           />
           <div className="flex gap-1">
-            <button className="btn flex-1 text-2xs" onClick={loadFromPaper}>
-              From paper positions
-            </button>
+            {!isViewer() && (
+              <button className="btn flex-1 text-2xs" onClick={loadFromPaper}>
+                From paper positions
+              </button>
+            )}
             <button
               className="btn flex-1 text-2xs"
               onClick={() => {
@@ -951,7 +956,7 @@ export function StrategyBuilder() {
               Clear
             </button>
           </div>
-          {broker?.authed && (
+          {broker?.authed && !isViewer() && (
             <button
               className="w-full rounded border border-up/60 bg-up/10 px-2 py-1.5 text-xs font-semibold text-up hover:bg-up/20"
               onClick={loadFromBroker}
@@ -1410,6 +1415,12 @@ export function StrategyBuilder() {
           </div>
         )}
 
+        {isViewer() ? (
+          <div className="border-t border-term-border p-2 text-2xs text-term-dim lg:mt-auto">
+            View-only account: build and study strategies here — payoff, Greeks, hedges, backtest.
+            Executing, scheduling and saving are off.
+          </div>
+        ) : (
         <div className="flex flex-col gap-2 border-t border-term-border p-2 lg:mt-auto">
           {fromBroker && orderMode !== "live" && (
             <div className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-2xs text-amber-400">
@@ -1631,6 +1642,7 @@ export function StrategyBuilder() {
             </div>
           ))}
         </div>
+        )}
       </div>
 
       <VSplit onDrag={bumpBuilder} className="hidden lg:block" />

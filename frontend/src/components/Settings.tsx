@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../store";
-import { api } from "../lib/api";
+import { api, users, type ViewerUser } from "../lib/api";
 import { disablePush, enablePush, getPushState, type PushState } from "../lib/push";
-import { lockNow } from "../lib/auth";
+import { isViewer, lockNow, viewerName } from "../lib/auth";
 import { FontScale } from "./FontScale";
 import { SelectMenu } from "./SelectMenu";
 import { openPinSetup, clearPin, hasPin } from "./PinLock";
@@ -46,7 +46,28 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Row({
+  label,
+  hint,
+  children,
+  stack = false,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+  /** controls on their own wrapping line under the label (many chips -- no sideways scroll on a phone) */
+  stack?: boolean;
+}) {
+  if (stack)
+    return (
+      <div className="flex flex-col gap-1.5">
+        <div className="min-w-0">
+          <div className="text-xs text-term-text">{label}</div>
+          {hint && <div className="text-[10px] leading-snug text-term-dim">{hint}</div>}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">{children}</div>
+      </div>
+    );
   return (
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
@@ -223,6 +244,7 @@ function AlertDeliverySection() {
 
       <Row
         label="Market alerts for"
+        stack
         hint="Gamma blast, OI surge, IV / straddle spikes, flow reversals and delta/gamma jumps only for the symbols picked here — none picked = every symbol. Alerts about your own positions (short-strike guard, SL / target) and alerts you set yourself always come through."
       >
         {[...new Set(["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX", ...alertSyms])].map((s) => {
@@ -467,6 +489,161 @@ function BrokerTokenSection() {
   );
 }
 
+/** The owner's view-only users (max 5): people who can open the terminal and see
+ *  the market data, but not the owner's orders, positions, funds, trades,
+ *  alerts or settings -- the server refuses all of that for them. They sign in
+ *  with their name + password; each gets their own watchlists. */
+function UsersSection() {
+  const [list, setList] = useState<ViewerUser[] | null>(null);
+  const [max, setMax] = useState(5);
+  const [name, setName] = useState("");
+  const [pwd, setPwd] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [resetId, setResetId] = useState<string | null>(null);
+  const [resetPwd, setResetPwd] = useState("");
+
+  const took = (d: { users: ViewerUser[]; max: number }) => {
+    setList(d.users);
+    setMax(d.max);
+  };
+  useEffect(() => {
+    users.list().then(took, (e) => setMsg({ ok: false, text: String(e?.message || e) }));
+  }, []);
+
+  const run = async (fn: () => Promise<{ users: ViewerUser[]; max: number }>, done: string) => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      took(await fn());
+      setMsg({ ok: true, text: done });
+      return true;
+    } catch (e: any) {
+      setMsg({ ok: false, text: String(e?.message || e) });
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const add = async () => {
+    const n = name.trim();
+    if (!n || !pwd) return;
+    if (await run(() => users.add(n, pwd), `Added ${n}. They sign in with the name "${n}" and that password.`)) {
+      setName("");
+      setPwd("");
+    }
+  };
+  const full = (list?.length ?? 0) >= max;
+  const input =
+    "min-w-0 flex-1 rounded border border-term-border bg-term-bg px-2 py-1 text-2xs text-term-text outline-none focus:border-term-accent";
+
+  return (
+    <Section title="View-only users">
+      <div className="text-[10px] leading-snug text-term-dim">
+        Up to {max} people who can see the market data (chain, OI, charts, flow, screener, Home) and build
+        strategies to study — never your orders, positions, funds, trades, alerts or settings. They sign in
+        with their name + password and get their own watchlists.
+      </div>
+      {list === null ? (
+        <div className="text-2xs text-term-dim">loading…</div>
+      ) : list.length === 0 ? (
+        <div className="text-2xs text-term-dim">No viewers yet.</div>
+      ) : (
+        <table className="w-full text-2xs">
+          <tbody>
+            {list.map((u) => (
+              <tr key={u.id} className="border-t border-term-border/40 align-top">
+                <td className="py-1.5 pr-2">
+                  <div className="font-semibold text-term-text">{u.name}</div>
+                  <div className="text-[10px] text-term-dim">
+                    added {u.created ? new Date(u.created * 1000).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : "–"}
+                  </div>
+                  {resetId === u.id && (
+                    <div className="mt-1 flex items-center gap-1">
+                      <input
+                        id={`reset-${u.id}`}
+                        type="password"
+                        autoComplete="new-password"
+                        value={resetPwd}
+                        onChange={(e) => setResetPwd(e.target.value)}
+                        placeholder="new password (6+)"
+                        className={input}
+                      />
+                      <button
+                        disabled={busy || resetPwd.length < 6}
+                        onClick={async () => {
+                          if (await run(() => users.setPassword(u.id, resetPwd), `New password set for ${u.name} — their old sign-in stops working.`)) {
+                            setResetId(null);
+                            setResetPwd("");
+                          }
+                        }}
+                        className={`${SEG} ${off} disabled:opacity-40`}
+                      >
+                        Save
+                      </button>
+                    </div>
+                  )}
+                </td>
+                <td className="py-1.5 text-right">
+                  <div className="flex justify-end gap-1">
+                    <button
+                      onClick={() => {
+                        setResetId(resetId === u.id ? null : u.id);
+                        setResetPwd("");
+                      }}
+                      className={`${SEG} ${resetId === u.id ? on : off}`}
+                    >
+                      Password
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => {
+                        if (confirm(`Remove ${u.name}? They are signed out at once and their watchlists are deleted.`))
+                          run(() => users.remove(u.id), `Removed ${u.name}.`);
+                      }}
+                      className={`${SEG} border-term-border text-down hover:bg-down/10`}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {list !== null && !full && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <input
+            id="viewer-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="name"
+            autoComplete="off"
+            className={input}
+          />
+          <input
+            id="viewer-password"
+            type="password"
+            autoComplete="new-password"
+            value={pwd}
+            onChange={(e) => setPwd(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && add()}
+            placeholder="password (6+)"
+            className={input}
+          />
+          <button disabled={busy || !name.trim() || pwd.length < 6} onClick={add} className={`${SEG} ${off} disabled:opacity-40`}>
+            {busy ? "…" : "Add"}
+          </button>
+        </div>
+      )}
+      {full && <div className="text-[10px] text-term-dim">All {max} places are used — remove one to add another.</div>}
+      {msg && <div className={`text-[10px] ${msg.ok ? "text-up" : "text-down"}`}>{msg.text}</div>}
+    </Section>
+  );
+}
+
 /** let a mounted Chart adopt a changed default immediately */
 const notifyPrefs = () => window.dispatchEvent(new Event("gt-prefs"));
 
@@ -587,6 +764,14 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </Row>
         </Section>
 
+        {isViewer() && (
+          <Section title="Account">
+            <Row label={viewerName() ?? "Viewer"} hint="View-only: market data only — trading, positions, funds and alerts setup are off">
+              <span className={`${SEG} border-term-accent/50 text-term-accent`}>VIEW ONLY</span>
+            </Row>
+          </Section>
+        )}
+
         {/* ---- Security ---- */}
         <Section title="Security">
           <Row
@@ -641,7 +826,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </Row>
         </Section>
 
+        {!isViewer() && <UsersSection />}
+
         {/* ---- Trading defaults ---- */}
+        {!isViewer() && (
         <Section title="Trading defaults">
           <Row label="Default lots" hint="Pre-fills the quantity in Scalp / Builder / rules">
             <button
@@ -705,8 +893,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
             ))}
           </Row>
         </Section>
+        )}
 
-        <BrokerTokenSection />
+        {!isViewer() && <BrokerTokenSection />}
 
         {/* ---- Data ---- */}
         <Section title="Data">
@@ -754,7 +943,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </Row>
         </Section>
 
-        <AlertDeliverySection />
+        {!isViewer() && <AlertDeliverySection />}
 
         {/* ---- About ---- */}
         <Section title="About">

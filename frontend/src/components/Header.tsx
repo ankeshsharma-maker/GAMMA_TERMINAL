@@ -2,13 +2,13 @@ import { useStore } from "../store";
 import { compact, nf, ago, sk, signColor, px } from "../lib/format";
 import { ivRegime } from "../lib/iv";
 import { api } from "../lib/api";
-import { lockNow } from "../lib/auth";
+import { isViewer, lockNow, viewerName } from "../lib/auth";
 import { useLiveMtm } from "../lib/useLiveMtm";
 import { ConnBadge } from "./ConnBadge";
 import { LogoWordmark } from "./Logo";
 import { Settings } from "./Settings";
 import { GroupSubNav } from "./GroupSubNav";
-import { NAV_GROUPS, groupForView } from "../lib/navGroups";
+import { navGroups, groupForView } from "../lib/navGroups";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 function Stat({ label, value, cls = "" }: { label: string; value: ReactNode; cls?: string }) {
@@ -75,7 +75,7 @@ function ViewToggle() {
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-2xs">
       <div className="flex flex-wrap items-center gap-1">
-        {NAV_GROUPS.map((g) => (
+        {navGroups().map((g) => (
           <button
             key={g.key}
             onClick={() => setView(g.members[0][0])}
@@ -840,6 +840,18 @@ function IvBadge() {
   );
 }
 
+/** in place of the broker / order-mode / margin / P&L pills: who this is */
+export function ViewerChip() {
+  return (
+    <span
+      className="whitespace-nowrap rounded border border-term-accent/50 bg-term-accent/10 px-1.5 py-0.5 text-2xs font-semibold text-term-accent"
+      title="View-only account: market data only — no orders, positions, funds or trades"
+    >
+      👁 {viewerName() ?? "Viewer"} · view only
+    </span>
+  );
+}
+
 export function Header({ children }: { children?: ReactNode }) {
   const chain = useStore((s) => s.chain);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -868,14 +880,20 @@ export function Header({ children }: { children?: ReactNode }) {
           </span>
         )}
         <div className="flex items-center gap-1.5">
-          <OrderModePill />
-          <UpstoxPill />
-          <BrokerPill />
-          <div className="flex items-center gap-1.5 border-l border-term-border pl-1.5">
-            <MarginStats />
-            <PnlStrip />
-          </div>
-          <LegRuleBell />
+          {isViewer() ? (
+            <ViewerChip />
+          ) : (
+            <>
+              <OrderModePill />
+              <UpstoxPill />
+              <BrokerPill />
+              <div className="flex items-center gap-1.5 border-l border-term-border pl-1.5">
+                <MarginStats />
+                <PnlStrip />
+              </div>
+              <LegRuleBell />
+            </>
+          )}
           <AlertBell />
           <button
             onClick={() => setSettingsOpen(true)}

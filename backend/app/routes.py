@@ -4,7 +4,7 @@ from __future__ import annotations
 import time
 from collections import OrderedDict
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from . import candle_sources, flow, pcr_series, portfolio_scenario, volatility
 from . import screener as scr
@@ -258,8 +258,61 @@ def scan_symbol(symbol: str):
 
 
 @router.get("/alerts")
-def alerts(limit: int = Query(100, ge=1, le=200)):
-    return {"alerts": store.get_alerts(limit)}
+def alerts(request: Request, limit: int = Query(100, ge=1, le=200)):
+    from .users import market_alert
+
+    rows = store.get_alerts(limit)
+    if getattr(request.state, "viewer", None):  # a view-only user: market alerts only
+        rows = [a for a in rows if market_alert(a)]
+    return {"alerts": rows}
+
+
+# ---- view-only users (the owner only: none of these are on the viewer allowlist) ----
+@router.get("/users")
+def users_list():
+    from . import users
+
+    return {"users": users.list_users(), "max": users.MAX_VIEWERS}
+
+
+@router.post("/users")
+def users_create(body: dict):
+    from . import users
+
+    try:
+        users.create(body.get("name") or "", body.get("password") or "")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"users": users.list_users(), "max": users.MAX_VIEWERS}
+
+
+@router.post("/users/{uid}/password")
+async def users_password(uid: str, body: dict):
+    from . import users
+    from .hub import hub
+
+    try:
+        users.set_password(uid, body.get("password") or "")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such user")
+    await hub.kick_viewer(uid)
+    return {"users": users.list_users(), "max": users.MAX_VIEWERS}
+
+
+@router.delete("/users/{uid}")
+async def users_delete(uid: str):
+    from . import users
+    from .hub import hub
+
+    try:
+        users.delete(uid)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such user")
+    await hub.kick_viewer(uid)
+    store._user_wls.pop(uid, None)
+    return {"users": users.list_users(), "max": users.MAX_VIEWERS}
 
 
 @router.get("/unusual")

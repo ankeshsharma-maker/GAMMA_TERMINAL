@@ -28,6 +28,7 @@ from .config import (
     SCREENER_IV_HISTORY_MAXLEN,
 )
 from . import db, history_archive
+from .users import current_user
 from .processing import build_chain, lot_size
 
 _WATCHLIST_FILE = DATA_DIR / "watchlist.json"  # legacy pre-multi-list schema; read-only upgrade path
@@ -88,6 +89,7 @@ class Store:
         self._load_history()
         self._load_iv_history()
         self._iv_hist_last_save = 0.0
+        self._user_wls: dict[str, dict] = {}         # view-only users' watchlists, by user id
         self.watchlists: dict = self._load_watchlists()
         self.paper: dict = db.get_kv("paper") or {"positions": [], "orders": [], "realized": 0.0}
         self.journal: deque = deque(
@@ -103,11 +105,13 @@ class Store:
     def all_symbols(self, extra: Optional[set[str]] = None) -> list[str]:
         with _lock:
             every = set(DEFAULT_SYMBOLS)
-            for l in self.watchlists["lists"]:
-                for e in l["symbols"]:
-                    if e.startswith("IDX:"):
-                        continue
-                    every.add(e.split("|")[0].upper() if "|" in e else e)
+            # the owner's lists and every viewer's that has been loaded
+            for wl in [self._owner_wl, *self._user_wls.values()]:
+                for l in wl["lists"]:
+                    for e in l["symbols"]:
+                        if e.startswith("IDX:"):
+                            continue
+                        every.add(e.split("|")[0].upper() if "|" in e else e)
             return sorted(every | (extra or set()))
 
     def set_expiries(self, symbol: str, expiries: list[str]) -> None:
@@ -910,16 +914,38 @@ class Store:
             return drawings
 
     # ---- watchlists (5 named lists) --------------------------------
-    def _load_watchlists(self) -> dict:
-        data = db.get_kv("watchlists")
+    # The owner's lists, plus one set per view-only user (users.py). Which set
+    # `self.watchlists` means is decided by the request / socket's user
+    # (users.current_user, None = the owner), so every watchlist method below
+    # works on the right user's lists without knowing about users at all.
+    @property
+    def watchlists(self) -> dict:
+        uid = current_user.get()
+        if uid is None:
+            return self._owner_wl
+        wl = self._user_wls.get(uid)
+        if wl is None:
+            wl = self._user_wls[uid] = self._load_watchlists(f"watchlists:{uid}")
+        return wl
+
+    @watchlists.setter
+    def watchlists(self, v: dict) -> None:
+        self._owner_wl = v
+
+    def _load_watchlists(self, key: str = "watchlists") -> dict:
+        data = db.get_kv(key)
+        if key != "watchlists" and not (isinstance(data, dict) and data.get("lists")):
+            data = {"lists": [], "active": 0}
         if isinstance(data, dict) and isinstance(data.get("lists"), list) and data["lists"]:
             lists = [
                 {"name": str(l.get("name") or f"List {i + 1}"), "symbols": list(l.get("symbols") or [])}
                 for i, l in enumerate(data["lists"][:_WL_MAX])
             ]
-        else:
+        elif key == "watchlists":
             legacy = _load(_WATCHLIST_FILE, list(DEFAULT_SYMBOLS))
             lists = [{"name": "List 1", "symbols": list(legacy)}]
+        else:  # a new viewer: empty lists (the default indices still show)
+            lists = [{"name": "List 1", "symbols": []}]
         # trim trailing empty lists beyond the default count
         while len(lists) > _WL_DEFAULT and not lists[-1]["symbols"]:
             lists.pop()
@@ -930,7 +956,8 @@ class Store:
         return {"lists": lists, "active": active, "hiddenDefaults": hidden}
 
     def _save_watchlists(self) -> None:
-        db.set_kv("watchlists", self.watchlists)
+        uid = current_user.get()
+        db.set_kv("watchlists" if uid is None else f"watchlists:{uid}", self.watchlists)
 
     def _wli(self, index) -> int:
         return min(max(int(index), 0), len(self.watchlists["lists"]) - 1)
@@ -960,13 +987,15 @@ class Store:
 
     def watched_option_pairs(self) -> set[tuple[str, str]]:
         """(symbol, expiry) of every option contract in the active watchlist --
-        the poller keeps those chains fresh, so a later-expiry row (e.g. added
-        from search) prices instead of sitting on "loading"."""
+        the owner's and each loaded viewer's -- the poller keeps those chains
+        fresh, so a later-expiry row (e.g. added from search) prices instead of
+        sitting on "loading"."""
         out: set[tuple[str, str]] = set()
-        for e in self.watchlist:
-            p = self._parse_opt(e)
-            if p:
-                out.add((p[0], p[1]))
+        for wl in [self._owner_wl, *self._user_wls.values()]:
+            for e in wl["lists"][wl["active"]]["symbols"]:
+                p = self._parse_opt(e)
+                if p:
+                    out.add((p[0], p[1]))
         return out
 
     def get_watchlists(self) -> dict:

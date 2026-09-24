@@ -12,6 +12,7 @@ import {
   ClassFilter,
   FontScale,
   LegRuleBell,
+  ViewerChip,
   useBookPnl,
 } from "./Header";
 
@@ -198,7 +199,8 @@ function MobileReturnCard() {
     </div>
   );
 }
-import { lockNow } from "../lib/auth";
+import { isViewer, lockNow } from "../lib/auth";
+import { OWNER_ONLY_VIEWS, viewFor } from "../lib/navGroups";
 import { Settings } from "./Settings";
 import { NotificationPanel } from "./NotificationPanel";
 import { OrderConfirm } from "./OrderConfirm";
@@ -360,10 +362,16 @@ function loadTabTop(): View[] {
 
 /** the tab row: the numbered tabs first, in number order, then every other
  *  tab in the usual (grouped) order. `section` drives the dividers. */
-const orderedTabs = (top: View[]) => [
-  ...top.flatMap((v) => TOP_NAV.filter((n) => n.v === v).map((n) => ({ ...n, section: "top" }))),
-  ...TOP_NAV.filter((n) => !top.includes(n.v)).map((n) => ({ ...n, section: n.group as string })),
-];
+// a view-only user: no Auto / Scalp / Journal (Build stays -- analysis only)
+const navFor = () => (isViewer() ? TOP_NAV.filter((n) => !OWNER_ONLY_VIEWS.includes(n.v)) : TOP_NAV);
+
+const orderedTabs = (top: View[]) => {
+  const nav = navFor();
+  return [
+    ...top.flatMap((v) => nav.filter((n) => n.v === v).map((n) => ({ ...n, section: "top" }))),
+    ...nav.filter((n) => !top.includes(n.v)).map((n) => ({ ...n, section: n.group as string })),
+  ];
+};
 
 /** bottom sheet: every top tab as a button. Tap them in the order you want
  *  them first — each tap gives the next number (up to 5); tapping a numbered
@@ -395,13 +403,13 @@ function TabOrderSheet({
           Tap tabs in the order you want them first — up to {TOP_SLOTS}. Tap a numbered tab to
           take it out. The rest follow in the usual order.
         </div>
-        {(Object.keys(GROUP_NAME) as TabGroup[]).map((g) => (
+        {(Object.keys(GROUP_NAME) as TabGroup[]).filter((g) => navFor().some((n) => n.group === g)).map((g) => (
           <div key={g} className="mb-2">
             <div className="mb-1 text-[9px] font-semibold uppercase tracking-wide text-term-dim">
               {GROUP_NAME[g]}
             </div>
             <div className="grid grid-cols-3 gap-1.5">
-              {TOP_NAV.filter((n) => n.group === g).map((n) => {
+              {navFor().filter((n) => n.group === g).map((n) => {
                 const num = top.indexOf(n.v) + 1;
                 return (
                   <button
@@ -479,9 +487,17 @@ const BOTTOM_NAV: { v: View; icon: string; label: string }[] = [
   { v: "positions", icon: "💼", label: "Position" },
   { v: "funds", icon: "💰", label: "Funds" },
 ];
+// a view-only user has no orders / positions / funds -- market shortcuts instead
+const VIEWER_BOTTOM_NAV: { v: View; icon: string; label: string }[] = [
+  { v: "watchlist", icon: "★", label: "Watchlist" },
+  { v: "home", icon: "🏠", label: "Home" },
+  { v: "chart", icon: "📈", label: "Chart" },
+  { v: "scanner", icon: "📡", label: "Screener" },
+];
 
-function MobileBody({ view }: { view: View }) {
+function MobileBody({ view: want }: { view: View }) {
   const brokerAuthed = useStore((s) => !!s.broker?.authed);
+  const view = viewFor(want); // a viewer never renders an owner-only view
   switch (view) {
     case "chain":
       return (
@@ -643,7 +659,7 @@ export function MobileShell() {
               className={`relative ml-auto shrink-0 rounded border px-1.5 py-1 text-[11px] ${
                 brokerOpen ? "border-term-accent text-term-accent" : "border-term-dim/70 text-term-dim"
               }`}
-              title="Broker · mode · alerts"
+              title={isViewer() ? "Alerts · settings" : "Broker · mode · alerts"}
             >
               ⚿
               {alertsUnseen > 0 && !brokerOpen && (
@@ -659,18 +675,22 @@ export function MobileShell() {
 
           {brokerOpen && (
             <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-2 py-1.5">
-              <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
-                Mode <OrderModePill />
-              </span>
+              {isViewer() ? (
+                <ViewerChip />
+              ) : (
+                <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
+                  Mode <OrderModePill />
+                </span>
+              )}
               <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
                 Show <ClassFilter />
               </span>
-              <BrokerPill />
-              <UpstoxPill />
+              {!isViewer() && <BrokerPill />}
+              {!isViewer() && <UpstoxPill />}
               <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
                 Text <FontScale />
               </span>
-              <LegRuleBell />
+              {!isViewer() && <LegRuleBell />}
               <button
                 onClick={() => (notifOpen ? closeNotif() : openNotif())}
                 className={`ml-auto rounded border px-2 py-1 text-2xs ${
@@ -742,7 +762,7 @@ export function MobileShell() {
       {/* ── bottom tab bar ────────────────────────────────────── */}
       {!isFull && (
         <nav className="flex shrink-0 border-t border-term-border bg-term-panel2">
-          {BOTTOM_NAV.map((n) => {
+          {(isViewer() ? VIEWER_BOTTOM_NAV : BOTTOM_NAV).map((n) => {
             const active = view === n.v;
             return (
               <button

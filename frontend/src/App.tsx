@@ -29,6 +29,8 @@ import { MobileShell } from "./components/MobileShell";
 import { LoginGate } from "./components/LoginGate";
 import { PinLock } from "./components/PinLock";
 import { useIsMobile } from "./lib/useIsMobile";
+import { isViewer } from "./lib/auth";
+import { viewFor } from "./lib/navGroups";
 import { VSplit, clamp, readNum } from "./components/VSplit";
 
 const LS = {
@@ -63,7 +65,9 @@ function Shell() {
 }
 
 function DesktopShell() {
-  const view = useStore((s) => s.view);
+  // a view-only user never renders an owner-only view (store.setView already
+  // redirects; this covers a view restored from before they signed in)
+  const view = viewFor(useStore((s) => s.view));
 
   const wide =
     view === "builder" ||
@@ -132,7 +136,8 @@ function DesktopShell() {
     } catch {}
   }, [hideRight]);
 
-  const showRight = !wide && !hideRight;
+  // the right column is the owner's paper positions / scalp panel -- not for a viewer
+  const showRight = !wide && !hideRight && !isViewer();
   const leftCols = hideLeft ? "0px" : `${leftW}px 4px`;
   const notifCols = notifDock ? ` 4px ${notifW}px` : "";
   const cols =
@@ -148,7 +153,7 @@ function DesktopShell() {
             <span>Watchlist panel</span>
             <span className="text-[10px] opacity-70">{hideLeft ? "Hidden" : "Shown"}</span>
           </MenuRow>
-          {!wide && (
+          {!wide && !isViewer() && (
             <MenuRow onClick={() => setHideRight((v) => !v)} active={!hideRight}>
               <span>Right panel</span>
               <span className="text-[10px] opacity-70">{hideRight ? "Hidden" : "Shown"}</span>

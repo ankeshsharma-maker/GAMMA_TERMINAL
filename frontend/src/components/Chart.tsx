@@ -9,6 +9,7 @@ import {
   type ISeriesApi,
 } from "lightweight-charts";
 import { useStore } from "../store";
+import { isViewer } from "../lib/auth";
 import { ChartStepper } from "./ChartStepper";
 import { api } from "../lib/api";
 import { MiniChart } from "./MiniChart";
@@ -1214,6 +1215,11 @@ export function Chart() {
   const drawKey = `${instrument || symbol}|${intervalS}`;
   useEffect(() => {
     let alive = true;
+    // a view-only user starts clean: the saved drawings are the owner's
+    if (isViewer()) {
+      setDrawings([]);
+      return;
+    }
     api.chartDrawings(drawKey).then(
       (d) => alive && setDrawings(Array.isArray(d.drawings) ? (d.drawings as Drawing[]) : []),
       () => alive && setDrawings([])
@@ -1238,7 +1244,7 @@ export function Chart() {
       return;
     }
     const t = setTimeout(() => {
-      api.saveChartDrawings(drawKey, drawings).catch(() => {});
+      if (!isViewer()) api.saveChartDrawings(drawKey, drawings).catch(() => {});
     }, 1000);
     return () => clearTimeout(t);
   }, [drawings, drawKey]);
@@ -1486,7 +1492,7 @@ export function Chart() {
         )}
 
         {/* fast execution — trades the strike picked above, at scalpLots */}
-        {strikes.length > 0 && chain?.expiry && pickStrike > 0 && (
+        {!isViewer() && strikes.length > 0 && chain?.expiry && pickStrike > 0 && (
           <div className="flex items-center gap-0.5 rounded border border-term-dim/70 px-1" title={`${pickStrike} × ${scalpLots} lot(s)`}>
             <button
               onClick={() => quickTradeAt(symbol, chain.expiry, pickStrike, "CE", "BUY")}

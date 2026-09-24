@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { api } from "./lib/api";
 import { TerminalSocket } from "./lib/ws";
 import { getDefaultLots } from "./lib/prefs";
+import { isViewer } from "./lib/auth";
+import { viewFor } from "./lib/navGroups";
 import type {
   Alert,
   BrokerStatus,
@@ -187,6 +189,17 @@ interface State {
   autobotResume: (id: string) => Promise<void>;
 }
 
+/** a view-only user can't trade: say so instead of sending an order the server refuses */
+function viewOnly(): boolean {
+  if (!isViewer()) return false;
+  try {
+    window.alert("View-only account — trading is switched off.");
+  } catch {
+    /* ignore */
+  }
+  return true;
+}
+
 export const useStore = create<State>((set, get) => ({
   socket: null,
   conn: "connecting",
@@ -236,6 +249,7 @@ export const useStore = create<State>((set, get) => ({
   indexSet: ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50", "SENSEX", "BANKEX"],
 
   setOrderMode: async (m) => {
+    if (isViewer()) return "View-only account";
     try {
       const { mode } = await api.orderModeSet(m);
       set({ orderMode: mode });
@@ -246,6 +260,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   requestStrategyExecute: (legs) => {
+    if (viewOnly()) return;
     const { symbol, chain, expiry, orderMode } = get();
     const exp = expiry ?? chain?.expiry;
     if (!exp || legs.length === 0) return;
@@ -262,6 +277,7 @@ export const useStore = create<State>((set, get) => ({
   confirmPending: async () => {
     const p = get().pending;
     if (!p) return;
+    if (viewOnly()) return set({ pending: null });
     set({ pending: null });
     if (p.kind === "single") {
       if (p.optionType === "FUT") {
@@ -390,27 +406,33 @@ export const useStore = create<State>((set, get) => ({
         set({ screener: d.rows, screenerProgress: d.progress, screenerPresets: d.presets }),
       () => {}
     );
-    const pollBroker = () => {
-      if (typeof document !== "undefined" && document.hidden) return;
-      api.brokerStatus().then((b) => set({ broker: b }), () => {});
-      api.brokerFunds().then((f) => set({ brokerFunds: f }), () => {});
-    };
-    pollBroker();
-    setInterval(pollBroker, 10000);
-    api.orderModeGet().then(
-      (d) => set({ orderMode: d.mode }),
-      () => {}
-    );
-    // paper / autobot polls skip while the tab is hidden and only `set()` when
-    // something actually changed, so idle re-renders stop between real updates.
-    get().refreshPaper();
-    setInterval(() => {
-      if (!(typeof document !== "undefined" && document.hidden)) get().refreshPaper();
-    }, 8000);
-    get().loadAutobot();
-    setInterval(() => {
-      if (!(typeof document !== "undefined" && document.hidden)) get().loadAutobot();
-    }, 15000);
+    // the owner's book: broker, funds, order mode, paper, AutoBot. A view-only
+    // user has none of it (the server answers 403), so don't ask.
+    if (!isViewer()) {
+      const pollBroker = () => {
+        if (typeof document !== "undefined" && document.hidden) return;
+        api.brokerStatus().then((b) => set({ broker: b }), () => {});
+        api.brokerFunds().then((f) => set({ brokerFunds: f }), () => {});
+      };
+      pollBroker();
+      setInterval(pollBroker, 10000);
+      api.orderModeGet().then(
+        (d) => set({ orderMode: d.mode }),
+        () => {}
+      );
+      // paper / autobot polls skip while the tab is hidden and only `set()` when
+      // something actually changed, so idle re-renders stop between real updates.
+      get().refreshPaper();
+      setInterval(() => {
+        if (!(typeof document !== "undefined" && document.hidden)) get().refreshPaper();
+      }, 8000);
+      get().loadAutobot();
+      setInterval(() => {
+        if (!(typeof document !== "undefined" && document.hidden)) get().loadAutobot();
+      }, 15000);
+    } else if (viewFor(get().view) !== get().view) {
+      set({ view: "home" });
+    }
     api.symbols().then(
       (d) =>
         d.indices?.length &&
@@ -495,7 +517,10 @@ export const useStore = create<State>((set, get) => ({
     );
   },
 
-  setView: (v) => set({ view: v, ...(v === "scanner" ? { alertsSeen: get().alerts.length } : {}) }),
+  setView: (want) => {
+    const v = viewFor(want); // a viewer asking for Positions / Orders / Funds / ... lands on Home
+    set({ view: v, ...(v === "scanner" ? { alertsSeen: get().alerts.length } : {}) });
+  },
 
   queueBuilderLeg: (leg, goToBuilder = true) =>
     set((s) => ({
@@ -632,6 +657,7 @@ export const useStore = create<State>((set, get) => ({
   setScalpLots: (n) => set({ scalpLots: Math.max(1, n) }),
 
   quickTrade: async (symbol, ot, side, lots) => {
+    if (viewOnly()) return;
     symbol = symbol.toUpperCase();
     const qty = lots ?? get().scalpLots;
     const wq = get().watch.find((w) => w.symbol === symbol);
@@ -665,6 +691,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   quickTradeAt: async (symbol, expiry, strike, ot, side, lots) => {
+    if (viewOnly()) return;
     symbol = symbol.toUpperCase();
     const qty = lots ?? get().scalpLots;
     if (get().orderMode === "live") {
@@ -686,6 +713,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   quickTradeFuture: async (symbol, expiry, side, lots) => {
+    if (viewOnly()) return;
     symbol = symbol.toUpperCase();
     const qty = lots ?? get().scalpLots;
     // known live price, if any -- lets the LIVE confirm dialog show a real
@@ -726,6 +754,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   placeOrder: async ({ strike, optionType, side, lots }) => {
+    if (viewOnly()) return;
     const { symbol, chain, expiry, orderMode } = get();
     const exp = expiry ?? chain?.expiry;
     if (!exp) return;

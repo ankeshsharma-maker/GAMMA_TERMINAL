@@ -44,13 +44,35 @@ async function j<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+type Role = "owner" | "viewer";
+export type ViewerUser = { id: string; name: string; role: "viewer"; created: number | null };
+
 export const auth = {
-  status: () => j<{ required: boolean; ok: boolean }>("/api/auth/status"),
-  login: (password: string) =>
-    j<{ token: string; required: boolean }>("/api/auth/login", {
+  status: () =>
+    j<{ required: boolean; ok: boolean; role?: Role | null; name?: string | null }>("/api/auth/status"),
+  /** the owner: password only; a view-only user: name + password */
+  login: (password: string, name?: string) =>
+    j<{ token: string; required: boolean; role?: Role; name?: string }>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify(name ? { name, password } : { password }),
+    }),
+};
+
+/** the owner's view-only users (max 5) -- every call is owner-only on the server */
+export const users = {
+  list: () => j<{ users: ViewerUser[]; max: number }>("/api/users"),
+  add: (name: string, password: string) =>
+    j<{ users: ViewerUser[]; max: number }>("/api/users", {
+      method: "POST",
+      body: JSON.stringify({ name, password }),
+    }),
+  setPassword: (id: string, password: string) =>
+    j<{ users: ViewerUser[]; max: number }>(`/api/users/${encodeURIComponent(id)}/password`, {
       method: "POST",
       body: JSON.stringify({ password }),
     }),
+  remove: (id: string) =>
+    j<{ users: ViewerUser[]; max: number }>(`/api/users/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
 
 export const api = {

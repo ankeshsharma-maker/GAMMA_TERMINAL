@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useStore } from "../store";
+import { isViewer } from "../lib/auth";
 import { api } from "../lib/api";
 import { RefreshChainBtn } from "./RefreshChainBtn";
 import { SelectMenu } from "./SelectMenu";
@@ -314,8 +315,8 @@ function ActivityCell({
   const a = classifyLeg(leg, ot);
   return (
     <button
-      onClick={onTicket}
-      title="tap to trade this strike"
+      onClick={isViewer() ? undefined : onTicket}
+      title={isViewer() ? undefined : "tap to trade this strike"}
       className={`w-full whitespace-nowrap rounded px-1 py-0.5 text-[9px] font-semibold leading-tight ${a.cls} hover:brightness-110`}
     >
       {a.label}
@@ -797,7 +798,7 @@ export function OptionChain({ paneNav }: { paneNav?: ReactNode } = {}) {
         </table>
       </div>
 
-      {ticket && (
+      {ticket && !isViewer() && (
         <OrderTicket
           strike={ticket.strike}
           optionType={ticket.ot}

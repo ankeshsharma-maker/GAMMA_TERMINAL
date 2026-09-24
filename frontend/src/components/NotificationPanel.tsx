@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
+import { isViewer } from "../lib/auth";
 import { api } from "../lib/api";
 import { hhmm } from "../lib/format";
 import type { UnusualKind } from "../types";
@@ -25,7 +26,7 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
   const {
     notifOpen,
     notifDock,
-    notifTab,
+    notifTab: storeTab,
     setNotifTab,
     setNotifDock,
     closeNotif,
@@ -38,6 +39,8 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
   const ref = useRef<HTMLDivElement>(null);
   // sub-filter for the Unusual tab — "different windows" for spike / collapse / jump
   const [uKind, setUKind] = useState<"all" | UnusualKind>("all");
+  // a view-only user gets the market feeds only; the watch / alert-rule tabs are the owner's
+  const notifTab = isViewer() && storeTab !== "alerts" && storeTab !== "unusual" ? "alerts" : storeTab;
 
   // popover mode: close on outside click / Esc. docked mode: never auto-close.
   useEffect(() => {
@@ -90,7 +93,7 @@ export function NotificationPanel({ docked = false }: { docked?: boolean } = {})
             ["indicatorwatch", "EMA/RSI Alerts", 0],
             ["mtmwatch", "MTM Alerts", 0],
           ] as const
-        ).map(([k, label, n]) => (
+        ).filter(([k]) => !isViewer() || k === "unusual" || k === "alerts").map(([k, label, n]) => (
           <button
             key={k}
             onClick={() => setNotifTab(k)}
