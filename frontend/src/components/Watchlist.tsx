@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
@@ -64,6 +64,25 @@ const wExch = (w: WatchQuote) => {
   if (BSE_SYMS.has(u)) return "BSE";
   if (w.kind === "index" || u === "INDIA VIX" || u === "VIX" || u.includes("NIFTY")) return "INDEX";
   return "NSE";
+};
+/** "24-Sep-2026" -> "24 SEP" */
+const shortExp = (e?: string) => {
+  const m = /^(\d{1,2})-([A-Za-z]{3})/.exec(e ?? "");
+  return m ? `${m[1]} ${m[2].toUpperCase()}` : e ?? "";
+};
+/** broker-style full contract name (phone rows): "SENSEX 24 SEP 74500 CE", "NIFTY 30 SEP FUT" */
+const wFull = (w: WatchQuote) =>
+  w.kind === "option"
+    ? `${w.symbol} ${shortExp(w.expiry)} ${w.strike} ${w.optionType}`
+    : w.kind === "future"
+    ? `${w.symbol} ${shortExp(w.expiry)} FUT`
+    : w.symbol;
+/** the segment a broker shows under the name: NSE / BSE for the cash leg,
+ *  NFO / BFO for options and futures */
+const wSeg = (w: WatchQuote) => {
+  const bse = BSE_SYMS.has(w.symbol.toUpperCase());
+  if (w.kind === "option" || w.kind === "future") return bse ? "BFO" : "NFO";
+  return bse ? "BSE" : "NSE";
 };
 const wAbsChg = (w: WatchQuote) => {
   if (w.variation != null) return w.variation;
@@ -163,6 +182,79 @@ function QuoteRow({ w, queue, stacked = false }: { w: WatchQuote; queue: string[
   );
 }
 
+/** phone row, laid out like the Flattrade / Kite marketwatch: full contract
+ *  name over its segment on the left, ▲/▼ LTP over the change on the right.
+ *  No buttons -- tap charts it; the ⋮ menu's "Edit list" shows a remove ✕. */
+function MobileQuoteRow({ w, queue, editing }: { w: WatchQuote; queue: string[]; editing: boolean }) {
+  const {
+    symbol, selectSymbol, selectExpiry, setChartInstrument, chartInstrument, setView, removeWatch,
+    setChartQueue,
+  } = useStore();
+  const on = w.kind === "option" ? chartInstrument === w.key : w.symbol === symbol;
+  const px = wPx(w);
+  const pct = wPct(w);
+  const chg = wAbsChg(w);
+  const has = pct != null || chg != null;
+  const up = (pct ?? chg ?? 0) >= 0;
+  const col = !has ? "text-term-text" : up ? "text-up" : "text-down";
+  return (
+    <div className={`flex items-center border-b border-term-border/70 ${on ? "bg-term-accent/[0.07]" : ""}`}>
+      <button
+        onClick={() => {
+          setChartQueue("Watchlist", queue);
+          selectSymbol(w.symbol, true);
+          if (w.kind === "option") {
+            if (w.expiry) selectExpiry(w.expiry);
+            setChartInstrument(w.key);
+          }
+          setView("chart");
+        }}
+        title={`Chart ${wName(w)}`}
+        className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left active:bg-term-border/40"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[15px] font-medium text-term-text">{wFull(w)}</span>
+          <span className="mt-1 block text-xs text-term-dim">{wSeg(w)}</span>
+        </span>
+        <span className="flex shrink-0 flex-col items-end">
+          <span className={`num flex items-center gap-1.5 text-[15px] font-medium tabular-nums ${col}`}>
+            {has && <span className="text-[10px] leading-none">{up ? "▲" : "▼"}</span>}
+            {px != null ? nf(px) : "–"}
+          </span>
+          <span className="num mt-1 text-xs tabular-nums text-term-dim">
+            {has ? `${nf(chg ?? 0)} (${nf(pct ?? 0)}%)` : " "}
+          </span>
+        </span>
+      </button>
+      {editing && (
+        <button
+          onClick={() => removeWatch(w.key)}
+          title="Remove from this list"
+          className="mr-3 shrink-0 rounded-full border border-down/50 bg-down/10 px-2.5 py-1 text-xs font-semibold text-down"
+        >
+          ✕
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** 20px line icons for the phone Marketwatch header */
+function HeadIcon({ d, w = 1.9 }: { d: string; w?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" strokeWidth={w}
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={d} />
+    </svg>
+  );
+}
+const ICON = {
+  bell: "M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16zM10 20.5a2 2 0 0 0 4 0",
+  sort: "M4 7h16M4 12h11M4 17h6",
+  search: "M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM15.5 15.5 20 20",
+  dots: "M12 5.5v.01M12 12v.01M12 18.5v.01",
+};
+
 type StrikePair = {
   gkey: string;
   symbol: string;
@@ -172,7 +264,8 @@ type StrikePair = {
   pe?: WatchQuote;
 };
 
-export function Watchlist() {
+/** `band` (phone): the index quotes, shown under the Marketwatch header */
+export function Watchlist({ band }: { band?: ReactNode } = {}) {
   const {
     watch,
     watchlists,
@@ -195,6 +288,16 @@ export function Watchlist() {
   const [results, setResults] = useState<Awaited<ReturnType<typeof api.symbolSearch>>["results"]>([]);
   const [openSearch, setOpenSearch] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false); // phone: strike / future / preset tools folded away
+  // phone Marketwatch header: each icon opens its panel under the header
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const [listsOpen, setListsOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const openNotif = useStore((s) => s.openNotif);
+  const alertsUnseen = useStore(
+    (s) =>
+      Math.max(0, s.alerts.length - s.alertsSeen) + Math.max(0, s.unusual.length - s.unusualSeen)
+  );
   const [view, setView] = useState<WlView>(() => {
     try {
       return (localStorage.getItem("wlView") as WlView) || "list";
@@ -387,10 +490,127 @@ export function Watchlist() {
     </div>
   );
 
+  // phone tabs are always numbered 1-5 like a broker's marketwatch; tapping a
+  // number with no list behind it yet creates the missing lists (the server keeps 3)
+  const pickList = async (i: number) => {
+    if (!watchlists) return;
+    let n = watchlists.lists.length;
+    while (n <= i && n < 8) {
+      await wlAddList();
+      n++;
+    }
+    if (i !== (useStore.getState().watchlists?.active ?? 0)) await wlSetActive(i);
+  };
+  const headBtns = [
+    { ic: "bell", title: "Alerts", on: false, w: 1.9, fn: () => openNotif() },
+    { ic: "sort", title: "Sort", on: sortOpen, w: 1.9, fn: () => setSortOpen((o) => !o) },
+    { ic: "search", title: "Search & add", on: searchOpen, w: 1.9, fn: () => setSearchOpen((o) => !o) },
+    { ic: "dots", title: "Strikes, future, presets, edit list", on: toolsOpen, w: 3.2, fn: () => setToolsOpen((o) => !o) },
+  ] as const;
+
   return (
     <div className="flex h-full flex-col bg-term-panel2">
-      {/* header -- on a phone its view toggle rides the sort bar instead, so the
-          rows start higher (Flattrade-style: 8+ symbols on screen) */}
+      {/* phone: Flattrade-style Marketwatch -- title (your lists) + icons,
+          the index band, numbered list tabs; search / sort / tools fold away */}
+      {isMobile && (
+        <>
+          <div className="flex shrink-0 items-center bg-term-panel px-3 pb-1 pt-2">
+            <button
+              onClick={() => setListsOpen((o) => !o)}
+              title="Your lists — switch, rename, delete"
+              className="flex items-center gap-1.5 py-1 text-[19px] font-semibold tracking-tight text-term-text"
+            >
+              Marketwatch
+              <span className={`text-xs text-term-dim transition-transform ${listsOpen ? "rotate-180" : ""}`}>
+                ▾
+              </span>
+            </button>
+            <div className="ml-auto flex items-center gap-0.5">
+              {headBtns.map((b) => (
+                <button
+                  key={b.ic}
+                  onClick={b.fn}
+                  title={b.title}
+                  className={`relative rounded-full p-2 ${
+                    b.on ? "bg-term-accent/15 text-term-accent" : "text-term-text active:bg-term-border/50"
+                  }`}
+                >
+                  <HeadIcon d={ICON[b.ic]} w={b.w} />
+                  {b.ic === "bell" && alertsUnseen > 0 && (
+                    <span className="absolute right-0.5 top-0.5 min-w-[15px] rounded-full bg-down px-1 text-center text-[9px] font-bold leading-4 text-white">
+                      {alertsUnseen}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+          {listsOpen && watchlists && (
+            <div className="shrink-0 border-b border-term-border bg-term-panel px-3 pb-1.5">
+              {watchlists.lists.map((l, i) => (
+                <div key={i} className="flex items-center gap-2 border-t border-term-border/50 py-1.5">
+                  <button
+                    onClick={() => {
+                      pickList(i);
+                      setListsOpen(false);
+                    }}
+                    className={`flex min-w-0 flex-1 items-center gap-2 text-left text-sm ${
+                      i === active ? "font-semibold text-term-accent" : "text-term-text"
+                    }`}
+                  >
+                    <span className="num w-5 text-center">{i + 1}</span>
+                    <span className="truncate">{l.name}</span>
+                    <span className="num text-[10px] text-term-dim">{l.symbols.length}</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      const n = prompt("Rename list", l.name);
+                      if (n && n.trim()) wlRename(i, n.trim());
+                    }}
+                    title="Rename"
+                    className="rounded border border-term-dim/70 px-2 py-0.5 text-[11px] text-term-dim"
+                  >
+                    ✎
+                  </button>
+                  {watchlists.lists.length > 1 && (
+                    <button
+                      onClick={() => {
+                        if (confirm(`Delete "${l.name}"?`)) wlDeleteList(i);
+                      }}
+                      title="Delete this list"
+                      className="rounded border border-term-dim/70 px-2 py-0.5 text-[11px] text-term-dim"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {band}
+          {watchlists && (
+            <div className="flex shrink-0 border-b border-term-border bg-term-panel">
+              {Array.from({ length: Math.min(8, Math.max(5, watchlists.lists.length)) }, (_, i) => (
+                <button
+                  key={i}
+                  onClick={() => pickList(i)}
+                  title={watchlists.lists[i]?.name ?? `New list ${i + 1}`}
+                  className={`relative flex-1 py-2.5 text-[15px] ${
+                    i === active ? "font-semibold text-term-accent" : "text-term-text"
+                  }`}
+                >
+                  {i + 1}
+                  {i === active && (
+                    <span className="absolute inset-x-3 bottom-0 h-[3px] rounded-t bg-term-accent" />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* header (desktop) */}
       {!isMobile && (
         <div className="flex items-center justify-between px-3 pb-1.5 pt-2.5">
           <div className="flex items-baseline gap-2">
@@ -403,7 +623,8 @@ export function Watchlist() {
         </div>
       )}
 
-      {/* sort bar */}
+      {/* sort bar (phone: behind the sort icon) */}
+      {(!isMobile || sortOpen) && (
       <div className={`flex items-center gap-1 px-3 pb-1.5 text-[10px] ${isMobile ? "pt-1.5" : ""}`}>
         <span className="text-term-dim">Sort</span>
         {(
@@ -436,24 +657,11 @@ export function Watchlist() {
             ✕
           </button>
         )}
-        {isMobile && (
-          <div className="ml-auto flex items-center gap-1">
-            {viewToggle}
-            <button
-              onClick={() => setToolsOpen((o) => !o)}
-              title="Add strikes / future, clear strikes, load a preset"
-              className={`rounded border px-1.5 py-0.5 text-[11px] ${
-                toolsOpen ? "border-term-accent text-term-accent" : "border-term-dim/70 text-term-dim"
-              }`}
-            >
-              ⚙
-            </button>
-          </div>
-        )}
       </div>
+      )}
 
-      {/* list tabs — pills */}
-      {watchlists && (
+      {/* list tabs — pills (phone: the numbered tabs above) */}
+      {watchlists && !isMobile && (
         <div className="flex items-center gap-1 overflow-x-auto px-3 pb-2">
           {watchlists.lists.map((l, i) => {
             const on = i === active;
@@ -510,18 +718,17 @@ export function Watchlist() {
         </div>
       )}
 
-      {/* search + actions — on mobile this jumps to the top, right under the index band */}
-      <div
-        className={`relative border-y border-term-border/60 bg-term-panel/30 px-3 py-2 ${
-          isMobile ? "order-first" : ""
-        }`}
-      >
+      {/* search + actions (phone: search behind 🔍, tools behind ⋮) */}
+      {(!isMobile || searchOpen || toolsOpen) && (
+      <div className="relative border-y border-term-border/60 bg-term-panel/30 px-3 py-2">
+        {(!isMobile || searchOpen) && (
         <form onSubmit={submit} className="flex items-center gap-1.5">
           <div className="relative flex-1">
             <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-term-dim">
               ⌕
             </span>
             <input
+              autoFocus={isMobile}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onFocus={() => results.length && setOpenSearch(true)}
@@ -534,8 +741,26 @@ export function Watchlist() {
             +
           </button>
         </form>
+        )}
         {(!isMobile || toolsOpen) && (
         <>
+        {isMobile && (
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setEditing((e) => !e);
+                setToolsOpen(false);
+              }}
+              className={`flex-1 rounded border py-1 text-[11px] ${
+                editing ? "border-term-accent text-term-accent" : "border-term-dim/70 text-term-dim"
+              }`}
+              title="Show a remove button on every row"
+            >
+              ✎ {editing ? "Done editing" : "Edit list (remove symbols)"}
+            </button>
+          </div>
+        )}
         <div className="mt-1.5 flex gap-1">
           <button
             type="button"
@@ -618,6 +843,16 @@ export function Watchlist() {
           </div>
         )}
       </div>
+      )}
+
+      {isMobile && editing && (
+        <div className="flex shrink-0 items-center justify-between bg-term-accent/10 px-4 py-1.5 text-xs text-term-text">
+          <span>Tap ✕ to remove a symbol from this list</span>
+          <button onClick={() => setEditing(false)} className="font-semibold text-term-accent">
+            Done
+          </button>
+        </div>
+      )}
 
       {/* rows */}
       <div className="flex-1 overflow-y-auto">
@@ -628,6 +863,14 @@ export function Watchlist() {
         ) : shown.length === 0 ? (
           <div className="p-6 text-center text-[11px] text-term-dim">
             No matching rows — the header All / Indices / Stocks filter is hiding this list.
+          </div>
+        ) : isMobile ? (
+          // phone: one flat list in your order (or the chosen sort), full
+          // contract names, no group headers -- like the broker's marketwatch
+          <div className="flex flex-col">
+            {shown.map((w) => (
+              <MobileQuoteRow key={w.key} w={w} queue={queueSyms} editing={editing} />
+            ))}
           </div>
         ) : (
           <div className="flex flex-col">
@@ -647,9 +890,11 @@ export function Watchlist() {
         )}
       </div>
 
-      <div className="border-t border-term-border bg-term-panel/30 px-3 py-1.5 text-[9px] leading-tight text-term-dim">
-        tap a symbol or option to chart it
-      </div>
+      {!isMobile && (
+        <div className="border-t border-term-border bg-term-panel/30 px-3 py-1.5 text-[9px] leading-tight text-term-dim">
+          tap a symbol or option to chart it
+        </div>
+      )}
     </div>
   );
 }

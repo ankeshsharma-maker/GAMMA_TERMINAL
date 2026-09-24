@@ -122,31 +122,32 @@ function MobileIndexBand() {
     };
   }, []);
   if (rows.length === 0) return null;
-  const label: Record<string, string> = { NIFTY: "NIFTY 50", "INDIA VIX": "INDIA VIX" };
+  const label: Record<string, string> = { NIFTY: "Nifty 50", SENSEX: "Sensex" };
+  // broker-marketwatch style: name + price on one line, the move under the price
   return (
-    <div className="grid shrink-0 grid-cols-2 divide-x divide-term-border border-b border-term-border bg-term-panel2">
-      {rows.slice(0, 2).map((r) => {
+    <div className="grid shrink-0 grid-cols-2 gap-3 bg-term-panel px-4 pb-2 pt-0.5">
+      {rows.slice(0, 2).map((r, i) => {
         const up = (r.chgPct ?? 0) >= 0;
+        const col = r.chgPct == null ? "text-term-text" : up ? "text-up" : "text-down";
         const pts =
           r.chgPts ??
           (r.chgPct != null && r.spot != null ? r.spot - r.spot / (1 + r.chgPct / 100) : null);
         return (
-          <div key={r.symbol} className="flex flex-col items-center py-1 leading-tight">
-            <span className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wide text-term-dim">
-              {label[r.symbol] ?? r.symbol}
-              {r.chgPct != null && (
-                <span className={up ? "text-up" : "text-down"}>{up ? "↑" : "↓"}</span>
-              )}
-            </span>
-            <span className={`num text-xs font-bold ${up ? "text-up" : "text-down"}`}>
-              {r.spot != null ? nf(r.spot, r.spot < 100 ? 2 : 0) : "–"}
-            </span>
-            {(pts != null || r.chgPct != null) && (
-              <span className={`num text-[9px] ${up ? "text-up" : "text-down"}`}>
-                {pts != null ? `${up ? "+" : "−"}${nf(Math.abs(pts), 2)} ` : ""}
-                {r.chgPct != null ? `(${nf(Math.abs(r.chgPct), 2)}%)` : ""}
+          <div key={r.symbol} className={`flex ${i === 0 ? "justify-start" : "justify-end"}`}>
+            <div className="inline-flex flex-col items-end leading-tight">
+              <span className="flex items-baseline gap-1.5 whitespace-nowrap text-[15px]">
+                <span className="text-term-accent">{label[r.symbol] ?? r.symbol}</span>
+                <span className={`num ${col}`}>
+                  {r.spot != null ? nf(r.spot, 2) : "–"}
+                </span>
               </span>
-            )}
+              {(pts != null || r.chgPct != null) && (
+                <span className={`num mt-1 whitespace-nowrap text-xs ${col}`}>
+                  {up ? "▲" : "▼"} {pts != null ? nf(Math.abs(pts), 2) : ""}
+                  {r.chgPct != null ? ` (${nf(Math.abs(r.chgPct), 2)}%)` : ""}
+                </span>
+              )}
+            </div>
           </div>
         );
       })}
@@ -489,8 +490,7 @@ function MobileBody({ view }: { view: View }) {
     case "watchlist":
       return (
         <div className="flex min-h-0 flex-1 flex-col">
-          <MobileIndexBand />
-          <Watchlist />
+          <Watchlist band={<MobileIndexBand />} />
         </div>
       );
     case "scrip":
