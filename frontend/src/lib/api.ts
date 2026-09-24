@@ -21,6 +21,22 @@ import { getToken, handleUnauthorized } from "./auth";
 // deploy) this stays "" and every call is a relative /api/... path. In the
 // packaged Android app there is no backend on the WebView origin, so
 // VITE_API_BASE points at the real backend (e.g. http://92.4.84.13).
+/** one recorded reading of the OI walls: cw / pw = the strike with the most
+ *  call / put OI (cw2 / pw2 the runners-up), OI in shares */
+export type OiWallPt = {
+  t: number;
+  expiry: string;
+  spot: number | null;
+  cw: number;
+  cwOI: number;
+  cw2: number | null;
+  cw2OI: number | null;
+  pw: number;
+  pwOI: number;
+  pw2: number | null;
+  pw2OI: number | null;
+};
+
 export const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/+$/, "");
 
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
@@ -142,6 +158,12 @@ export const api = {
     }>(
       `/api/oi-change/${symbol}?minutes=${minutes}` +
         (expiry ? `&expiry=${encodeURIComponent(expiry)}` : "")
+    ),
+
+  /** where the call / put OI walls (biggest-OI strikes) sat through today */
+  oiWalls: (symbol: string, expiry?: string) =>
+    j<{ symbol: string; expiry: string; points: OiWallPt[] }>(
+      `/api/oi-walls/${symbol}` + (expiry ? `?expiry=${encodeURIComponent(expiry)}` : "")
     ),
 
   addWatch: (symbol: string) =>

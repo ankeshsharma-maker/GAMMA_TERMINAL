@@ -222,6 +222,16 @@ async def oi_change(
             **store.oi_change_window(symbol, chain["expiry"], minutes)}
 
 
+@router.get("/oi-walls/{symbol}")
+async def oi_walls_route(symbol: str, expiry: str | None = Query(None)):
+    """Where the call / put OI walls (biggest-OI strikes) sat through today --
+    the OI tab's Walls view. Recorded live from the polls (oi_walls.py)."""
+    from . import oi_walls
+
+    chain = await _ensure_chain(symbol, expiry)
+    return {"symbol": symbol.upper(), "expiry": chain["expiry"], "points": oi_walls.series(symbol, chain["expiry"])}
+
+
 @router.get("/flow/{symbol}")
 async def option_flow(
     symbol: str,

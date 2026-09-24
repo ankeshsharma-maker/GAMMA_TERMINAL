@@ -135,7 +135,7 @@ _ALLOW: list[tuple[str, re.Pattern]] = [
         ("GET", rf"/api/expiries/{_SYM}"),
         ("GET", r"/api/indices/header(/options)?"),
         # (not /api/chart/drawings -- the owner's saved drawings)
-        ("GET", rf"/api/(option-chain|volatility|history|pcr|oi-change|flow|chart)/(?!drawings$){_SYM}"),
+        ("GET", rf"/api/(option-chain|volatility|history|pcr|oi-change|oi-walls|flow|chart)/(?!drawings$){_SYM}"),
         ("GET", rf"/api/(scan|screener)(/{_SYM})?"),
         ("GET", r"/api/(alerts|unusual)"),
         ("GET", r"/api/health"),

@@ -2,7 +2,8 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import { RefreshChainBtn } from "./RefreshChainBtn";
 import { ClassFilter } from "./Header";
 import { useStore } from "../store";
-import { api } from "../lib/api";
+import { api, type OiWallPt } from "../lib/api";
+import { istTime } from "../lib/istTime";
 import { compact, crores, nf, sk } from "../lib/format";
 import { PcrChart } from "./PcrChart";
 import { SelectMenu } from "./SelectMenu";
@@ -159,22 +160,43 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const isMobile = useIsMobile();
   const [tools, setTools] = useState(false); // mobile: show the extra control rows
   const [metric, setMetric] = useState<Metric>("combined");
-  const [layout, setLayout] = useState<"chart" | "ladder" | "pcr" | "gex" | "dex">("chart");
+  const [layout, setLayout] = useState<"chart" | "table" | "ladder" | "walls" | "pcr" | "gex" | "dex">("chart");
   // the ladder opens scrolled to the spot line (with All strikes it used to
   // start at the lowest strike) -- once per open / symbol / expiry, never
   // again on the 5s refreshes, so it doesn't fight a manual scroll
   const spotRef = useRef<HTMLDivElement>(null);
+  const tableSpotRef = useRef<HTMLTableRowElement>(null);
   const ladderScrolled = useRef("");
   useEffect(() => {
-    if (layout !== "ladder") {
+    if (layout !== "ladder" && layout !== "table") {
       ladderScrolled.current = "";
       return;
     }
-    const key = `${symbol}|${expiry}`;
-    if (ladderScrolled.current === key || !spotRef.current) return;
-    spotRef.current.scrollIntoView({ block: "center" });
+    const key = `${layout}|${symbol}|${expiry}`;
+    const el = layout === "table" ? tableSpotRef.current : spotRef.current;
+    if (ladderScrolled.current === key || !el) return;
+    el.scrollIntoView({ block: "center" });
     ladderScrolled.current = key;
   });
+
+  // the Walls view: today's recorded walls, refreshed every minute
+  const [wallPts, setWallPts] = useState<OiWallPt[] | null>(null);
+  useEffect(() => {
+    if (layout !== "walls") return;
+    let alive = true;
+    setWallPts(null);
+    const load = () =>
+      api.oiWalls(symbol, expiry || undefined).then(
+        (d) => alive && setWallPts(d.points),
+        () => alive && setWallPts([])
+      );
+    load();
+    const id = window.setInterval(() => !document.hidden && load(), 60_000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [layout, symbol, expiry]);
   const [gexPts, setGexPts] = useState<
     { date: string; spot: number; netGex: number; gammaFlip: number }[]
   >([]);
@@ -806,6 +828,247 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       {spotRow === -1 && rows.length > 0 && spotLine}
     </div>
   );
+
+  // ---- the strike TABLE: every strike as a bordered grid row, OI in lakhs
+  // with a bar inside the OI cell (call bars grow toward the strike from the
+  // left, put bars from the right), change over the chosen window, R / S on
+  // the biggest call / put strike, and the spot line between strikes ----
+  const L1 = (v: number) => nf(v / 1e5, 1);
+  const S1 = (v: number) => {
+    const l = Math.round(v / 1e4) / 10; // lakhs, 1 decimal -- rounded first, so a tiny change reads 0.0, not +0.0
+    return `${l > 0 ? "+" : l < 0 ? "−" : ""}${nf(Math.abs(l), 1)}`;
+  };
+  const tone = (v: number, pos: string, neg: string) => (v > 0 ? pos : v < 0 ? neg : "text-term-dim");
+  const GRID = "w-full border-separate border-spacing-0 text-[12px] tabular-nums [&_tr>*:first-child]:border-l";
+  const GTH =
+    "sticky top-0 z-10 border-b border-r border-t border-term-dim/50 bg-term-panel2 px-1.5 py-1 text-[10px] font-medium uppercase tracking-wide text-term-dim";
+  const GTD = "border-b border-r border-term-dim/50 px-1.5 py-1";
+  const WTH = GTH.replace("sticky top-0 z-10 ", ""); // headers of the small tables: not sticky
+  const tableSpot = (
+    <tr ref={tableSpotRef}>
+      <td colSpan={5} className="border-b border-r border-term-dim/50 bg-term-accent/10 px-2 py-0.5 text-center text-[10px] font-semibold text-term-accent">
+        ▶ spot {nf(spot, 1)}
+      </td>
+    </tr>
+  );
+  const tableEl = (
+    <div className={isMobile ? "px-2 py-2" : "min-h-0 flex-1 overflow-y-auto px-3 py-2"}>
+      <table className={`${GRID} mx-auto max-w-3xl`}>
+        <thead>
+          <tr>
+            <th className={`${GTH} rounded-tl-lg text-right`}>Call OI</th>
+            <th className={`${GTH} text-right`}>Chg</th>
+            <th className={`${GTH} text-center`}>Strike</th>
+            <th className={`${GTH} text-left`}>Chg</th>
+            <th className={`${GTH} rounded-tr-lg text-left`}>Put OI</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => {
+            const cChg = dCE(r);
+            const pChg = dPE(r);
+            const isRes = r.strike === stats.resistance;
+            const isFloor = r.strike === stats.floor;
+            const cPct = Math.min(100, (r.call.oi / stats.maxOI) * 100);
+            const pPct = Math.min(100, (r.put.oi / stats.maxOI) * 100);
+            return (
+              <Fragment key={r.strike}>
+                {i === spotRow && tableSpot}
+                <tr className={r.strike === chain?.atmStrike ? "[&>td]:bg-term-accent/[0.07]" : ""}>
+                  <td
+                    className={`${GTD} text-right ${isRes ? "font-bold text-down" : "text-term-text"}`}
+                    style={{ backgroundImage: `linear-gradient(to left, ${CALL_OI}70 ${cPct}%, transparent ${cPct}%)` }}
+                  >
+                    {L1(r.call.oi)}
+                  </td>
+                  <td className={`${GTD} text-right ${tone(cChg, "text-down", "text-up")}`}>{S1(cChg)}</td>
+                  <td
+                    className={`${GTD} whitespace-nowrap text-center font-semibold ${
+                      isRes ? "text-down" : isFloor ? "text-up" : "text-term-text"
+                    }`}
+                  >
+                    {sk(r.strike)}
+                    {isRes && <span className="ml-1 rounded bg-down/15 px-1 text-[9px]">R</span>}
+                    {isFloor && <span className="ml-1 rounded bg-up/15 px-1 text-[9px]">S</span>}
+                  </td>
+                  <td className={`${GTD} text-left ${tone(pChg, "text-up", "text-down")}`}>{S1(pChg)}</td>
+                  <td
+                    className={`${GTD} text-left ${isFloor ? "font-bold text-up" : "text-term-text"}`}
+                    style={{ backgroundImage: `linear-gradient(to right, ${PUT_OI}70 ${pPct}%, transparent ${pPct}%)` }}
+                  >
+                    {L1(r.put.oi)}
+                  </td>
+                </tr>
+              </Fragment>
+            );
+          })}
+          {spotRow === -1 && rows.length > 0 && tableSpot}
+          <tr className="font-semibold [&>td]:bg-term-border/50">
+            <td className={`${GTD} rounded-bl-lg text-right text-term-text`}>{L1(oiTotals.ce)}</td>
+            <td className={`${GTD} text-right ${tone(flow.ceAdd + flow.ceCut, "text-down", "text-up")}`}>
+              {S1(flow.ceAdd + flow.ceCut)}
+            </td>
+            <td className={`${GTD} text-center text-term-text`}>Total</td>
+            <td className={`${GTD} text-left ${tone(flow.peAdd + flow.peCut, "text-up", "text-down")}`}>
+              {S1(flow.peAdd + flow.peCut)}
+            </td>
+            <td className={`${GTD} rounded-br-lg text-left text-term-text`}>{L1(oiTotals.pe)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div className="mx-auto mt-1.5 max-w-3xl text-[10px] leading-snug text-term-dim">
+        OI in lakhs · Chg = {tfName} · bar = OI vs the biggest strike shown · R / S = most call / put OI · PCR{" "}
+        {chain?.pcr != null ? nf(chain.pcr, 2) : "–"} (whole chain)
+      </div>
+    </div>
+  );
+
+  // ---- the WALLS view: where the biggest call strike (resistance) and put
+  // strike (support) sat through today, as a step chart + the moves table ----
+  const wallsEl = (() => {
+    const pts = wallPts;
+    if (pts === null) return <div className="p-6 text-center text-xs text-term-dim">loading walls…</div>;
+    if (pts.length === 0)
+      return (
+        <div className="p-6 text-center text-xs leading-relaxed text-term-dim">
+          No walls recorded yet today for {symbol} {expiry}.<br />
+          They're recorded from the live chain every minute, 09:15–16:00 IST.
+        </div>
+      );
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    const moves = pts.filter((p, i) => i === 0 || p.cw !== pts[i - 1].cw || p.pw !== pts[i - 1].pw);
+    if (moves[moves.length - 1] !== last) moves.push(last);
+    const cd = Math.sign(last.cw - first.cw);
+    const pd = Math.sign(last.pw - first.pw);
+    const read =
+      (cd < 0 && pd <= 0) || (cd <= 0 && pd < 0)
+        ? { t: "▼ Walls moving DOWN — sellers in control", c: "border-down/40 bg-down/15 text-down" }
+        : (cd > 0 && pd >= 0) || (cd >= 0 && pd > 0)
+        ? { t: "▲ Walls moving UP — buyers in control", c: "border-up/40 bg-up/15 text-up" }
+        : cd === 0 && pd === 0
+        ? { t: `◆ Walls holding — range ${sk(last.pw)}–${sk(last.cw)}`, c: "border-term-border bg-term-border/40 text-term-text" }
+        : cd > 0
+        ? { t: "◆ Range widening — both sides backing off", c: "border-term-border bg-term-border/40 text-term-text" }
+        : { t: "◆ Range narrowing — walls closing in", c: "border-term-border bg-term-border/40 text-term-text" };
+
+    // step chart
+    const W = isMobile ? 360 : 720;
+    const H = 200;
+    const padL = 44;
+    const padR = 8;
+    const padT = 10;
+    const padB = 20;
+    const vals = pts.flatMap((p) => [p.cw, p.pw, ...(p.spot ? [p.spot] : [])]);
+    const step = chain?.strikeStep || 50;
+    const lo = Math.min(...vals) - step;
+    const hi = Math.max(...vals) + step;
+    const t0 = first.t;
+    const t1 = Math.max(last.t, t0 + 60);
+    const x = (t: number) => padL + ((t - t0) / (t1 - t0)) * (W - padL - padR);
+    const y = (v: number) => padT + (1 - (v - lo) / (hi - lo || 1)) * (H - padT - padB);
+    const stepPath = (k: "cw" | "pw") =>
+      pts.map((p, i) => (i === 0 ? `M${x(p.t)},${y(p[k])}` : `H${x(p.t)}V${y(p[k])}`)).join("") + `H${x(t1)}`;
+    const spotPath = pts
+      .filter((p) => p.spot)
+      .map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.spot as number).toFixed(1)}`)
+      .join("");
+    const levels = [...new Set(pts.flatMap((p) => [p.cw, p.pw]))].sort((a, b) => b - a);
+    const hours = pts.map((p) => p.t).filter((t) => istTime(t).endsWith(":15") || istTime(t).endsWith(":00"));
+    const hourTicks = [...new Set(hours.map((t) => istTime(t).slice(0, 2)))].map((h) => pts.find((p) => istTime(p.t).startsWith(h))!.t);
+    const arrowOf = (a: number, b: number) => (a > b ? "▲" : a < b ? "▼" : "");
+
+    return (
+      <div className={isMobile ? "flex flex-col gap-2 px-2 py-2" : "mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-2 overflow-y-auto px-3 py-2"}>
+        <div className={`self-start rounded border px-2 py-1 text-[12px] font-bold ${read.c}`}>{read.t}</div>
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxWidth: W }}>
+          {levels.map((v) => (
+            <g key={v}>
+              <line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke="rgb(var(--term-border))" strokeDasharray="2 3" />
+              <text x={padL - 4} y={y(v) + 3.5} textAnchor="end" fontSize="10" fill="rgb(var(--term-dim))">
+                {sk(v)}
+              </text>
+            </g>
+          ))}
+          {hourTicks.map((t) => (
+            <text key={t} x={x(t)} y={H - 5} textAnchor="middle" fontSize="10" fill="rgb(var(--term-dim))">
+              {istTime(t)}
+            </text>
+          ))}
+          {spotPath && <path d={spotPath} fill="none" stroke="rgb(var(--term-dim))" strokeWidth="1.3" strokeDasharray="4 3" />}
+          <path d={stepPath("cw")} fill="none" stroke="#ef4444" strokeWidth="2.2" />
+          <path d={stepPath("pw")} fill="none" stroke="#22c55e" strokeWidth="2.2" />
+        </svg>
+        <div className="flex flex-wrap gap-x-3 text-[10px] text-term-dim">
+          <span><span className="text-down">━</span> call wall (most call OI = resistance)</span>
+          <span><span className="text-up">━</span> put wall (most put OI = support)</span>
+          <span>┅ spot</span>
+        </div>
+        <table className={GRID}>
+          <thead>
+            <tr>
+              <th className={`${WTH} rounded-tl-lg text-left`}>Now</th>
+              <th className={`${WTH} text-right`}>Call wall</th>
+              <th className={`${WTH} rounded-tr-lg text-right`}>Put wall</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className={`${GTD} text-term-dim`}>Biggest</td>
+              <td className={`${GTD} text-right font-semibold text-down`}>{sk(last.cw)} · {L1(last.cwOI)}L</td>
+              <td className={`${GTD} text-right font-semibold text-up`}>{sk(last.pw)} · {L1(last.pwOI)}L</td>
+            </tr>
+            <tr>
+              <td className={`${GTD} rounded-bl-lg text-term-dim`}>Next</td>
+              <td className={`${GTD} text-right text-term-text`}>{last.cw2 != null ? `${sk(last.cw2)} · ${L1(last.cw2OI ?? 0)}L` : "–"}</td>
+              <td className={`${GTD} rounded-br-lg text-right text-term-text`}>{last.pw2 != null ? `${sk(last.pw2)} · ${L1(last.pw2OI ?? 0)}L` : "–"}</td>
+            </tr>
+          </tbody>
+        </table>
+        <table className={GRID}>
+          <thead>
+            <tr>
+              <th className={`${WTH} rounded-tl-lg text-left`}>Time</th>
+              <th className={`${WTH} text-right`}>Spot</th>
+              <th className={`${WTH} text-right`}>Call wall</th>
+              <th className={`${WTH} rounded-tr-lg text-right`}>Put wall</th>
+            </tr>
+          </thead>
+          <tbody>
+            {moves.map((p, i) => {
+              const prev = i ? moves[i - 1] : null;
+              const lastRow = i === moves.length - 1;
+              return (
+                <tr key={p.t}>
+                  <td className={`${GTD} text-term-dim ${lastRow ? "rounded-bl-lg" : ""}`}>
+                    {istTime(p.t)}
+                    {lastRow && p === last && i > 0 ? " · now" : ""}
+                  </td>
+                  <td className={`${GTD} text-right text-term-text`}>{p.spot ? nf(p.spot, 0) : "–"}</td>
+                  <td className={`${GTD} text-right ${prev && p.cw !== prev.cw ? "font-bold text-down" : "text-term-text"}`}>
+                    {prev && p.cw !== prev.cw ? `${arrowOf(p.cw, prev.cw)} ` : ""}
+                    {sk(p.cw)}
+                  </td>
+                  <td
+                    className={`${GTD} text-right ${prev && p.pw !== prev.pw ? "font-bold text-up" : "text-term-text"} ${
+                      lastRow ? "rounded-br-lg" : ""
+                    }`}
+                  >
+                    {prev && p.pw !== prev.pw ? `${arrowOf(p.pw, prev.pw)} ` : ""}
+                    {sk(p.pw)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <div className="text-[10px] leading-snug text-term-dim">
+          One row each time a wall moved. Call wall stepping down = resistance coming closer (bearish); put wall stepping up =
+          support rising (bullish).
+        </div>
+      </div>
+    );
+  })();
 
   // ---- OI donuts (total OI split + change-in-OI split) ----
   const donutEl = (() => {
@@ -1561,11 +1824,13 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
                 ⚙ {tools ? "▴" : "▾"}
               </button>
             </div>
-            <div className="seg no-scrollbar self-start overflow-x-auto">
+            <div className="seg no-scrollbar max-w-full self-start overflow-x-auto">
               {(
                 [
                   ["chart", "Chart"],
+                  ["table", "Table"],
                   ["ladder", "Ladder"],
+                  ["walls", "Walls"],
                   ["gex", "Weekly Gex"],
                   ["dex", "Dealer Exp"],
                   ["pcr", "PCR"],
@@ -1640,7 +1905,9 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
             {(
               [
                 ["chart", "Chart"],
+                ["table", "Table"],
                 ["ladder", "Ladder"],
+                ["walls", "Walls"],
                 ["gex", "Weekly Gex"],
                 ["dex", "Dealer Exp"],
                 ["pcr", "PCR"],
@@ -1772,6 +2039,8 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         </div>
       )}
       {layout === "ladder" && ladderEl}
+      {layout === "table" && tableEl}
+      {layout === "walls" && wallsEl}
       {layout === "pcr" && <PcrChart symbol={symbol} isMobile={isMobile} />}
       {layout === "gex" && gexEl}
       {layout === "dex" && dexEl}

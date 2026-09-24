@@ -27,7 +27,7 @@ from .config import (
     SHORT_OPTION_MARGIN_PCT,
     SCREENER_IV_HISTORY_MAXLEN,
 )
-from . import db, history_archive
+from . import db, history_archive, oi_walls
 from .users import current_user
 from .processing import build_chain, lot_size
 
@@ -176,6 +176,8 @@ class Store:
             return
         dq = self.oi_series.setdefault((symbol.upper(), expiry), deque(maxlen=self._OI_SERIES_MAXLEN))
         dq.append({"t": now, "oi": snap})
+        # the day's OI walls (biggest call / put strikes) -- kept on disk too
+        oi_walls.record(symbol, expiry, snap, chain.get("spot"), now)
 
     def oi_change_window(self, symbol: str, expiry: str, minutes: int) -> dict:
         """Per-strike OI change over a rolling window (vs the snapshot ~`minutes` ago)."""
