@@ -64,11 +64,15 @@ const Chip = ({ tone, children }: { tone: Tone; children: ReactNode }) => (
   <span className={`whitespace-nowrap rounded border px-2 py-0.5 text-[11px] font-bold ${TONE[tone]}`}>{children}</span>
 );
 
-// every card is a table: small dim headers, hairline rows, figures right-aligned
-const TBL = "w-full text-[12px] tabular-nums";
-const TH = "py-1 text-[10px] font-medium uppercase tracking-wide text-term-dim";
-const TR = "border-t border-term-border/40";
-const TD = "py-1";
+// every card is a table of separate rounded, bordered cells (3px apart; the
+// negative margin keeps the outer cells flush with the card's text), headers
+// on a soft fill, figures right-aligned
+const TBL = "-mx-[3px] w-[calc(100%+6px)] border-separate border-spacing-[3px] text-[12px] tabular-nums";
+const TH = "rounded-lg bg-term-border/35 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-term-dim";
+const TR = "";
+const TD = "rounded-lg border border-term-border/80 px-2 py-1";
+// a totals row: stronger cells
+const TOT = "font-semibold [&>td]:border-term-dim/60 [&>td]:bg-term-border/20";
 const L = (v: number | null | undefined) => (v == null ? "–" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${lakhs(Math.abs(v))}`);
 const pct = (v: number | null | undefined) => (v == null ? "–" : `${nf(v, 1)}%`);
 const tone3 = (v: number | null | undefined, pos: string, neg: string) =>
@@ -325,11 +329,43 @@ export function HomeDashboard() {
                   </tbody>
                 </table>
               )}
+              {trend.tfs.some((t) => t.atr) && (
+                <table className={TBL}>
+                  <thead>
+                    <tr>
+                      <th className={`${TH} text-left`}>ATR (14)</th>
+                      <th className={`${TH} text-right`}>Points</th>
+                      <th className={`${TH} text-right`}>vs avg</th>
+                      <th className={`${TH} text-right`}>Direction</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trend.tfs.map((t) => (
+                      <tr key={t.label} className={TR}>
+                        <td className={`${TD} text-term-text`}>{t.label}</td>
+                        <td className={`${TD} text-right text-term-text`}>{t.atr ? nf(t.atr.value, 1) : "–"}</td>
+                        <td className={`${TD} text-right text-term-text`}>
+                          {t.atr ? `${t.atr.chg >= 0 ? "+" : "−"}${nf(Math.abs(t.atr.chg) * 100, 0)}%` : "–"}
+                        </td>
+                        <td
+                          className={`${TD} text-right ${
+                            t.atr?.dir === "expanding" ? "font-semibold text-amber-400" : t.atr?.dir === "contracting" ? "text-sky-400" : "text-term-dim"
+                          }`}
+                        >
+                          {!t.atr ? "–" : t.atr.dir === "expanding" ? "▲ expanding" : t.atr.dir === "contracting" ? "▼ contracting" : "◆ steady"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
               <div className="text-[11px] text-term-dim">
                 {trend.up} up · {trend.down} down of {trend.total} signals. Structure: HH·HL (higher highs, higher lows) = up,
                 LH·LL (lower highs, lower lows) = down, from swing points (a candle beating the 2 on each side). A close through
-                the last swing confirms the trend — or, against it, is the first sign of a turn. Confirms a trend once it's under
-                way — it lags at turns.
+                the last swing confirms the trend — or, against it, is the first sign of a turn. ATR = the average candle range
+                in points: expanding = moves getting bigger than their last-20-candle average (the move has energy), contracting =
+                smaller (tiring, or a range). ATR is size, not up/down, so it doesn't vote. Confirms a trend once it's under way — it
+                lags at turns.
               </div>
             </>
           ) : (
@@ -452,7 +488,7 @@ export function HomeDashboard() {
                       <td className={`${TD} text-right text-term-text`}>{r.pcr != null ? nf(r.pcr, 2) : "–"}</td>
                     </tr>
                   ))}
-                  <tr className="border-t border-term-border font-semibold">
+                  <tr className={TOT}>
                     <td className={`${TD} text-term-text`}>Today</td>
                     <td className={TD} />
                     <td className={`${TD} text-right ${tone3(trending.dCE, "text-down", "text-up")}`}>{L(trending.dCE)}</td>
@@ -551,7 +587,7 @@ export function HomeDashboard() {
                     <td className={`${TD} text-right text-term-text`}>{pct(vol.rv?.rv20)}</td>
                   </tr>
                   {vol.vrp && (
-                    <tr className="border-t border-term-border font-semibold">
+                    <tr className={TOT}>
                       <td className={`${TD} text-term-text`}>IV ÷ RV (1 month)</td>
                       <td colSpan={2} className={`${TD} text-right ${volTone === "down" ? "text-down" : volTone === "up" ? "text-up" : "text-term-text"}`}>
                         ×{nf(vol.vrp.ratio, 2)}

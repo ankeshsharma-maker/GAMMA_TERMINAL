@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
-import { ema, supertrend, type Candle } from "../lib/indicators";
+import { atr, ema, supertrend, type Candle } from "../lib/indicators";
 import type { FlowDir } from "../types";
 
 /* One trend reading built from signals the app already draws: EMA 9/21 and
@@ -27,11 +27,22 @@ export interface Structure {
   broke: "up" | "down" | null;
 }
 
+/** ATR(14): how big a candle's range typically is, in points -- and whether
+ *  that is growing or shrinking. Size of the moves, not their direction, so
+ *  it doesn't vote. */
+export interface AtrRead {
+  value: number;
+  /** now vs the average ATR over the 20 candles before, e.g. -0.12 = 12% smaller */
+  chg: number;
+  dir: "expanding" | "contracting" | "steady";
+}
+
 export interface TfRead {
   label: string;
   ema: Dir | null;
   st: Dir | null;
   pa: Structure | null;
+  atr: AtrRead | null;
 }
 
 export interface TrendRead {
@@ -111,6 +122,18 @@ export function structure(c: Candle[]): Structure | null {
   return { dir, hi, lo, lastHigh: h2.price, lastLow: l2.price, broke };
 }
 
+const ATR_BAND = 0.1; // within ±10% of its recent average = steady
+
+export function atrRead(c: Candle[]): AtrRead | null {
+  const a = atr(c, 14).filter((v) => Number.isFinite(v));
+  if (a.length < 21) return null;
+  const value = a[a.length - 1];
+  const base = a.slice(-21, -1).reduce((x, y) => x + y, 0) / 20;
+  if (!(base > 0)) return null;
+  const chg = value / base - 1;
+  return { value, chg, dir: chg > ATR_BAND ? "expanding" : chg < -ATR_BAND ? "contracting" : "steady" };
+}
+
 const flowDir = (d: FlowDir | null | undefined): Dir | null =>
   d === "bull" ? "up" : d === "bear" ? "down" : d === "mixed" ? "mixed" : null;
 
@@ -126,8 +149,8 @@ async function build(symbol: string): Promise<TrendRead | null> {
   const tfs = TFS.map(([label], i) => {
     const c = candleSets[i];
     return c && c.length
-      ? { label, ema: emaDir(c), st: stDir(c), pa: structure(c) }
-      : { label, ema: null, st: null, pa: null };
+      ? { label, ema: emaDir(c), st: stDir(c), pa: structure(c), atr: atrRead(c) }
+      : { label, ema: null, st: null, pa: null, atr: null };
   });
   const votes = [...tfs.flatMap((t) => [t.ema, t.st, t.pa?.dir ?? null]), flow].filter((v): v is Dir => v != null);
   if (!votes.length) return null;
