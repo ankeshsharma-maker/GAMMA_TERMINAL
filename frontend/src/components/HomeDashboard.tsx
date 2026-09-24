@@ -64,15 +64,21 @@ const Chip = ({ tone, children }: { tone: Tone; children: ReactNode }) => (
   <span className={`whitespace-nowrap rounded border px-2 py-0.5 text-[11px] font-bold ${TONE[tone]}`}>{children}</span>
 );
 
-// every card is a table of separate rounded, bordered cells (3px apart; the
-// negative margin keeps the outer cells flush with the card's text), headers
-// on a soft fill, figures right-aligned
-const TBL = "-mx-[3px] w-[calc(100%+6px)] border-separate border-spacing-[3px] text-[12px] tabular-nums";
-const TH = "rounded-lg bg-term-border/35 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-term-dim";
+// every card is a table with ALL borders (a grid, like Excel's "All Borders"):
+// one visible line around every cell, the header row filled, outer corners
+// rounded. Cells draw their right + bottom lines, the first column its left and
+// the header its top, so each line is 1px (separate borders, 0 spacing -- the
+// only way rounded outer corners work on a table).
+const TBL =
+  "w-full border-separate border-spacing-0 text-[12px] tabular-nums [&_tr>*:first-child]:border-l " +
+  "[&_thead_tr>*:first-child]:rounded-tl-lg [&_thead_tr>*:last-child]:rounded-tr-lg " +
+  "[&_tbody_tr:last-child>*:first-child]:rounded-bl-lg [&_tbody_tr:last-child>*:last-child]:rounded-br-lg";
+const TH =
+  "border-b border-r border-t border-term-dim/50 bg-term-border/70 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-term-dim";
 const TR = "";
-const TD = "rounded-lg border border-term-border/80 px-2 py-1";
-// a totals row: stronger cells
-const TOT = "font-semibold [&>td]:border-term-dim/60 [&>td]:bg-term-border/20";
+const TD = "border-b border-r border-term-dim/50 px-2 py-1";
+// a totals row: filled + bold
+const TOT = "font-semibold [&>td]:bg-term-border/50";
 const L = (v: number | null | undefined) => (v == null ? "–" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${lakhs(Math.abs(v))}`);
 const pct = (v: number | null | undefined) => (v == null ? "–" : `${nf(v, 1)}%`);
 const tone3 = (v: number | null | undefined, pos: string, neg: string) =>
@@ -276,10 +282,11 @@ export function HomeDashboard() {
               <table className={TBL}>
                 <thead>
                   <tr>
-                    <th className={`${TH} text-left`}>Timeframe</th>
-                    <th className={`${TH} text-center`}>EMA 9/21</th>
+                    <th className={`${TH} text-left`}>TF</th>
+                    <th className={`${TH} text-center`} title="EMA 9 / 21">EMA</th>
                     <th className={`${TH} text-center`}>Supertrend</th>
-                    <th className={`${TH} text-right`}>Structure</th>
+                    <th className={`${TH} text-center`}>Structure</th>
+                    <th className={`${TH} text-center`} title="ADX(14): +DI vs -DI; under 20 = no trend">ADX</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -289,10 +296,16 @@ export function HomeDashboard() {
                       <td className={`${TD} text-center text-[14px] ${dirCls(t.ema)}`}>{arrow(t.ema)}</td>
                       <td className={`${TD} text-center text-[14px] ${dirCls(t.st)}`}>{arrow(t.st)}</td>
                       <td
-                        className={`${TD} text-right font-semibold ${dirCls(t.pa?.dir ?? null)}`}
+                        className={`${TD} text-center font-semibold ${dirCls(t.pa?.dir ?? null)}`}
                         title={t.pa ? `${t.pa.hi} · ${t.pa.lo}${t.pa.broke ? ` · price ${t.pa.broke === "up" ? "above the last swing high" : "below the last swing low"}` : ""}` : undefined}
                       >
                         {t.pa ? `${arrow(t.pa.dir)} ${t.pa.dir === "up" ? "UP" : t.pa.dir === "down" ? "DOWN" : "MIXED"}` : "–"}
+                      </td>
+                      <td
+                        className={`${TD} text-center font-semibold ${dirCls(t.adx?.dir ?? null)}`}
+                        title={t.adx ? `ADX ${nf(t.adx.adx, 1)} · +DI ${nf(t.adx.pdi, 1)} · −DI ${nf(t.adx.mdi, 1)} (under 20 = no trend)` : undefined}
+                      >
+                        {t.adx ? `${arrow(t.adx.dir)} ${nf(t.adx.adx, 0)}` : "–"}
                       </td>
                     </tr>
                   ))}
@@ -320,36 +333,6 @@ export function HomeDashboard() {
                           }`}
                         >
                           {!t.pa ? "–" : t.pa.broke === "up" ? "▲ above high" : t.pa.broke === "down" ? "▼ below low" : "between"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              {trend.tfs.some((t) => t.atr) && (
-                <table className={TBL}>
-                  <thead>
-                    <tr>
-                      <th className={`${TH} text-left`}>ATR (14)</th>
-                      <th className={`${TH} text-right`}>Points</th>
-                      <th className={`${TH} text-right`}>vs avg</th>
-                      <th className={`${TH} text-right`}>Direction</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {trend.tfs.map((t) => (
-                      <tr key={t.label} className={TR}>
-                        <td className={`${TD} text-term-text`}>{t.label}</td>
-                        <td className={`${TD} text-right text-term-text`}>{t.atr ? nf(t.atr.value, 1) : "–"}</td>
-                        <td className={`${TD} text-right text-term-text`}>
-                          {t.atr ? `${t.atr.chg >= 0 ? "+" : "−"}${nf(Math.abs(t.atr.chg) * 100, 0)}%` : "–"}
-                        </td>
-                        <td
-                          className={`${TD} text-right ${
-                            t.atr?.dir === "expanding" ? "font-semibold text-amber-400" : t.atr?.dir === "contracting" ? "text-sky-400" : "text-term-dim"
-                          }`}
-                        >
-                          {!t.atr ? "–" : t.atr.dir === "expanding" ? "▲ UP" : t.atr.dir === "contracting" ? "▼ DOWN" : "◆ FLAT"}
                         </td>
                       </tr>
                     ))}

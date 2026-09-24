@@ -191,6 +191,53 @@ export const atr = (candles: Candle[], period = 14): number[] => {
   return out;
 };
 
+/** ADX(14) with +DI / -DI, Wilder's smoothing -- the latest values only.
+ *  ADX = how strong the trend is (not its direction); +DI above -DI = up. */
+export const adx = (
+  candles: Candle[],
+  period = 14
+): { adx: number; pdi: number; mdi: number } | null => {
+  const tr: number[] = [];
+  const pdm: number[] = [];
+  const mdm: number[] = [];
+  for (let i = 1; i < candles.length; i++) {
+    const c = candles[i];
+    const p = candles[i - 1];
+    const up = c.high - p.high;
+    const dn = p.low - c.low;
+    pdm.push(up > dn && up > 0 ? up : 0);
+    mdm.push(dn > up && dn > 0 ? dn : 0);
+    tr.push(Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close)));
+  }
+  if (tr.length < 2 * period) return null;
+  let st = 0;
+  let sp = 0;
+  let sm = 0;
+  for (let i = 0; i < period; i++) {
+    st += tr[i];
+    sp += pdm[i];
+    sm += mdm[i];
+  }
+  const dx: number[] = [];
+  let pdi = 0;
+  let mdi = 0;
+  const push = () => {
+    pdi = st ? (100 * sp) / st : 0;
+    mdi = st ? (100 * sm) / st : 0;
+    dx.push(pdi + mdi ? (100 * Math.abs(pdi - mdi)) / (pdi + mdi) : 0);
+  };
+  push();
+  for (let i = period; i < tr.length; i++) {
+    st = st - st / period + tr[i];
+    sp = sp - sp / period + pdm[i];
+    sm = sm - sm / period + mdm[i];
+    push();
+  }
+  let a = dx.slice(0, period).reduce((x, y) => x + y, 0) / period;
+  for (let i = period; i < dx.length; i++) a = (a * (period - 1) + dx[i]) / period;
+  return { adx: a, pdi, mdi };
+};
+
 /** Supertrend line (period=10, mult=3). */
 export const supertrend = (candles: Candle[], period = 10, mult = 3): Pt[] => {
   const a = atr(candles, period);

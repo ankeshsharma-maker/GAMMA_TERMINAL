@@ -1,12 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
-import { atr, ema, supertrend, type Candle } from "../lib/indicators";
+import { adx, ema, supertrend, type Candle } from "../lib/indicators";
 import type { FlowDir } from "../types";
 
 /* One trend reading built from signals the app already draws: EMA 9/21 and
    Supertrend(10,3) on 5m / 15m / 1h candles (same functions as the chart's own
    overlays, so the two can't disagree), the price-action STRUCTURE on the same
-   candles (higher highs / higher lows vs lower highs / lower lows), plus the
+   candles (higher highs / higher lows vs lower highs / lower lows), ADX(14)
+   (+DI vs -DI, once the trend is strong enough to count), plus the
    option-flow direction. It confirms a trend once it is under way; it lags at
    turning points and does not predict them. */
 
@@ -27,14 +28,14 @@ export interface Structure {
   broke: "up" | "down" | null;
 }
 
-/** ATR(14): how big a candle's range typically is, in points -- and whether
- *  that is growing or shrinking. Size of the moves, not their direction, so
- *  it doesn't vote. */
-export interface AtrRead {
-  value: number;
-  /** now vs the average ATR over the 20 candles before, e.g. -0.12 = 12% smaller */
-  chg: number;
-  dir: "expanding" | "contracting" | "steady";
+/** ADX(14): +DI above -DI = up, below = down -- but only once ADX (the
+ *  trend's strength) is at least ADX_TREND; weaker than that there is no
+ *  trend to follow, so it reads mixed. */
+export interface AdxRead {
+  adx: number;
+  pdi: number;
+  mdi: number;
+  dir: Dir;
 }
 
 export interface TfRead {
@@ -42,7 +43,7 @@ export interface TfRead {
   ema: Dir | null;
   st: Dir | null;
   pa: Structure | null;
-  atr: AtrRead | null;
+  adx: AdxRead | null;
 }
 
 export interface TrendRead {
@@ -122,16 +123,13 @@ export function structure(c: Candle[]): Structure | null {
   return { dir, hi, lo, lastHigh: h2.price, lastLow: l2.price, broke };
 }
 
-const ATR_BAND = 0.1; // within ±10% of its recent average = steady
+const ADX_TREND = 20; // ADX under 20 = no real trend
 
-export function atrRead(c: Candle[]): AtrRead | null {
-  const a = atr(c, 14).filter((v) => Number.isFinite(v));
-  if (a.length < 21) return null;
-  const value = a[a.length - 1];
-  const base = a.slice(-21, -1).reduce((x, y) => x + y, 0) / 20;
-  if (!(base > 0)) return null;
-  const chg = value / base - 1;
-  return { value, chg, dir: chg > ATR_BAND ? "expanding" : chg < -ATR_BAND ? "contracting" : "steady" };
+export function adxRead(c: Candle[]): AdxRead | null {
+  const r = adx(c, 14);
+  if (!r) return null;
+  const dir: Dir = r.adx < ADX_TREND ? "mixed" : r.pdi > r.mdi ? "up" : r.mdi > r.pdi ? "down" : "mixed";
+  return { ...r, dir };
 }
 
 const flowDir = (d: FlowDir | null | undefined): Dir | null =>
@@ -149,10 +147,12 @@ async function build(symbol: string): Promise<TrendRead | null> {
   const tfs = TFS.map(([label], i) => {
     const c = candleSets[i];
     return c && c.length
-      ? { label, ema: emaDir(c), st: stDir(c), pa: structure(c), atr: atrRead(c) }
-      : { label, ema: null, st: null, pa: null, atr: null };
+      ? { label, ema: emaDir(c), st: stDir(c), pa: structure(c), adx: adxRead(c) }
+      : { label, ema: null, st: null, pa: null, adx: null };
   });
-  const votes = [...tfs.flatMap((t) => [t.ema, t.st, t.pa?.dir ?? null]), flow].filter((v): v is Dir => v != null);
+  const votes = [...tfs.flatMap((t) => [t.ema, t.st, t.pa?.dir ?? null, t.adx?.dir ?? null]), flow].filter(
+    (v): v is Dir => v != null
+  );
   if (!votes.length) return null;
   const up = votes.filter((v) => v === "up").length;
   const down = votes.filter((v) => v === "down").length;
@@ -221,8 +221,8 @@ const arrow = (d: Dir | null) =>
   );
 
 // a timeframe cell is tinted only when all its signals agree
-const tint = (a: Dir | null, b: Dir | null, c: Dir | null) =>
-  a && a === b && a === c ? (a === "up" ? "bg-up/10" : a === "down" ? "bg-down/10" : "") : "";
+const tint = (...d: (Dir | null)[]) =>
+  d[0] && d.every((x) => x === d[0]) ? (d[0] === "up" ? "bg-up/10" : d[0] === "down" ? "bg-down/10" : "") : "";
 
 const Cell = ({ className = "", children }: { className?: string; children: ReactNode }) => (
   <span className={`whitespace-nowrap px-1 py-0.5 ${className}`}>{children}</span>
@@ -242,7 +242,7 @@ export function TrendCompass({ symbol }: { symbol: string }) {
     // than wrapping into a second line that eats chart height
     <div
       className="no-scrollbar flex items-center overflow-x-auto border-b border-term-border bg-term-panel px-1 py-1 text-[10px]"
-      title="Trend compass — EMA 9/21 (first arrow), Supertrend (second) and price-action structure (third: higher highs + higher lows = up, lower highs + lower lows = down) on 5m, 15m and 1h candles, plus the option-flow direction. Confirms a trend once it's under way; it lags at turning points and does not predict them."
+      title="Trend compass — EMA 9/21 (first arrow), Supertrend (second) and price-action structure (third: higher highs + higher lows = up, lower highs + lower lows = down) and ADX (fourth: +DI vs -DI once ADX is 20+) on 5m, 15m and 1h candles, plus the option-flow direction. Confirms a trend once it's under way; it lags at turning points and does not predict them."
     >
       <div className="num flex shrink-0 divide-x divide-term-border/70 overflow-hidden rounded border border-term-border/70">
         <Cell className="font-semibold uppercase tracking-wide text-term-dim">Trend · {symbol}</Cell>
@@ -253,11 +253,12 @@ export function TrendCompass({ symbol }: { symbol: string }) {
               {t.up}↑ {t.down}↓ of {t.total}
             </Cell>
             {t.tfs.map((f) => (
-              <Cell key={f.label} className={tint(f.ema, f.st, f.pa?.dir ?? null)}>
+              <Cell key={f.label} className={tint(f.ema, f.st, f.pa?.dir ?? null, f.adx?.dir ?? null)}>
                 <span className="text-term-dim">{f.label} </span>
                 {arrow(f.ema)}
                 {arrow(f.st)}
                 {arrow(f.pa?.dir ?? null)}
+                {arrow(f.adx?.dir ?? null)}
               </Cell>
             ))}
             {t.flow && (
