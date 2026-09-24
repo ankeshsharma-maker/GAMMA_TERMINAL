@@ -349,7 +349,7 @@ export function HomeDashboard() {
                             t.atr?.dir === "expanding" ? "font-semibold text-amber-400" : t.atr?.dir === "contracting" ? "text-sky-400" : "text-term-dim"
                           }`}
                         >
-                          {!t.atr ? "–" : t.atr.dir === "expanding" ? "▲ expanding" : t.atr.dir === "contracting" ? "▼ contracting" : "◆ steady"}
+                          {!t.atr ? "–" : t.atr.dir === "expanding" ? "▲ UP" : t.atr.dir === "contracting" ? "▼ DOWN" : "◆ FLAT"}
                         </td>
                       </tr>
                     ))}
