@@ -848,7 +848,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     const isFloor = r.strike === stats.floor;
     return (
       <div
-        className={`flex items-center justify-center gap-1 px-2 text-sm tabular-nums ${
+        className={`flex items-center justify-center gap-1 px-2 text-[13px] tabular-nums ${
           isRes ? "font-bold text-down" : isFloor ? "font-bold text-up" : r.strike === chain?.atmStrike ? "font-bold text-term-accent" : "text-term-text"
         }`}
       >
@@ -862,13 +862,13 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const hbar = (pct: number, col: string, label: string, side: "call" | "put", thin: boolean, tone?: string) => (
     <div className={`flex w-full items-center gap-1.5 ${side === "put" ? "flex-row-reverse" : ""}`}>
       <span
-        className={`w-12 shrink-0 tabular-nums ${side === "call" ? "text-right" : "text-left"} ${
+        className={`w-12 shrink-0 tabular-nums leading-tight ${side === "call" ? "text-right" : "text-left"} ${
           thin ? "text-[10px]" : "text-[11px] font-semibold"
         } ${tone ?? "text-term-text"}`}
       >
         {label}
       </span>
-      <div className={`relative flex-1 ${thin ? "h-1.5" : "h-3.5"}`}>
+      <div className={`relative flex-1 ${thin ? "h-1" : "h-2.5"}`}>
         <span
           className={`absolute top-0 h-full ${side === "call" ? "right-0 rounded-l" : "left-0 rounded-r"}`}
           style={{ width: `${Math.min(100, pct)}%`, background: col }}
@@ -876,22 +876,27 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       </div>
     </div>
   );
+  // lakhs on both sides (compact() mixed K and L: 7.0K calls beside 13.24L puts)
+  const ldp = stats.maxOI < 10e5 ? 2 : 1;
+  const lk = (v: number) => nf(v / 1e5, ldp);
+  const slk = (v: number) => {
+    const l = Math.round(v / 10 ** (5 - ldp)) / 10 ** ldp;
+    return `${l > 0 ? "+" : l < 0 ? "−" : ""}${nf(Math.abs(l), ldp)}`;
+  };
   const ladderEl = (
     <div ref={jumpBoxRef} className={isMobile ? "" : "min-h-0 flex-1 overflow-y-auto"}>
-      <div className="sticky top-0 z-10 border-b border-term-border bg-term-panel2 px-3 py-1.5">
-        <div className="mb-1">{jumpBar}</div>
-        <div className="grid grid-cols-[1fr_auto_1fr] text-[10px] font-semibold uppercase">
-          <span className="text-right" style={{ color: "#f87171" }}>Calls</span>
-          <span className="px-4 text-center text-term-dim">Strike</span>
-          <span style={{ color: "#4ade80" }}>Puts</span>
-        </div>
-        <div className="mt-1 flex flex-wrap justify-center gap-x-3 gap-y-0.5 text-[10px] text-term-dim">
-          <span className="flex items-center gap-1"><Sw c={CALL_OI} /> call OI</span>
-          <span className="flex items-center gap-1"><Sw c={PUT_OI} /> put OI</span>
+      {/* ONE sticky row: jump chips + legend (was three rows) */}
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1">
+        <div className="min-w-0 flex-1">{jumpBar}</div>
+        <div className="flex items-center gap-x-2 text-[10px] text-term-dim">
+          <span className="flex items-center gap-1"><Sw c={CALL_OI} /> call</span>
+          <span className="flex items-center gap-1"><Sw c={PUT_OI} /> put</span>
           <span className="flex items-center gap-1"><Sw c={OI_ADD} /> added</span>
-          <span className="flex items-center gap-1"><Sw c={OI_CUT} /> cut · {tfName}</span>
+          <span className="flex items-center gap-1"><Sw c={OI_CUT} /> cut · {tf === 0 ? "day" : `${tf}m`}</span>
+          <span>· lakhs</span>
         </div>
       </div>
+      <div className={isMobile ? "" : "mx-auto max-w-3xl"}>
       {rows.map((r, i) => {
         const cChg = dCE(r);
         const pChg = dPE(r);
@@ -900,24 +905,25 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
             {i === spotRow && spotLine}
             <div
               data-strike={r.strike}
-              className={`grid grid-cols-[1fr_auto_1fr] items-center border-b border-term-border/50 py-1.5 transition-colors ${
+              className={`grid grid-cols-[1fr_auto_1fr] items-center border-b border-term-border/50 py-0.5 transition-colors ${
                 flash === r.strike ? "bg-term-accent/25" : r.strike === chain?.atmStrike ? "bg-term-accent/[0.06]" : ""
               }`}
             >
-              <div className="flex flex-col gap-1 pl-2">
-                {hbar((r.call.oi / stats.maxOI) * 100, CALL_OI, compact(r.call.oi), "call", false)}
-                {hbar((Math.abs(cChg) / flow.maxChg) * 100, cChg >= 0 ? OI_ADD : OI_CUT, signedK(cChg), "call", true, cChg >= 0 ? "text-up" : "text-down")}
+              <div className="flex flex-col gap-0.5 pl-2">
+                {hbar((r.call.oi / stats.maxOI) * 100, CALL_OI, lk(r.call.oi), "call", false)}
+                {hbar((Math.abs(cChg) / flow.maxChg) * 100, cChg >= 0 ? OI_ADD : OI_CUT, slk(cChg), "call", true, cChg >= 0 ? "text-up" : "text-down")}
               </div>
               {strikeCell(r)}
-              <div className="flex flex-col gap-1 pr-2">
-                {hbar((r.put.oi / stats.maxOI) * 100, PUT_OI, compact(r.put.oi), "put", false)}
-                {hbar((Math.abs(pChg) / flow.maxChg) * 100, pChg >= 0 ? OI_ADD : OI_CUT, signedK(pChg), "put", true, pChg >= 0 ? "text-up" : "text-down")}
+              <div className="flex flex-col gap-0.5 pr-2">
+                {hbar((r.put.oi / stats.maxOI) * 100, PUT_OI, lk(r.put.oi), "put", false)}
+                {hbar((Math.abs(pChg) / flow.maxChg) * 100, pChg >= 0 ? OI_ADD : OI_CUT, slk(pChg), "put", true, pChg >= 0 ? "text-up" : "text-down")}
               </div>
             </div>
           </Fragment>
         );
       })}
       {spotRow === -1 && rows.length > 0 && spotLine}
+      </div>
     </div>
   );
 
@@ -2095,7 +2101,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           windowed changes in lakhs, and a windowed resistance.) */}
       <div
         className={`border-b border-term-border bg-term-panel px-3 py-1.5 ${
-          (isMobile && !tools) || layout === "table" ? "hidden" : ""
+          (isMobile && !tools) || layout === "table" || layout === "ladder" ? "hidden" : ""
         }`}
       >
         <table className="w-full max-w-2xl border-separate border-spacing-0 whitespace-nowrap text-[11px] tabular-nums [&_tr>*:first-child]:border-l">
