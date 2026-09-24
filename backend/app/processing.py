@@ -272,10 +272,15 @@ def build_chain(
         put = _leg(pe, "PE", spot, strike, t, q)
         net_gex += call["gex"] - put["gex"]
         # how far this strike's LAST TRADES sit from parity: a big gap is a stale
-        # print on a thin side, not an arbitrage
+        # print on a thin side, not an arbitrage. Only flagged when it's wider than
+        # the live quotes themselves allow -- deep-ITM legs with 150+ pt spreads
+        # sit "off parity" all day and flagging them is just noise.
         pdev = None
+        stale = False
         if fwd and call["ltp"] > 0 and put["ltp"] > 0:
             pdev = round(strike + (call["ltp"] - put["ltp"]) * math.exp(RISK_FREE_RATE * tc) - fwd, 2)
+            spreads = sum(s["ask"] - s["bid"] for s in (call, put) if s["bid"] > 0 and s["ask"] > 0)
+            stale = abs(pdev) > max(flag_pts, spreads)
         rows.append(
             {
                 "strike": strike,
@@ -284,7 +289,7 @@ def build_chain(
                 "call": call,
                 "put": put,
                 "parityDev": pdev,
-                "parityStale": pdev is not None and abs(pdev) > flag_pts,
+                "parityStale": stale,
             }
         )
 

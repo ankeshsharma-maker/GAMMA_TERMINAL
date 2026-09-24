@@ -625,7 +625,7 @@ export function OptionChain({ paneNav }: { paneNav?: ReactNode } = {}) {
           {row.parityStale && row.parityDev != null && (
             <sup
               className="ml-0.5 font-bold text-amber-400"
-              title={`Last trades here are ${row.parityDev > 0 ? "+" : ""}${nf(row.parityDev, 1)} pts off put-call parity — a stale print on a thin side, not free money. Trust bid/ask here, not LTP.`}
+              title={`Last trades here are ${row.parityDev > 0 ? "+" : ""}${nf(row.parityDev, 1)} pts off put-call parity — more than the bid/ask spread allows, so the LTP is a stale print, not free money. Trust bid/ask here.`}
             >
               ≠
             </sup>
