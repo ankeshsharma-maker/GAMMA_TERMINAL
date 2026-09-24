@@ -138,11 +138,11 @@ function MarketRow({
           <span className="block truncate text-[12.5px] font-medium text-term-text">{wFull(w)}</span>
           <span className="mt-0.5 flex items-baseline gap-1.5 whitespace-nowrap">
             <span className="text-[10px] text-term-dim">{wSeg(w)}</span>
-            <span className={`num ml-auto text-[12.5px] font-medium tabular-nums ${col}`}>
+            <span className={`tabular-nums ml-auto text-[12.5px] font-medium ${col}`}>
               {has && <span className="mr-1 text-[8px]">{up ? "▲" : "▼"}</span>}
               {px != null ? nf(px) : "–"}
             </span>
-            {pct != null && <span className="num text-[10px] tabular-nums text-term-dim">{nf(pct)}%</span>}
+            {pct != null && <span className="tabular-nums text-[10px] text-term-dim">{nf(pct)}%</span>}
           </span>
         </button>
         {removeBtn}
@@ -164,11 +164,11 @@ function MarketRow({
           <span className="mt-1 block text-xs text-term-dim">{wSeg(w)}</span>
         </span>
         <span className="flex shrink-0 flex-col items-end">
-          <span className={`num flex items-center gap-1.5 text-[15px] font-medium tabular-nums ${col}`}>
+          <span className={`tabular-nums flex items-center gap-1.5 text-[15px] font-medium ${col}`}>
             {has && <span className="text-[10px] leading-none">{up ? "▲" : "▼"}</span>}
             {px != null ? nf(px) : "–"}
           </span>
-          <span className="num mt-1 text-xs tabular-nums text-term-dim">
+          <span className="tabular-nums mt-1 text-xs text-term-dim">
             {has ? `${nf(chg ?? 0)} (${nf(pct ?? 0)}%)` : " "}
           </span>
         </span>

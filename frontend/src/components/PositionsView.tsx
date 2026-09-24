@@ -11,13 +11,20 @@ import { PortfolioSummary } from "./PortfolioSummary";
 import { AutoSquareOff } from "./AutoSquareOff";
 import { ShortGuard } from "./ShortGuard";
 
-type Tab = "broker" | "scenario" | "holdings" | "orders";
+type Tab = "broker" | "holdings" | "orders" | "advanced";
+// Positions / Holdings read like the Flattrade app's Portfolio screen; the
+// risk tools (portfolio Greeks + hedge, short-strike guard, scenario grid,
+// auto square-off) live together under "Advanced"
 const TABS: [Tab, string][] = [
-  ["broker", "Broker Positions"],
-  ["scenario", "Scenario"],
+  ["broker", "Positions"],
   ["holdings", "Holdings"],
   ["orders", "Orders"],
+  ["advanced", "Advanced"],
 ];
+
+/** Noren product code -> the name the broker app shows */
+const PRD: Record<string, string> = { M: "NRML", I: "MIS", C: "CNC", H: "CO", B: "BO" };
+const PNL_MODE_LS = "positions.pnlMode";
 
 const n = (v: any) => {
   const x = Number(v);
@@ -44,7 +51,7 @@ function TD({ children, cls = "" }: { children: React.ReactNode; cls?: string })
 }
 
 // ---------------- Broker positions ----------------
-function BrokerTab() {
+function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
   const broker = useStore((s) => s.broker);
   const { mark } = useLiveMtm();
   const [rows, setRows] = useState<any[]>([]);
@@ -52,6 +59,25 @@ function BrokerTab() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const loadRef = useRef<() => void>(() => {});
+  // the MTM | P&L switch, as in the broker app (remembered on this device)
+  const [mode, setModeState] = useState<"mtm" | "pnl">(() => {
+    try {
+      return localStorage.getItem(PNL_MODE_LS) === "mtm" ? "mtm" : "pnl";
+    } catch {
+      return "pnl";
+    }
+  });
+  const setMode = (m: "mtm" | "pnl") => {
+    setModeState(m);
+    try {
+      localStorage.setItem(PNL_MODE_LS, m);
+    } catch {
+      /* ignore */
+    }
+  };
+  // tapping a card opens its actions (target / SL, select, square off)
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  useEffect(() => onCount?.(rows.length), [rows.length, onCount]);
 
   // per-position target/SL brackets (leg rules attached to an already-open position)
   const [legRules, setLegRules] = useState<LegRule[]>([]);
@@ -93,6 +119,11 @@ function BrokerTab() {
     return { r, mtm, rpnl, day, today: mtm + rpnl, key: String(r.tsym ?? r.symname ?? "") };
   });
   const totalToday = totalMtm + totalRealized;
+  // Buy / Sell / Net value like the broker app: traded value, carry-forward included
+  const amt = (r: any, side: "buy" | "sell") =>
+    n(r[`tot${side}amt`]) ?? (n(r[`day${side}amt`]) ?? 0) + (n(r[`cf${side}amt`]) ?? 0);
+  const buyVal = rows.reduce((s, r) => s + amt(r, "buy"), 0);
+  const sellVal = rows.reduce((s, r) => s + amt(r, "sell"), 0);
   const allKeys = withPnl.map((w) => w.key).filter(Boolean);
   const allSelected = allKeys.length > 0 && allKeys.every((k) => selected.has(k));
 
@@ -165,143 +196,186 @@ function BrokerTab() {
     setSelected(new Set());
   };
 
+  // MTM = vs the entry price, P&L = day M2M from the previous close (the
+  // labels the Flattrade app uses -- same as the phone's MTM card)
+  const total = mode === "mtm" ? totalToday : totalDay;
+  const anyOpen = withPnl.some((w) => (n(w.r.netqty) ?? 0) !== 0);
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col p-3">
-      {/* summary header */}
-      <div className="mb-2 grid grid-cols-3 gap-2">
-        {([
-          ["Realised", totalRealized],
-          ["MTM · vs entry", totalToday],
-          ["P&L · prev close", totalDay],
-        ] as const).map(([label, val]) => (
-          <div key={label} className="rounded border border-term-border bg-term-bg/40 px-3 py-1.5">
-            <div className="text-[9px] uppercase tracking-wide text-term-dim">{label}</div>
-            <div className={`num text-base font-bold ${signColor(val)}`}>₹{nf(val, 0)}</div>
+    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto bg-term-bg p-2 md:p-3">
+      {/* MTM | P&L + the book total */}
+      <div className="flex items-center justify-between gap-3 rounded-lg bg-term-panel px-4 py-3">
+        <div className="flex overflow-hidden rounded-lg border border-term-dim/60">
+          {(
+            [
+              ["mtm", "MTM"],
+              ["pnl", "P&L"],
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => setMode(k)}
+              className={`px-5 py-1.5 text-[15px] ${
+                mode === k ? "rounded-lg bg-term-accent text-white" : "text-term-text"
+              }`}
+              title={k === "mtm" ? "Profit / loss against your entry price" : "Day M2M from the previous close"}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="min-w-0 text-right">
+          <div className={`tabular-nums truncate text-[26px] font-medium leading-tight ${signColor(total)}`}>
+            {nf(total, 2)}
+          </div>
+          <div className="mt-0.5 flex items-center justify-end gap-1.5 text-[10px] text-term-dim">
+            <span className="num">
+              realised <span className={signColor(totalRealized)}>{nf(totalRealized, 2)}</span>
+            </span>
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${broker?.wsConnected ? "bg-up" : "animate-pulse bg-amber-500"}`}
+              title={
+                broker?.wsConnected
+                  ? "Live tick feed connected — MTM re-marks on every tick"
+                  : "Live tick feed down — MTM is on the ~4s REST poll instead of tick-by-tick (Flattrade WS disconnected, e.g. another session using the same login)"
+              }
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Buy / Sell / Net value */}
+      <div className="grid grid-cols-3 rounded-lg bg-term-panel px-4 py-2.5">
+        {(
+          [
+            ["Buy Value", buyVal, "text-left"],
+            ["Sell Value", sellVal, "text-center"],
+            ["Net Value", buyVal - sellVal, "text-right"],
+          ] as const
+        ).map(([label, v, align]) => (
+          <div key={label} className={align}>
+            <div className="text-[15px] text-term-text">{label}</div>
+            <div className="tabular-nums mt-0.5 text-[15px] text-term-text">{nf(v, 2)}</div>
           </div>
         ))}
       </div>
 
-      <div className="mb-2 flex items-center gap-2 text-2xs">
-        <button
-          className="btn btn-sell font-semibold disabled:opacity-40"
-          disabled={withPnl.every((w) => (n(w.r.netqty) ?? 0) === 0)}
-          onClick={squareOffAll}
-          title="Flatten every open position in one click, no selection needed"
-        >
-          ⚡ Square off ALL
-        </button>
-        <button
-          className="btn btn-sell disabled:opacity-40"
-          disabled={selected.size === 0}
-          onClick={squareOffSelected}
-        >
-          Square off selected ({selected.size})
-        </button>
-      </div>
-      {/* select-all + count */}
-      {withPnl.length > 0 && (
-        <label className="mb-1 flex items-center gap-1.5 px-1 text-[10px] text-term-dim">
-          <input type="checkbox" checked={allSelected} onChange={toggleAll} />
-          {withPnl.length} position{withPnl.length > 1 ? "s" : ""} · tap a card to select
-        </label>
+      {/* bulk square-off (kept from before) */}
+      {anyOpen && (
+        <div className="flex flex-wrap items-center gap-2 px-1 text-2xs">
+          <button
+            className="btn btn-sell font-semibold"
+            onClick={squareOffAll}
+            title="Flatten every open position in one click, no selection needed"
+          >
+            ⚡ Square off ALL
+          </button>
+          {selected.size > 0 && (
+            <button className="btn btn-sell" onClick={squareOffSelected}>
+              Square off selected ({selected.size})
+            </button>
+          )}
+          <label className="ml-auto flex items-center gap-1.5 text-[10px] text-term-dim">
+            <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+            select all
+          </label>
+        </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-term-border">
-        {withPnl.length === 0 && (
-          <div className="px-3 py-6 text-center text-2xs text-term-dim">
-            No open broker positions.
-          </div>
-        )}
-        {withPnl.map(({ r, today, key }, i) => {
+      {withPnl.length === 0 && (
+        <div className="rounded-lg bg-term-panel px-3 py-6 text-center text-xs text-term-dim">
+          No positions today.
+        </div>
+      )}
+
+      {/* position cards -- the broker app's layout; tap one for its actions */}
+      <div className="grid gap-2 lg:grid-cols-2 2xl:grid-cols-3">
+        {withPnl.map(({ r, today, day, key }, i) => {
           const qty = n(r.netqty) ?? 0;
           const isBusy = busy.has(r.tsym);
-          const avg = n(r.netavgprc) ?? n(r.daybuyavgprc) ?? n(r.daysellavgprc);
+          const avg = qty ? n(r.netavgprc) ?? n(r.daybuyavgprc) ?? n(r.daysellavgprc) ?? 0 : 0;
+          const lp = n(r.lp);
+          const pnl = mode === "mtm" ? today : day;
+          // the % the broker shows: LTP against the average price
+          const pct = avg && lp != null ? ((lp - avg) / avg) * 100 : 0;
           const sel = selected.has(key);
+          const open = openKey === key;
+          const prd = r.s_prdt_ali ?? PRD[String(r.prd ?? "")] ?? r.prd ?? "NRML";
           return (
             <div
-              key={i}
-              onClick={() => key && toggleOne(key)}
-              className={`cursor-pointer border-b border-term-border/50 px-3 py-1.5 last:border-b-0 ${
-                sel ? "bg-term-accent/10" : "hover:bg-term-panel/50"
+              key={key || i}
+              onClick={() => setOpenKey(open ? null : key)}
+              className={`cursor-pointer rounded-lg bg-term-panel px-4 py-2.5 ${
+                sel ? "ring-1 ring-term-accent" : ""
               }`}
             >
-              {!!qty && (
-                <div className="flex items-center justify-between text-[10px] text-term-dim">
-                  <span className="num">
-                    Qty. <span className="text-term-text">{qty}</span> · Avg.{" "}
-                    <span className="text-term-text">₹{nf(avg ?? 0, 2)}</span>
-                  </span>
-                  <span className="rounded bg-term-border/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-term-dim">
-                    {r.prd ?? "NRML"}
-                  </span>
-                </div>
-              )}
-              <div className="flex items-center justify-between">
-                <span className="num text-sm font-semibold text-term-text">
-                  {r.dname ?? r.tsym ?? r.symname ?? "—"}
+              <div className="flex items-baseline justify-between gap-2 text-[14px]">
+                <span className="text-term-text">
+                  {prd} | {r.exch ?? "NFO"}
                 </span>
-                <span className={`num text-base font-bold ${signColor(today)}`}>
-                  {nf(today, 2)}
+                <span className="tabular-nums whitespace-nowrap">
+                  <span className="text-term-dim">{mode === "mtm" ? "MTM" : "P&L"} : </span>
+                  <span className={signColor(pnl)}>{nf(pnl, 2)}</span>
                 </span>
               </div>
-              <div className="flex items-center justify-between text-[10px] text-term-dim">
-                <span className="uppercase tracking-wide">
-                  {qty ? `${r.exch ?? "NFO"} · MKT · DAY` : `${r.exch ?? "NFO"} · closed`}
+              <div className="mt-1 flex items-baseline justify-between gap-2">
+                <span className="truncate text-[16px] text-term-text">
+                  {r.dname ?? r.tsym ?? r.symname ?? "—"}
                 </span>
-                <span className="num">
-                  LTP <span className="text-term-text">{nf(n(r.lp), 2)}</span>
+                <span className={`tabular-nums whitespace-nowrap text-[15px] ${signColor(pct)}`}>
+                  ({nf(pct, 2)} %)
+                </span>
+              </div>
+              <div className="mt-1 flex items-baseline justify-between gap-2 text-[14px]">
+                <span className="tabular-nums flex gap-4 whitespace-nowrap">
+                  <span className={qty > 0 ? "text-up" : qty < 0 ? "text-down" : "text-term-dim"}>
+                    Qty : {qty}
+                  </span>
+                  <span>
+                    <span className="text-term-dim">Price : </span>
+                    <span className="text-term-text">{avg.toFixed(2)}</span>
+                  </span>
+                </span>
+                <span className="tabular-nums whitespace-nowrap">
+                  <span className="text-term-dim">LTP </span>
+                  <span className="text-term-text">{lp != null ? lp.toFixed(2) : "–"}</span>
                 </span>
               </div>
 
-              {!!qty && (
-                <>
-                  <div className="mt-1" onClick={(e) => e.stopPropagation()}>
-                    <LegBracketBadge
-                      r={r}
-                      bracket={findBracket(r, legRules)}
-                      onChanged={loadLegRules}
-                    />
+              {open && (
+                <div
+                  className="mt-2 flex flex-col gap-1.5 border-t border-term-border/60 pt-2"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {!!qty && (
+                    <LegBracketBadge r={r} bracket={findBracket(r, legRules)} onChanged={loadLegRules} />
+                  )}
+                  <div className="flex items-center gap-2 text-[11px]">
+                    {!!qty && (
+                      <label className="flex items-center gap-1.5 text-term-dim">
+                        <input type="checkbox" checked={sel} onChange={() => key && toggleOne(key)} />
+                        select
+                      </label>
+                    )}
+                    <span className="tabular-nums text-term-dim">
+                      realised <span className={signColor(n(r.rpnl))}>{nf(n(r.rpnl) ?? 0, 2)}</span>
+                    </span>
+                    {!!qty && (
+                      <button
+                        disabled={isBusy}
+                        onClick={() => squareOff(r)}
+                        className="ml-auto rounded border border-down/50 px-3 py-1 text-[11px] font-semibold text-down hover:bg-down/10 disabled:opacity-30"
+                        title="Flatten this position with an opposite-side MARKET order"
+                      >
+                        {isBusy ? "…" : "Square off"}
+                      </button>
+                    )}
                   </div>
-                  <div
-                    className="mt-1.5 flex items-center gap-1.5"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      disabled={isBusy}
-                      onClick={() => squareOff(r)}
-                      className="ml-auto rounded border border-down/50 px-2 py-0.5 text-[10px] font-semibold text-down hover:bg-down/10 disabled:opacity-30"
-                      title="Flatten this position with an opposite-side MARKET order"
-                    >
-                      {isBusy ? "…" : "Square off"}
-                    </button>
-                  </div>
-                </>
+                </div>
               )}
             </div>
           );
         })}
-        {withPnl.length > 0 && (
-          <div className="flex items-center justify-between bg-term-panel2 px-3 py-2 text-2xs font-semibold">
-            <span className="flex items-center gap-1.5 uppercase text-term-dim">
-              Total
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  broker?.wsConnected ? "bg-up" : "bg-amber-500 animate-pulse"
-                }`}
-                title={
-                  broker?.wsConnected
-                    ? "Live tick feed connected — MTM re-marks on every tick"
-                    : "Live tick feed down — MTM is on the ~4s REST poll instead of tick-by-tick (Flattrade WS disconnected, e.g. another session using the same login)"
-                }
-              />
-            </span>
-            <span className="num flex gap-3">
-              <span className={signColor(totalMtm)}>MTM ₹{nf(totalMtm, 0)}</span>
-              <span className={signColor(totalRealized)}>Rlz ₹{nf(totalRealized, 0)}</span>
-              <span className={signColor(totalToday)}>P&amp;L ₹{nf(totalToday, 0)}</span>
-            </span>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -639,38 +713,62 @@ export function OrdersTab() {
   );
 }
 
+/** everything beyond the broker app's plain position list, in one place */
+function AdvancedTab() {
+  const broker = useStore((s) => s.broker);
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      {broker?.authed && (
+        <div className="flex items-center gap-2 border-b border-term-border bg-term-panel px-3 py-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-term-dim">
+            Auto square-off
+          </span>
+          <AutoSquareOff />
+        </div>
+      )}
+      <PortfolioSummary />
+      <ShortGuard />
+      <div className="flex min-h-[420px] flex-col">
+        <ScenarioGrid />
+      </div>
+    </div>
+  );
+}
+
 export function PositionsView({ initialTab }: { initialTab?: Tab } = {}) {
   const isMobile = useIsMobile();
-  const broker = useStore((s) => s.broker);
   // the mobile app has a dedicated Orders bottom-tab, so drop the sub-tab here
   const tabs = isMobile ? TABS.filter(([k]) => k !== "orders") : TABS;
   const [tab, setTab] = useState<Tab>(
     initialTab && (initialTab !== "orders" || !isMobile) ? initialTab : "broker"
   );
+  const [count, setCount] = useState(0);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs">
+      {/* broker-app tabs: Positions (n) | Holdings | … with an underline */}
+      <div className="flex shrink-0 border-b border-term-border bg-term-panel">
         {tabs.map(([k, label]) => (
           <button
             key={k}
             onClick={() => setTab(k)}
-            className={`rounded border px-2.5 py-1 ${
-              tab === k
-                ? "border-term-accent bg-term-accent text-white"
-                : "border-term-dim/70 text-term-dim hover:bg-term-border"
+            className={`relative flex flex-1 items-center justify-center gap-2 py-2.5 text-[15px] ${
+              tab === k ? "text-term-accent" : "text-term-text hover:text-term-accent"
             }`}
           >
             {label}
+            {k === "broker" && count > 0 && (
+              <span className="tabular-nums flex h-6 min-w-[24px] items-center justify-center rounded-full bg-term-accent px-1.5 text-[13px] text-white">
+                {count}
+              </span>
+            )}
+            {tab === k && <span className="absolute inset-x-0 bottom-0 h-[3px] bg-term-accent" />}
           </button>
         ))}
-        {tab === "broker" && broker?.authed && <AutoSquareOff />}
       </div>
-      <PortfolioSummary />
-      <ShortGuard />
-      {tab === "broker" && <BrokerTab />}
-      {tab === "scenario" && <ScenarioGrid />}
+      {tab === "broker" && <BrokerTab onCount={setCount} />}
       {tab === "holdings" && <HoldingsTab />}
       {tab === "orders" && <OrdersTab />}
+      {tab === "advanced" && <AdvancedTab />}
     </div>
   );
 }

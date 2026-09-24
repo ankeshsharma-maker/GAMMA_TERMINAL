@@ -137,12 +137,12 @@ function MobileIndexBand() {
             <div className="inline-flex flex-col items-end leading-tight">
               <span className="flex items-baseline gap-1.5 whitespace-nowrap text-[15px]">
                 <span className="text-term-accent">{label[r.symbol] ?? r.symbol}</span>
-                <span className={`num ${col}`}>
+                <span className={`tabular-nums ${col}`}>
                   {r.spot != null ? nf(r.spot, 2) : "–"}
                 </span>
               </span>
               {(pts != null || r.chgPct != null) && (
-                <span className={`num mt-1 whitespace-nowrap text-xs ${col}`}>
+                <span className={`tabular-nums mt-1 whitespace-nowrap text-xs ${col}`}>
                   {up ? "▲" : "▼"} {pts != null ? nf(Math.abs(pts), 2) : ""}
                   {r.chgPct != null ? ` (${nf(Math.abs(r.chgPct), 2)}%)` : ""}
                 </span>
@@ -479,6 +479,7 @@ const BOTTOM_NAV: { v: View; icon: string; label: string }[] = [
 ];
 
 function MobileBody({ view }: { view: View }) {
+  const brokerAuthed = useStore((s) => !!s.broker?.authed);
   switch (view) {
     case "chain":
       return (
@@ -528,7 +529,8 @@ function MobileBody({ view }: { view: View }) {
     case "positions":
       return (
         <div className="flex min-h-0 flex-1 flex-col">
-          <MobileReturnCard />
+          {/* live: the Positions tab has its own broker-style MTM | P&L card */}
+          {!brokerAuthed && <MobileReturnCard />}
           <PositionsView />
         </div>
       );
