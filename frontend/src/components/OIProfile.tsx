@@ -227,7 +227,26 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const [count, setCount] = useState(0); // strikes each side of ATM; 0 = All
   const [symChoices, setSymChoices] = useState<string[]>([]);
   const [zoom, setZoom] = useState(1);
-  const [tf, setTf] = useState(5); // minutes; 0 = change since day open
+  // ΔOI window in minutes, 0 = the full day (since yesterday's close). Remembered
+  // on the device; Full day until one is picked -- a rolling 5 min reads all
+  // zeros whenever the market is shut, which looked like missing data
+  const [tf, setTfState] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem("oi.tf");
+      if (v != null && Number.isFinite(+v)) return +v;
+    } catch {
+      /* private mode */
+    }
+    return 0;
+  });
+  const setTf = (v: number) => {
+    setTfState(v);
+    try {
+      localStorage.setItem("oi.tf", String(v));
+    } catch {
+      /* ignore */
+    }
+  };
   const [win, setWin] = useState<Record<string, { ceOiChg: number; peOiChg: number }>>({});
   const [winCov, setWinCov] = useState(0);
   const [donutW, setDonutW] = useState(260); // resizable OI-split panel width (px)
@@ -993,21 +1012,37 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
             );
           })}
           {spotRow === -1 && rows.length > 0 && tableSpot}
+          {/* totals -- in the table itself (the separate totals strip above is
+              hidden in this view, so the rows get that height back) */}
           <tr className="font-semibold [&>td]:bg-term-border/50">
-            <td className={`${GTD} rounded-bl-lg text-right text-term-text`}>{L1(oiTotals.ce)}</td>
+            <td className={`${GTD} text-right text-term-text`}>{L1(oiTotals.ce)}</td>
             <td className={`${GTD} text-right ${tone(flow.ceAdd + flow.ceCut, "text-down", "text-up")}`}>
               {S1(flow.ceAdd + flow.ceCut)}
             </td>
-            <td className={`${GTD} text-center text-term-text`}>Total</td>
+            <td className={`${GTD} text-center text-term-text`}>Total · net</td>
             <td className={`${GTD} text-left ${tone(flow.peAdd + flow.peCut, "text-up", "text-down")}`}>
               {S1(flow.peAdd + flow.peCut)}
             </td>
-            <td className={`${GTD} rounded-br-lg text-left text-term-text`}>{L1(oiTotals.pe)}</td>
+            <td className={`${GTD} text-left text-term-text`}>{L1(oiTotals.pe)}</td>
+          </tr>
+          <tr className="[&>td]:bg-term-border/30">
+            <td className={GTD} />
+            <td className={`${GTD} text-right ${tone(flow.ceAdd, "text-down", "text-up")}`}>{S1(flow.ceAdd)}</td>
+            <td className={`${GTD} text-center text-term-dim`}>Added</td>
+            <td className={`${GTD} text-left ${tone(flow.peAdd, "text-up", "text-down")}`}>{S1(flow.peAdd)}</td>
+            <td className={GTD} />
+          </tr>
+          <tr className="[&>td]:bg-term-border/30">
+            <td className={`${GTD} rounded-bl-lg`} />
+            <td className={`${GTD} text-right ${tone(flow.ceCut, "text-down", "text-up")}`}>{S1(flow.ceCut)}</td>
+            <td className={`${GTD} text-center text-term-dim`}>Cut</td>
+            <td className={`${GTD} text-left ${tone(flow.peCut, "text-up", "text-down")}`}>{S1(flow.peCut)}</td>
+            <td className={`${GTD} rounded-br-lg`} />
           </tr>
         </tbody>
       </table>
       <div className="mx-auto mt-1.5 max-w-3xl text-[10px] leading-snug text-term-dim">
-        OI in lakhs · Chg = {tfName} · bar = OI vs the biggest strike shown · R / S = most call / put OI · PCR{" "}
+        OI in lakhs · strikes: {count === 0 ? "all" : `ATM ±${count}`} · Chg = {tfName} · bar = OI vs the biggest strike shown · R / S = most call / put OI · PCR{" "}
         {chain?.pcr != null ? nf(chain.pcr, 2) : "–"} (whole chain)
       </div>
     </div>
@@ -2058,12 +2093,16 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           all in lakhs: total OI, added / cut over the ΔOI window, net, and the
           wall on each side. (It used to mix whole-chain totals in crores with
           windowed changes in lakhs, and a windowed resistance.) */}
-      <div className={`border-b border-term-border bg-term-panel px-3 py-1.5 ${isMobile && !tools ? "hidden" : ""}`}>
+      <div
+        className={`border-b border-term-border bg-term-panel px-3 py-1.5 ${
+          (isMobile && !tools) || layout === "table" ? "hidden" : ""
+        }`}
+      >
         <table className="w-full max-w-2xl border-separate border-spacing-0 whitespace-nowrap text-[11px] tabular-nums [&_tr>*:first-child]:border-l">
           <thead>
             <tr className="[&>th]:border-b [&>th]:border-r [&>th]:border-t [&>th]:border-term-dim/50 [&>th]:bg-term-panel2 [&>th]:px-1.5 [&>th]:py-0.5 [&>th]:text-[10px] [&>th]:font-medium [&>th]:text-term-dim">
               <th className="rounded-tl-lg text-left" title={`strikes counted: ${count === 0 ? "all" : `ATM ${sk(chain.atmStrike)} ±${count}`}`}>
-                {count === 0 ? "All" : `±${count}`}
+                {count === 0 ? "All" : `±${count}`} · {tf === 0 ? "day" : `${tf}m`}
               </th>
               <th className="text-right">OI</th>
               <th className="text-right" title={`over ${tfName}`}>Added</th>
