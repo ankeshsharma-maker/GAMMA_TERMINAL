@@ -43,6 +43,14 @@ GREEK_DELTA_JUMP = float(os.getenv("GREEK_DELTA_JUMP", "0.12"))       # abs delt
 GREEK_GAMMA_JUMP_PCT = float(os.getenv("GREEK_GAMMA_JUMP_PCT", "0.6"))  # relative gamma change
 GREEK_NEAR_ATM_STRIKES = int(os.getenv("GREEK_NEAR_ATM_STRIKES", "12"))
 GREEK_EVENT_TTL = int(os.getenv("GREEK_EVENT_TTL", "180"))            # seconds a strike stays "hot"
+# a previous reading older than this (overnight, a feed gap) is no baseline --
+# comparing against it made the whole chain "jump" at once at every open
+GREEK_BASELINE_MAX_AGE_S = int(os.getenv("GREEK_BASELINE_MAX_AGE_S", "300"))
+# a "very big" move -- the only kind that goes to Telegram / phone push by
+# default: on a near-the-money strike, a quarter-delta jump in one poll, or
+# gamma x2.5 (or cut to under 40%)
+GREEK_BIG_DELTA = float(os.getenv("GREEK_BIG_DELTA", "0.25"))
+GREEK_BIG_GAMMA_X = float(os.getenv("GREEK_BIG_GAMMA_X", "2.5"))
 
 # ---- cross-symbol screener --------------------------------------------
 # Seconds between deep-scan option-chain fetches (gentle on NSE, runs alongside

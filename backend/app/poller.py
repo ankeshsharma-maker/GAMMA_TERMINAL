@@ -28,6 +28,10 @@ _EXP_TTL = 300  # re-pull the expiry list at most this often
 _exp_refreshed: dict[str, float] = {}
 _JOURNAL_SYNC_S = 300
 _journal_synced = 0.0
+# unusual delta/gamma moves reach Telegram / phone push only when very big,
+# on the nearest expiry, and at most one per symbol this often
+_GREEK_PUSH_GAP_S = 600
+_greek_pushed: dict[str, float] = {}
 
 
 def _in_market_hours(now: datetime | None = None) -> bool:
@@ -102,16 +106,26 @@ async def _refresh(symbol: str, expiry: str) -> None:
         except Exception as exc:  # noqa: BLE001 - the tracker must never take the poll loop down
             log.debug("flow tracker failed for %s %s: %s", symbol, expiry, exc)
         if events:
-            for e in events:
+            near_exp = _nearest_live_expiry(symbol)
+            # biggest first, so the one allowed out to the phone is the largest
+            for e in sorted(events, key=lambda ev: -ev.get("size", 0.0)):
                 log.info("UNUSUAL %s", e["message"])
-                # was only landing in the separate Unusual Activity feed --
-                # also feed the same choke point every other alert source
-                # uses, so an unusual delta jump / gamma spike-collapse
-                # reaches webhook/Telegram/push too, same as everything else
+                # every event lands in the Alerts feed too, but only a very big
+                # one on the nearest expiry is marked critical (= pushed, see
+                # alert_delivery's "greeks" switch), one per symbol per 10 min --
+                # all of them going out was a Telegram message a minute
+                push = (
+                    e.get("big")
+                    and expiry == near_exp
+                    and time.time() - _greek_pushed.get(symbol, 0.0) >= _GREEK_PUSH_GAP_S
+                )
+                if push:
+                    _greek_pushed[symbol] = time.time()
                 store.add_alert(
                     {
                         "ts": e["ts"], "symbol": e["symbol"], "kind": e["kind"],
-                        "severity": e["severity"], "message": e["message"], "score": 0,
+                        "severity": "critical" if push else "info", "category": "greeks",
+                        "message": e["message"], "score": 0,
                     }
                 )
             await hub.broadcast_all({"type": "unusual", "data": store.get_unusual(60)})

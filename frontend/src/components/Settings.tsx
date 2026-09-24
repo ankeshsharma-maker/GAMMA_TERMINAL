@@ -71,6 +71,7 @@ function AlertDeliverySection() {
   const [enabled, setEnabled] = useState(false);
   const [minSeverity, setMinSeverity] = useState<"info" | "warning" | "critical">("warning");
   const [autobotAlerts, setAutobotAlerts] = useState<"all" | "important" | "off">("all");
+  const [greeksAlerts, setGreeksAlerts] = useState<"big" | "all" | "off">("big");
   const [webhookSet, setWebhookSet] = useState(false);
   const [telegramSet, setTelegramSet] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState("");
@@ -123,6 +124,7 @@ function AlertDeliverySection() {
       setEnabled(d.enabled);
       setMinSeverity(d.minSeverity);
       setAutobotAlerts(d.autobotAlerts ?? "all");
+      setGreeksAlerts(d.greeksAlerts ?? "big");
       setWebhookSet(d.webhookUrlSet);
       setTelegramSet(d.telegramSet);
     }, () => {});
@@ -210,6 +212,30 @@ function AlertDeliverySection() {
               save({ autobotAlerts: k });
             }}
             className={`${SEG} ${autobotAlerts === k ? on : off}`}
+          >
+            {label}
+          </button>
+        ))}
+      </Row>
+
+      <Row
+        label="Delta / gamma jumps"
+        hint="Sudden delta or gamma moves on single strikes. 'Very big only' sends just a quarter-delta jump or gamma x2.5 on a near-the-money strike of the nearest expiry, in market hours, at most one per symbol per 10 min. All of them still show in the app's Alerts feed."
+      >
+        {(
+          [
+            ["big", "Very big only"],
+            ["all", "All"],
+            ["off", "Off"],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            onClick={() => {
+              setGreeksAlerts(k);
+              save({ greeksAlerts: k });
+            }}
+            className={`${SEG} ${greeksAlerts === k ? on : off}`}
           >
             {label}
           </button>

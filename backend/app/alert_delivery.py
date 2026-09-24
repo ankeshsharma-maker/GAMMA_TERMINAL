@@ -16,6 +16,10 @@ Config lives in the kv_store table (key "alert_delivery"), as one JSON blob:
                                    # events (entries, exits, errors, safety stops). They are
                                    # info-level by nature, so minSeverity would silently drop
                                    # every entry and exit; this is their own switch instead.
+      "greeksAlerts": "big",      # big | all | off -- unusual delta / gamma moves on single
+                                   # strikes. "big" = only the very big ones the poller marks
+                                   # critical (near the money, nearest expiry, market hours,
+                                   # one per symbol per 10 min); all of them was one a minute.
     }
 """
 from __future__ import annotations
@@ -38,10 +42,12 @@ _DEFAULT = {
     "telegramChatId": None,
     "minSeverity": "warning",
     "autobotAlerts": "all",
+    "greeksAlerts": "big",
 }
 _AUTOBOT_MODES = ("all", "important", "off")
 # "important" = the events you must act on or know happened: exits, errors, safety stops
 _AUTOBOT_IMPORTANT = ("autobot-exit", "autobot-error", "autobot-stop")
+_GREEKS_MODES = ("big", "all", "off")
 
 
 def _load() -> dict:
@@ -61,6 +67,7 @@ def get_config() -> dict:
         "enabled": cfg["enabled"],
         "minSeverity": cfg["minSeverity"],
         "autobotAlerts": cfg["autobotAlerts"],
+        "greeksAlerts": cfg["greeksAlerts"],
         "webhookUrlSet": bool(cfg.get("webhookUrl")),
         "telegramSet": bool(cfg.get("telegramBotToken") and cfg.get("telegramChatId")),
     }
@@ -77,6 +84,8 @@ def set_config(patch: dict) -> dict:
         cfg["minSeverity"] = patch["minSeverity"]
     if patch.get("autobotAlerts") in _AUTOBOT_MODES:
         cfg["autobotAlerts"] = patch["autobotAlerts"]
+    if patch.get("greeksAlerts") in _GREEKS_MODES:
+        cfg["greeksAlerts"] = patch["greeksAlerts"]
     if "enabled" in patch:
         cfg["enabled"] = bool(patch["enabled"])
     _save(cfg)
@@ -130,6 +139,10 @@ def deliver(alert: dict) -> None:
     if alert.get("category") == "autobot":
         mode = cfg.get("autobotAlerts", "all")
         if mode == "off" or (mode == "important" and alert.get("kind") not in _AUTOBOT_IMPORTANT):
+            return
+    elif alert.get("category") == "greeks":
+        mode = cfg.get("greeksAlerts", "big")
+        if mode == "off" or (mode == "big" and alert.get("severity") != "critical"):
             return
     else:
         sev = alert.get("severity") or "info"

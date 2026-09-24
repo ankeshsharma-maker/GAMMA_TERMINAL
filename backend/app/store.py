@@ -14,6 +14,9 @@ from typing import Optional
 from .config import (
     DATA_DIR,
     DEFAULT_SYMBOLS,
+    GREEK_BASELINE_MAX_AGE_S,
+    GREEK_BIG_DELTA,
+    GREEK_BIG_GAMMA_X,
     GREEK_DELTA_JUMP,
     GREEK_EVENT_TTL,
     GREEK_GAMMA_JUMP_PCT,
@@ -66,6 +69,7 @@ class Store:
         self.alerts: deque = deque(maxlen=200)         # newest first
         self.unusual: deque = deque(maxlen=200)        # unusual Greeks events, newest first
         self._prev_greeks: dict[tuple, dict] = {}      # (symbol,expiry) -> {(strike,ot): (delta,gamma)}
+        self._prev_greeks_ts: dict[tuple, float] = {}  # (symbol,expiry) -> when that baseline was taken
         self.universe: dict[str, dict] = {}            # symbol -> screener row
         self.iv_history: dict[str, deque] = {}         # symbol -> deque[atmIV]
         self.session_ref: dict[str, tuple] = {}        # symbol -> (date, open spot)
@@ -339,6 +343,17 @@ class Store:
     def _detect_greek_moves(self, symbol: str, expiry: str, chain: dict, now: float) -> list[dict]:
         key = (symbol, expiry)
         prev = self._prev_greeks.get(key, {})
+        prev_ts = self._prev_greeks_ts.get(key, 0.0)
+        # no comparison against a stale baseline (overnight, a feed gap -- the
+        # whole chain "jumped" at every open), or with either reading outside
+        # market hours (pre-open / after-close quotes flicker): the baseline
+        # is still refreshed below, nothing is flagged
+        if (
+            now - prev_ts > GREEK_BASELINE_MAX_AGE_S
+            or not history_archive.in_session(now)
+            or not history_archive.in_session(prev_ts)
+        ):
+            prev = {}
         cur: dict = {}
         events: list[dict] = []
         atm = chain.get("atmStrike") or 0
@@ -372,7 +387,10 @@ class Store:
                 # strike oscillating between two negligible gamma values
                 # (e.g. 0.0002 -> 0.0000, a real move but an irrelevant one)
                 # no longer qualifies as "unusual"
-                if abs(dd) >= GREEK_DELTA_JUMP and abs(g) > 3e-4:
+                if abs(dd) >= GREEK_DELTA_JUMP and abs(g) > 3e-4 and abs(pg) > 3e-4:
+                    # (the previous side too: delta exactly 1.00 with gamma
+                    # 0.0000 is the pricer's no-quote fallback, and its next
+                    # real reading looked like a big jump)
                     kind = "DELTA_JUMP"
                 elif rel_g >= GREEK_GAMMA_JUMP_PCT and abs(pg) > 3e-4 and abs(g) > 3e-4:
                     kind = "GAMMA_SPIKE" if dg > 0 else "GAMMA_COLLAPSE"
@@ -382,6 +400,10 @@ class Store:
                 # of a running commentary on it
                 if not kind or self._recent_unusual(symbol, r["strike"], ot, 900):
                     continue
+                # "very big": near the money and a quarter-delta / 2.5x gamma move
+                ratio = max(abs(g), abs(pg)) / max(min(abs(g), abs(pg)), 1e-9)
+                near = any(0.2 <= abs(x) <= 0.8 for x in (d, pd))
+                big = near and (abs(dd) >= GREEK_BIG_DELTA or ratio >= GREEK_BIG_GAMMA_X)
                 label = {
                     "DELTA_JUMP": "delta jump",
                     "GAMMA_SPIKE": "gamma spike",
@@ -400,7 +422,9 @@ class Store:
                     "gamma": g,
                     "prevDelta": pd,
                     "prevGamma": pg,
-                    "severity": "warning",
+                    "severity": "critical" if big else "warning",
+                    "big": big,
+                    "size": round(max(abs(dd) / GREEK_BIG_DELTA, ratio / GREEK_BIG_GAMMA_X), 2),
                     "message": (
                         f"{symbol} {r['strike']:.0f}{ot} {label}: "
                         f"Δ {pd:+.2f}→{d:+.2f} ({dd:+.2f}), Γ {pg:.4f}→{g:.4f}"
@@ -410,6 +434,7 @@ class Store:
                 self.unusual.appendleft(ev)
 
         self._prev_greeks[key] = cur
+        self._prev_greeks_ts[key] = now
         return events
 
     def get_unusual(self, limit: int = 100) -> list[dict]:
