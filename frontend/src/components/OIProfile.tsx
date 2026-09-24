@@ -906,10 +906,13 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   // with a bar inside the OI cell (call bars grow toward the strike from the
   // left, put bars from the right), change over the chosen window, R / S on
   // the biggest call / put strike, and the spot line between strikes ----
-  const L1 = (v: number) => nf(v / 1e5, 1);
+  // lakhs: 1 decimal, 2 when the biggest strike is under 10 lakh (SENSEX /
+  // BANKEX / stocks -- with 1 decimal most of their strikes read 0.0)
+  const dp = stats.maxOI < 10e5 ? 2 : 1;
+  const L1 = (v: number) => nf(v / 1e5, dp);
   const S1 = (v: number) => {
-    const l = Math.round(v / 1e4) / 10; // lakhs, 1 decimal -- rounded first, so a tiny change reads 0.0, not +0.0
-    return `${l > 0 ? "+" : l < 0 ? "−" : ""}${nf(Math.abs(l), 1)}`;
+    const l = Math.round(v / 10 ** (5 - dp)) / 10 ** dp; // rounded first, so a tiny change reads 0.0, not +0.0
+    return `${l > 0 ? "+" : l < 0 ? "−" : ""}${nf(Math.abs(l), dp)}`;
   };
   const tone = (v: number, pos: string, neg: string) => (v > 0 ? pos : v < 0 ? neg : "text-term-dim");
   const GRID = "w-full border-separate border-spacing-0 text-[12px] tabular-nums [&_tr>*:first-child]:border-l";
@@ -925,7 +928,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     </tr>
   );
   const tableEl = (
-    <div ref={jumpBoxRef} className={isMobile ? "px-2 py-2" : "min-h-0 flex-1 overflow-y-auto px-3 py-2"}>
+    <div ref={jumpBoxRef} className={isMobile ? "px-2 py-2" : "min-h-0 flex-1 overflow-y-auto px-3 pb-2"}>
       <table className={`${GRID} mx-auto max-w-3xl`}>
         <thead className="sticky top-0 z-10">
           <tr>
@@ -2077,7 +2080,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
               ] as const
             ).map(([side, oi, add, cut, wall, tag, addCls, cutCls], i) => {
               const net = add + cut;
-              const l1 = (v: number) => `${nf(v / 1e5, 1)}L`;
+              const l1 = (v: number) => `${nf(v / 1e5, dp)}L`;
               const sgn = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${l1(Math.abs(v))}`;
               return (
                 <tr key={side}>
