@@ -40,60 +40,57 @@ export function ShortGuard() {
           alerts at Δ {levels.map((l) => nf(l, 2)).join(" / ")} · roll back to ~Δ 0.20
         </span>
       </div>
-      <div className="overflow-x-auto">
-        <table className="grid-table num text-[11px]">
-          <thead className="bg-term-panel2 text-[10px] text-term-dim">
-            <tr className="[&>th]:px-2 [&>th]:py-0.5 [&>th]:text-left">
-              <th>Short leg</th>
-              <th>Δ</th>
-              <th>Strike vs spot</th>
-              <th>Suggested roll (live quotes)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {legs.map((r) => {
-              const itm = r.distance != null && r.distance < 0;
-              return (
-                <tr key={`${r.src}-${r.symbol}-${r.expiry}-${r.strike}-${r.ot}`} className="[&>td]:px-2 [&>td]:py-1">
-                  <td className="whitespace-nowrap">
-                    <span className="font-semibold text-term-text">
-                      {r.symbol} {sk(r.strike)} {r.ot}
-                    </span>
-                    <span className="ml-1 text-[9px] text-term-dim">
-                      {r.src} · {nf(r.qty, 0)} qty · {r.expiry}
-                    </span>
-                  </td>
-                  <td>
-                    {r.absDelta == null ? (
-                      <span className="text-term-dim">–</span>
-                    ) : (
-                      <span className={`rounded px-1.5 py-0.5 font-bold ${tone(r.level)}`}>{nf(r.absDelta, 2)}</span>
-                    )}
-                  </td>
-                  <td className={`whitespace-nowrap ${itm ? "text-down" : "text-term-dim"}`}>
-                    {r.distance == null ? "–" : itm ? `${nf(-r.distance, 0)} pts ITM` : `${nf(r.distance, 0)} pts away`}
-                  </td>
-                  <td className="whitespace-nowrap text-term-text">
-                    {r.reason ? (
-                      <span className="text-term-dim">{r.reason}</span>
-                    ) : r.roll ? (
-                      <>
-                        → {sk(r.roll.strike)} {r.ot} <span className="text-term-dim">(Δ {nf(Math.abs(r.roll.delta), 2)})</span>
-                        {" · "}
-                        <span className={r.roll.netPerUnit >= 0 ? "text-up" : "text-down"}>
-                          {r.roll.netPerUnit >= 0 ? "credit" : "debit"} {nf(Math.abs(r.roll.netPerUnit), 2)}/unit
-                        </span>
-                        <span className="text-term-dim"> (₹{nf(Math.abs(r.roll.netTotal), 0)})</span>
-                      </>
-                    ) : (
-                      <span className="text-term-dim">safe — under Δ {nf(levels[0], 2)}</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      {/* one block per short leg -- wraps on a phone instead of scrolling sideways */}
+      <div className="flex flex-col gap-1.5">
+        {legs.map((r) => {
+          const itm = r.distance != null && r.distance < 0;
+          return (
+            <div
+              key={`${r.src}-${r.symbol}-${r.expiry}-${r.strike}-${r.ot}`}
+              className="rounded-md bg-term-bg/50 px-2.5 py-1.5 text-[12px] tabular-nums"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="min-w-0">
+                  <span className="font-semibold text-term-text">
+                    {r.symbol} {sk(r.strike)} {r.ot}
+                  </span>
+                  <span className="ml-1.5 text-[10px] text-term-dim">
+                    {r.src} · {nf(r.qty, 0)} qty · {r.expiry}
+                  </span>
+                </span>
+                {r.absDelta == null ? (
+                  <span className="text-term-dim">Δ –</span>
+                ) : (
+                  <span className={`shrink-0 rounded px-1.5 py-0.5 font-bold ${tone(r.level)}`}>
+                    Δ {nf(r.absDelta, 2)}
+                  </span>
+                )}
+              </div>
+              <div className="mt-0.5 flex flex-wrap gap-x-2 text-[11px]">
+                <span className={itm ? "text-down" : "text-term-dim"}>
+                  {r.distance == null ? "–" : itm ? `${nf(-r.distance, 0)} pts ITM` : `${nf(r.distance, 0)} pts away`}
+                </span>
+                <span className="text-term-text">
+                  {r.reason ? (
+                    <span className="text-term-dim">{r.reason}</span>
+                  ) : r.roll ? (
+                    <>
+                      → roll to {sk(r.roll.strike)} {r.ot}{" "}
+                      <span className="text-term-dim">(Δ {nf(Math.abs(r.roll.delta), 2)})</span>
+                      {" · "}
+                      <span className={r.roll.netPerUnit >= 0 ? "text-up" : "text-down"}>
+                        {r.roll.netPerUnit >= 0 ? "credit" : "debit"} {nf(Math.abs(r.roll.netPerUnit), 2)}/unit
+                      </span>
+                      <span className="text-term-dim"> (₹{nf(Math.abs(r.roll.netTotal), 0)})</span>
+                    </>
+                  ) : (
+                    <span className="text-term-dim">safe — under Δ {nf(levels[0], 2)}</span>
+                  )}
+                </span>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

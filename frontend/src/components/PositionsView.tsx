@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
-import { nf, signColor, hhmm, sk } from "../lib/format";
+import { nf, signColor, sk } from "../lib/format";
 import { StopEditor } from "./StopEditor";
 import { useLiveMtm } from "../lib/useLiveMtm";
 import { useIsMobile } from "../lib/useIsMobile";
@@ -533,13 +533,70 @@ function OrderRowActions({ order }: { order: any }) {
   );
 }
 
+/** one order, whatever it came from, in the shape the cards draw */
+type OrderCard = {
+  key: string;
+  ms: number;
+  side: "BUY" | "SELL";
+  prd: string;
+  exch: string;
+  name: string;
+  status: string; // as shown: COMPLETE / OPEN / REJECTED / CANCELLED / TRIGGER PENDING / PLACED
+  open: boolean; // still working at the exchange
+  qty: number | null;
+  filled: number | null;
+  lots?: number; // an order refused before sending has lots, not a qty
+  price: string; // order price, "MKT" for a market order
+  avg: number | null;
+  trg: number | null;
+  time: string;
+  reason: string;
+  book?: any; // the Flattrade order-book row (for modify / cancel)
+};
+
+const OPEN_RE = /open|pending|trigger|received|modif/i;
+const statusCls = (s: string) =>
+  /complete|filled/i.test(s)
+    ? "bg-up/15 text-up"
+    : /reject/i.test(s)
+    ? "bg-down/15 text-down"
+    : /cancel/i.test(s)
+    ? "bg-term-border/60 text-term-dim"
+    : /trigger/i.test(s)
+    ? "bg-amber-500/15 text-amber-400"
+    : "bg-term-accent/15 text-term-accent";
+const bseName = (s: string) => /^(SENSEX|BANKEX|SENSEX50|SNSX50)$/i.test(s || "");
+
+/** 24h "HH:MM:SS", the way the broker's order book prints times */
+const hms = (ms: number) => (ms ? new Date(ms).toLocaleTimeString("en-GB", { hour12: false }) : "");
+/** "01-Oct-2026" -> "01 OCT" */
+const expShort = (e?: string) => {
+  const m = /^(\d{1,2})-([A-Za-z]{3})/.exec(e || "");
+  return m ? `${m[1]} ${m[2].toUpperCase()}` : "";
+};
+
+/** "15:20:13 22-09-2026" (Noren norentm) -> epoch ms */
+const norenMs = (t?: string): number => {
+  const m = /^(\d{2}):(\d{2}):(\d{2})\s+(\d{2})-(\d{2})-(\d{4})/.exec(t || "");
+  return m ? new Date(+m[6], +m[5] - 1, +m[4], +m[1], +m[2], +m[3]).getTime() : 0;
+};
+
+/** Orders, laid out like the broker app's order book: Open | Executed tabs
+ *  of cards -- "BUY | NRML | NFO" + status, the contract + time, Qty
+ *  filled/total, Price and Avg. Tap an open order to modify / cancel it.
+ *  Live = Flattrade's order book plus any order GammaTerminal refused before
+ *  sending (those never reach the book); Paper = this session's paper fills. */
 export function OrdersTab() {
   const broker = useStore((s) => s.broker);
   const paper = useStore((s) => s.paper);
   const orderMode = useStore((s) => s.orderMode);
   const [src, setSrc] = useState<"live" | "paper">(orderMode === "live" ? "live" : "paper");
+  // the order mode arrives after the first render -- follow it
+  useEffect(() => setSrc(orderMode === "live" ? "live" : "paper"), [orderMode]);
   const [book, setBook] = useState<any[]>([]);
   const [liveLog, setLiveLog] = useState<any[]>([]);
+  const [tab, setTab] = useState<"open" | "done">("open");
+  const [openKey, setOpenKey] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
     const load = () => {
@@ -554,161 +611,218 @@ export function OrdersTab() {
     };
   }, [broker?.authed]);
 
-  const [filter, setFilter] = useState<"all" | "open" | "executed" | "cancelled">("all");
-
-  const stCls = (s: string) =>
-    /complete|placed|filled/i.test(s) ? "text-up" : /reject|cancel/i.test(s) ? "text-down" : "text-term-dim";
-
-  const stBucket = (s: string): "open" | "executed" | "cancelled" | "other" => {
-    if (/complete|filled|placed|traded/i.test(s)) return "executed";
-    if (/cancel|reject/i.test(s)) return "cancelled";
-    if (/open|pending|trigger|received/i.test(s)) return "open";
-    return "other";
-  };
-  const passFilter = (s: string) => filter === "all" || stBucket(s || "") === filter;
-
-  const tsOf = (o: any): number => {
-    const raw = o?.ts ?? o?.time ?? o?.norentm ?? o?.exch_tm ?? o?.orderTime;
-    const n = Number(raw);
-    if (Number.isFinite(n) && n > 0) return n < 1e12 ? n * 1000 : n;
+  const tsMs = (raw: any): number => {
+    const x = Number(raw);
+    if (Number.isFinite(x) && x > 0) return x < 1e12 ? x * 1000 : x;
     const d = raw ? new Date(raw) : null;
     return d && !Number.isNaN(d.getTime()) ? d.getTime() : 0;
   };
+  // broker-style name: "SENSEX 01 OCT 74800 CE"
+  const contract = (o: any) =>
+    [o.symbol, expShort(o.expiry), o.optionType === "FUT" ? "FUT" : `${sk(o.strike)} ${o.optionType ?? ""}`]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
 
-  // unified session order history: live-routed + paper
-  const log = [
-    ...liveLog.map((o) => ({ ...o, _ms: tsOf(o) })),
-    ...(paper?.orders ?? []).map((o) => ({
-      _ms: tsOf(o),
-      ts: o.ts,
-      symbol: o.symbol,
-      strike: o.strike,
-      optionType: o.optionType,
-      side: o.side,
-      qtyLots: o.qtyLots,
-      qty: o.qty,
-      mode: "paper",
-      status: "FILLED",
-      orderId: `@${nf(o.price)}`,
-    })),
-  ].sort((a, b) => b._ms - a._ms);
-
-  const isPaper = (o: any) => (o.mode || "").toLowerCase() === "paper";
-  const shownLog = log.filter(
-    (o) => passFilter(o.status || "") && (src === "paper" ? isPaper(o) : !isPaper(o))
-  );
-  const shownBook = book.filter((o) => passFilter(o.status || ""));
+  let cards: OrderCard[] = [];
+  if (src === "live") {
+    const fromBook: OrderCard[] = book.map((o, i) => {
+      const st = String(o.status || "").toUpperCase().replace(/_/g, " ").replace("CANCELED", "CANCELLED");
+      const ms = norenMs(o.norentm);
+      return {
+        key: String(o.norenordno ?? `b${i}`),
+        ms,
+        side: o.trantype === "B" ? "BUY" : "SELL",
+        prd: o.s_prdt_ali ?? PRD[String(o.prd ?? "")] ?? o.prd ?? "NRML",
+        exch: o.exch ?? "NFO",
+        name: String(o.dname || "").trim() || o.tsym || "—",
+        status: st || "—",
+        open: OPEN_RE.test(st),
+        qty: n(o.qty),
+        filled: n(o.fillshares) ?? 0,
+        price: /MKT/i.test(o.prctyp || "") ? "MKT" : n(o.prc)?.toFixed(2) ?? "–",
+        avg: n(o.avgprc),
+        trg: n(o.trgprc),
+        time: (o.norentm || "").split(" ")[0] || hms(ms),
+        reason: String(o.rejreason || "").trim(),
+        book: o,
+      };
+    });
+    // GammaTerminal's own log: an order refused before sending never reaches
+    // the broker's book, so it's added here (and, with Flattrade not
+    // connected, everything GammaTerminal sent this session)
+    const fromLog: OrderCard[] = liveLog
+      .filter((o) => (o.mode || "live") !== "paper")
+      .filter((o) => !broker?.authed || (!o.orderId && /reject|error/i.test(o.status || "")))
+      .map((o, i) => {
+        const ms = tsMs(o.ts);
+        const rej = /reject|error/i.test(o.status || "");
+        return {
+          key: `g${i}-${o.ts}`,
+          ms,
+          side: o.side === "SELL" ? "SELL" : "BUY",
+          prd: "NRML",
+          exch: o.exch ?? (bseName(o.symbol) ? "BFO" : "NFO"),
+          name: contract(o),
+          status: rej ? "REJECTED" : String(o.status || "PLACED").toUpperCase(),
+          open: false,
+          qty: n(o.qty),
+          filled: null,
+          lots: n(o.qtyLots) ?? undefined,
+          price: "–",
+          avg: null,
+          trg: null,
+          time: hms(ms),
+          reason: rej ? `Not sent — ${o.error || "refused by GammaTerminal"}` : "",
+        };
+      });
+    cards = [...fromBook, ...fromLog];
+  } else {
+    cards = (paper?.orders ?? []).map((o: any, i: number) => {
+      const ms = tsMs(o.ts);
+      return {
+        key: `p${i}-${o.ts}`,
+        ms,
+        side: o.side === "SELL" ? "SELL" : "BUY",
+        prd: "PAPER",
+        exch: bseName(o.symbol) ? "BFO" : "NFO",
+        name: contract(o),
+        status: "COMPLETE",
+        open: false,
+        qty: n(o.qty),
+        filled: n(o.qty),
+        price: n(o.price)?.toFixed(2) ?? "–",
+        avg: n(o.price),
+        trg: null,
+        time: hms(ms),
+        reason: "",
+      };
+    });
+  }
+  cards.sort((a, b) => b.ms - a.ms);
+  const openCards = cards.filter((c) => c.open);
+  const doneCards = cards.filter((c) => !c.open);
+  const shown = tab === "open" ? openCards : doneCards;
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto">
-      <div className="flex flex-wrap items-center gap-2 px-3 py-1.5">
-        <div className="seg text-[11px]">
-          {(["live", "paper"] as const).map((s) => (
-            <button key={s} onClick={() => setSrc(s)} className={src === s ? "on" : ""}>
-              {s === "live" ? "Live" : "Paper"}
-            </button>
-          ))}
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* Open | Executed, underlined like the broker app */}
+      <div className="flex shrink-0 items-stretch border-b border-term-border bg-term-panel">
+        {(
+          [
+            ["open", "Open", openCards.length],
+            ["done", "Executed", doneCards.length],
+          ] as const
+        ).map(([k, label, count]) => (
+          <button
+            key={k}
+            onClick={() => setTab(k)}
+            className={`relative flex flex-1 items-center justify-center gap-2 py-2.5 text-[15px] ${
+              tab === k ? "text-term-accent" : "text-term-text hover:text-term-accent"
+            }`}
+          >
+            {label}
+            {count > 0 && (
+              <span className="flex h-6 min-w-[24px] items-center justify-center rounded-full bg-term-accent px-1.5 text-[13px] tabular-nums text-white">
+                {count}
+              </span>
+            )}
+            {tab === k && <span className="absolute inset-x-0 bottom-0 h-[3px] bg-term-accent" />}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto bg-term-bg p-2 md:p-3">
+        <div className="flex items-center gap-2 px-1 text-[11px] text-term-dim">
+          <div className="seg text-[11px]">
+            {(["live", "paper"] as const).map((s) => (
+              <button key={s} onClick={() => setSrc(s)} className={src === s ? "on" : ""}>
+                {s === "live" ? "Live" : "Paper"}
+              </button>
+            ))}
+          </div>
+          <span className="truncate">
+            {src === "live"
+              ? broker?.authed
+                ? "Flattrade"
+                : "Flattrade not connected — orders GammaTerminal sent"
+              : "paper orders this session"}
+          </span>
+          {tab === "open" && openCards.length > 0 && (
+            <span className="ml-auto whitespace-nowrap">tap to modify / cancel</span>
+          )}
         </div>
-        <span className="text-[10px] font-semibold uppercase text-term-dim">
-          {src === "live" ? "Live" : "Paper"} orders · placed &amp; status
-        </span>
-        <div className="seg ml-auto text-[10px]">
-          {(["all", "open", "executed", "cancelled"] as const).map((f) => (
-            <button key={f} onClick={() => setFilter(f)} className={filter === f ? "on" : ""}>
-              {f[0].toUpperCase() + f.slice(1)}
-            </button>
-          ))}
+
+        {shown.length === 0 && (
+          <div className="rounded-lg bg-term-panel px-3 py-6 text-center text-xs text-term-dim">
+            {tab === "open" ? "No open orders." : "No executed orders today."}
+          </div>
+        )}
+
+        <div className="grid gap-2 lg:grid-cols-2 2xl:grid-cols-3">
+          {shown.map((c) => {
+            const expanded = openKey === c.key && c.open && !!c.book?.norenordno;
+            return (
+              <div
+                key={c.key}
+                onClick={() => c.open && setOpenKey(expanded ? null : c.key)}
+                className={`rounded-lg bg-term-panel px-4 py-2.5 ${c.open ? "cursor-pointer" : ""}`}
+              >
+                <div className="flex items-center justify-between gap-2 text-[14px]">
+                  <span className="text-term-text">
+                    <span className={c.side === "BUY" ? "text-up" : "text-down"}>{c.side}</span> | {c.prd} | {c.exch}
+                  </span>
+                  <span className={`whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium ${statusCls(c.status)}`}>
+                    {c.status}
+                  </span>
+                </div>
+                <div className="mt-1 flex items-baseline justify-between gap-2">
+                  <span className="truncate text-[16px] text-term-text">{c.name}</span>
+                  <span className="whitespace-nowrap text-[13px] tabular-nums text-term-dim">{c.time}</span>
+                </div>
+                <div className="mt-1 flex items-baseline justify-between gap-2 text-[14px]">
+                  <span className="flex gap-4 whitespace-nowrap tabular-nums">
+                    <span>
+                      <span className="text-term-dim">Qty : </span>
+                      <span className="text-term-text">
+                        {c.filled != null && c.qty != null
+                          ? `${c.filled}/${c.qty}`
+                          : c.qty ?? (c.lots ? `${c.lots} lot${c.lots > 1 ? "s" : ""}` : "–")}
+                      </span>
+                    </span>
+                    <span>
+                      <span className="text-term-dim">Price : </span>
+                      <span className="text-term-text">{c.price}</span>
+                    </span>
+                  </span>
+                  <span className="whitespace-nowrap tabular-nums">
+                    {c.trg != null && c.trg > 0 ? (
+                      <>
+                        <span className="text-term-dim">Trg </span>
+                        <span className="text-term-text">{c.trg.toFixed(2)}</span>
+                      </>
+                    ) : c.avg != null && c.avg > 0 ? (
+                      <>
+                        <span className="text-term-dim">Avg </span>
+                        <span className="text-term-text">{c.avg.toFixed(2)}</span>
+                      </>
+                    ) : null}
+                  </span>
+                </div>
+                {c.reason && <div className="mt-1 text-[12px] leading-snug text-down/90">{c.reason}</div>}
+                {expanded && (
+                  <div
+                    className="mt-2 flex justify-end border-t border-term-border/60 pt-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <OrderRowActions order={c.book} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
-      {shownLog.length === 0 ? (
-        <Empty>
-          {src === "live"
-            ? filter === "all"
-              ? "No live orders this session."
-              : `No ${filter} live orders.`
-            : filter === "all"
-            ? "No paper orders this session."
-            : `No ${filter} paper orders.`}
-        </Empty>
-      ) : (
-        <table className="grid-table text-xs">
-          <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
-            <tr>
-              <TH>Time</TH>
-              <TH>Contract</TH>
-              <TH>Side</TH>
-              <TH>Lots</TH>
-              <TH>Total Qty</TH>
-              <TH>Mode</TH>
-              <TH>Status</TH>
-              <TH>Ref / reason</TH>
-            </tr>
-          </thead>
-          <tbody>
-            {shownLog.map((o, i) => (
-              <tr key={i}>
-                <TD cls="num text-term-dim">{o._ms ? hhmm(o._ms) : "–"}</TD>
-                <TD cls="num">
-                  {o.symbol} {sk(o.strike)}
-                  {o.optionType}
-                </TD>
-                <TD cls={o.side === "BUY" ? "text-up" : "text-down"}>{o.side}</TD>
-                <TD cls="num">{o.qtyLots ?? "–"}</TD>
-                <TD cls="num font-medium text-term-text">{o.qty ?? "–"}</TD>
-                <TD cls="text-term-dim">{o.mode}</TD>
-                <TD cls={stCls(o.status || "")}>{o.status}</TD>
-                <TD cls="text-[10px] text-term-dim">{o.error || o.orderId || o.tsym || ""}</TD>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {src === "live" && broker?.authed && (
-        <>
-          <div className="mt-2 px-3 py-1.5 text-[10px] font-semibold uppercase text-term-dim">
-            Flattrade order book
-          </div>
-          {shownBook.length === 0 ? (
-            <Empty>{filter === "all" ? "Order book empty." : `No ${filter} orders.`}</Empty>
-          ) : (
-            <table className="grid-table text-xs">
-              <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
-                <tr>
-                  <TH>Symbol</TH>
-                  <TH>Side</TH>
-                  <TH>Total Qty</TH>
-                  <TH>Price</TH>
-                  <TH>Status</TH>
-                  <TH>Reason</TH>
-                  <TH>Action</TH>
-                </tr>
-              </thead>
-              <tbody>
-                {shownBook.map((o, i) => (
-                  <tr key={i}>
-                    <TD cls="num">{o.tsym}</TD>
-                    <TD cls={o.trantype === "B" ? "text-up" : "text-down"}>
-                      {o.trantype === "B" ? "BUY" : "SELL"}
-                    </TD>
-                    <TD cls="num font-medium text-term-text">{o.qty}</TD>
-                    <TD cls="num">{nf(n(o.prc))}</TD>
-                    <TD cls={stCls(o.status || "")}>{o.status}</TD>
-                    <TD cls="text-[10px] text-term-dim">{o.rejreason || ""}</TD>
-                    <TD>
-                      {stBucket(o.status || "") === "open" && o.norenordno ? (
-                        <OrderRowActions order={o} />
-                      ) : (
-                        <span className="text-term-dim">—</span>
-                      )}
-                    </TD>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </>
-      )}
     </div>
   );
 }
