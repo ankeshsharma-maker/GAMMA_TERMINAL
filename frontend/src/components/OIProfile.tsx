@@ -4,7 +4,7 @@ import { ClassFilter } from "./Header";
 import { useStore } from "../store";
 import { api, type OiWallPt } from "../lib/api";
 import { istTime } from "../lib/istTime";
-import { compact, crores, nf, sk } from "../lib/format";
+import { compact, nf, sk } from "../lib/format";
 import { PcrChart } from "./PcrChart";
 import { SelectMenu } from "./SelectMenu";
 import { useIsMobile } from "../lib/useIsMobile";
@@ -2051,29 +2051,49 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         )}
       </div>
 
-      {/* legend / totals (phone: behind ⚙) */}
-      <div
-        className={`flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel px-3 py-1.5 text-[10px] ${
-          isMobile && !tools ? "hidden" : "flex"
-        }`}
-      >
-        <span className="rounded border border-down/30 bg-down/5 px-2 py-1 text-term-dim">
-          <span className="font-semibold text-down">Call OI</span>{" "}
-          <span className="num text-term-text">{crores(chain.totals.ceOI)}</span> ·{" "}
-          <Sw c={OI_ADD} /> added <span style={{ color: OI_ADD }}>+{compact(flow.ceAdd)}</span> ·{" "}
-          <Sw c={OI_CUT} hollow /> reduced <span style={{ color: OI_CUT }}>{compact(flow.ceCut)}</span>
-        </span>
-        <span className="rounded border border-term-border bg-term-bg/40 px-2 py-1 text-term-dim">
-          Resistance <span className="num text-term-text">{sk(stats.resistance)}</span> · Floor{" "}
-          <span className="num text-term-text">{sk(stats.floor)}</span> · ATM{" "}
-          <span className="num text-term-text">{sk(chain.atmStrike)}</span>
-        </span>
-        <span className="rounded border border-up/30 bg-up/5 px-2 py-1 text-term-dim">
-          <span className="font-semibold text-up">Put OI</span>{" "}
-          <span className="num text-term-text">{crores(chain.totals.peOI)}</span> ·{" "}
-          <Sw c={OI_ADD} /> added <span style={{ color: OI_ADD }}>+{compact(flow.peAdd)}</span> ·{" "}
-          <Sw c={OI_CUT} hollow /> reduced <span style={{ color: OI_CUT }}>{compact(flow.peCut)}</span>
-        </span>
+      {/* OI totals (phone: behind ⚙) -- ONE scope, the strikes shown ("Strikes ±"),
+          all in lakhs: total OI, added / cut over the ΔOI window, net, and the
+          wall on each side. (It used to mix whole-chain totals in crores with
+          windowed changes in lakhs, and a windowed resistance.) */}
+      <div className={`border-b border-term-border bg-term-panel px-3 py-1.5 ${isMobile && !tools ? "hidden" : ""}`}>
+        <table className="w-full max-w-2xl border-separate border-spacing-0 whitespace-nowrap text-[11px] tabular-nums [&_tr>*:first-child]:border-l">
+          <thead>
+            <tr className="[&>th]:border-b [&>th]:border-r [&>th]:border-t [&>th]:border-term-dim/50 [&>th]:bg-term-panel2 [&>th]:px-1.5 [&>th]:py-0.5 [&>th]:text-[10px] [&>th]:font-medium [&>th]:text-term-dim">
+              <th className="rounded-tl-lg text-left" title={`strikes counted: ${count === 0 ? "all" : `ATM ${sk(chain.atmStrike)} ±${count}`}`}>
+                {count === 0 ? "All" : `±${count}`}
+              </th>
+              <th className="text-right">OI</th>
+              <th className="text-right" title={`over ${tfName}`}>Added</th>
+              <th className="text-right">Cut</th>
+              <th className="text-right">Net</th>
+              <th className="rounded-tr-lg text-right">Wall</th>
+            </tr>
+          </thead>
+          <tbody className="[&_td]:border-b [&_td]:border-r [&_td]:border-term-dim/50 [&_td]:px-1.5 [&_td]:py-0.5">
+            {(
+              [
+                ["Calls", oiTotals.ce, flow.ceAdd, flow.ceCut, stats.resistance, "R", "text-down", "text-up"],
+                ["Puts", oiTotals.pe, flow.peAdd, flow.peCut, stats.floor, "S", "text-up", "text-down"],
+              ] as const
+            ).map(([side, oi, add, cut, wall, tag, addCls, cutCls], i) => {
+              const net = add + cut;
+              const l1 = (v: number) => `${nf(v / 1e5, 1)}L`;
+              const sgn = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${l1(Math.abs(v))}`;
+              return (
+                <tr key={side}>
+                  <td className={`font-semibold ${addCls} ${i === 1 ? "rounded-bl-lg" : ""}`}>{side}</td>
+                  <td className="text-right text-term-text">{l1(oi)}</td>
+                  <td className={`text-right ${add > 0 ? addCls : "text-term-dim"}`}>{sgn(add)}</td>
+                  <td className={`text-right ${cut < 0 ? cutCls : "text-term-dim"}`}>{sgn(cut)}</td>
+                  <td className={`text-right font-semibold ${net > 0 ? addCls : net < 0 ? cutCls : "text-term-dim"}`}>{sgn(net)}</td>
+                  <td className={`text-right font-semibold ${addCls} ${i === 1 ? "rounded-br-lg" : ""}`}>
+                    {wall > 0 ? `${sk(wall)} ${tag}` : "–"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
       {/* overall OI verdict (phone: the summary row shows the bias; reasons behind ⚙) */}
