@@ -16,6 +16,10 @@ Config lives in the kv_store table (key "alert_delivery"), as one JSON blob:
                                    # events (entries, exits, errors, safety stops). They are
                                    # info-level by nature, so minSeverity would silently drop
                                    # every entry and exit; this is their own switch instead.
+      "symbols": [],              # MARKET alerts (gamma blast, IV / straddle / OI surge, flow
+                                   # reversal, delta-gamma jumps) only for these underlyings;
+                                   # [] = every symbol. Alerts about your own positions and
+                                   # your own rules always go out, whatever is picked here.
       "greeksAlerts": "big",      # big | all | off -- unusual delta / gamma moves on single
                                    # strikes. "big" = only the very big ones the poller marks
                                    # critical (near the money, nearest expiry, market hours,
@@ -43,11 +47,19 @@ _DEFAULT = {
     "minSeverity": "warning",
     "autobotAlerts": "all",
     "greeksAlerts": "big",
+    "symbols": [],
 }
 _AUTOBOT_MODES = ("all", "important", "off")
 # "important" = the events you must act on or know happened: exits, errors, safety stops
 _AUTOBOT_IMPORTANT = ("autobot-exit", "autobot-error", "autobot-stop")
 _GREEKS_MODES = ("big", "all", "off")
+# alerts about the MARKET (not about the user's own positions or rules) -- the
+# ones the symbol filter applies to
+_MARKET_KINDS = ("blast-crit", "blast-warn", "blast-build", "iv-spike", "straddle-exp", "oi-surge", "flow-reversal")
+
+
+def _is_market(alert: dict) -> bool:
+    return alert.get("kind") in _MARKET_KINDS or alert.get("category") == "greeks"
 
 
 def _load() -> dict:
@@ -68,6 +80,7 @@ def get_config() -> dict:
         "minSeverity": cfg["minSeverity"],
         "autobotAlerts": cfg["autobotAlerts"],
         "greeksAlerts": cfg["greeksAlerts"],
+        "symbols": list(cfg.get("symbols") or []),
         "webhookUrlSet": bool(cfg.get("webhookUrl")),
         "telegramSet": bool(cfg.get("telegramBotToken") and cfg.get("telegramChatId")),
     }
@@ -86,6 +99,8 @@ def set_config(patch: dict) -> dict:
         cfg["autobotAlerts"] = patch["autobotAlerts"]
     if patch.get("greeksAlerts") in _GREEKS_MODES:
         cfg["greeksAlerts"] = patch["greeksAlerts"]
+    if isinstance(patch.get("symbols"), list):
+        cfg["symbols"] = sorted({str(x).strip().upper() for x in patch["symbols"] if str(x).strip()})
     if "enabled" in patch:
         cfg["enabled"] = bool(patch["enabled"])
     _save(cfg)
@@ -135,6 +150,10 @@ def deliver(alert: dict) -> None:
     of its ~10 call sites across the codebase) async."""
     cfg = _load()
     if not cfg.get("enabled"):
+        return
+    # market alerts only for the chosen symbols (none chosen = all of them)
+    picked = cfg.get("symbols") or []
+    if picked and _is_market(alert) and str(alert.get("symbol") or "").upper() not in picked:
         return
     if alert.get("category") == "autobot":
         mode = cfg.get("autobotAlerts", "all")

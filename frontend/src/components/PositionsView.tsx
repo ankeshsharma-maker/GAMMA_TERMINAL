@@ -9,7 +9,8 @@ import { LegBracketBadge, findBracket, type LegRule } from "./LegBracketBadge";
 import { ScenarioGrid } from "./ScenarioGrid";
 import { PortfolioSummary } from "./PortfolioSummary";
 import { AutoSquareOff } from "./AutoSquareOff";
-import { ShortGuard } from "./ShortGuard";
+import { ShortGuard, guardText } from "./ShortGuard";
+import type { ShortGuardLeg } from "../types";
 
 type Tab = "broker" | "holdings" | "orders" | "advanced";
 // Positions / Holdings read like the Flattrade app's Portfolio screen; the
@@ -79,6 +80,10 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
   const [openKey, setOpenKey] = useState<string | null>(null);
   useEffect(() => onCount?.(rows.length), [rows.length, onCount]);
 
+  // the short-strike guard's read of each short leg, keyed by trading symbol --
+  // shown on the card itself so a warning is seen where the trade is managed
+  const [guard, setGuard] = useState<Record<string, ShortGuardLeg>>({});
+
   // per-position target/SL brackets (leg rules attached to an already-open position)
   const [legRules, setLegRules] = useState<LegRule[]>([]);
   const loadLegRules = () =>
@@ -93,6 +98,12 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
         (e) => alive && setErr(String(e.message || e))
       );
       loadLegRules();
+      api.shortGuard().then(
+        (d) =>
+          alive &&
+          setGuard(Object.fromEntries(d.legs.filter((l) => l.src === "live" && l.name).map((l) => [l.name as string, l]))),
+        () => {}
+      );
     };
     loadRef.current = load;
     load();
@@ -356,6 +367,33 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
                 </span>
               </div>
 
+              {(() => {
+                const g = qty < 0 ? guard[String(r.tsym ?? "")] : undefined;
+                if (!g || g.level < 1) return null;
+                const t = guardText(g);
+                return (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className={`mt-2 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12px] ${
+                      g.level >= 2 ? "bg-down/15 text-down" : "bg-amber-500/15 text-amber-400"
+                    }`}
+                  >
+                    <span className="min-w-0 flex-1 leading-snug">
+                      <b>{g.level >= 2 ? "🔴 DANGER" : "🟠 WARNING"}</b> · {t.where}
+                      {t.next && <> · {t.next}</>}
+                    </span>
+                    <button
+                      disabled={isBusy}
+                      onClick={() => squareOff(r)}
+                      className={`shrink-0 rounded px-3 py-1 text-[12px] font-bold text-white disabled:opacity-40 ${
+                        g.level >= 2 ? "bg-down" : "bg-amber-500"
+                      }`}
+                    >
+                      Exit
+                    </button>
+                  </div>
+                );
+              })()}
               {open && (
                 <div
                   className="mt-2 flex flex-col gap-1.5 border-t border-term-border/60 pt-2"

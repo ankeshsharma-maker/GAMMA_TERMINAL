@@ -947,6 +947,12 @@ export interface ShortGuardLeg {
   /** pts the strike is still out of the money; negative = in the money */
   distance: number | null;
   ltp: number | null;
+  /** price to buy the leg back now (ask), its P&L at that price, and the ₹ the
+   *  next `move` points against it would add */
+  buyBack: number | null;
+  pnl: number | null;
+  move: number | null;
+  moveCost: number | null;
   roll: {
     strike: number;
     delta: number;

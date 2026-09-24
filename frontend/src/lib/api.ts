@@ -507,6 +507,7 @@ export const api = {
       minSeverity: "info" | "warning" | "critical";
       autobotAlerts: "all" | "important" | "off";
       greeksAlerts?: "big" | "all" | "off";
+      symbols?: string[];
       webhookUrlSet: boolean;
       telegramSet: boolean;
     }>("/api/alert-delivery"),

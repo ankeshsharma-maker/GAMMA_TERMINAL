@@ -30,7 +30,7 @@ export function Alerts({ compact = false }: { compact?: boolean }) {
               <span className="font-semibold">{a.symbol}</span>
               <span className="num text-term-dim">{hhmm(a.ts)}</span>
             </div>
-            <div className="text-term-text/90">{a.message}</div>
+            <div className="whitespace-pre-line text-term-text/90">{a.message}</div>
           </div>
         ))}
       </div>

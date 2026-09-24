@@ -72,6 +72,8 @@ function AlertDeliverySection() {
   const [minSeverity, setMinSeverity] = useState<"info" | "warning" | "critical">("warning");
   const [autobotAlerts, setAutobotAlerts] = useState<"all" | "important" | "off">("all");
   const [greeksAlerts, setGreeksAlerts] = useState<"big" | "all" | "off">("big");
+  const [alertSyms, setAlertSyms] = useState<string[]>([]);
+  const [symInput, setSymInput] = useState("");
   const [webhookSet, setWebhookSet] = useState(false);
   const [telegramSet, setTelegramSet] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState("");
@@ -125,6 +127,7 @@ function AlertDeliverySection() {
       setMinSeverity(d.minSeverity);
       setAutobotAlerts(d.autobotAlerts ?? "all");
       setGreeksAlerts(d.greeksAlerts ?? "big");
+      setAlertSyms(d.symbols ?? []);
       setWebhookSet(d.webhookUrlSet);
       setTelegramSet(d.telegramSet);
     }, () => {});
@@ -216,6 +219,46 @@ function AlertDeliverySection() {
             {label}
           </button>
         ))}
+      </Row>
+
+      <Row
+        label="Market alerts for"
+        hint="Gamma blast, OI surge, IV / straddle spikes, flow reversals and delta/gamma jumps only for the symbols picked here — none picked = every symbol. Alerts about your own positions (short-strike guard, SL / target) and alerts you set yourself always come through."
+      >
+        {[...new Set(["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX", ...alertSyms])].map((s) => {
+          const sel = alertSyms.includes(s);
+          return (
+            <button
+              key={s}
+              onClick={() => {
+                const next = sel ? alertSyms.filter((x) => x !== s) : [...alertSyms, s];
+                setAlertSyms(next);
+                save({ symbols: next });
+              }}
+              className={`${SEG} ${sel ? on : off}`}
+            >
+              {s}
+            </button>
+          );
+        })}
+        <input
+          value={symInput}
+          onChange={(e) => setSymInput(e.target.value.toUpperCase())}
+          onKeyDown={(e) => {
+            const v = symInput.trim();
+            if (e.key === "Enter" && v && !alertSyms.includes(v)) {
+              const next = [...alertSyms, v];
+              setAlertSyms(next);
+              save({ symbols: next });
+              setSymInput("");
+            }
+          }}
+          placeholder="+ stock, Enter"
+          className="w-28 rounded border border-term-border bg-term-bg px-2 py-1 text-2xs outline-none focus:border-term-accent"
+        />
+        <span className="text-2xs text-term-dim">
+          {alertSyms.length ? `only ${alertSyms.join(", ")}` : "all symbols"}
+        </span>
       </Row>
 
       <Row
