@@ -64,42 +64,18 @@ const Chip = ({ tone, children }: { tone: Tone; children: ReactNode }) => (
   <span className={`whitespace-nowrap rounded border px-2 py-0.5 text-[11px] font-bold ${TONE[tone]}`}>{children}</span>
 );
 
-const Stat = ({ label, value, cls = "text-term-text" }: { label: string; value: ReactNode; cls?: string }) => (
-  <div className="min-w-0">
-    <div className="text-[10px] uppercase tracking-wide text-term-dim">{label}</div>
-    <div className={`truncate text-[14px] font-semibold tabular-nums ${cls}`}>{value}</div>
-  </div>
-);
-
-/** a small line over the day, with its first and last values marked */
-function Spark({ pts, fmt }: { pts: { t: number; v: number }[]; fmt: (v: number) => string }) {
-  if (pts.length < 2) return <div className="text-[11px] text-term-dim">collecting…</div>;
-  const W = 300;
-  const H = 54;
-  const lo = Math.min(...pts.map((p) => p.v));
-  const hi = Math.max(...pts.map((p) => p.v));
-  const t0 = pts[0].t;
-  const t1 = pts[pts.length - 1].t;
-  const x = (t: number) => 2 + ((t - t0) / (t1 - t0 || 1)) * (W - 4);
-  const y = (v: number) => 4 + (1 - (v - lo) / (hi - lo || 1)) * (H - 8);
-  const d = pts.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join("");
-  const up = pts[pts.length - 1].v >= pts[0].v;
-  return (
-    <div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="block h-[54px] w-full" preserveAspectRatio="none">
-        <path d={d} fill="none" stroke={up ? "#22c55e" : "#ef4444"} strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
-      </svg>
-      <div className="flex justify-between text-[10px] tabular-nums text-term-dim">
-        <span>
-          {istTime(t0)} · {fmt(pts[0].v)}
-        </span>
-        <span>
-          {istTime(t1)} · <span className={up ? "text-up" : "text-down"}>{fmt(pts[pts.length - 1].v)}</span>
-        </span>
-      </div>
-    </div>
-  );
-}
+// every card is a table: small dim headers, hairline rows, figures right-aligned
+const TBL = "w-full text-[12px] tabular-nums";
+const TH = "py-1 text-[10px] font-medium uppercase tracking-wide text-term-dim";
+const TR = "border-t border-term-border/40";
+const TD = "py-1";
+const L = (v: number | null | undefined) => (v == null ? "–" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${lakhs(Math.abs(v))}`);
+const pct = (v: number | null | undefined) => (v == null ? "–" : `${nf(v, 1)}%`);
+const tone3 = (v: number | null | undefined, pos: string, neg: string) =>
+  v == null || v === 0 ? "text-term-dim" : v > 0 ? pos : neg;
+// IST minute-of-day / day number of an epoch second
+const istMin = (t: number) => Math.floor(((t + 19800) % 86400) / 60);
+const istDay = (t: number) => Math.floor((t + 19800) / 86400);
 
 export function HomeDashboard() {
   const symbol = useStore((s) => s.symbol);
@@ -108,7 +84,9 @@ export function HomeDashboard() {
   const trend = useTrend(symbol);
 
   const [flows, setFlows] = useState<Record<string, FlowData | null>>({});
-  const [hist, setHist] = useState<{ t: number; pcr: number | null; ceOI: number; peOI: number; spot: number }[]>([]);
+  const [hist, setHist] = useState<
+    { t: number; pcr: number | null; ceOI: number; peOI: number; ceChg: number | null; peChg: number | null; spot: number }[]
+  >([]);
   const [vol, setVol] = useState<VolatilityData | null>(null);
 
   useEffect(() => {
@@ -122,11 +100,20 @@ export function HomeDashboard() {
       api.pcr(symbol, null, 5).then((d) => {
         if (!alive) return;
         const at = (k: string) => d.fields.indexOf(k);
-        const [it, isp, ipc, ice, ipe] = ["t", "spot", "pcr", "ceOI", "peOI"].map(at);
+        const [it, isp, ipc, ice, ipe, icc, ipcg] = ["t", "spot", "pcr", "ceOI", "peOI", "ceOIChg", "peOIChg"].map(at);
+        const num = (v: number | null | undefined) => (v == null ? null : (v as number));
         setHist(
           d.points
             .filter((p) => p[it] != null && p[ice] != null && p[ipe] != null)
-            .map((p) => ({ t: p[it] as number, pcr: p[ipc], ceOI: p[ice] as number, peOI: p[ipe] as number, spot: (p[isp] ?? 0) as number }))
+            .map((p) => ({
+              t: p[it] as number,
+              pcr: p[ipc],
+              ceOI: p[ice] as number,
+              peOI: p[ipe] as number,
+              ceChg: icc >= 0 ? num(p[icc]) : null,
+              peChg: ipcg >= 0 ? num(p[ipcg]) : null,
+              spot: (p[isp] ?? 0) as number,
+            }))
         );
       }, () => {});
     };
@@ -172,17 +159,36 @@ export function HomeDashboard() {
     return { ...v, spot, res: res.k, floor: flo.k, ceAdd, ceCut, peAdd, peCut };
   }, [chain, symbol]);
 
-  // ---- trending OI: today's put vs call OI build, from the history ring ----
+  // ---- trending OI: the session in hourly rows (09:15 grid), whole chain ----
+  // Row 1 is the change from yesterday's close to the first reading (the open
+  // can move a lot of OI in its first minutes); every row after it is the
+  // change during that hour; the total is today vs yesterday's close.
   const trending = useMemo(() => {
-    const day = hist;
-    if (day.length < 2) return null;
-    const a = day[0];
-    const b = day[day.length - 1];
-    const dCE = b.ceOI - a.ceOI;
-    const dPE = b.peOI - a.peOI;
-    const pcrPts = day.filter((p) => p.pcr != null).map((p) => ({ t: p.t, v: p.pcr as number }));
+    if (hist.length < 2) return null;
+    const lastDay = istDay(hist[hist.length - 1].t);
+    // from 09:15 on -- including the after-close readings, where the day's final OI lands
+    let pts = hist.filter((p) => istDay(p.t) === lastDay && istMin(p.t) >= 555);
+    if (pts.length < 2) pts = hist.filter((p) => istDay(p.t) === lastDay);
+    if (pts.length < 2) pts = hist;
+    const picks = [pts[0]];
+    for (const edge of [615, 675, 735, 795, 855, 915]) {
+      let best: (typeof pts)[number] | null = null;
+      for (const p of pts) if (istMin(p.t) <= edge) best = p;
+      if (best && best.t > picks[picks.length - 1].t) picks.push(best);
+    }
+    const last = pts[pts.length - 1];
+    if (last.t > picks[picks.length - 1].t) picks.push(last);
+    const rows = picks.map((p, i) => ({
+      t: p.t,
+      spot: p.spot,
+      pcr: p.pcr,
+      dCE: i ? p.ceOI - picks[i - 1].ceOI : p.ceChg,
+      dPE: i ? p.peOI - picks[i - 1].peOI : p.peChg,
+    }));
+    const dCE = last.ceChg ?? last.ceOI - pts[0].ceOI;
+    const dPE = last.peChg ?? last.peOI - pts[0].peOI;
     const tone: Tone = dPE > dCE * 1.15 && dPE > 0 ? "up" : dCE > dPE * 1.15 && dCE > 0 ? "down" : "flat";
-    return { dCE, dPE, pcrPts, tone, since: a.t };
+    return { rows, dCE, dPE, pcr: last.pcr, tone, vsClose: last.ceChg != null };
   }, [hist]);
 
   // ---- order flow: net buying − selling per window ----
@@ -298,32 +304,77 @@ export function HomeDashboard() {
         >
           {oi && chain ? (
             <>
-              <div className="grid grid-cols-3 gap-2">
-                <Stat label="PCR" value={nf(chain.pcr, 2)} cls={(chain.pcr ?? 0) >= 1 ? "text-up" : "text-down"} />
-                <Stat label="Max pain" value={sk(chain.maxPain)} />
-                <Stat label="Spot" value={nf(oi.spot, 1)} />
-                <Stat label="Resistance" value={sk(oi.res)} cls="text-down" />
-                <Stat label="Support" value={sk(oi.floor)} cls="text-up" />
-                <Stat label="Range" value={`${sk(oi.floor)}–${sk(oi.res)}`} cls="text-term-dim" />
-              </div>
-              <div className="flex flex-wrap gap-x-3 text-[11px] text-term-dim">
-                <span>
-                  Call OI today <span className={oi.ceAdd + oi.ceCut >= 0 ? "text-down" : "text-up"}>{oi.ceAdd + oi.ceCut >= 0 ? "+" : ""}{lakhs(oi.ceAdd + oi.ceCut)}</span>
-                </span>
-                <span>
-                  Put OI today <span className={oi.peAdd + oi.peCut >= 0 ? "text-up" : "text-down"}>{oi.peAdd + oi.peCut >= 0 ? "+" : ""}{lakhs(oi.peAdd + oi.peCut)}</span>
-                </span>
-              </div>
+              <table className={TBL}>
+                <thead>
+                  <tr>
+                    <th className={`${TH} text-left`}>PCR</th>
+                    <th className={`${TH} text-right`}>Max pain</th>
+                    <th className={`${TH} text-right`}>Spot</th>
+                    <th className={`${TH} text-right`}>Range</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className={TR}>
+                    <td className={`${TD} font-semibold ${(chain.pcr ?? 0) >= 1 ? "text-up" : "text-down"}`}>{nf(chain.pcr, 2)}</td>
+                    <td className={`${TD} text-right text-term-text`}>{sk(chain.maxPain)}</td>
+                    <td className={`${TD} text-right text-term-text`}>{nf(oi.spot, 1)}</td>
+                    <td className={`${TD} text-right text-term-text`}>
+                      {sk(oi.floor)}–{sk(oi.res)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <table className={TBL}>
+                <thead>
+                  <tr>
+                    <th className={`${TH} text-left`}>Today</th>
+                    <th className={`${TH} text-right`}>Calls</th>
+                    <th className={`${TH} text-right`}>Puts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className={TR}>
+                    <td className={`${TD} text-term-dim`}>Wall (most OI)</td>
+                    <td className={`${TD} text-right font-semibold text-down`}>{sk(oi.res)} R</td>
+                    <td className={`${TD} text-right font-semibold text-up`}>{sk(oi.floor)} S</td>
+                  </tr>
+                  <tr className={TR}>
+                    <td className={`${TD} text-term-dim`}>OI added</td>
+                    <td className={`${TD} text-right text-term-text`}>{L(oi.ceAdd)}</td>
+                    <td className={`${TD} text-right text-term-text`}>{L(oi.peAdd)}</td>
+                  </tr>
+                  <tr className={TR}>
+                    <td className={`${TD} text-term-dim`}>OI cut</td>
+                    <td className={`${TD} text-right text-term-text`}>{L(oi.ceCut)}</td>
+                    <td className={`${TD} text-right text-term-text`}>{L(oi.peCut)}</td>
+                  </tr>
+                </tbody>
+              </table>
               {(oi.pros.length > 0 || oi.cons.length > 0) && (
-                <ul className="flex flex-col gap-0.5 text-[11px] leading-snug">
-                  {oi.pros.slice(0, 2).map((p) => (
-                    <li key={p} className="text-up">▲ {p}</li>
-                  ))}
-                  {oi.cons.slice(0, 2).map((p) => (
-                    <li key={p} className="text-down">▼ {p}</li>
-                  ))}
-                </ul>
+                <table className={TBL}>
+                  <thead>
+                    <tr>
+                      <th className={`${TH} w-5 text-left`} />
+                      <th className={`${TH} text-left`}>What the OI says</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {oi.pros.slice(0, 2).map((p) => (
+                      <tr key={p} className={TR}>
+                        <td className={`${TD} align-top text-up`}>▲</td>
+                        <td className={`${TD} leading-snug text-term-text`}>{p}</td>
+                      </tr>
+                    ))}
+                    {oi.cons.slice(0, 2).map((p) => (
+                      <tr key={p} className={TR}>
+                        <td className={`${TD} align-top text-down`}>▼</td>
+                        <td className={`${TD} leading-snug text-term-text`}>{p}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
+              <div className="text-[10px] text-term-dim">Strikes on the chain, vs yesterday's close.</div>
             </>
           ) : (
             <div className="text-[12px] text-term-dim">loading the chain…</div>
@@ -338,13 +389,39 @@ export function HomeDashboard() {
         >
           {trending ? (
             <>
-              <div className="grid grid-cols-2 gap-2">
-                <Stat label="Call OI since open" value={`${trending.dCE >= 0 ? "+" : ""}${lakhs(trending.dCE)}`} cls={trending.dCE >= 0 ? "text-down" : "text-up"} />
-                <Stat label="Put OI since open" value={`${trending.dPE >= 0 ? "+" : ""}${lakhs(trending.dPE)}`} cls={trending.dPE >= 0 ? "text-up" : "text-down"} />
-              </div>
-              <div className="text-[10px] uppercase tracking-wide text-term-dim">PCR through the day</div>
-              <Spark pts={trending.pcrPts} fmt={(v) => nf(v, 2)} />
-              <div className="text-[11px] text-term-dim">
+              <table className={TBL}>
+                <thead>
+                  <tr>
+                    <th className={`${TH} text-left`}>Time</th>
+                    <th className={`${TH} text-right`}>Spot</th>
+                    <th className={`${TH} text-right`}>Call OI</th>
+                    <th className={`${TH} text-right`}>Put OI</th>
+                    <th className={`${TH} text-right`}>PCR</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trending.rows.map((r, i) => (
+                    <tr key={r.t} className={TR}>
+                      <td className={`${TD} text-term-dim`}>
+                        {i === 0 && trending.vsClose ? `${istTime(r.t)}*` : istMin(r.t) > 930 ? "Close" : istTime(r.t)}
+                      </td>
+                      <td className={`${TD} text-right text-term-text`}>{r.spot ? nf(r.spot, 0) : "–"}</td>
+                      <td className={`${TD} text-right ${tone3(r.dCE, "text-down", "text-up")}`}>{L(r.dCE)}</td>
+                      <td className={`${TD} text-right ${tone3(r.dPE, "text-up", "text-down")}`}>{L(r.dPE)}</td>
+                      <td className={`${TD} text-right text-term-text`}>{r.pcr != null ? nf(r.pcr, 2) : "–"}</td>
+                    </tr>
+                  ))}
+                  <tr className="border-t border-term-border font-semibold">
+                    <td className={`${TD} text-term-text`}>Today</td>
+                    <td className={TD} />
+                    <td className={`${TD} text-right ${tone3(trending.dCE, "text-down", "text-up")}`}>{L(trending.dCE)}</td>
+                    <td className={`${TD} text-right ${tone3(trending.dPE, "text-up", "text-down")}`}>{L(trending.dPE)}</td>
+                    <td className={`${TD} text-right text-term-text`}>{trending.pcr != null ? nf(trending.pcr, 2) : "–"}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div className="text-[10px] leading-snug text-term-dim">
+                {trending.vsClose ? "* change from yesterday's close to the first reading; each row after = change in that hour. " : ""}
                 Puts added faster than calls = writers defending below (support). Calls faster = writers capping above.
               </div>
             </>
@@ -355,22 +432,41 @@ export function HomeDashboard() {
 
         {/* order flow */}
         <Card title="Order flow · buying vs selling" go="orderflow" right={<Chip tone={flowTone}>{flowTone === "up" ? "▲ BUYING" : flowTone === "down" ? "▼ SELLING" : "◆ MIXED"}</Chip>}>
-          {flowRows.map((r) => (
-            <div key={r.w} className="flex items-center gap-2 text-[12px] tabular-nums">
-              <span className="w-14 shrink-0 text-term-dim">{r.label}</span>
-              <div className="relative h-3 flex-1 overflow-hidden rounded bg-term-border/40">
-                {r.tot > 0 && (
-                  <>
-                    <div className="absolute inset-y-0 left-0 bg-up/70" style={{ width: `${(r.buy / r.tot) * 100}%` }} />
-                    <div className="absolute inset-y-0 right-0 bg-down/70" style={{ width: `${(r.sell / r.tot) * 100}%` }} />
-                  </>
-                )}
-              </div>
-              <span className={`w-16 shrink-0 text-right font-semibold ${r.net > 0 ? "text-up" : r.net < 0 ? "text-down" : "text-term-dim"}`}>
-                {r.tot ? `${r.net > 0 ? "+" : r.net < 0 ? "−" : ""}${compact(Math.abs(r.net))}` : r.warming ? "warming" : "–"}
-              </span>
-            </div>
-          ))}
+          <table className={TBL}>
+            <thead>
+              <tr>
+                <th className={`${TH} text-left`}>Window</th>
+                <th className={`${TH} text-right`}>Buying</th>
+                <th className={`${TH} text-right`}>Selling</th>
+                <th className={`${TH} text-right`}>Net</th>
+                <th className={`${TH} text-right`}>Buy %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {flowRows.map((r) => (
+                <tr key={r.w} className={TR}>
+                  <td className={`${TD} text-term-dim`}>{r.label}</td>
+                  {r.tot ? (
+                    <>
+                      <td className={`${TD} text-right text-up`}>{compact(r.buy)}</td>
+                      <td className={`${TD} text-right text-down`}>{compact(r.sell)}</td>
+                      <td className={`${TD} text-right font-semibold ${r.net > 0 ? "text-up" : r.net < 0 ? "text-down" : "text-term-dim"}`}>
+                        {r.net > 0 ? "+" : r.net < 0 ? "−" : ""}
+                        {compact(Math.abs(r.net))}
+                      </td>
+                      <td className={`${TD} text-right ${r.tone === "up" ? "text-up" : r.tone === "down" ? "text-down" : "text-term-text"}`}>
+                        {Math.round((r.buy / r.tot) * 100)}%
+                      </td>
+                    </>
+                  ) : (
+                    <td colSpan={4} className={`${TD} text-right text-term-dim`}>
+                      {r.closed ? "closed" : r.warming ? "warming up" : "–"}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
           <div className="text-[11px] text-term-dim">
             {flow15?.closed
               ? "Market closed — tracking resumes 09:15."
@@ -384,11 +480,45 @@ export function HomeDashboard() {
         <Card title="Volatility" go="vol" right={vs?.verdict && <Chip tone={volTone}>{vs.verdict.toUpperCase()}</Chip>}>
           {vol ? (
             <>
-              <div className="grid grid-cols-3 gap-2">
-                <Stat label="ATM IV" value={atmIV != null ? `${nf(atmIV, 1)}%` : "–"} />
-                <Stat label="IV 7d" value={vol.iv7 != null ? `${nf(vol.iv7, 1)}%` : "–"} />
-                <Stat label="Realized" value={vol.rv?.rv10 != null ? `${nf(vol.rv.rv10, 1)}%` : "–"} />
-              </div>
+              <table className={TBL}>
+                <thead>
+                  <tr>
+                    <th className={`${TH} text-left`}>Horizon</th>
+                    <th className={`${TH} text-right`}>Implied (IV)</th>
+                    <th className={`${TH} text-right`}>Realized (RV)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className={TR}>
+                    <td className={`${TD} text-term-dim`}>Front ATM{vol.term?.[0]?.expiry ? ` · ${vol.term[0].expiry.slice(0, 6)}` : ""}</td>
+                    <td className={`${TD} text-right font-semibold text-term-text`}>{pct(atmIV)}</td>
+                    <td className={`${TD} text-right text-term-text`}>{pct(vol.rv?.today?.rv)}</td>
+                  </tr>
+                  <tr className={TR}>
+                    <td className={`${TD} text-term-dim`}>1 week</td>
+                    <td className={`${TD} text-right text-term-text`}>{pct(vol.iv7)}</td>
+                    <td className={`${TD} text-right text-term-text`}>{pct(vol.rv?.rv5)}</td>
+                  </tr>
+                  <tr className={TR}>
+                    <td className={`${TD} text-term-dim`}>2 weeks</td>
+                    <td className={`${TD} text-right text-term-dim`}>–</td>
+                    <td className={`${TD} text-right text-term-text`}>{pct(vol.rv?.rv10)}</td>
+                  </tr>
+                  <tr className={TR}>
+                    <td className={`${TD} text-term-dim`}>1 month</td>
+                    <td className={`${TD} text-right text-term-text`}>{pct(vol.iv30)}</td>
+                    <td className={`${TD} text-right text-term-text`}>{pct(vol.rv?.rv20)}</td>
+                  </tr>
+                  {vol.vrp && (
+                    <tr className="border-t border-term-border font-semibold">
+                      <td className={`${TD} text-term-text`}>IV ÷ RV (1 month)</td>
+                      <td colSpan={2} className={`${TD} text-right ${volTone === "down" ? "text-down" : volTone === "up" ? "text-up" : "text-term-text"}`}>
+                        ×{nf(vol.vrp.ratio, 2)}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
               {vs && <p className="text-[12px] leading-snug text-term-text">{vs.headline}</p>}
             </>
           ) : (
