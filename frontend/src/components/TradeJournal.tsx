@@ -90,6 +90,57 @@ function DayBars({ days }: { days: { date: string; pnl: number; trades: number }
   );
 }
 
+type Mode = "all" | "paper" | "live";
+const MODE_LS = "journal.mode";
+
+const istDay = (ts: number) =>
+  new Date(ts * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); // YYYY-MM-DD
+
+/** Same figures as the backend's journal_stats, over whichever trades are
+ *  shown -- so the cards, curve and daily bars follow the Paper / Live filter. */
+function computeStats(trades: JournalTrade[]): JournalStats {
+  const chrono = [...trades].sort((a, b) => a.closedTs - b.closedTs);
+  const wins = chrono.filter((t) => t.pnl > 0);
+  const losses = chrono.filter((t) => t.pnl < 0);
+  const grossWin = wins.reduce((s, t) => s + t.pnl, 0);
+  const grossLoss = losses.reduce((s, t) => s + t.pnl, 0);
+  let cum = 0;
+  const equityCurve = chrono.map((t) => ({ ts: t.closedTs, cum: (cum += t.pnl) }));
+  const days = new Map<string, { date: string; pnl: number; trades: number }>();
+  const syms = new Map<string, { symbol: string; pnl: number; trades: number; wins: number }>();
+  for (const t of chrono) {
+    const d = days.get(istDay(t.closedTs)) ?? { date: istDay(t.closedTs), pnl: 0, trades: 0 };
+    d.pnl += t.pnl;
+    d.trades += 1;
+    days.set(d.date, d);
+    const s = syms.get(t.symbol) ?? { symbol: t.symbol, pnl: 0, trades: 0, wins: 0 };
+    s.pnl += t.pnl;
+    s.trades += 1;
+    if (t.pnl > 0) s.wins += 1;
+    syms.set(t.symbol, s);
+  }
+  const holds = chrono.filter((t) => t.openedTs).map((t) => t.closedTs - (t.openedTs as number));
+  const n = chrono.length;
+  return {
+    totalTrades: n,
+    wins: wins.length,
+    losses: losses.length,
+    winRate: n ? (100 * wins.length) / n : 0,
+    totalPnl: grossWin + grossLoss,
+    avgWin: wins.length ? grossWin / wins.length : 0,
+    avgLoss: losses.length ? grossLoss / losses.length : 0,
+    bestTrade: n ? Math.max(...chrono.map((t) => t.pnl)) : 0,
+    worstTrade: n ? Math.min(...chrono.map((t) => t.pnl)) : 0,
+    profitFactor: grossLoss < 0 ? grossWin / Math.abs(grossLoss) : null,
+    avgHoldMin: holds.length ? holds.reduce((a, b) => a + b, 0) / holds.length / 60 : 0,
+    equityCurve,
+    byDay: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)),
+    bySymbol: [...syms.values()]
+      .map(({ wins: w, ...s }) => ({ ...s, winRate: s.trades ? (100 * w) / s.trades : 0 }))
+      .sort((a, b) => Math.abs(b.pnl) - Math.abs(a.pnl)),
+  };
+}
+
 const FLAG_ICON: Record<JournalReview["flags"][number]["kind"], string> = {
   reentry: "↺",
   flip: "⇄",
@@ -165,19 +216,33 @@ function DayReview({ refresh }: { refresh: number }) {
 }
 
 export function TradeJournal() {
-  const [stats, setStats] = useState<JournalStats | null>(null);
-  const [trades, setTrades] = useState<JournalTrade[]>([]);
+  const [allTrades, setAllTrades] = useState<JournalTrade[] | null>(null);
   const [busy, setBusy] = useState(true);
   const [symbolFilter, setSymbolFilter] = useState("");
   const [syncNote, setSyncNote] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const [mode, setModeState] = useState<Mode>(() => {
+    try {
+      const v = localStorage.getItem(MODE_LS);
+      return v === "paper" || v === "live" ? v : "all";
+    } catch {
+      return "all";
+    }
+  });
+  const setMode = (m: Mode) => {
+    setModeState(m);
+    setSymbolFilter("");
+    try {
+      localStorage.setItem(MODE_LS, m);
+    } catch {
+      /* private mode */
+    }
+  };
 
   const load = async () => {
     setBusy(true);
     try {
-      const [st, tr] = await Promise.all([api.journalStats(), api.journal({ limit: 300 })]);
-      setStats(st);
-      setTrades(tr);
+      setAllTrades(await api.journal({ limit: 5000 }));
       setRefresh((n) => n + 1);
     } finally {
       setBusy(false);
@@ -201,13 +266,38 @@ export function TradeJournal() {
     return () => clearInterval(id);
   }, []);
 
+  const trades = useMemo(
+    () => (allTrades ?? []).filter((t) => mode === "all" || t.mode === mode),
+    [allTrades, mode]
+  );
+  const stats = useMemo(() => (allTrades ? computeStats(trades) : null), [allTrades, trades]);
+  const counts = useMemo(
+    () => ({
+      all: allTrades?.length ?? 0,
+      paper: allTrades?.filter((t) => t.mode === "paper").length ?? 0,
+      live: allTrades?.filter((t) => t.mode === "live").length ?? 0,
+    }),
+    [allTrades]
+  );
   const filtered = symbolFilter ? trades.filter((t) => t.symbol === symbolFilter) : trades;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto p-4">
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <h2 className="text-base font-semibold">Trade Journal</h2>
-        <span className="rounded bg-term-border px-1.5 py-0.5 text-2xs text-term-dim">Paper + live Flattrade</span>
+        <div className="seg" title="Show paper trades, live Flattrade trades, or both — every figure below follows it">
+          {(
+            [
+              ["all", "All"],
+              ["paper", "Paper"],
+              ["live", "Live"],
+            ] as const
+          ).map(([m, label]) => (
+            <button key={m} onClick={() => setMode(m)} className={mode === m ? "on" : ""}>
+              {label} <span className="num opacity-70">{counts[m]}</span>
+            </button>
+          ))}
+        </div>
         {syncNote && <span className="text-2xs text-term-dim">{syncNote}</span>}
         <button
           onClick={syncLive}
@@ -225,14 +315,17 @@ export function TradeJournal() {
         </button>
       </div>
 
-      <DayReview refresh={refresh} />
+      {mode !== "paper" && <DayReview refresh={refresh} />}
 
       {busy && !stats ? (
         <div className="p-6 text-center text-sm text-term-dim">Loading…</div>
       ) : !stats || stats.totalTrades === 0 ? (
         <div className="rounded border border-term-border bg-term-panel p-6 text-center text-sm text-term-dim">
-          No closed trades yet. Paper trades appear once a position is closed; live Flattrade trades are
-          copied in every 5 minutes while the broker is connected (or tap ⟳ Sync live).
+          {mode === "paper"
+            ? "No closed paper trades yet. They appear once a paper position is closed — manually, via the Close button, or via an SL/target hit."
+            : mode === "live"
+            ? "No live Flattrade trades yet. They're copied in every 5 minutes while the broker is connected (or tap ⟳ Sync live)."
+            : "No closed trades yet. Paper trades appear once a position is closed; live Flattrade trades are copied in every 5 minutes while the broker is connected (or tap ⟳ Sync live)."}
         </div>
       ) : (
         <>
