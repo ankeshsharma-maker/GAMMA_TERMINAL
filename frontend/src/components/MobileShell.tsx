@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, sk, compact, signColor, px } from "../lib/format";
@@ -226,19 +226,28 @@ import { LogoMark } from "./Logo";
  *  landing-page nav (which still exists -- Chart.tsx's own Chain/OI/Trend
  *  OI/OI Profile switcher and each view's own internal navigation still
  *  reach everything else; these are just the fast one-tap paths). */
-const TOP_NAV: { v: View; label: string }[] = [
-  { v: "scrip", label: "OI" },
-  { v: "trendingoi", label: "Trend OI" },
-  { v: "flow", label: "Flow" },
-  { v: "orderflow", label: "OrderFlow" },
-  { v: "vol", label: "Vol" },
-  { v: "scanner", label: "Screener" },
-  { v: "auto", label: "Auto" },
-  { v: "builder", label: "Build" },
-  { v: "chart", label: "Chart" },
-  { v: "scalper", label: "Scalp" },
-  { v: "journal", label: "Journal" },
+type TabGroup = "analysis" | "trade" | "funds";
+type TopTab = { v: View; label: string; group: TabGroup };
+/** in the user's order of use (2026-09-24): analysis, then trading, then
+ *  funds / review — a thin divider marks each group on the tab row */
+const TOP_NAV: TopTab[] = [
+  { v: "chart", label: "Chart", group: "analysis" },
+  { v: "scrip", label: "OI", group: "analysis" },
+  { v: "trendingoi", label: "Trend OI", group: "analysis" },
+  { v: "flow", label: "Flow", group: "analysis" },
+  { v: "orderflow", label: "OrderFlow", group: "analysis" },
+  { v: "vol", label: "Vol", group: "analysis" },
+  { v: "scanner", label: "Screener", group: "analysis" },
+  { v: "builder", label: "Build", group: "trade" },
+  { v: "auto", label: "Auto", group: "trade" },
+  { v: "scalper", label: "Scalp", group: "trade" },
+  { v: "journal", label: "Journal", group: "funds" },
 ];
+const GROUP_NAME: Record<TabGroup, string> = {
+  analysis: "Analysis",
+  trade: "Trading",
+  funds: "Funds & review",
+};
 const tabCls = (active: boolean) =>
   `rounded border text-[11px] font-semibold ${
     active
@@ -250,7 +259,15 @@ const tabCls = (active: boolean) =>
  *  chart/data lost on a 375px phone). Fades mark the edges that have more
  *  tabs behind them; on a screen wide enough for all of them (an unfolded
  *  Fold) they grow to fill the row instead. */
-function ScrollTabs({ view, setView }: { view: View; setView: (v: View) => void }) {
+function ScrollTabs({
+  tabs,
+  view,
+  setView,
+}: {
+  tabs: (TopTab & { section: string })[];
+  view: View;
+  setView: (v: View) => void;
+}) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [edge, setEdge] = useState({ left: false, right: false });
   const measure = () => {
@@ -291,15 +308,19 @@ function ScrollTabs({ view, setView }: { view: View; setView: (v: View) => void 
         onScroll={measure}
         className="no-scrollbar flex items-center gap-1 overflow-x-auto px-1.5 py-1.5"
       >
-        {TOP_NAV.map((n) => (
-          <button
-            key={n.v}
-            data-v={n.v}
-            onClick={() => setView(n.v)}
-            className={`shrink-0 grow whitespace-nowrap px-2.5 py-1.5 ${tabCls(view === n.v)}`}
-          >
-            {n.label}
-          </button>
+        {tabs.map((n, i) => (
+          <Fragment key={n.v}>
+            {i > 0 && tabs[i - 1].section !== n.section && (
+              <span className="mx-0.5 h-5 w-px shrink-0 bg-term-dim/50" aria-hidden="true" />
+            )}
+            <button
+              data-v={n.v}
+              onClick={() => setView(n.v)}
+              className={`shrink-0 grow whitespace-nowrap px-2.5 py-1.5 ${tabCls(view === n.v)}`}
+            >
+              {n.label}
+            </button>
+          </Fragment>
         ))}
       </div>
       {edge.left && (
@@ -311,6 +332,116 @@ function ScrollTabs({ view, setView }: { view: View; setView: (v: View) => void 
         </span>
       )}
     </nav>
+  );
+}
+
+const TOP_SLOTS = 5;
+const TAB_TOP_LS = "mobile.tabTop";
+
+/** the tabs the user numbered 1-5 (this device) — may be fewer than 5, or
+ *  none (= the usual order). Unknown entries are dropped. */
+function loadTabTop(): View[] {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(TAB_TOP_LS) || "null");
+    if (Array.isArray(v)) {
+      const all = TOP_NAV.map((n) => n.v);
+      return [...new Set(v)]
+        .filter((x): x is View => all.includes(x as View))
+        .slice(0, TOP_SLOTS);
+    }
+  } catch {
+    /* private mode / bad JSON — usual order */
+  }
+  return [];
+}
+
+/** the tab row: the numbered tabs first, in number order, then every other
+ *  tab in the usual (grouped) order. `section` drives the dividers. */
+const orderedTabs = (top: View[]) => [
+  ...top.flatMap((v) => TOP_NAV.filter((n) => n.v === v).map((n) => ({ ...n, section: "top" }))),
+  ...TOP_NAV.filter((n) => !top.includes(n.v)).map((n) => ({ ...n, section: n.group as string })),
+];
+
+/** bottom sheet: every top tab as a button. Tap them in the order you want
+ *  them first — each tap gives the next number (up to 5); tapping a numbered
+ *  one takes it out and the numbers after it close up. Applies live. */
+function TabOrderSheet({
+  top,
+  onChange,
+  onClose,
+}: {
+  top: View[];
+  onChange: (t: View[]) => void;
+  onClose: () => void;
+}) {
+  const full = top.length >= TOP_SLOTS;
+  const tap = (v: View) => {
+    if (top.includes(v)) onChange(top.filter((x) => x !== v));
+    else if (!full) onChange([...top, v]);
+  };
+  const btn = "rounded border border-term-dim/70 px-2.5 py-1 text-xs text-term-dim";
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={onClose}>
+      <div
+        className="max-h-[85%] w-full max-w-md overflow-y-auto rounded-t-xl border border-term-border bg-term-panel p-3"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-sm font-semibold text-term-text">Top tab order</div>
+        <div className="mb-2.5 mt-0.5 text-[11px] leading-snug text-term-dim">
+          Tap tabs in the order you want them first — up to {TOP_SLOTS}. Tap a numbered tab to
+          take it out. The rest follow in the usual order.
+        </div>
+        {(Object.keys(GROUP_NAME) as TabGroup[]).map((g) => (
+          <div key={g} className="mb-2">
+            <div className="mb-1 text-[9px] font-semibold uppercase tracking-wide text-term-dim">
+              {GROUP_NAME[g]}
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {TOP_NAV.filter((n) => n.group === g).map((n) => {
+                const num = top.indexOf(n.v) + 1;
+                return (
+                  <button
+                    key={n.v}
+                    onClick={() => tap(n.v)}
+                    disabled={!num && full}
+                    className={`relative rounded border px-2 py-2.5 text-[13px] font-semibold ${
+                      num
+                        ? "border-term-accent/60 bg-term-accent/15 text-term-accent"
+                        : "border-term-dim/70 bg-term-border/40 text-term-dim disabled:opacity-35"
+                    }`}
+                  >
+                    {num > 0 && (
+                      <span className="num absolute -left-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-term-accent text-[11px] font-bold text-white">
+                        {num}
+                      </span>
+                    )}
+                    {n.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        <div className="mt-2.5 text-[10px] text-term-dim">
+          {top.length === 0
+            ? "Nothing numbered — the usual order."
+            : `${top.length} of ${TOP_SLOTS} numbered${full ? " — tap one to swap it out" : ""}`}
+        </div>
+        <div className="mt-3 flex items-center gap-2">
+          <button onClick={() => onChange([])} className={btn}>
+            Clear
+          </button>
+          <span className="text-[10px] text-term-dim">saved on this device</span>
+          <button
+            onClick={onClose}
+            className="ml-auto rounded border border-term-accent/50 bg-term-accent/15 px-4 py-1.5 text-xs font-semibold text-term-accent"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -434,6 +565,18 @@ export function MobileShell() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // full screen on Chart / Scalp: the top bar, tab row and bottom bar go away
+  const [tabTop, setTabTopState] = useState<View[]>(loadTabTop);
+  const [orderOpen, setOrderOpen] = useState(false);
+  const setTabTop = (t: View[]) => {
+    setTabTopState(t);
+    try {
+      localStorage.setItem(TAB_TOP_LS, JSON.stringify(t));
+    } catch {
+      /* ignore */
+    }
+  };
+  const tabs = orderedTabs(tabTop);
+
   const [full, setFull] = useState(false);
   const fullOk = view === "chart" || view === "scalper";
   const isFull = full && fullOk;
@@ -506,7 +649,7 @@ export function MobileShell() {
           </div>
 
           {/* ── top tab row — ONE row, however many tabs there are ──── */}
-          <ScrollTabs view={view} setView={setView} />
+          <ScrollTabs tabs={tabs} view={view} setView={setView} />
 
           {brokerOpen && (
             <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-2 py-1.5">
@@ -544,6 +687,16 @@ export function MobileShell() {
                 ⚙ Settings
               </button>
               <button
+                onClick={() => {
+                  setBrokerOpen(false);
+                  setOrderOpen(true);
+                }}
+                className="rounded border border-term-dim/70 px-2 py-1 text-2xs text-term-dim hover:text-term-text"
+                title="Choose the first 5 top tabs"
+              >
+                ⇅ Tabs
+              </button>
+              <button
                 onClick={lockNow}
                 className="rounded border border-term-dim/70 px-2 py-1 text-2xs text-term-dim hover:text-term-text"
                 title="Lock the app — require the password / PIN again"
@@ -555,6 +708,9 @@ export function MobileShell() {
         </>
       )}
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
+      {orderOpen && (
+        <TabOrderSheet top={tabTop} onChange={setTabTop} onClose={() => setOrderOpen(false)} />
+      )}
 
       <NotificationPanel />
 
