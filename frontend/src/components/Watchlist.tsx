@@ -135,10 +135,10 @@ function MarketRow({
         }`}
       >
         <button onClick={open} title={`Chart ${wName(w)}`} className="min-w-0 flex-1 px-2 py-1.5 text-left">
-          <span className="block truncate text-[12.5px] font-medium text-term-text">{wFull(w)}</span>
+          <span className="block truncate text-[12px] font-medium text-term-text">{wFull(w)}</span>
           <span className="mt-0.5 flex items-baseline gap-1.5 whitespace-nowrap">
             <span className="text-[10px] text-term-dim">{wSeg(w)}</span>
-            <span className={`tabular-nums ml-auto text-[12.5px] font-medium ${col}`}>
+            <span className={`tabular-nums ml-auto text-[12px] font-medium ${col}`}>
               {has && <span className="mr-1 text-[8px]">{up ? "▲" : "▼"}</span>}
               {px != null ? nf(px) : "–"}
             </span>
@@ -157,18 +157,18 @@ function MarketRow({
       <button
         onClick={open}
         title={`Chart ${wName(w)}`}
-        className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left active:bg-term-border/40"
+        className="flex min-w-0 flex-1 items-center gap-3 px-3.5 py-2.5 text-left active:bg-term-border/40"
       >
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[15px] font-medium text-term-text">{wFull(w)}</span>
-          <span className="mt-1 block text-xs text-term-dim">{wSeg(w)}</span>
+          <span className="block truncate text-[13px] font-medium text-term-text">{wFull(w)}</span>
+          <span className="mt-0.5 block text-[11px] text-term-dim">{wSeg(w)}</span>
         </span>
         <span className="flex shrink-0 flex-col items-end">
-          <span className={`tabular-nums flex items-center gap-1.5 text-[15px] font-medium ${col}`}>
-            {has && <span className="text-[10px] leading-none">{up ? "▲" : "▼"}</span>}
+          <span className={`tabular-nums flex items-center gap-1.5 text-[13px] font-medium ${col}`}>
+            {has && <span className="text-[9px] leading-none">{up ? "▲" : "▼"}</span>}
             {px != null ? nf(px) : "–"}
           </span>
-          <span className="tabular-nums mt-1 text-xs text-term-dim">
+          <span className="tabular-nums mt-0.5 text-[11px] text-term-dim">
             {has ? `${nf(chg ?? 0)} (${nf(pct ?? 0)}%)` : " "}
           </span>
         </span>
@@ -377,7 +377,7 @@ export function Watchlist({ band }: { band?: ReactNode } = {}) {
           onClick={() => setListsOpen((o) => !o)}
           title="Your lists — switch, rename, add, delete"
           className={`flex min-w-0 items-center gap-1.5 py-1 font-semibold tracking-tight text-term-text ${
-            compact ? "pl-1 text-[13px]" : "text-[19px]"
+            compact ? "pl-1 text-[13px]" : "text-[16px]"
           }`}
         >
           <span className="truncate">Marketwatch</span>
@@ -471,7 +471,7 @@ export function Watchlist({ band }: { band?: ReactNode } = {}) {
               key={i}
               onClick={() => pickList(i)}
               title={watchlists.lists[i]?.name ?? `New list ${i + 1}`}
-              className={`relative flex-1 ${compact ? "py-1.5 text-[13px]" : "py-2.5 text-[15px]"} ${
+              className={`relative flex-1 ${compact ? "py-1.5 text-[13px]" : "py-2 text-[13px]"} ${
                 i === active ? "font-semibold text-term-accent" : "text-term-text hover:text-term-accent"
               }`}
             >
