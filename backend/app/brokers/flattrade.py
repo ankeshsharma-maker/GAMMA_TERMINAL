@@ -115,6 +115,11 @@ _TSYM_RE = re.compile(r"^([A-Z]+)(\d{2}[A-Z]{3}\d{2})([CP])(\d+(?:\.\d+)?)$")
 # 24th (the same PositionBook row's dname reads "SENSEX 24 SEP 74600 CE"),
 # not a 26-Sep expiry.
 _BFO_TSYM_RE = re.compile(r"^([A-Z]+)(\d{2})([A-Z]{3})(\d+(?:\.\d+)?)(CE|PE)$")
+# Weekly BFO contracts do carry the day: YY + a one-character month (1-9 =
+# Jan-Sep, O/N/D = Oct/Nov/Dec) + DD -- "SENSEX26O0174800CE" is 01-Oct-2026
+# (its SearchScrip dname reads "SENSEX 01 OCT 74800 CE"; seen live 2026-09-24).
+_BFO_WEEKLY_RE = re.compile(r"^([A-Z]+)(\d{2})([1-9OND])(\d{2})(\d+(?:\.\d+)?)(CE|PE)$")
+_WEEKLY_MONTH = {**{str(i): i for i in range(1, 10)}, "O": 10, "N": 11, "D": 12}
 _BSE_INDICES = frozenset({"SENSEX", "BANKEX", "SENSEX50", "SNSX50"})
 # PositionBook/OrderBook display name for BSE legs: "SENSEX 24 SEP 74600 CE"
 _DNAME_RE = re.compile(r"^([A-Z0-9]+)\s+(\d{1,2})\s+([A-Z]{3})\s+(\d+(?:\.\d+)?)\s+(CE|PE)$")
@@ -154,9 +159,10 @@ def _bfo_month_expiry(name: str, year: int, mon: str) -> datetime | None:
 def parse_noren_tsym(tsym: str, dname: str | None = None) -> dict | None:
     """Reverse of resolve_nfo's tsym build: 'NIFTY08SEP26C24050' ->
     {symbol, expiry ('08-Sep-2026'), optionType, strike}. Also handles BSE's
-    YY+MON, suffix-CE/PE shape (see _BFO_TSYM_RE); pass the PositionBook row's
-    `dname` when available -- it carries the exact expiry day. None if tsym
-    isn't an option in either conventional form (e.g. an equity '-EQ' symbol)."""
+    monthly YY+MON and weekly YY+M+DD suffix-CE/PE shapes (_BFO_TSYM_RE /
+    _BFO_WEEKLY_RE); pass the PositionBook row's `dname` when available -- a
+    monthly tsym needs it for the exact expiry day. None if tsym isn't an
+    option in any of these forms (e.g. an equity '-EQ' symbol)."""
     up = (tsym or "").upper()
     m = _TSYM_RE.match(up)
     if m:
@@ -184,6 +190,19 @@ def parse_noren_tsym(tsym: str, dname: str | None = None) -> dict | None:
         if d is None:
             d = _bfo_month_expiry(name, 2000 + int(yy), mon)
         if d is None:
+            return None
+        return {
+            "symbol": name,
+            "expiry": d.strftime("%d-%b-%Y"),
+            "optionType": ot,
+            "strike": float(strike_s),
+        }
+    m = _BFO_WEEKLY_RE.match(up)
+    if m:
+        name, yy, mc, dd, strike_s, ot = m.groups()
+        try:
+            d = datetime(2000 + int(yy), _WEEKLY_MONTH[mc], int(dd))
+        except ValueError:
             return None
         return {
             "symbol": name,
