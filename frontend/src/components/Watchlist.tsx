@@ -37,6 +37,10 @@ const wName = (w: WatchQuote) =>
     : w.kind === "future"
     ? `${w.symbol} ${w.expiry} FUT`
     : w.symbol;
+/** row label: a future's expiry without the year ("NIFTY 30-Sep FUT") so it
+ *  isn't cut off on a phone; the full name stays in the tooltip */
+const wLabel = (w: WatchQuote) =>
+  w.kind === "future" ? `${w.symbol} ${(w.expiry ?? "").replace(/-\d{4}$/, "")} FUT` : wName(w);
 
 function sortWatch(rows: WatchQuote[], { k, dir }: { k: SortKey; dir: 1 | -1 }) {
   if (k === "none") return rows;
@@ -68,12 +72,14 @@ const wAbsChg = (w: WatchQuote) => {
   return p != null && c != null ? (p * c) / 100 : null;
 };
 
-/** broker-style quote row: name + exchange on the left, LTP + change on the
- *  right, divider between rows. Tapping the row opens the chart for that symbol. */
-function QuoteRow({ w, queue }: { w: WatchQuote; queue: string[] }) {
+/** broker-style quote row: name + exchange on the left, LTP with its change
+ *  beside it in brackets on the right, divider between rows. `stacked` (the
+ *  narrow grid cells) puts the change under the price instead. Tapping the
+ *  row opens the chart for that symbol. No order buttons here, by request. */
+function QuoteRow({ w, queue, stacked = false }: { w: WatchQuote; queue: string[]; stacked?: boolean }) {
   const {
     symbol, selectSymbol, selectExpiry, setChartInstrument, chartInstrument, setView, removeWatch,
-    quickTradeFuture, scalpLots, setChartQueue,
+    setChartQueue,
   } = useStore();
   const on = w.kind === "option" ? chartInstrument === w.key : w.symbol === symbol;
   const px = wPx(w);
@@ -81,6 +87,7 @@ function QuoteRow({ w, queue }: { w: WatchQuote; queue: string[] }) {
   const chg = wAbsChg(w);
   const up = (pct ?? 0) >= 0;
   const col = pct == null ? "text-term-text" : up ? "text-up" : "text-down";
+  const sg = (v: number) => (v >= 0 ? "+" : "−");
   return (
     <div
       className={`group relative flex items-center gap-2 border-b border-term-border/60 px-3 py-2 transition-colors ${
@@ -101,39 +108,45 @@ function QuoteRow({ w, queue }: { w: WatchQuote; queue: string[] }) {
         title={`Chart ${wName(w)}`}
         className="min-w-0 flex-1 text-left"
       >
-        <div className="truncate text-sm font-semibold text-term-text">{wName(w)}</div>
-        <div className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-500">
-          {wExch(w)}
-        </div>
-      </button>
-      <div className="flex shrink-0 flex-col items-end leading-tight">
-        <span className={`num text-[15px] font-semibold tabular-nums ${col}`}>
-          {px != null ? nf(px) : "–"}
-        </span>
-        {(chg != null || pct != null) && (
-          <span className={`num mt-0.5 flex items-center gap-1 text-xs tabular-nums ${col}`}>
-            <span>{up ? "↑" : "↓"}</span>
-            {chg != null && <span>{nf(Math.abs(chg))}</span>}
-            {pct != null && <span>({nf(Math.abs(pct), 2)}%)</span>}
-          </span>
+        <div className="truncate text-sm font-semibold text-term-text">{wLabel(w)}</div>
+        {/* option rows sit under a "SENSEX · 24-Sep" header already — the
+            exchange tag under every strike only cost a line */}
+        {w.kind !== "option" && (
+          <div className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-500">
+            {wExch(w)}
+          </div>
         )}
-      </div>
-      {w.kind === "future" && w.expiry && (
-        <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => quickTradeFuture(w.symbol, w.expiry!, "BUY", scalpLots)}
-            title={`Buy ${scalpLots} lot(s) of ${wName(w)}`}
-            className="rounded border border-up/40 bg-up/10 px-1.5 py-0.5 text-[10px] font-semibold text-up transition hover:bg-up/20"
-          >
-            Buy
-          </button>
-          <button
-            onClick={() => quickTradeFuture(w.symbol, w.expiry!, "SELL", scalpLots)}
-            title={`Sell ${scalpLots} lot(s) of ${wName(w)}`}
-            className="rounded border border-down/40 bg-down/10 px-1.5 py-0.5 text-[10px] font-semibold text-down transition hover:bg-down/20"
-          >
-            Sell
-          </button>
+      </button>
+      {stacked ? (
+        <div className="flex shrink-0 flex-col items-end leading-tight">
+          <span className={`num text-[15px] font-semibold tabular-nums ${col}`}>
+            {px != null ? nf(px) : "–"}
+          </span>
+          {(chg != null || pct != null) && (
+            <span className={`num mt-0.5 flex items-center gap-1 text-xs tabular-nums ${col}`}>
+              <span>{up ? "↑" : "↓"}</span>
+              {chg != null && <span>{nf(Math.abs(chg))}</span>}
+              {pct != null && <span>({nf(Math.abs(pct), 2)}%)</span>}
+            </span>
+          )}
+        </div>
+      ) : (
+        <div className="flex shrink-0 items-baseline gap-1 leading-tight">
+          <span className={`num text-[15px] font-semibold tabular-nums ${col}`}>
+            {px != null ? nf(px) : "–"}
+          </span>
+          {(chg != null || pct != null) && (
+            <span className={`num whitespace-nowrap text-xs tabular-nums ${col}`}>
+              (
+              {[
+                chg != null ? `${sg(chg)}${nf(Math.abs(chg))}` : null,
+                pct != null ? `${sg(pct)}${nf(Math.abs(pct), 2)}%` : null,
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              )
+            </span>
+          )}
         </div>
       )}
       <button
@@ -170,7 +183,6 @@ export function Watchlist() {
     wlAddFuture,
     wlClear,
     selectSymbol,
-    scalpLots,
     symClassOk,
     setSymClass,
   } = useStore();
@@ -325,7 +337,9 @@ export function Watchlist() {
 
   // Next / Prev on the chart follow the underlyings in the order shown here
   const queueSyms = nonOpts.filter((w) => w.kind !== "future").map((w) => w.symbol);
-  const rowFor = (w: WatchQuote) => <QuoteRow key={w.key} w={w} queue={queueSyms} />;
+  const rowFor = (w: WatchQuote, stacked = false) => (
+    <QuoteRow key={w.key} w={w} queue={queueSyms} stacked={stacked} />
+  );
 
   const optionSection = (
     <div className="flex flex-col gap-2">
@@ -623,10 +637,10 @@ export function Watchlist() {
                   className="grid gap-1 p-2"
                   style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}
                 >
-                  {nonOpts.map(rowFor)}
+                  {nonOpts.map((w) => rowFor(w, true))}
                 </div>
               ) : (
-                <div className="flex flex-col">{nonOpts.map(rowFor)}</div>
+                <div className="flex flex-col">{nonOpts.map((w) => rowFor(w))}</div>
               ))}
             {strikeBlocks.length > 0 && <div className="p-2">{optionSection}</div>}
           </div>
@@ -634,7 +648,7 @@ export function Watchlist() {
       </div>
 
       <div className="border-t border-term-border bg-term-panel/30 px-3 py-1.5 text-[9px] leading-tight text-term-dim">
-        1-click = {scalpLots} lot · tap a symbol or option to chart it
+        tap a symbol or option to chart it
       </div>
     </div>
   );
