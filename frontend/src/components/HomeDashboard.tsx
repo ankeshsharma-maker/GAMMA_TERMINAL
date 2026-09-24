@@ -269,26 +269,67 @@ export function HomeDashboard() {
         <Card title="Trend direction · price action" go="chart" right={trend && <Chip tone={OVERALL[trend.overall].tone}>{OVERALL[trend.overall].word}</Chip>}>
           {trend ? (
             <>
-              <table className="w-full text-[12px] tabular-nums">
+              <table className={TBL}>
                 <thead>
-                  <tr className="text-[10px] uppercase tracking-wide text-term-dim">
-                    <th className="py-0.5 text-left font-medium">Timeframe</th>
-                    <th className="py-0.5 text-center font-medium">EMA 9/21</th>
-                    <th className="py-0.5 text-center font-medium">Supertrend</th>
+                  <tr>
+                    <th className={`${TH} text-left`}>Timeframe</th>
+                    <th className={`${TH} text-center`}>EMA 9/21</th>
+                    <th className={`${TH} text-center`}>Supertrend</th>
+                    <th className={`${TH} text-right`}>Structure</th>
                   </tr>
                 </thead>
                 <tbody>
                   {trend.tfs.map((t) => (
-                    <tr key={t.label} className="border-t border-term-border/40">
-                      <td className="py-1 text-term-text">{t.label}</td>
-                      <td className={`py-1 text-center text-[14px] ${dirCls(t.ema)}`}>{arrow(t.ema)}</td>
-                      <td className={`py-1 text-center text-[14px] ${dirCls(t.st)}`}>{arrow(t.st)}</td>
+                    <tr key={t.label} className={TR}>
+                      <td className={`${TD} text-term-text`}>{t.label}</td>
+                      <td className={`${TD} text-center text-[14px] ${dirCls(t.ema)}`}>{arrow(t.ema)}</td>
+                      <td className={`${TD} text-center text-[14px] ${dirCls(t.st)}`}>{arrow(t.st)}</td>
+                      <td className={`${TD} text-right font-semibold ${dirCls(t.pa?.dir ?? null)}`}>
+                        {t.pa ? (
+                          <>
+                            {arrow(t.pa.dir)} {t.pa.hi} · {t.pa.lo}
+                          </>
+                        ) : (
+                          "–"
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              {trend.tfs.some((t) => t.pa) && (
+                <table className={TBL}>
+                  <thead>
+                    <tr>
+                      <th className={`${TH} text-left`}>Swings</th>
+                      <th className={`${TH} text-right`}>Last high</th>
+                      <th className={`${TH} text-right`}>Last low</th>
+                      <th className={`${TH} text-right`}>Price now</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trend.tfs.map((t) => (
+                      <tr key={t.label} className={TR}>
+                        <td className={`${TD} text-term-text`}>{t.label}</td>
+                        <td className={`${TD} text-right text-term-text`}>{t.pa ? nf(t.pa.lastHigh, 0) : "–"}</td>
+                        <td className={`${TD} text-right text-term-text`}>{t.pa ? nf(t.pa.lastLow, 0) : "–"}</td>
+                        <td
+                          className={`${TD} text-right ${
+                            t.pa?.broke === "up" ? "text-up" : t.pa?.broke === "down" ? "text-down" : "text-term-dim"
+                          }`}
+                        >
+                          {!t.pa ? "–" : t.pa.broke === "up" ? "▲ above high" : t.pa.broke === "down" ? "▼ below low" : "between"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
               <div className="text-[11px] text-term-dim">
-                {trend.up} up · {trend.down} down of {trend.total} signals. Confirms a trend once it's under way — it lags at turns.
+                {trend.up} up · {trend.down} down of {trend.total} signals. Structure: HH·HL (higher highs, higher lows) = up,
+                LH·LL (lower highs, lower lows) = down, from swing points (a candle beating the 2 on each side). A close through
+                the last swing confirms the trend — or, against it, is the first sign of a turn. Confirms a trend once it's under
+                way — it lags at turns.
               </div>
             </>
           ) : (
