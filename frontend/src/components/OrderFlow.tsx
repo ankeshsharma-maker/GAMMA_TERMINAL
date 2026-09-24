@@ -15,15 +15,17 @@ const PROFILE_WINDOWS: [string, string][] = [
 ];
 type Pt = { t: number; v: number };
 
-/** Buying share (0-100%) per sample. Each series point already holds the flow over
- *  its whole window, so it is plotted as-is -- summing points would count the same
- *  flow once per minute it stays inside the window. */
-const shareSeries = (d: FlowData | null): Pt[] =>
-  (d?.series ?? []).flatMap((p) => {
-    const bull = (p.pw ?? 0) + (p.cb ?? 0);
-    const bear = (p.cw ?? 0) + (p.pb ?? 0);
-    return bull + bear > 0 ? [{ t: p.t, v: (100 * bull) / (bull + bear) }] : [];
-  });
+/** Net flow per sample: buying (put writing + call buying) minus selling (call
+ *  writing + put buying), in contracts. Each series point already holds the flow
+ *  over its whole window, so it is plotted as-is -- summing points would count the
+ *  same flow once per minute it stays inside the window. (Plotting the buying
+ *  SHARE instead pinned the 15 min / 1 hour rows at 0% on a one-way day -- every
+ *  put up, every call down -- so they looked frozen while the flow kept moving.) */
+const netSeries = (d: FlowData | null): Pt[] =>
+  (d?.series ?? []).map((p) => ({
+    t: p.t,
+    v: (p.pw ?? 0) + (p.cb ?? 0) - (p.cw ?? 0) - (p.pb ?? 0),
+  }));
 
 function PressureChart({ lines }: { lines: { w: string; label: string; pts: Pt[] }[] }) {
   const box = useRef<HTMLDivElement>(null);
@@ -64,7 +66,7 @@ function PressureSvg({ lines, all, wd }: { lines: { w: string; label: string; pt
   const gap = 8;
   const axisH = 18;
   const H = lines.length * rowH + (lines.length - 1) * gap + axisH;
-  const m = { l: 44, r: 40 };
+  const m = { l: 44, r: 58 };
   const t0 = Math.min(...all.map((p) => p.t));
   const t1 = Math.max(...all.map((p) => p.t));
   const x = (t: number) => m.l + ((t - t0) / (t1 - t0 || 1)) * (wd - m.l - m.r);
@@ -75,7 +77,7 @@ function PressureSvg({ lines, all, wd }: { lines: { w: string; label: string; pt
   const plotBottom = H - axisH;
 
   return (
-    <svg width={wd} height={H} className="block" role="img" aria-label="Buying share over time: one row each for the 5 min, 15 min and 1 hour windows">
+    <svg width={wd} height={H} className="block" role="img" aria-label="Net buying minus selling over time: one row each for the 5 min, 15 min and 1 hour windows">
       {xt.map((t) => (
         <g key={t}>
           <line x1={x(t)} x2={x(t)} y1={0} y2={plotBottom} stroke="currentColor" strokeOpacity={0.07} className="text-term-dim" />
@@ -86,8 +88,11 @@ function PressureSvg({ lines, all, wd }: { lines: { w: string; label: string; pt
       ))}
       {lines.map((l, r) => {
         const top = r * (rowH + gap);
-        const y = (v: number) => top + (1 - v / 100) * rowH;
-        const mid = y(50);
+        // each row on its own scale: the 1 hour window carries far more
+        // contracts than the 5 min one, and a shared scale would flatten it
+        const rowMax = Math.max(1, ...l.pts.map((p) => Math.abs(p.v)));
+        const mid = top + rowH / 2;
+        const y = (v: number) => mid - (v / rowMax) * (rowH / 2 - 2);
         // one closed area per unbroken run of samples; gaps (closed market, missed
         // samples) stay empty instead of being bridged
         const runs: Pt[][] = [];
@@ -110,7 +115,6 @@ function PressureSvg({ lines, all, wd }: { lines: { w: string; label: string; pt
               </clipPath>
             </defs>
             <rect x={m.l} y={top} width={wd - m.l - m.r} height={rowH} fill="currentColor" opacity={0.03} className="text-term-text" />
-            <rect x={m.l} y={y(55)} width={wd - m.l - m.r} height={y(45) - y(55)} fill="currentColor" opacity={0.06} className="text-term-text" />
             <path d={area} fill={UP} fillOpacity={0.55} clipPath={`url(#${id}u${r})`} />
             <path d={area} fill={DOWN} fillOpacity={0.55} clipPath={`url(#${id}d${r})`} />
             <line x1={m.l} x2={wd - m.r} y1={mid} y2={mid} stroke="currentColor" strokeOpacity={0.35} strokeDasharray="3 3" className="text-term-dim" />
@@ -123,10 +127,11 @@ function PressureSvg({ lines, all, wd }: { lines: { w: string; label: string; pt
                 y={mid + 3}
                 fontSize={11}
                 fontWeight={700}
-                fill={last.v >= 55 ? UP : last.v <= 45 ? DOWN : "currentColor"}
-                className={last.v > 45 && last.v < 55 ? "text-term-dim" : undefined}
+                fill={last.v > 0 ? UP : last.v < 0 ? DOWN : "currentColor"}
+                className={last.v === 0 ? "text-term-dim" : undefined}
               >
-                {nf(last.v, 0)}%
+                {last.v > 0 ? "+" : last.v < 0 ? "−" : ""}
+                {compact(Math.abs(last.v))}
               </text>
             )}
           </g>
@@ -231,7 +236,7 @@ export function OrderFlowView() {
   };
   const base = freshProfile("15") ?? freshProfile("5") ?? freshProfile("60");
   const lines = useMemo(
-    () => PROFILE_WINDOWS.map(([w, label]) => ({ w, label, pts: shareSeries(freshProfile(w)) })),
+    () => PROFILE_WINDOWS.map(([w, label]) => ({ w, label, pts: netSeries(freshProfile(w)) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [profiles, symbol]
   );
@@ -320,9 +325,9 @@ export function OrderFlowView() {
             <PressureChart lines={lines} />
           </div>
           <div className="mt-2 text-[10px] leading-snug text-term-dim">
-            Each row is one window, read on its own: the % on the right is its buying share now. Buying = call buying +
-            put writing; selling = call writing + put buying. The 5 min row flips first; the 1 hour row shows the bigger
-            picture.
+            Each row is one window, read on its own and scaled to its own range: the line is net flow (buying − selling,
+            in contracts) and the figure on the right is where it stands now. Buying = call buying + put writing; selling =
+            call writing + put buying. The 5 min row flips first; the 1 hour row shows the bigger picture.
           </div>
         </section>
 
