@@ -929,3 +929,31 @@ export interface JournalStats {
   byDay: { date: string; pnl: number; trades: number }[];
   bySymbol: { symbol: string; pnl: number; trades: number; winRate: number }[];
 }
+
+export interface ShortGuardLeg {
+  src: "paper" | "live";
+  symbol: string;
+  expiry: string;
+  strike: number;
+  ot: "CE" | "PE";
+  qty: number;
+  avg: number;
+  name: string | null;
+  delta: number | null;
+  absDelta: number | null;
+  /** 0 = under the first alert level, 1 = past it, 2 = past the second */
+  level: number;
+  spot: number | null;
+  /** pts the strike is still out of the money; negative = in the money */
+  distance: number | null;
+  ltp: number | null;
+  roll: {
+    strike: number;
+    delta: number;
+    buyBack: number;
+    sellNew: number;
+    netPerUnit: number;
+    netTotal: number;
+  } | null;
+  reason: string | null;
+}

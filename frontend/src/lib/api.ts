@@ -12,6 +12,7 @@ import type {
   ScanRow,
   ScreenerProgress,
   ScreenerRow,
+  ShortGuardLeg,
   StrategyLeg,
 } from "../types";
 import { getToken, handleUnauthorized } from "./auth";
@@ -425,6 +426,7 @@ export const api = {
   priceAlertDel: (id: string) =>
     j<{ alerts: any[] }>(`/api/price-alerts/${id}`, { method: "DELETE" }),
 
+  shortGuard: () => j<{ legs: ShortGuardLeg[]; levels: number[]; target: number }>("/api/short-guard"),
   indicatorAlerts: () => j<{ alerts: any[] }>("/api/indicator-alerts"),
   indicatorAlertAdd: (body: Record<string, unknown>) =>
     j<{ alert: any; alerts: any[] }>("/api/indicator-alerts", {

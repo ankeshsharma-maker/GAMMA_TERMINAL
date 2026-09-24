@@ -9,6 +9,7 @@ import { LegBracketBadge, findBracket, type LegRule } from "./LegBracketBadge";
 import { ScenarioGrid } from "./ScenarioGrid";
 import { PortfolioSummary } from "./PortfolioSummary";
 import { AutoSquareOff } from "./AutoSquareOff";
+import { ShortGuard } from "./ShortGuard";
 
 type Tab = "broker" | "scenario" | "holdings" | "orders";
 const TABS: [Tab, string][] = [
@@ -665,6 +666,7 @@ export function PositionsView({ initialTab }: { initialTab?: Tab } = {}) {
         {tab === "broker" && broker?.authed && <AutoSquareOff />}
       </div>
       <PortfolioSummary />
+      <ShortGuard />
       {tab === "broker" && <BrokerTab />}
       {tab === "scenario" && <ScenarioGrid />}
       {tab === "holdings" && <HoldingsTab />}

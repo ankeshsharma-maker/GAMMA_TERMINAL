@@ -1192,6 +1192,14 @@ def price_alerts_clear():
     return {"alerts": price_alerts.clear_finished()}
 
 
+# ---- short-strike guard: live delta of every open short option + the roll back to ~0.20 ----
+@router.get("/short-guard")
+def short_guard_view():
+    from . import short_guard
+
+    return {"legs": short_guard.snapshot(), "levels": list(short_guard.LEVELS), "target": short_guard.TARGET}
+
+
 # ---- indicator alerts (fire once when EMA proximity / RSI level hits, on a chosen timeframe) ----
 @router.get("/indicator-alerts")
 def indicator_alerts_list():

@@ -233,17 +233,21 @@ async def run_poller(stop: asyncio.Event) -> None:
     await _refresh_indices()
     await _backfill_spot(store.all_symbols())
     while not stop.is_set():
-        symbols = sorted({s for s, _ in hub.subscriptions()} | set(store.all_symbols()))
+        from . import short_guard
+
+        short_pairs = short_guard.watch_pairs()
+        symbols = sorted({s for s, _ in hub.subscriptions()} | set(store.all_symbols()) | {s for s, _ in short_pairs})
         for sym in symbols:
             await _ensure_expiries(sym)
 
         # (symbol, expiry) set: front-month for everything + whatever clients watch
+        # + every open short leg's own expiry (the short-strike guard reads it)
         pairs: set[tuple[str, str]] = set()
         for sym in symbols:
             near = store.nearest_expiry(sym)
             if near:
                 pairs.add((sym, near))
-        for sym, exp in hub.subscriptions():
+        for sym, exp in [*hub.subscriptions(), *short_pairs]:
             resolved = store.resolve_expiry(sym, exp)
             if resolved:
                 pairs.add((sym.upper(), resolved))
@@ -377,6 +381,24 @@ async def run_poller(stop: asyncio.Event) -> None:
                 await hub.broadcast_all({"type": "alerts", "data": store.get_alerts(50)})
         except Exception as exc:  # noqa: BLE001
             log.warning("price-alert tick failed: %s", exc)
+
+        try:
+            from . import short_guard
+
+            sev = await short_guard.tick()
+            for e in sev:
+                store.add_alert(
+                    {
+                        "ts": time.time(), "symbol": e.get("symbol", ""),
+                        "kind": e["kind"], "severity": e["severity"],
+                        "message": e["message"], "score": 0,
+                    }
+                )
+                log.info("SHORT-GUARD %s", e["message"])
+            if sev:
+                await hub.broadcast_all({"type": "alerts", "data": store.get_alerts(50)})
+        except Exception as exc:  # noqa: BLE001
+            log.warning("short-guard tick failed: %s", exc)
 
         try:
             from . import indicator_alerts
