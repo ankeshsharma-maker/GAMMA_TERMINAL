@@ -239,6 +239,81 @@ const TOP_NAV: { v: View; label: string }[] = [
   { v: "scalper", label: "Scalp" },
   { v: "journal", label: "Journal" },
 ];
+const tabCls = (active: boolean) =>
+  `rounded border text-[11px] font-semibold ${
+    active
+      ? "border-term-accent/50 bg-term-accent/15 text-term-accent"
+      : "border-term-dim/70 bg-term-border/40 text-term-dim active:bg-term-border"
+  }`;
+
+/** all tabs on ONE row that swipes sideways (was 3 wrapped rows, ~68px of
+ *  chart/data lost on a 375px phone). Fades mark the edges that have more
+ *  tabs behind them; on a screen wide enough for all of them (an unfolded
+ *  Fold) they grow to fill the row instead. */
+function ScrollTabs({ view, setView }: { view: View; setView: (v: View) => void }) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [edge, setEdge] = useState({ left: false, right: false });
+  const measure = () => {
+    const el = rowRef.current;
+    if (!el) return;
+    setEdge({
+      left: el.scrollLeft > 2,
+      right: el.scrollLeft + el.clientWidth < el.scrollWidth - 2,
+    });
+  };
+  // centre the selected tab — a switch from elsewhere (bottom bar, Chart's
+  // own view switcher) can land on one that's scrolled off, and an edge
+  // position would sit under the fade. (scrollTo, not scrollIntoView, which
+  // would also scroll the page's ancestors; instant while the app is in the
+  // background, where a smooth scroll never animates and stays put.)
+  useEffect(() => {
+    const row = rowRef.current;
+    const el = row?.querySelector<HTMLElement>(`[data-v="${view}"]`);
+    if (row && el)
+      row.scrollTo({
+        left: el.offsetLeft - (row.clientWidth - el.offsetWidth) / 2,
+        behavior: document.hidden ? "auto" : "smooth",
+      });
+    measure();
+  }, [view]);
+  // the row's own size, not window resize — covers fold/unfold and rotation
+  useEffect(() => {
+    const el = rowRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <nav className="relative shrink-0 border-b border-term-border bg-term-panel2">
+      <div
+        ref={rowRef}
+        onScroll={measure}
+        className="no-scrollbar flex items-center gap-1 overflow-x-auto px-1.5 py-1.5"
+      >
+        {TOP_NAV.map((n) => (
+          <button
+            key={n.v}
+            data-v={n.v}
+            onClick={() => setView(n.v)}
+            className={`shrink-0 grow whitespace-nowrap px-2.5 py-1.5 ${tabCls(view === n.v)}`}
+          >
+            {n.label}
+          </button>
+        ))}
+      </div>
+      {edge.left && (
+        <span className="pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-term-panel2 to-transparent" />
+      )}
+      {edge.right && (
+        <span className="pointer-events-none absolute inset-y-0 right-0 flex w-8 items-center justify-end bg-gradient-to-l from-term-panel2 via-term-panel2/80 to-transparent pr-1 text-xs font-bold text-term-dim">
+          ›
+        </span>
+      )}
+    </nav>
+  );
+}
+
 const BOTTOM_NAV: { v: View; icon: string; label: string }[] = [
   { v: "watchlist", icon: "★", label: "Watchlist" },
   { v: "orders", icon: "📋", label: "Orders" },
@@ -370,25 +445,8 @@ export function MobileShell() {
         </button>
       </div>
 
-      {/* ── top tab row — fixed one-tap shortcuts ──────────────── */}
-      <nav className="flex shrink-0 flex-wrap items-center gap-1 border-b border-term-border bg-term-panel2 px-1.5 py-1.5">
-        {TOP_NAV.map((n) => {
-          const active = view === n.v;
-          return (
-            <button
-              key={n.v}
-              onClick={() => setView(n.v)}
-              className={`min-w-[22%] flex-1 rounded border px-1 py-1.5 text-[11px] font-semibold ${
-                active
-                  ? "border-term-accent/50 bg-term-accent/15 text-term-accent"
-                  : "border-term-dim/70 bg-term-border/40 text-term-dim active:bg-term-border"
-              }`}
-            >
-              {n.label}
-            </button>
-          );
-        })}
-      </nav>
+      {/* ── top tab row — ONE row, however many tabs there are ──── */}
+      <ScrollTabs view={view} setView={setView} />
 
       {brokerOpen && (
         <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-2 py-1.5">
