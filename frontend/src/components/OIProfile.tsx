@@ -161,23 +161,39 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const [tools, setTools] = useState(false); // mobile: show the extra control rows
   const [metric, setMetric] = useState<Metric>("combined");
   const [layout, setLayout] = useState<"chart" | "table" | "ladder" | "walls" | "pcr" | "gex" | "dex">("chart");
-  // the ladder opens scrolled to the spot line (with All strikes it used to
-  // start at the lowest strike) -- once per open / symbol / expiry, never
-  // again on the 5s refreshes, so it doesn't fight a manual scroll
+  // Table / Ladder open centred on the spot line (with All strikes they'd
+  // start at the lowest strike) -- re-centred a few times over ~1.5 s while
+  // the page settles (a single scroll on the first render could land at the
+  // top on a phone, the list still growing), and again on a symbol / expiry
+  // change. Any touch, wheel or key stops it, so it never fights a manual
+  // scroll, and the 5 s refreshes don't re-run it.
   const spotRef = useRef<HTMLDivElement>(null);
   const tableSpotRef = useRef<HTMLTableRowElement>(null);
-  const ladderScrolled = useRef("");
+  const chainReady = !!chain && chain.rows.length > 0;
   useEffect(() => {
-    if (layout !== "ladder" && layout !== "table") {
-      ladderScrolled.current = "";
-      return;
-    }
-    const key = `${layout}|${symbol}|${expiry}`;
-    const el = layout === "table" ? tableSpotRef.current : spotRef.current;
-    if (ladderScrolled.current === key || !el) return;
-    el.scrollIntoView({ block: "center" });
-    ladderScrolled.current = key;
-  });
+    if ((layout !== "ladder" && layout !== "table") || !chainReady) return;
+    let stop = false;
+    const target = () => (layout === "table" ? tableSpotRef.current : spotRef.current);
+    const go = () => {
+      if (!stop) target()?.scrollIntoView({ block: "center" });
+    };
+    const halt = () => {
+      stop = true;
+    };
+    const evs = ["touchstart", "wheel", "keydown"] as const;
+    evs.forEach((e) => document.addEventListener(e, halt, { passive: true }));
+    const timers = [0, 150, 400, 900, 1600].map((ms) => window.setTimeout(go, ms));
+    return () => {
+      stop = true;
+      timers.forEach((t) => window.clearTimeout(t));
+      evs.forEach((e) => document.removeEventListener(e, halt));
+    };
+  }, [layout, symbol, expiry, chainReady]);
+
+  // "Go to" chips: centre a strike and flash its row
+  const jumpBoxRef = useRef<HTMLDivElement>(null);
+  const [flash, setFlash] = useState<number | null>(null);
+  const flashT = useRef<number | undefined>(undefined);
 
   // the Walls view: today's recorded walls, refreshed every minute
   const [wallPts, setWallPts] = useState<OiWallPt[] | null>(null);
@@ -746,6 +762,61 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const signedK = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${compact(Math.abs(v))}`;
   // index of the first strike above spot: the spot line goes just before it
   const spotRow = rows.findIndex((r) => r.strike > spot);
+  // the strikes where the most call / put OI was ADDED over the chosen window
+  const maxAdd = (() => {
+    let ce = { k: 0, v: 0 };
+    let pe = { k: 0, v: 0 };
+    for (const r of rows) {
+      const c = dCE(r);
+      const p = dPE(r);
+      if (c > ce.v) ce = { k: r.strike, v: c };
+      if (p > pe.v) pe = { k: r.strike, v: p };
+    }
+    return { ce: ce.v > 0 ? ce.k : null, pe: pe.v > 0 ? pe.k : null };
+  })();
+  const jumpTo = (k: number | "spot") => {
+    const el =
+      k === "spot"
+        ? layout === "table"
+          ? tableSpotRef.current
+          : spotRef.current
+        : jumpBoxRef.current?.querySelector<HTMLElement>(`[data-strike="${k}"]`);
+    el?.scrollIntoView({ block: "center" });
+    if (k !== "spot") {
+      setFlash(k);
+      window.clearTimeout(flashT.current);
+      flashT.current = window.setTimeout(() => setFlash(null), 1600);
+    }
+  };
+  const chip = "shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold tabular-nums";
+  const jumpBar = (
+    <div className="no-scrollbar flex items-center gap-1 overflow-x-auto normal-case tracking-normal">
+      <span className="shrink-0 text-[10px] font-medium text-term-dim">Go to</span>
+      <button onClick={() => jumpTo("spot")} className={`${chip} border-term-accent/60 text-term-accent`}>
+        ⌖ Spot
+      </button>
+      {stats.resistance > 0 && (
+        <button onClick={() => jumpTo(stats.resistance)} className={`${chip} border-down/50 text-down`} title="most call OI">
+          R {sk(stats.resistance)}
+        </button>
+      )}
+      {stats.floor > 0 && (
+        <button onClick={() => jumpTo(stats.floor)} className={`${chip} border-up/50 text-up`} title="most put OI">
+          S {sk(stats.floor)}
+        </button>
+      )}
+      {maxAdd.ce != null && (
+        <button onClick={() => jumpTo(maxAdd.ce!)} className={`${chip} border-down/50 text-down`} title={`most call OI added (${tfName})`}>
+          +C {sk(maxAdd.ce)}
+        </button>
+      )}
+      {maxAdd.pe != null && (
+        <button onClick={() => jumpTo(maxAdd.pe!)} className={`${chip} border-up/50 text-up`} title={`most put OI added (${tfName})`}>
+          +P {sk(maxAdd.pe)}
+        </button>
+      )}
+    </div>
+  );
   const spotLine = (
     <div ref={spotRef} className="flex items-center gap-2 px-3 py-0.5 text-[10px] font-semibold text-term-accent">
       <span className="h-px flex-1 bg-term-accent/60" />
@@ -787,8 +858,9 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     </div>
   );
   const ladderEl = (
-    <div className={isMobile ? "" : "min-h-0 flex-1 overflow-y-auto"}>
+    <div ref={jumpBoxRef} className={isMobile ? "" : "min-h-0 flex-1 overflow-y-auto"}>
       <div className="sticky top-0 z-10 border-b border-term-border bg-term-panel2 px-3 py-1.5">
+        <div className="mb-1">{jumpBar}</div>
         <div className="grid grid-cols-[1fr_auto_1fr] text-[10px] font-semibold uppercase">
           <span className="text-right" style={{ color: "#f87171" }}>Calls</span>
           <span className="px-4 text-center text-term-dim">Strike</span>
@@ -808,8 +880,9 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           <Fragment key={r.strike}>
             {i === spotRow && spotLine}
             <div
-              className={`grid grid-cols-[1fr_auto_1fr] items-center border-b border-term-border/50 py-1.5 ${
-                r.strike === chain?.atmStrike ? "bg-term-accent/[0.06]" : ""
+              data-strike={r.strike}
+              className={`grid grid-cols-[1fr_auto_1fr] items-center border-b border-term-border/50 py-1.5 transition-colors ${
+                flash === r.strike ? "bg-term-accent/25" : r.strike === chain?.atmStrike ? "bg-term-accent/[0.06]" : ""
               }`}
             >
               <div className="flex flex-col gap-1 pl-2">
@@ -852,15 +925,20 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     </tr>
   );
   const tableEl = (
-    <div className={isMobile ? "px-2 py-2" : "min-h-0 flex-1 overflow-y-auto px-3 py-2"}>
+    <div ref={jumpBoxRef} className={isMobile ? "px-2 py-2" : "min-h-0 flex-1 overflow-y-auto px-3 py-2"}>
       <table className={`${GRID} mx-auto max-w-3xl`}>
-        <thead>
+        <thead className="sticky top-0 z-10">
           <tr>
-            <th className={`${GTH} rounded-tl-lg text-right`}>Call OI</th>
-            <th className={`${GTH} text-right`}>Chg</th>
-            <th className={`${GTH} text-center`}>Strike</th>
-            <th className={`${GTH} text-left`}>Chg</th>
-            <th className={`${GTH} rounded-tr-lg text-left`}>Put OI</th>
+            <th colSpan={5} className="rounded-t-lg border-b border-r border-t border-term-dim/50 bg-term-panel2 px-1.5 py-1 text-left font-normal">
+              {jumpBar}
+            </th>
+          </tr>
+          <tr>
+            <th className={`${WTH} text-right`}>Call OI</th>
+            <th className={`${WTH} text-right`}>Chg</th>
+            <th className={`${WTH} text-center`}>Strike</th>
+            <th className={`${WTH} text-left`}>Chg</th>
+            <th className={`${WTH} text-left`}>Put OI</th>
           </tr>
         </thead>
         <tbody>
@@ -874,7 +952,16 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
             return (
               <Fragment key={r.strike}>
                 {i === spotRow && tableSpot}
-                <tr className={r.strike === chain?.atmStrike ? "[&>td]:bg-term-accent/[0.07]" : ""}>
+                <tr
+                  data-strike={r.strike}
+                  className={
+                    flash === r.strike
+                      ? "[&>td]:bg-term-accent/25"
+                      : r.strike === chain?.atmStrike
+                      ? "[&>td]:bg-term-accent/[0.07]"
+                      : ""
+                  }
+                >
                   <td
                     className={`${GTD} text-right ${isRes ? "font-bold text-down" : "text-term-text"}`}
                     style={{ backgroundImage: `linear-gradient(to left, ${CALL_OI}70 ${cPct}%, transparent ${cPct}%)` }}
