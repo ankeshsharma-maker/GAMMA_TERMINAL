@@ -1,6 +1,7 @@
 """Turn a raw NSE option-chain payload into a processed chain with Greeks."""
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -94,18 +95,46 @@ def future_expiries(expiries: list[str], now: datetime | None = None) -> list[st
     return out or list(expiries)
 
 
-def _leg(raw: dict | None, kind: str, spot: float, strike: float, t: float) -> dict:
+def _mid(raw: dict) -> float:
+    """Bid/ask mid when both sides are quoted, else the last trade."""
+    bid = _num(raw.get("bidprice", raw.get("bidPrice")))
+    ask = _num(raw.get("askPrice"))
+    return (bid + ask) / 2.0 if bid > 0 and ask > 0 else _num(raw.get("lastPrice"))
+
+
+# a stale print further than this from parity gets flagged in the chain
+PARITY_FLAG_PTS = 2.5
+PARITY_FLAG_FRAC = 0.00012
+
+
+def implied_forward(pairs: list[tuple[float, float, float]], spot: float, t: float) -> float | None:
+    """Put-call parity: every strike prices the same forward, F = K + (C - P)·e^(rt).
+    Median over near-ATM (strike, call, put) prices -- robust to a stale print or
+    two. None when too few strikes are two-sided or the result is implausible,
+    so the caller falls back to the rate/dividend model."""
+    tc = max(t, _MIN_T)
+    fs = sorted(k + (c - p) * math.exp(RISK_FREE_RATE * tc) for k, c, p in pairs if c > 0 and p > 0)
+    if len(fs) < 3 or spot <= 0:
+        return None
+    n = len(fs)
+    f = fs[n // 2] if n % 2 else (fs[n // 2 - 1] + fs[n // 2]) / 2.0
+    return f if abs(f / spot - 1.0) < 0.03 else None
+
+
+def _leg(raw: dict | None, kind: str, spot: float, strike: float, t: float, q: float = DIVIDEND_YIELD) -> dict:
+    """`q` is the chain's carry: the parity-implied dividend yield, so pricing off
+    spot with it is the same as pricing off the market's own forward."""
     raw = raw or {}
     tc = max(t, _MIN_T)
     ltp = _num(raw.get("lastPrice"))
     bid = _num(raw.get("bidprice", raw.get("bidPrice")))
     ask = _num(raw.get("askPrice"))
-    mid = (bid + ask) / 2.0 if bid > 0 and ask > 0 else ltp
+    mid = _mid(raw)
     nse_iv = _num(raw.get("impliedVolatility")) / 100.0 or None
 
-    iv_calc = implied_vol(kind, mid, spot, strike, tc, RISK_FREE_RATE, DIVIDEND_YIELD)
+    iv_calc = implied_vol(kind, mid, spot, strike, tc, RISK_FREE_RATE, q)
     sigma = iv_calc or nse_iv
-    g = greeks(kind, spot, strike, tc, RISK_FREE_RATE, DIVIDEND_YIELD, sigma or 0.0)
+    g = greeks(kind, spot, strike, tc, RISK_FREE_RATE, q, sigma or 0.0)
     oi = _num(raw.get("openInterest"))
 
     return {
@@ -198,6 +227,17 @@ def build_chain(
     lo, hi = atm - strike_window * step, atm + strike_window * step
 
     t = year_fraction(expiry)
+    tc = max(t, _MIN_T)
+
+    # the market's own forward from put-call parity (±6 strikes around ATM),
+    # turned into the carry q every leg below is priced with. Falls back to the
+    # flat rate/dividend model when the chain is too thin to trust.
+    near = [d for d in exp_rows if abs(_num(d.get("strikePrice")) - atm) <= 6 * step]
+    fwd = implied_forward(
+        [(_num(d.get("strikePrice")), _mid(d.get("CE") or {}), _mid(d.get("PE") or {})) for d in near], spot, t
+    )
+    q = RISK_FREE_RATE - math.log(fwd / spot) / tc if fwd else DIVIDEND_YIELD
+    flag_pts = max(PARITY_FLAG_PTS, PARITY_FLAG_FRAC * spot)
 
     rows: list[dict] = []
     tot_ce_oi = tot_pe_oi = tot_ce_vol = tot_pe_vol = 0.0
@@ -228,9 +268,14 @@ def build_chain(
         if not (lo <= strike <= hi):
             continue
 
-        call = _leg(ce, "CE", spot, strike, t)
-        put = _leg(pe, "PE", spot, strike, t)
+        call = _leg(ce, "CE", spot, strike, t, q)
+        put = _leg(pe, "PE", spot, strike, t, q)
         net_gex += call["gex"] - put["gex"]
+        # how far this strike's LAST TRADES sit from parity: a big gap is a stale
+        # print on a thin side, not an arbitrage
+        pdev = None
+        if fwd and call["ltp"] > 0 and put["ltp"] > 0:
+            pdev = round(strike + (call["ltp"] - put["ltp"]) * math.exp(RISK_FREE_RATE * tc) - fwd, 2)
         rows.append(
             {
                 "strike": strike,
@@ -238,6 +283,8 @@ def build_chain(
                 "moneyness": "ITM" if strike < spot else ("OTM" if strike > spot else "ATM"),
                 "call": call,
                 "put": put,
+                "parityDev": pdev,
+                "parityStale": pdev is not None and abs(pdev) > flag_pts,
             }
         )
 
@@ -271,6 +318,12 @@ def build_chain(
         "expiry": expiry,
         "expiries": expiries,
         "spot": round(spot, 2),
+        # the price the options are actually priced off (a synthetic future:
+        # buy call + sell put at one strike) -- "model" when parity couldn't be
+        # read and the flat rate/dividend assumption was used instead
+        "forward": round(fwd if fwd else spot * math.exp((RISK_FREE_RATE - q) * tc), 2),
+        "forwardSource": "parity" if fwd else "model",
+        "carryQ": round(q, 6),
         "atmStrike": atm,
         "strikeStep": step,
         "lotSize": lot_size(symbol),

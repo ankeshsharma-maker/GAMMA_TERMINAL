@@ -622,6 +622,14 @@ export function OptionChain({ paneNav }: { paneNav?: ReactNode } = {}) {
           ) : (
             sk(row.strike)
           )}
+          {row.parityStale && row.parityDev != null && (
+            <sup
+              className="ml-0.5 font-bold text-amber-400"
+              title={`Last trades here are ${row.parityDev > 0 ? "+" : ""}${nf(row.parityDev, 1)} pts off put-call parity — a stale print on a thin side, not free money. Trust bid/ask here, not LTP.`}
+            >
+              ≠
+            </sup>
+          )}
         </td>
 
         {/* ---- PUT side ---- */}
@@ -691,6 +699,25 @@ export function OptionChain({ paneNav }: { paneNav?: ReactNode } = {}) {
           onChange={setOiTf}
           title="ΔOI window"
         />
+
+        {chain.forward != null && (
+          <span
+            className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5"
+            title={
+              chain.forwardSource === "parity"
+                ? "Forward from put-call parity — a synthetic future (buy call + sell put at one strike). It's the price these options are really priced off; IVs and Greeks use it. The gap to spot is carry (interest minus dividends)."
+                : "Too few two-sided quotes to read parity — IVs and Greeks fall back to a flat 6.5% rate, no dividend."
+            }
+          >
+            <span className="text-term-dim">Fwd </span>
+            <span className="num text-term-text">{nf(chain.forward, 1)}</span>
+            <span className="num ml-1 text-term-dim">
+              ({chain.forward - chain.spot >= 0 ? "+" : ""}
+              {nf(chain.forward - chain.spot, 1)})
+            </span>
+            {chain.forwardSource === "model" && <span className="ml-1 text-amber-400">model</span>}
+          </span>
+        )}
 
         <span className="ml-3 text-up">■ CALLS</span>
         <span className="text-down">■ PUTS</span>

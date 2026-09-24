@@ -101,23 +101,24 @@ def _spot_of(ch: dict) -> float:
 
 
 # ---------------------------------------------------------------- pricing
-def _price(kind: str, s: float, k: float, t_years: float, sigma: float) -> float:
+def _price(kind: str, s: float, k: float, t_years: float, sigma: float, q: float = Q) -> float:
     if t_years <= 0:
         return max((s - k) if kind == "CE" else (k - s), 0.0)      # past expiry: intrinsic
-    return bs_price(kind, s, k, max(t_years, 1e-6), R, Q, max(sigma, 0.01))
+    return bs_price(kind, s, k, max(t_years, 1e-6), R, q, max(sigma, 0.01))
 
 
-def _leg_model(p: dict, spot: float, atm_iv: float, chain_iv: float | None) -> dict:
-    """IV (solved from the mark), and today's model price / Greeks for one option leg."""
+def _leg_model(p: dict, spot: float, atm_iv: float, chain_iv: float | None, q: float = Q) -> dict:
+    """IV (solved from the mark), and today's model price / Greeks for one option leg.
+    `q` = the chain's parity-implied carry, so the leg is priced off the market's forward."""
     kind, k = p["type"], p["strike"]
     t0 = year_fraction(p["expiry"])
     tc = max(t0, _MIN_T)               # the same floor the chain's own Greeks use
-    iv = implied_vol(kind, p["ltp"], spot, k, tc, R, Q) if p["ltp"] > 0 else None
+    iv = implied_vol(kind, p["ltp"], spot, k, tc, R, q) if p["ltp"] > 0 else None
     src = "mark"
     if iv is None:
         iv, src = ((chain_iv / 100.0), "chain") if chain_iv else (atm_iv, "atm")
     return {"t0": t0, "tc": tc, "iv": iv, "ivSource": src,
-            "p0": bs_price(kind, spot, k, tc, R, Q, iv), "g": bs_greeks(kind, spot, k, tc, R, Q, iv)}
+            "p0": bs_price(kind, spot, k, tc, R, q, iv), "g": bs_greeks(kind, spot, k, tc, R, q, iv)}
 
 
 # ---------------------------------------------------------------- the grid
@@ -184,7 +185,8 @@ async def build(
             if rw:
                 leg = rw["call"] if p["type"] == "CE" else rw["put"]
                 chain_iv = leg.get("ivCalc") or leg.get("iv")
-            m = _leg_model(p, spot, atm_iv, chain_iv)
+            q = ch.get("carryQ", Q)
+            m = _leg_model(p, spot, atm_iv, chain_iv, q)
             t_s = m["t0"] - days_forward / 365.0
             grid = []
             for dv in IV_SHIFTS:
@@ -192,9 +194,9 @@ async def build(
                 for x in SPOT_SHOCKS:
                     s2 = spot * (1.0 + x / 100.0)
                     if days_forward <= 0:
-                        px = _price(p["type"], s2, p["strike"], m["tc"], m["iv"] + dv / 100.0)
+                        px = _price(p["type"], s2, p["strike"], m["tc"], m["iv"] + dv / 100.0, q)
                     else:
-                        px = _price(p["type"], s2, p["strike"], t_s, m["iv"] + dv / 100.0)
+                        px = _price(p["type"], s2, p["strike"], t_s, m["iv"] + dv / 100.0, q)
                     line.append(qty * (px - m["p0"]))
                 grid.append(line)
             g = m["g"]

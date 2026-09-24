@@ -26,6 +26,10 @@ export interface ChainRow {
   moneyness: "ITM" | "OTM" | "ATM";
   call: Leg;
   put: Leg;
+  /** pts this strike's last trades sit off put-call parity; null when a side has no trade */
+  parityDev?: number | null;
+  /** parityDev is big enough that the LTP is a stale print */
+  parityStale?: boolean;
 }
 
 export interface Chain {
@@ -33,6 +37,11 @@ export interface Chain {
   expiry: string;
   expiries: string[];
   spot: number;
+  /** the market's forward from put-call parity (a synthetic future); "model" = flat rate/dividend fallback */
+  forward?: number;
+  forwardSource?: "parity" | "model";
+  /** carry used for every IV/Greek: the parity-implied dividend yield */
+  carryQ?: number;
   atmStrike: number;
   strikeStep: number;
   lotSize: number;

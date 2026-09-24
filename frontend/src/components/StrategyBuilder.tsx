@@ -429,7 +429,7 @@ export function StrategyBuilder() {
       });
       const wholeLots = Math.round(Math.abs(signedLots));
       const perUnitPrice =
-        hedgeInstrument === "FUT" ? chain.spot || 0 : atmRow?.[hedgeInstrument === "CE" ? "call" : "put"].ltp ?? 0;
+        hedgeInstrument === "FUT" ? chain.forward ?? chain.spot ?? 0 : atmRow?.[hedgeInstrument === "CE" ? "call" : "put"].ltp ?? 0;
       setDeltaHedge({
         leg,
         label: `${side} ${wholeLots} lot${wholeLots > 1 ? "s" : ""} ${symbol}${

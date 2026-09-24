@@ -40,7 +40,8 @@ def _resolve_leg(chain: dict, leg: dict) -> dict:
     atm_iv = (chain.get("atmIV") or 15.0) / 100.0
 
     if ot == "FUT":
-        entry = float(leg.get("price") or chain["spot"])
+        # a future trades at the forward, not spot (BANKNIFTY's gap is 100+ pts some weeks)
+        entry = float(leg.get("price") or chain.get("forward") or chain["spot"])
         iv = atm_iv
         g = {"delta": 1.0, "gamma": 0.0, "theta": 0.0, "vega": 0.0}
     else:
@@ -80,19 +81,21 @@ def _leg_intrinsic(ot: str, strike: float, S: float) -> float:
     return S  # FUT: handled with entry separately
 
 
-def _payoff_at(resolved: list[dict], S: float, t: float, mode: str) -> float:
+def _payoff_at(resolved: list[dict], S: float, t: float, mode: str, q: float = DIVIDEND_YIELD) -> float:
+    """`q` = the chain's parity-implied carry, the same one its IVs were solved with."""
     total = 0.0
     for leg in resolved:
         sgn = _sign(leg["side"])
         qty = leg["qty"]
         if leg["optionType"] == "FUT":
-            total += sgn * (S - leg["entry"]) * qty
+            fut = S if mode == "expiry" else S * math.exp((RISK_FREE_RATE - q) * max(t, 0.0))
+            total += sgn * (fut - leg["entry"]) * qty
         elif mode == "expiry":
             total += sgn * (_leg_intrinsic(leg["optionType"], leg["strike"], S) - leg["entry"]) * qty
         else:  # "now" — theoretical value with time left
             px = bs_price(
                 leg["optionType"], S, leg["strike"], max(t, 1e-6),
-                RISK_FREE_RATE, DIVIDEND_YIELD, leg["iv"] / 100.0,
+                RISK_FREE_RATE, q, leg["iv"] / 100.0,
             )
             total += sgn * (px - leg["entry"]) * qty
     return total
@@ -145,8 +148,9 @@ def analyze(chain: dict, legs: list[dict], price_range: float = 0.10, points: in
 
     lo, hi = spot * (1 - price_range), spot * (1 + price_range)
     xs = [lo + (hi - lo) * i / (points - 1) for i in range(points)]
+    q = chain.get("carryQ", DIVIDEND_YIELD)
     exp_curve = [round(_payoff_at(resolved, S, t, "expiry"), 2) for S in xs]
-    now_curve = [round(_payoff_at(resolved, S, t, "now"), 2) for S in xs]
+    now_curve = [round(_payoff_at(resolved, S, t, "now", q), 2) for S in xs]
 
     max_profit, max_loss = max(exp_curve), min(exp_curve)
     up_unbounded = exp_curve[-1] > exp_curve[-2]
@@ -174,7 +178,7 @@ def analyze(chain: dict, legs: list[dict], price_range: float = 0.10, points: in
     sigma = (chain.get("atmIV") or 15.0) / 100.0
     pop = None
     if t > 0 and sigma > 0 and spot > 0:
-        mu = math.log(spot) + (RISK_FREE_RATE - DIVIDEND_YIELD - 0.5 * sigma * sigma) * t
+        mu = math.log(spot) + (RISK_FREE_RATE - q - 0.5 * sigma * sigma) * t
         sd = sigma * math.sqrt(t)
         n = 400
         tot = win = 0.0
