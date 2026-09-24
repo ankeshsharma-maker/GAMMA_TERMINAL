@@ -83,6 +83,18 @@ class Hub:
             self._conns.pop(ws, None)
             self._viewer.pop(ws, None)
 
+    async def kick_all(self) -> None:
+        """Every device was signed out: close every open socket (their tokens are
+        already dead, so the app's reconnect fails and it asks for the password)."""
+        async with self._lock:
+            socks = list(self._conns)
+        for ws in socks:
+            try:
+                await ws.close(code=1008)
+            except Exception:  # noqa: BLE001
+                pass
+            await self.disconnect(ws)
+
     async def kick_viewer(self, viewer_id: str) -> None:
         """A viewer was removed or given a new password: close their open
         sockets now (their tokens are already dead for every HTTP call; the

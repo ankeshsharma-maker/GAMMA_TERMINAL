@@ -58,6 +58,12 @@ export const auth = {
     }),
 };
 
+/** sign out EVERY device (this one too): the server changes its session key, so
+ *  every owner and viewer token stops working and open live sockets close */
+export const sessions = {
+  logoutAll: () => j<{ ok: boolean }>("/api/sessions/logout-all", { method: "POST" }),
+};
+
 /** the owner's view-only users (max 5) -- every call is owner-only on the server */
 export const users = {
   list: () => j<{ users: ViewerUser[]; max: number }>("/api/users"),

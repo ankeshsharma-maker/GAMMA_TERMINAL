@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../store";
-import { api, users, type ViewerUser } from "../lib/api";
+import { api, sessions, users, type ViewerUser } from "../lib/api";
 import { disablePush, enablePush, getPushState, type PushState } from "../lib/push";
 import { isViewer, lockNow, viewerName } from "../lib/auth";
 import { FontScale } from "./FontScale";
@@ -814,6 +814,28 @@ export function Settings({ onClose }: { onClose: () => void }) {
               </button>
             ))}
           </Row>
+          {!isViewer() && (
+            <Row
+              label="Sign out all devices"
+              hint="Every phone, browser and viewer — this one too — must enter the password again. Your broker connection stays."
+            >
+              <button
+                onClick={async () => {
+                  if (!confirm("Sign out GammaTerminal on EVERY device, including this one? Everyone must enter the password again.")) return;
+                  try {
+                    await sessions.logoutAll();
+                  } catch (e: any) {
+                    alert(`Couldn't sign out everywhere: ${e?.message || e}`);
+                    return;
+                  }
+                  lockNow();
+                }}
+                className={`${SEG} border-term-border text-down hover:bg-down/10`}
+              >
+                Sign out all
+              </button>
+            </Row>
+          )}
           <Row label="Sign out" hint="Clears the session; the app password will be asked again">
             <button
               onClick={() => {

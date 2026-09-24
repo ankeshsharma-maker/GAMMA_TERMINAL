@@ -21,7 +21,7 @@ import secrets
 import time
 
 from . import db
-from .auth import app_password
+from .auth import app_password, session_epoch
 
 MAX_VIEWERS = 5
 _KV = "users"
@@ -95,7 +95,10 @@ def delete(uid: str) -> None:
 
 
 def _sign(u: dict) -> str:
-    return hmac.new(app_password().encode(), f"viewer.{u['id']}.{u['hash']}".encode(), hashlib.sha256).hexdigest()
+    # the session key too: "sign out all devices" signs viewers out as well
+    ep = session_epoch()
+    msg = f"viewer.{u['id']}.{u['hash']}" + (f".{ep}" if ep else "")
+    return hmac.new(app_password().encode(), msg.encode(), hashlib.sha256).hexdigest()
 
 
 def login(name: str, password: str) -> tuple[str, dict] | None:

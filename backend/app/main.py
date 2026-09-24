@@ -128,6 +128,18 @@ async def auth_login(body: dict):
     return {"token": expected_token(), "required": True, "role": "owner"}
 
 
+@app.post("/api/sessions/logout-all")
+async def logout_all():
+    """Sign out every device -- this one too. Owner only: it's behind the auth
+    middleware and not on the viewer allowlist. A new session key changes every
+    owner and viewer token, and every open live socket is closed now."""
+    from .auth import rotate_sessions
+
+    rotate_sessions()
+    await hub.kick_all()
+    return {"ok": True}
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     from . import users

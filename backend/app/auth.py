@@ -5,8 +5,10 @@ empty every request passes through unchanged (so a fresh checkout / an
 un-migrated server keeps working exactly as before).
 
 The owner logs in with the password alone and gets a bearer token (an HMAC of
-the password, so the password itself never travels again and the token is
-stable across restarts). Up to 5 VIEW-ONLY users (users.py) log in with a name +
+the password and the current session key, so the password itself never
+travels again and the token is stable across restarts). "Sign out all
+devices" (``rotate_sessions``) replaces the session key: every token --
+the owner's and every viewer's -- stops working at once. Up to 5 VIEW-ONLY users (users.py) log in with a name +
 password and get their own token; for them the middleware lets through only
 the market-data allowlist in users.py and answers everything else 403. Every
 other ``/api`` route and the ``/ws`` socket must present a token.
@@ -15,6 +17,7 @@ from __future__ import annotations
 
 import hmac
 import os
+import secrets
 from hashlib import sha256
 
 from fastapi import Request
@@ -38,9 +41,36 @@ def auth_required() -> bool:
     return bool(app_password())
 
 
+# the session key: "" until the first "sign out all devices" (so tokens issued
+# before this existed stay valid until then); cached -- one backend process
+_EPOCH_KV = "auth_epoch"
+_epoch: str | None = None
+
+
+def session_epoch() -> str:
+    global _epoch
+    if _epoch is None:
+        from . import db
+
+        v = db.get_kv(_EPOCH_KV)
+        _epoch = v if isinstance(v, str) else ""
+    return _epoch
+
+
+def rotate_sessions() -> None:
+    """Sign out every device: a new session key changes every token."""
+    global _epoch
+    from . import db
+
+    _epoch = secrets.token_hex(16)
+    db.set_kv(_EPOCH_KV, _epoch)
+
+
 def expected_token() -> str:
-    """Deterministic token derived from the password — no server-side storage."""
-    return hmac.new(app_password().encode(), b"gammaterminal.v1", sha256).hexdigest()
+    """Derived from the password + the session key -- nothing per device stored."""
+    ep = session_epoch()
+    msg = b"gammaterminal.v1" + (f".{ep}".encode() if ep else b"")
+    return hmac.new(app_password().encode(), msg, sha256).hexdigest()
 
 
 def token_ok(token: str | None) -> bool:
