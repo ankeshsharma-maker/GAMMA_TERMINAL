@@ -7,6 +7,7 @@ import { compact, crores, nf, sk } from "../lib/format";
 import { PcrChart } from "./PcrChart";
 import { SelectMenu } from "./SelectMenu";
 import { useIsMobile } from "../lib/useIsMobile";
+import { scoreOI } from "../lib/oiVerdict";
 import type { ChainRow } from "../types";
 
 type Metric = "oi" | "chg" | "combined";
@@ -399,41 +400,15 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   // ---- overall OI-analysis verdict (bullish / bearish / neutral) ----
   const verdict = useMemo(() => {
     if (!chain) return null;
-    const spotNow = chain.liveSpot?.ltp ?? chain.spot;
-    const pcr = chain.pcr;
-    const putBuild = flow.peAdd;
-    const callBuild = flow.ceAdd;
-    const callUnwind = -flow.ceCut;
-    const putUnwind = -flow.peCut;
-    let score = 0;
-    const pros: string[] = [];
-    const cons: string[] = [];
-
-    if (pcr != null) {
-      if (pcr >= 1.2) { score += 2; pros.push(`PCR ${pcr.toFixed(2)} (put-heavy)`); }
-      else if (pcr <= 0.8) { score -= 2; cons.push(`PCR ${pcr.toFixed(2)} (call-heavy)`); }
-    }
-    if (putBuild > callBuild * 1.15 && putBuild > 0) {
-      score += 2; pros.push("Put writing > Call writing — support building");
-    } else if (callBuild > putBuild * 1.15 && callBuild > 0) {
-      score -= 2; cons.push("Call writing > Put writing — resistance building");
-    }
-    if (callUnwind > putUnwind * 1.25 && callUnwind > 0) {
-      score += 1; pros.push("Call OI unwinding — resistance easing");
-    } else if (putUnwind > callUnwind * 1.25 && putUnwind > 0) {
-      score -= 1; cons.push("Put OI unwinding — support easing");
-    }
-    if (chain.maxPain) {
-      if (spotNow < chain.maxPain * 0.997) { score += 1; pros.push(`Spot under Max Pain ${sk(chain.maxPain)}`); }
-      else if (spotNow > chain.maxPain * 1.003) { score -= 1; cons.push(`Spot over Max Pain ${sk(chain.maxPain)}`); }
-    }
-    if (stats.floor && stats.resistance) {
-      const room = (stats.resistance - spotNow) - (spotNow - stats.floor);
-      if (room > (chain.strikeStep || 50)) { score += 1; pros.push(`More room to the wall (${sk(stats.resistance)}) than the floor (${sk(stats.floor)})`); }
-      else if (room < -(chain.strikeStep || 50)) { score -= 1; cons.push(`Closer to the wall (${sk(stats.resistance)}) than the floor (${sk(stats.floor)})`); }
-    }
-    const bias = score >= 2 ? "BULLISH" : score <= -2 ? "BEARISH" : "NEUTRAL";
-    return { bias, score, pros, cons };
+    return scoreOI({
+      pcr: chain.pcr,
+      maxPain: chain.maxPain,
+      spot: chain.liveSpot?.ltp ?? chain.spot,
+      strikeStep: chain.strikeStep || 50,
+      resistance: stats.resistance,
+      floor: stats.floor,
+      ...flow,
+    });
   }, [chain, flow, stats]);
 
   useEffect(() => {

@@ -201,7 +201,7 @@ export const useStore = create<State>((set, get) => ({
   chartQueue: null,
   paper: null,
   brokerFunds: null,
-  view: "scrip",
+  view: "home", // the app opens on the Home dashboard (asked for 24-Sep)
   builderQueue: [],
   scan: [],
   alerts: [],

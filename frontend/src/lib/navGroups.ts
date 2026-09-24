@@ -20,9 +20,10 @@ export type NavGroup = {
 export const NAV_GROUPS: NavGroup[] = [
   {
     key: "chart",
-    label: "Chart",
-    icon: "📈",
+    label: "Home",
+    icon: "🏠",
     members: [
+      ["home", "Home"],
       ["chart", "Chart"],
       ["scrip", "OI"],
       ["trendingoi", "Trend OI"],

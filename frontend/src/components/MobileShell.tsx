@@ -206,6 +206,7 @@ import { Watchlist } from "./Watchlist";
 import { ExpiryTabs } from "./ExpiryTabs";
 import { OptionChain } from "./OptionChain";
 import { ScripView } from "./ScripView";
+import { HomeDashboard } from "./HomeDashboard";
 import { FlowView } from "./Flow";
 import { OrderFlowView } from "./OrderFlow";
 import { TrendingOI } from "./TrendingOI";
@@ -232,6 +233,7 @@ type TopTab = { v: View; label: string; group: TabGroup };
 /** in the user's order of use (2026-09-24): analysis, then trading, then
  *  funds / review — a thin divider marks each group on the tab row */
 const TOP_NAV: TopTab[] = [
+  { v: "home", label: "Home", group: "analysis" },
   { v: "chart", label: "Chart", group: "analysis" },
   { v: "scrip", label: "OI", group: "analysis" },
   { v: "trendingoi", label: "Trend OI", group: "analysis" },
@@ -494,6 +496,8 @@ function MobileBody({ view }: { view: View }) {
           <Watchlist band={<MobileIndexBand />} />
         </div>
       );
+    case "home":
+      return <HomeDashboard />;
     case "scrip":
       return <ScripView />;
     case "trendingoi":

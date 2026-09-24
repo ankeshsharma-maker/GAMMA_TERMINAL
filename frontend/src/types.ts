@@ -322,6 +322,7 @@ export interface Alert {
 }
 
 export type View =
+  | "home"
   | "flow"
   | "orderflow"
   | "chain"

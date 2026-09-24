@@ -18,6 +18,7 @@ import { TradeJournal } from "./components/TradeJournal";
 import { Chart } from "./components/Chart";
 import { StrategyBuilder } from "./components/StrategyBuilder";
 import { PositionsView } from "./components/PositionsView";
+import { HomeDashboard } from "./components/HomeDashboard";
 import { ScalpPanel } from "./components/ScalpPanel";
 import { ScalpCharts } from "./components/ScalpCharts";
 import { AutoBotView } from "./components/AutoBot";
@@ -73,6 +74,7 @@ function DesktopShell() {
     view === "flow" ||
     view === "orderflow" ||
     view === "vol" ||
+    view === "home" ||
     view === "scanner" ||
     view === "auto" ||
     view === "funds" ||
@@ -192,6 +194,7 @@ function DesktopShell() {
           {view === "trendingoi" && <TrendingOI />}
           {view === "flow" && <FlowView />}
           {view === "orderflow" && <OrderFlowView />}
+          {view === "home" && <HomeDashboard />}
           {view === "vol" && <VolatilityView />}
           {view === "scanner" && <ScannerView />}
           {view === "chart" && <Chart />}

@@ -26,7 +26,8 @@ const SENT_COL: Record<string, string> = {
   Neutral: "#3b4657",
 };
 
-const inr = (v: number) => nf(Math.round(v), 0);
+// OI figures in lakh ("35.35L", not "35,35,080") -- asked for 24-Sep
+const inr = (v: number) => `${(v / 1e5).toFixed(2)}L`;
 const sInr = (v: number) => (v >= 0 ? "+" : "") + inr(v);
 const sentCls = (s: string) =>
   s === "Bullish" ? "text-up" : s === "Bearish" ? "text-down" : "text-term-dim";
