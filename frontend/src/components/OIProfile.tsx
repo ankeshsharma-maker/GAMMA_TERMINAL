@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RefreshChainBtn } from "./RefreshChainBtn";
 import { ClassFilter } from "./Header";
 import { useStore } from "../store";
@@ -20,6 +20,60 @@ const OI_ADD = "#22c55e";
 const OI_CUT = "#ef4444";
 
 const zClamp = (z: number) => Math.min(3, Math.max(0.5, z));
+
+/** Change in OI as bars from a zero line: per side, OI added rises (green)
+ *  and OI cut falls (red), with the net over each pair -- read at a glance,
+ *  where the old ring only showed which side's net was bigger. */
+const DeltaOIBars = ({
+  ceAdd,
+  ceCut,
+  peAdd,
+  peCut,
+}: {
+  ceAdd: number;
+  ceCut: number;
+  peAdd: number;
+  peCut: number;
+}) => {
+  const W = 220;
+  const H = 150;
+  const base = 78; // zero line
+  const span = 52; // tallest bar
+  const m = Math.max(1, ceAdd, -ceCut, peAdd, -peCut);
+  const hgt = (v: number) => (Math.abs(v) / m) * span;
+  const bw = 30;
+  const signed = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${compact(Math.abs(v))}`;
+  const group = (cx: number, add: number, cut: number, label: string, col: string) => {
+    const net = add + cut;
+    const ha = hgt(add);
+    const hc = hgt(cut);
+    return (
+      <g>
+        <text x={cx} y={12} textAnchor="middle" fontSize="11" fontWeight="700" fill={net >= 0 ? OI_ADD : OI_CUT}>
+          net {signed(net)}
+        </text>
+        <rect x={cx - bw - 2} y={base - ha} width={bw} height={Math.max(ha, add > 0 ? 1.5 : 0)} rx="2" fill={OI_ADD} />
+        <rect x={cx + 2} y={base} width={bw} height={Math.max(hc, cut < 0 ? 1.5 : 0)} rx="2" fill={OI_CUT} />
+        <text x={cx - bw / 2 - 2} y={base - ha - 3} textAnchor="middle" fontSize="9" className="fill-term-text">
+          {add > 0 ? `+${compact(add)}` : ""}
+        </text>
+        <text x={cx + bw / 2 + 2} y={base + hc + 10} textAnchor="middle" fontSize="9" className="fill-term-text">
+          {cut < 0 ? `−${compact(-cut)}` : ""}
+        </text>
+        <text x={cx} y={H - 4} textAnchor="middle" fontSize="11" fontWeight="600" fill={col}>
+          {label}
+        </text>
+      </g>
+    );
+  };
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-[240px]">
+      <line x1="6" x2={W - 6} y1={base} y2={base} stroke="#64748b" strokeWidth="1" />
+      {group(W * 0.28, ceAdd, ceCut, "Call", "#f87171")}
+      {group(W * 0.72, peAdd, peCut, "Put", "#4ade80")}
+    </svg>
+  );
+};
 
 /** Two-value ring: |aVal| vs |bVal| as an arc split, a bold center label and
  *  a dim caption underneath. Shared by the OI-split donuts and the Dealer
@@ -659,104 +713,93 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     </div>
   );
 
-  // ---- OI-Ladder-style horizontal rows (combined total OI bar + ΔOI cap) ----
+  // ---- OI ladder: per strike, a solid OI bar and a separate thin ΔOI bar on
+  // each side, figures outside the bars, a legend and a spot line. (It used to
+  // paint the green/red ΔOI "cap" over OI bars that are themselves red/green.)
+  const tfName = tf === 0 ? "since open" : `last ${tf}m`;
+  const signedK = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${compact(Math.abs(v))}`;
+  // index of the first strike above spot: the spot line goes just before it
+  const spotRow = rows.findIndex((r) => r.strike > spot);
+  const spotLine = (
+    <div className="flex items-center gap-2 px-3 py-0.5 text-[10px] font-semibold text-term-accent">
+      <span className="h-px flex-1 bg-term-accent/60" />
+      spot {nf(spot, 1)}
+      <span className="h-px flex-1 bg-term-accent/60" />
+    </div>
+  );
+  const strikeCell = (r: ChainRow) => {
+    const isRes = r.strike === stats.resistance;
+    const isFloor = r.strike === stats.floor;
+    return (
+      <div
+        className={`flex items-center justify-center gap-1 px-2 text-sm tabular-nums ${
+          isRes ? "font-bold text-down" : isFloor ? "font-bold text-up" : r.strike === chain?.atmStrike ? "font-bold text-term-accent" : "text-term-text"
+        }`}
+      >
+        {sk(r.strike)}
+        {isRes && <span className="rounded bg-down/15 px-1 text-[9px]">R</span>}
+        {isFloor && <span className="rounded bg-up/15 px-1 text-[9px]">S</span>}
+      </div>
+    );
+  };
+
+  const hbar = (pct: number, col: string, label: string, side: "call" | "put", thin: boolean, tone?: string) => (
+    <div className={`flex w-full items-center gap-1.5 ${side === "put" ? "flex-row-reverse" : ""}`}>
+      <span
+        className={`w-12 shrink-0 tabular-nums ${side === "call" ? "text-right" : "text-left"} ${
+          thin ? "text-[10px]" : "text-[11px] font-semibold"
+        } ${tone ?? "text-term-text"}`}
+      >
+        {label}
+      </span>
+      <div className={`relative flex-1 ${thin ? "h-1.5" : "h-3.5"}`}>
+        <span
+          className={`absolute top-0 h-full ${side === "call" ? "right-0 rounded-l" : "left-0 rounded-r"}`}
+          style={{ width: `${Math.min(100, pct)}%`, background: col }}
+        />
+      </div>
+    </div>
+  );
   const ladderEl = (
     <div className={isMobile ? "" : "min-h-0 flex-1 overflow-y-auto"}>
-      <div className="sticky top-0 z-10 grid grid-cols-[1fr_auto_1fr] items-center divide-x divide-term-border border-b border-term-border bg-term-panel2 text-[10px] uppercase text-term-dim">
-        <span className="px-3 py-1 text-right" style={{ color: CALL_OI }}>
-          Call OI · Δ
-        </span>
-        <span className="px-3 py-1 text-center">Strike</span>
-        <span className="px-3 py-1" style={{ color: PUT_OI }}>
-          Put OI · Δ
-        </span>
+      <div className="sticky top-0 z-10 border-b border-term-border bg-term-panel2 px-3 py-1.5">
+        <div className="grid grid-cols-[1fr_auto_1fr] text-[10px] font-semibold uppercase">
+          <span className="text-right" style={{ color: "#f87171" }}>Calls</span>
+          <span className="px-4 text-center text-term-dim">Strike</span>
+          <span style={{ color: "#4ade80" }}>Puts</span>
+        </div>
+        <div className="mt-1 flex flex-wrap justify-center gap-x-3 gap-y-0.5 text-[10px] text-term-dim">
+          <span className="flex items-center gap-1"><Sw c={CALL_OI} /> call OI</span>
+          <span className="flex items-center gap-1"><Sw c={PUT_OI} /> put OI</span>
+          <span className="flex items-center gap-1"><Sw c={OI_ADD} /> added</span>
+          <span className="flex items-center gap-1"><Sw c={OI_CUT} /> cut · {tfName}</span>
+        </div>
       </div>
-      {rows.map((r) => {
-        const isATM = r.strike === chain?.atmStrike;
-        const isRes = r.strike === stats.resistance;
-        const isFloor = r.strike === stats.floor;
-        const near = Math.abs(r.strike - spot) < (chain?.strikeStep || 50) * 0.5;
+      {rows.map((r, i) => {
         const cChg = dCE(r);
         const pChg = dPE(r);
-        const cBarW = (r.call.oi / stats.maxOI) * 100;
-        const pBarW = (r.put.oi / stats.maxOI) * 100;
-        const cCapW = Math.min(cBarW, (Math.abs(cChg) / stats.maxOI) * 100);
-        const pCapW = Math.min(pBarW, (Math.abs(pChg) / stats.maxOI) * 100);
         return (
-          <div
-            key={r.strike}
-            className={`grid grid-cols-[1fr_auto_1fr] items-stretch divide-x divide-term-border/60 border-b border-term-border/60 ${
-              isATM ? "bg-term-accent/10" : near ? "bg-term-accent/[0.04]" : ""
-            }`}
-          >
-            {/* Call — ΔOI, then a full-width bar with the OI value sitting in the cell */}
-            <div className="flex h-10 items-center gap-1.5 pr-2">
-              <span
-                className={`num w-16 shrink-0 text-right text-xs font-semibold ${
-                  cChg >= 0 ? "text-up" : "text-down"
-                }`}
-              >
-                {cChg >= 0 ? "▲" : "▼"}
-                {compact(Math.abs(cChg))}
-              </span>
-              <span className="relative h-6 min-w-0 flex-1">
-                <span
-                  className="absolute right-0 top-0 h-full rounded-l"
-                  style={{ width: `${cBarW}%`, background: CALL_OI }}
-                />
-                <span
-                  className="absolute right-0 top-0 h-full"
-                  style={{ width: `${cCapW}%`, background: cChg >= 0 ? OI_ADD : OI_CUT }}
-                />
-                <span className="num absolute right-1 top-1/2 -translate-y-1/2 text-xs font-bold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.7)]">
-                  {compact(r.call.oi)}
-                </span>
-              </span>
-            </div>
-
+          <Fragment key={r.strike}>
+            {i === spotRow && spotLine}
             <div
-              className={`num flex h-10 items-center justify-center px-3 text-sm leading-none ${
-                isRes
-                  ? "font-bold text-down"
-                  : isFloor
-                  ? "font-bold text-up"
-                  : isATM || near
-                  ? "font-bold text-term-accent"
-                  : "text-term-text"
+              className={`grid grid-cols-[1fr_auto_1fr] items-center border-b border-term-border/50 py-1.5 ${
+                r.strike === chain?.atmStrike ? "bg-term-accent/[0.06]" : ""
               }`}
             >
-              {sk(r.strike)}
-              {isRes && <sup className="ml-0.5 text-[9px]">R</sup>}
-              {isFloor && <sup className="ml-0.5 text-[9px]">S</sup>}
+              <div className="flex flex-col gap-1 pl-2">
+                {hbar((r.call.oi / stats.maxOI) * 100, CALL_OI, compact(r.call.oi), "call", false)}
+                {hbar((Math.abs(cChg) / flow.maxChg) * 100, cChg >= 0 ? OI_ADD : OI_CUT, signedK(cChg), "call", true, cChg >= 0 ? "text-up" : "text-down")}
+              </div>
+              {strikeCell(r)}
+              <div className="flex flex-col gap-1 pr-2">
+                {hbar((r.put.oi / stats.maxOI) * 100, PUT_OI, compact(r.put.oi), "put", false)}
+                {hbar((Math.abs(pChg) / flow.maxChg) * 100, pChg >= 0 ? OI_ADD : OI_CUT, signedK(pChg), "put", true, pChg >= 0 ? "text-up" : "text-down")}
+              </div>
             </div>
-
-            {/* Put — mirrored */}
-            <div className="flex h-10 items-center gap-1.5 pl-2">
-              <span className="relative h-6 min-w-0 flex-1">
-                <span
-                  className="absolute left-0 top-0 h-full rounded-r"
-                  style={{ width: `${pBarW}%`, background: PUT_OI }}
-                />
-                <span
-                  className="absolute left-0 top-0 h-full"
-                  style={{ width: `${pCapW}%`, background: pChg >= 0 ? OI_ADD : OI_CUT }}
-                />
-                <span className="num absolute left-1 top-1/2 -translate-y-1/2 text-xs font-bold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.7)]">
-                  {compact(r.put.oi)}
-                </span>
-              </span>
-              <span
-                className={`num w-16 shrink-0 text-xs font-semibold ${
-                  pChg >= 0 ? "text-up" : "text-down"
-                }`}
-              >
-                {pChg >= 0 ? "▲" : "▼"}
-                {compact(Math.abs(pChg))}
-              </span>
-            </div>
-          </div>
+          </Fragment>
         );
       })}
+      {spotRow === -1 && rows.length > 0 && spotLine}
     </div>
   );
 
@@ -813,22 +856,15 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         </div>
         {dtot > 0 ? (
           <>
-            <MiniDonut
-              aVal={dCEnet}
-              bVal={dPEnet}
-              aCol={dCEnet >= 0 ? OI_ADD : OI_CUT}
-              bCol={dPEnet >= 0 ? OI_ADD : OI_CUT}
-              center={
-                Math.abs(dPEnet) > Math.abs(dCEnet)
-                  ? dPEnet >= 0
-                    ? "PUT+"
-                    : "PUT−"
-                  : dCEnet >= 0
-                  ? "CALL+"
-                  : "CALL−"
-              }
-              sub="net ΔOI"
-            />
+            <DeltaOIBars ceAdd={flow.ceAdd} ceCut={flow.ceCut} peAdd={flow.peAdd} peCut={flow.peCut} />
+            <div className="flex w-full justify-center gap-3 text-[10px] text-term-dim">
+              <span className="flex items-center gap-1">
+                <Sw c={OI_ADD} /> OI added
+              </span>
+              <span className="flex items-center gap-1">
+                <Sw c={OI_CUT} /> OI cut
+              </span>
+            </div>
             <div className="w-full space-y-0.5">
               <Row
                 c={dCEnet >= 0 ? OI_ADD : OI_CUT}
