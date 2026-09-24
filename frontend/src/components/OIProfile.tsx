@@ -35,13 +35,13 @@ const DeltaOIBars = ({
   peAdd: number;
   peCut: number;
 }) => {
-  const W = 220;
+  const W = 200;
   const H = 150;
-  const base = 78; // zero line
-  const span = 52; // tallest bar
+  const base = 76; // zero line
+  const span = 48; // tallest bar
   const m = Math.max(1, ceAdd, -ceCut, peAdd, -peCut);
   const hgt = (v: number) => (Math.abs(v) / m) * span;
-  const bw = 30;
+  const bw = 32;
   const signed = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${compact(Math.abs(v))}`;
   const group = (cx: number, add: number, cut: number, label: string, col: string) => {
     const net = add + cut;
@@ -49,25 +49,25 @@ const DeltaOIBars = ({
     const hc = hgt(cut);
     return (
       <g>
-        <text x={cx} y={12} textAnchor="middle" fontSize="11" fontWeight="700" fill={net >= 0 ? OI_ADD : OI_CUT}>
+        <text x={cx} y={13} textAnchor="middle" fontSize="12" fontWeight="700" fill={net >= 0 ? OI_ADD : OI_CUT}>
           net {signed(net)}
         </text>
         <rect x={cx - bw - 2} y={base - ha} width={bw} height={Math.max(ha, add > 0 ? 1.5 : 0)} rx="2" fill={OI_ADD} />
         <rect x={cx + 2} y={base} width={bw} height={Math.max(hc, cut < 0 ? 1.5 : 0)} rx="2" fill={OI_CUT} />
-        <text x={cx - bw / 2 - 2} y={base - ha - 3} textAnchor="middle" fontSize="9" className="fill-term-text">
+        <text x={cx - bw / 2 - 2} y={base - ha - 3} textAnchor="middle" fontSize="10" className="fill-term-text">
           {add > 0 ? `+${compact(add)}` : ""}
         </text>
-        <text x={cx + bw / 2 + 2} y={base + hc + 10} textAnchor="middle" fontSize="9" className="fill-term-text">
+        <text x={cx + bw / 2 + 2} y={base + hc + 11} textAnchor="middle" fontSize="10" className="fill-term-text">
           {cut < 0 ? `−${compact(-cut)}` : ""}
         </text>
-        <text x={cx} y={H - 4} textAnchor="middle" fontSize="11" fontWeight="600" fill={col}>
+        <text x={cx} y={H - 4} textAnchor="middle" fontSize="12" fontWeight="600" fill={col}>
           {label}
         </text>
       </g>
     );
   };
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-[240px]">
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-[360px]">
       <line x1="6" x2={W - 6} y1={base} y2={base} stroke="#64748b" strokeWidth="1" />
       {group(W * 0.28, ceAdd, ceCut, "Call", "#f87171")}
       {group(W * 0.72, peAdd, peCut, "Put", "#4ade80")}
@@ -145,6 +145,21 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const [tools, setTools] = useState(false); // mobile: show the extra control rows
   const [metric, setMetric] = useState<Metric>("combined");
   const [layout, setLayout] = useState<"chart" | "ladder" | "pcr" | "gex" | "dex">("chart");
+  // the ladder opens scrolled to the spot line (with All strikes it used to
+  // start at the lowest strike) -- once per open / symbol / expiry, never
+  // again on the 5s refreshes, so it doesn't fight a manual scroll
+  const spotRef = useRef<HTMLDivElement>(null);
+  const ladderScrolled = useRef("");
+  useEffect(() => {
+    if (layout !== "ladder") {
+      ladderScrolled.current = "";
+      return;
+    }
+    const key = `${symbol}|${expiry}`;
+    if (ladderScrolled.current === key || !spotRef.current) return;
+    spotRef.current.scrollIntoView({ block: "center" });
+    ladderScrolled.current = key;
+  });
   const [gexPts, setGexPts] = useState<
     { date: string; spot: number; netGex: number; gammaFlip: number }[]
   >([]);
@@ -721,7 +736,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   // index of the first strike above spot: the spot line goes just before it
   const spotRow = rows.findIndex((r) => r.strike > spot);
   const spotLine = (
-    <div className="flex items-center gap-2 px-3 py-0.5 text-[10px] font-semibold text-term-accent">
+    <div ref={spotRef} className="flex items-center gap-2 px-3 py-0.5 text-[10px] font-semibold text-term-accent">
       <span className="h-px flex-1 bg-term-accent/60" />
       spot {nf(spot, 1)}
       <span className="h-px flex-1 bg-term-accent/60" />
@@ -835,20 +850,17 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         }`}
         style={isMobile ? undefined : { width: donutW }}
       >
-        <div className="text-center text-2xs font-semibold uppercase tracking-wide text-term-dim">
-          Total OI · {count === 0 ? "all strikes" : `${count}±ATM`}
-        </div>
-        <MiniDonut
-          aVal={ce}
-          bVal={pe}
-          aCol={CALL_OI}
-          bCol={PUT_OI}
-          center={pcr != null ? nf(pcr, 2) : "–"}
-          sub="PCR"
-        />
-        <div className="w-full space-y-0.5">
-          <Row c={CALL_OI} label="Call" val={`${crores(ce)} · ${nf((ce / tot) * 100, 0)}%`} />
-          <Row c={PUT_OI} label="Put" val={`${crores(pe)} · ${nf((pe / tot) * 100, 0)}%`} />
+        {/* PCR as a number -- the Total OI ring was too small to read */}
+        <div className="flex w-full flex-col items-center">
+          <div className="text-2xs font-semibold uppercase tracking-wide text-term-dim">PCR · whole chain</div>
+          <div
+            className={`text-[34px] font-bold leading-tight tabular-nums ${
+              pcr == null ? "text-term-text" : pcr >= 1 ? "text-up" : "text-down"
+            }`}
+          >
+            {pcr != null ? nf(pcr, 2) : "–"}
+          </div>
+          <div className="text-[10px] text-term-dim">put OI ÷ call OI</div>
         </div>
 
         <div className="mt-1 w-full border-t border-term-border/50 pt-2 text-center text-2xs font-semibold uppercase tracking-wide text-term-dim">
@@ -1526,8 +1538,83 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     >
       {/* toolbar */}
       <div className="border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
-        {/* row 1 — always visible: symbol / expiry / view switch / readout */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        {/* phone: symbol / expiry / ⚙ on one row, the view switch on the next,
+            a one-line summary; everything else waits behind ⚙ so the chart /
+            ladder starts high up */}
+        {isMobile && (
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2">
+              <SelectMenu
+                value={symbol}
+                options={symOptions.map((s) => [s, s] as [string, string])}
+                onChange={(v) => selectSymbol(v, true)}
+                title="Underlying (list filtered by the All / Indices / Stocks toggle)"
+                width={150}
+              />
+              {chain.expiries.length > 0 && (
+                <SelectMenu
+                  value={expiry}
+                  options={chain.expiries.map((e) => [e, e] as [string, string])}
+                  onChange={selectExpiry}
+                  title="Expiry"
+                  width={130}
+                />
+              )}
+              <button
+                onClick={() => setTools((t) => !t)}
+                className={`ml-auto rounded border px-2 py-0.5 ${
+                  tools ? "border-term-accent text-term-accent" : "border-term-dim/70 text-term-dim"
+                }`}
+                title="Filters, strike / ΔOI controls, OI totals and the trend's reasons"
+              >
+                ⚙ {tools ? "▴" : "▾"}
+              </button>
+            </div>
+            <div className="seg no-scrollbar self-start overflow-x-auto">
+              {(
+                [
+                  ["chart", "Chart"],
+                  ["ladder", "Ladder"],
+                  ["gex", "Weekly Gex"],
+                  ["dex", "Dealer Exp"],
+                  ["pcr", "PCR"],
+                ] as const
+              ).map(([v, l]) => (
+                <button key={v} onClick={() => setLayout(v)} className={`whitespace-nowrap ${layout === v ? "on" : ""}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <div className="no-scrollbar flex items-center gap-2 overflow-x-auto whitespace-nowrap text-[10px] tabular-nums">
+              {verdict && (
+                <span
+                  className={`rounded px-1.5 py-0.5 font-bold ${
+                    verdict.bias === "BULLISH"
+                      ? "bg-up text-white"
+                      : verdict.bias === "BEARISH"
+                      ? "bg-down text-white"
+                      : "bg-term-border text-term-dim"
+                  }`}
+                >
+                  {verdict.bias}
+                </span>
+              )}
+              <span>
+                PCR <span className="text-term-text">{nf(chain.pcr, 2)}</span>
+              </span>
+              <span>
+                Spot <span className="text-term-text">{nf(spot, 1)}</span>
+              </span>
+              <span>
+                Max Pain <span className="text-term-text">{nf(chain.maxPain, 0)}</span>
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* row 1 — always visible: symbol / expiry / view switch / readout
+            (phone: this whole row lives behind ⚙) */}
+        <div className={`flex-wrap items-center gap-x-3 gap-y-1 ${isMobile ? (tools ? "mt-1.5 flex" : "hidden") : "flex"}`}>
           {paneNav ?? (
             <span className="font-semibold uppercase tracking-wide">OI Profile</span>
           )}
@@ -1535,15 +1622,17 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           <RefreshChainBtn />
 
           <ClassFilter />
-          <SelectMenu
-            value={symbol}
-            options={symOptions.map((s) => [s, s] as [string, string])}
-            onChange={(v) => selectSymbol(v, true)}
-            title="Underlying (list filtered by the All / Indices / Stocks toggle)"
-            width={150}
-          />
+          {!isMobile && (
+            <SelectMenu
+              value={symbol}
+              options={symOptions.map((s) => [s, s] as [string, string])}
+              onChange={(v) => selectSymbol(v, true)}
+              title="Underlying (list filtered by the All / Indices / Stocks toggle)"
+              width={150}
+            />
+          )}
 
-          {chain.expiries.length > 0 && (
+          {!isMobile && chain.expiries.length > 0 && (
             <SelectMenu
               value={expiry}
               options={chain.expiries.map((e) => [e, e] as [string, string])}
@@ -1553,6 +1642,8 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
             />
           )}
 
+          {!isMobile && (
+          <>
           <span className="ml-1">Show</span>
           <div className="seg">
             {(
@@ -1570,16 +1661,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
             ))}
           </div>
 
-          {isMobile && (
-            <button
-              onClick={() => setTools((t) => !t)}
-              className={`rounded border px-1.5 py-0.5 ${
-                tools ? "border-term-accent text-term-accent" : "border-term-dim/70 text-term-dim"
-              }`}
-              title="Show / hide the chart controls"
-            >
-              ⚙ {tools ? "▴" : "▾"}
-            </button>
+          </>
           )}
 
           {/* web portal: chart controls ride the "Show" row (saves a row) */}
@@ -1624,8 +1706,12 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         )}
       </div>
 
-      {/* legend / totals */}
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel px-3 py-1.5 text-[10px]">
+      {/* legend / totals (phone: behind ⚙) */}
+      <div
+        className={`flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel px-3 py-1.5 text-[10px] ${
+          isMobile && !tools ? "hidden" : "flex"
+        }`}
+      >
         <span className="rounded border border-down/30 bg-down/5 px-2 py-1 text-term-dim">
           <span className="font-semibold text-down">Call OI</span>{" "}
           <span className="num text-term-text">{crores(chain.totals.ceOI)}</span> ·{" "}
@@ -1645,8 +1731,8 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         </span>
       </div>
 
-      {/* overall OI verdict */}
-      {verdict && (
+      {/* overall OI verdict (phone: the summary row shows the bias; reasons behind ⚙) */}
+      {verdict && (!isMobile || tools) && (
         <div
           className={`flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b px-3 py-1 text-[10px] ${
             verdict.bias === "BULLISH"
