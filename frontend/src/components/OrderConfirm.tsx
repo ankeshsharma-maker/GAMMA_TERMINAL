@@ -64,10 +64,46 @@ export function OrderConfirm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [legs, lotSize]);
 
+  // Flattrade's own margin for the whole basket (real SPAN + hedge benefit);
+  // the rough estimate above is only the fallback when the broker can't answer
+  const [brokerMargin, setBrokerMargin] = useState<{ margin: number; remarks?: string | null } | null>(null);
+  const [brokerNote, setBrokerNote] = useState<string | null>(null);
+  useEffect(() => {
+    setBrokerMargin(null);
+    setBrokerNote(null);
+    if (!pending || !legs.length) return;
+    let alive = true;
+    api
+      .brokerMargin({
+        symbol: pending.symbol,
+        expiry: pending.expiry,
+        legs: legs.map((l) => ({
+          strike: l.strike,
+          optionType: l.optionType,
+          side: l.side,
+          lots: l.lots,
+          price: priceFor(l.strike, l.optionType, l.price),
+        })),
+      })
+      .then(
+        (d) => {
+          if (!alive) return;
+          if (d.ok && d.margin != null) setBrokerMargin({ margin: d.margin, remarks: d.remarks });
+          else setBrokerNote(d.reason ?? "broker check unavailable");
+        },
+        (e) => alive && setBrokerNote(String(e?.message || e))
+      );
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [legs, pending?.symbol, pending?.expiry]);
+
   if (!pending) return null;
 
-  const shortfall =
-    marginEst != null && funds?.available != null ? marginEst - funds.available : null;
+  const need = brokerMargin?.margin ?? marginEst;
+  const shortfall = need != null && funds?.available != null ? need - funds.available : null;
+  const brokerSaysShort = /insufficient/i.test(brokerMargin?.remarks ?? "");
 
   // only when every leg leans the wrong way -- a strangle / spread that is
   // deliberately two-sided shouldn't nag
@@ -134,11 +170,33 @@ export function OrderConfirm() {
           <span className="num font-semibold">₹{nf(Math.abs(net), 0)}</span>
         </div>
 
-        {shortfall != null && shortfall > 0 && (
+        {need != null && (
+          <div className="mb-3 flex items-center justify-between text-xs">
+            <span className="text-term-dim" title={brokerNote ? `Broker check unavailable: ${brokerNote}` : undefined}>
+              Margin needed · {brokerMargin ? "Flattrade" : "rough estimate"}
+            </span>
+            <span className="num font-semibold">
+              {rupee(need)}
+              {funds?.available != null && <span className="font-normal text-term-dim"> of {rupee(funds.available)} free</span>}
+            </span>
+          </div>
+        )}
+
+        {((shortfall != null && shortfall > 0) || brokerSaysShort) && (
           <div className="mb-3 rounded border border-down/50 bg-down/10 px-2.5 py-2 text-2xs text-down">
-            ⚠ Est. margin needed ≈ {rupee(marginEst!)}, but only {rupee(funds!.available!)} is available —
-            likely short by ≈ {rupee(shortfall)}. This is a rough estimate (not real SPAN); the broker may
-            still accept or reject it, but expect a possible margin rejection.
+            {brokerMargin ? (
+              <>
+                ⚠ Flattrade says this needs {rupee(brokerMargin.margin)}
+                {shortfall != null && shortfall > 0 && <> — short by {rupee(shortfall)}</>}
+                {brokerMargin.remarks ? <> ({brokerMargin.remarks})</> : null}. Expect a margin rejection.
+              </>
+            ) : (
+              <>
+                ⚠ Est. margin needed ≈ {rupee(need!)}, but only {rupee(funds!.available!)} is available — likely
+                short by ≈ {rupee(shortfall!)}. This is a rough estimate (not real SPAN); the broker may still
+                accept or reject it, but expect a possible margin rejection.
+              </>
+            )}
           </div>
         )}
 

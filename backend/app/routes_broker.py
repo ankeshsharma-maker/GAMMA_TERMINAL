@@ -356,6 +356,64 @@ async def order_tsym(body: dict):
     return {**res, "qty": qty}
 
 
+def _num(v) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+@router.post("/margin")
+async def basket_margin(body: dict):
+    """Flattrade's own margin for an order before it is sent (GetBasketMargin --
+    a calculation, nothing is placed): the legs together, so a hedged spread or
+    strangle gets its real SPAN benefit. body: {symbol, expiry, legs: [{strike,
+    optionType, side, lots, price?}]}. Returns ok=False with a reason whenever
+    the broker can't answer, so the caller falls back to its own estimate."""
+    from .routes import _ensure_chain
+
+    b = get_broker()
+    if not (b.configured and b.authed):
+        return {"ok": False, "reason": "Flattrade not connected"}
+    symbol = str(body.get("symbol") or "").upper()
+    legs = body.get("legs") or []
+    if not symbol or not legs:
+        raise HTTPException(status_code=422, detail="symbol and legs are required")
+    chain = await _ensure_chain(symbol, body.get("expiry"))
+    exp = chain["expiry"]
+    orders = []
+    for lg in legs:
+        ot = str(lg.get("optionType") or "").upper()
+        if ot not in ("CE", "PE"):
+            return {"ok": False, "reason": "futures legs aren't priced by the broker check yet"}
+        strike = float(lg["strike"])
+        info = await b.resolve_option(symbol, exp, strike, ot)
+        if not info.get("tsym") or (info["exch"] == "BFO" and not info.get("confirmed")):
+            return {"ok": False, "reason": f"couldn't find {symbol} {strike:g} {ot} at the broker ({info.get('error')})"}
+        row = next((r for r in chain["rows"] if abs(r["strike"] - strike) < 1e-6), None)
+        side_q = (row["call"] if ot == "CE" else row["put"]) if row else {}
+        px = _num(lg.get("price")) or _num(side_q.get("ltp")) or 0.05
+        qty = int(lg.get("lots") or 1) * int(info.get("lotSize") or chain["lotSize"])
+        orders.append(b.build_order_payload(
+            exch=info["exch"], tsym=info["tsym"], qty=qty, side=str(lg.get("side") or "BUY"),
+            order_type="LMT", price=round(px, 2), product="M",
+        ))
+    try:
+        out = await b.basket_margin(orders)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "reason": f"broker margin check failed: {exc}"}
+    # marginusedtrade = what this basket itself needs; marginused = account total
+    # after it. Either may be absent depending on the Noren build -- keep both +raw.
+    need = _num(out.get("marginusedtrade")) or _num(out.get("marginused"))
+    return {
+        "ok": True,
+        "margin": round(need, 2),
+        "accountMarginAfter": _num(out.get("marginused")) or None,
+        "remarks": out.get("remarks"),
+        "raw": out,
+    }
+
+
 @router.get("/orders")
 async def orders():
     b = _require_auth()

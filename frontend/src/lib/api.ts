@@ -453,6 +453,10 @@ export const api = {
     return j<JournalTrade[]>(`/api/journal${qs ? `?${qs}` : ""}`);
   },
   journalStats: () => j<JournalStats>("/api/journal/stats"),
+  journalReview: (day?: string) =>
+    j<import("../types").JournalReview>(`/api/journal/review${day ? `?day=${encodeURIComponent(day)}` : ""}`),
+  journalSyncLive: () =>
+    j<{ ok: boolean; orders?: number; new?: number; reason?: string }>("/api/journal/sync-live", { method: "POST" }),
 
   portfolioGreeks: () =>
     j<{
@@ -480,6 +484,15 @@ export const api = {
    *  order -- OrderConfirm.tsx compares this against actual available
    *  margin so a shortfall is caught before submitting, not from a broker
    *  rejection after the fact. */
+  brokerMargin: (body: {
+    symbol: string;
+    expiry?: string;
+    legs: { strike: number; optionType: string; side: "BUY" | "SELL"; lots: number; price: number }[];
+  }) =>
+    j<{ ok: boolean; margin?: number; accountMarginAfter?: number | null; remarks?: string | null; reason?: string }>(
+      "/api/broker/margin",
+      { method: "POST", body: JSON.stringify(body) }
+    ),
   marginEstimate: (legs: { side: "BUY" | "SELL"; strike: number; lots: number; price: number }[], lotSize: number) =>
     j<{ estimated: number }>("/api/margin-estimate", {
       method: "POST",

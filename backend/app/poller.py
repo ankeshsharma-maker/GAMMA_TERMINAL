@@ -26,6 +26,8 @@ _MKT_OPEN, _MKT_CLOSE = dtime(9, 15), dtime(15, 30)
 _EXP_TTL = 300  # re-pull the expiry list at most this often
 
 _exp_refreshed: dict[str, float] = {}
+_JOURNAL_SYNC_S = 300
+_journal_synced = 0.0
 
 
 def _in_market_hours(now: datetime | None = None) -> bool:
@@ -381,6 +383,21 @@ async def run_poller(stop: asyncio.Event) -> None:
                 await hub.broadcast_all({"type": "alerts", "data": store.get_alerts(50)})
         except Exception as exc:  # noqa: BLE001
             log.warning("price-alert tick failed: %s", exc)
+
+        # live trade journal: the broker's OrderBook only holds today, so copy it
+        # into the journal every few minutes while connected (cheap, idempotent)
+        global _journal_synced
+        if time.time() - _journal_synced >= _JOURNAL_SYNC_S:
+            try:
+                from . import live_journal
+
+                res = await live_journal.sync()
+                if res.get("ok"):
+                    _journal_synced = time.time()
+                    if res.get("new"):
+                        log.info("LIVE-JOURNAL %s new orders", res["new"])
+            except Exception as exc:  # noqa: BLE001
+                log.warning("live-journal sync failed: %s", exc)
 
         try:
             from . import short_guard

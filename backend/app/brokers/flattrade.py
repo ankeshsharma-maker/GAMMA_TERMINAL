@@ -109,34 +109,49 @@ _BROWSERISH = {
 TickHandler = Callable[[str, dict], Awaitable[None] | None]
 
 _TSYM_RE = re.compile(r"^([A-Z]+)(\d{2}[A-Z]{3}\d{2})([CP])(\d+(?:\.\d+)?)$")
-# BSE (SENSEX/BANKEX) Noren tsyms use a different shape from NFO's: no
-# 2-digit year, and the CE/PE suffix trails the strike instead of a single
-# C/P leading it -- e.g. "SENSEX26SEP74500CE" vs NFO's "NIFTY29SEP26C24050".
-# Confirmed against a real Flattrade PositionBook row after the plain NFO
-# regex above was silently skipping every open BSE leg ("no leg matched the
-# option tsym pattern").
-_BFO_TSYM_RE = re.compile(r"^([A-Z]+)(\d{2}[A-Z]{3})(\d+(?:\.\d+)?)(CE|PE)$")
+# BSE (SENSEX/BANKEX) Noren tsyms use a different shape from NFO's: the
+# CE/PE suffix trails the strike, and the date part is YEAR + MONTH with no
+# day -- "SENSEX26SEP74600CE" is the Sep-2026 contract that expires on the
+# 24th (the same PositionBook row's dname reads "SENSEX 24 SEP 74600 CE"),
+# not a 26-Sep expiry.
+_BFO_TSYM_RE = re.compile(r"^([A-Z]+)(\d{2})([A-Z]{3})(\d+(?:\.\d+)?)(CE|PE)$")
+_BSE_INDICES = frozenset({"SENSEX", "BANKEX", "SENSEX50", "SNSX50"})
+# PositionBook/OrderBook display name for BSE legs: "SENSEX 24 SEP 74600 CE"
+_DNAME_RE = re.compile(r"^([A-Z0-9]+)\s+(\d{1,2})\s+([A-Z]{3})\s+(\d+(?:\.\d+)?)\s+(CE|PE)$")
 
 
-def _infer_year(datepart: str, fmt: str, now: datetime | None = None) -> datetime | None:
-    """BFO tsyms carry no year -- assume the current one, rolling to next
-    year if that would already be well in the past (a contract opened in
-    December and still held when checked in January)."""
-    now = now or datetime.now()
+def _bfo_month_expiry(name: str, year: int, mon: str) -> datetime | None:
+    """A BFO YY+MON tsym has no day: the contract is that month's last expiry --
+    taken from the expiries the app has already loaded for the underlying, else
+    the month's last Thursday (BSE's expiry weekday)."""
     try:
-        d = datetime.strptime(f"{datepart}{now.year}", f"{fmt}%Y")
+        first = datetime.strptime(f"01{mon}{year}", "%d%b%Y")
     except ValueError:
         return None
-    if d < now - timedelta(days=60):
-        d = d.replace(year=now.year + 1)
+    from ..store import store  # lazy: store imports processing, which must not import this module
+
+    known = []
+    for e in store.expiries.get(name.upper(), []) or []:
+        try:
+            d = datetime.strptime(e, "%d-%b-%Y")
+        except ValueError:
+            continue
+        if (d.year, d.month) == (first.year, first.month):
+            known.append(d)
+    if known:
+        return max(known)
+    d = (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    while d.weekday() != 3:
+        d -= timedelta(days=1)
     return d
 
 
-def parse_noren_tsym(tsym: str) -> dict | None:
+def parse_noren_tsym(tsym: str, dname: str | None = None) -> dict | None:
     """Reverse of resolve_nfo's tsym build: 'NIFTY08SEP26C24050' ->
     {symbol, expiry ('08-Sep-2026'), optionType, strike}. Also handles BSE's
-    year-less, suffix-CE/PE shape (see _BFO_TSYM_RE). None if tsym isn't an
-    option in either conventional form (e.g. an equity '-EQ' symbol)."""
+    YY+MON, suffix-CE/PE shape (see _BFO_TSYM_RE); pass the PositionBook row's
+    `dname` when available -- it carries the exact expiry day. None if tsym
+    isn't an option in either conventional form (e.g. an equity '-EQ' symbol)."""
     up = (tsym or "").upper()
     m = _TSYM_RE.match(up)
     if m:
@@ -153,8 +168,16 @@ def parse_noren_tsym(tsym: str) -> dict | None:
         }
     m = _BFO_TSYM_RE.match(up)
     if m:
-        name, datepart, strike_s, ot = m.groups()
-        d = _infer_year(datepart, "%d%b")
+        name, yy, mon, strike_s, ot = m.groups()
+        d = None
+        dm = _DNAME_RE.match((dname or "").upper().strip())
+        if dm and dm.group(1) == name and dm.group(3) == mon:
+            try:
+                d = datetime.strptime(f"{dm.group(2)}{mon}20{yy}", "%d%b%Y")
+            except ValueError:
+                d = None
+        if d is None:
+            d = _bfo_month_expiry(name, 2000 + int(yy), mon)
         if d is None:
             return None
         return {
@@ -439,7 +462,7 @@ class FlattradeBroker:
         # BSE indices (SENSEX / BANKEX) have no NSE scrip — don't let the loose
         # fallback below grab a same-named NSE ETF (e.g. a SENSEX ETF ~₹880),
         # which was polluting the header spot. Leave them to the chain spot.
-        if sym in ("SENSEX", "BANKEX", "SENSEX50", "SNSX50"):
+        if sym in _BSE_INDICES:
             return None
         vals = await self.search_scrip("NSE", sym)
         for v in vals:
@@ -531,6 +554,41 @@ class FlattradeBroker:
             "tsym": tsym, "token": token, "lotSize": lot,
             "confirmed": token is not None, "error": error,
         }
+
+    async def resolve_option(self, name: str, expiry: str, strike: float, opt_type: str) -> dict:
+        """resolve_nfo plus `exch`, and BSE indices (SENSEX / BANKEX) on BFO. BFO
+        tsyms can't be built blind (monthly contracts carry YY+MON, not the day),
+        so a BFO leg is found by SearchScrip and matched on its parsed expiry,
+        strike and type -- `confirmed` stays False rather than guessing."""
+        if name.upper() not in _BSE_INDICES:
+            return {**await self.resolve_nfo(name, expiry, strike, opt_type), "exch": "NFO"}
+        want = (name.upper(), expiry, float(strike), opt_type.upper())
+        error = None
+        try:
+            for r in await self.search_scrip("BFO", f"{name.upper()} {strike:g} {opt_type.upper()}"):
+                p = parse_noren_tsym(r.get("tsym", ""), r.get("dname"))
+                if p and (p["symbol"], p["expiry"], p["strike"], p["optionType"]) == want:
+                    try:
+                        lot = int(float(r.get("ls", 0))) or None
+                    except (TypeError, ValueError):
+                        lot = None
+                    return {"tsym": r["tsym"], "token": r.get("token"), "lotSize": lot,
+                            "confirmed": True, "error": None, "exch": "BFO"}
+            error = "no BFO contract matched"
+        except Exception as exc:  # noqa: BLE001
+            error = str(exc)
+        return {"tsym": None, "token": None, "lotSize": None, "confirmed": False, "error": error, "exch": "BFO"}
+
+    async def basket_margin(self, orders: list[dict]) -> dict:
+        """What Flattrade itself would block for these orders placed together
+        (SPAN + exposure, with the basket's hedge benefit): GetBasketMargin is a
+        calculation only -- nothing is placed. `orders` are build_order_payload()
+        dicts; the first rides at the top level, the rest in `basketlists`."""
+        first = {k: v for k, v in orders[0].items() if k not in ("uid", "ret")}
+        rest = [{k: v for k, v in o.items() if k not in ("uid", "actid", "ret")} for o in orders[1:]]
+        if rest:
+            first["basketlists"] = rest
+        return await self._post("GetBasketMargin", first)
 
     async def resolve_nfo_future(self, name: str, expiry: str) -> dict:
         """Resolve an NFO futures contract to its Noren trading symbol / token /

@@ -511,12 +511,32 @@ def paper_clear_stop(position_id: str):
 
 @router.get("/journal")
 def journal_list(limit: int = 200, symbol: str | None = None):
-    return store.get_journal(limit=limit, symbol=symbol)
+    from . import live_journal
+
+    return store.get_journal(limit=limit, symbol=symbol, extra=live_journal.trades())
 
 
 @router.get("/journal/stats")
 def journal_stats():
-    return store.journal_stats()
+    from . import live_journal
+
+    return store.journal_stats(extra=live_journal.trades())
+
+
+@router.post("/journal/sync-live")
+async def journal_sync_live():
+    """Pull today's Flattrade OrderBook + brokerage into the journal now."""
+    from . import live_journal
+
+    return await live_journal.sync()
+
+
+@router.get("/journal/review")
+def journal_review(day: str | None = None):
+    """One day's live trading: result, charges, and the patterns that cost money."""
+    from . import live_journal
+
+    return live_journal.review(day)
 
 
 # ---- unified order routing (paper | live) --------------------------
@@ -1014,7 +1034,7 @@ async def portfolio_greeks():
             rows = []
         for r in rows or []:
             netqty = _fnum(r.get("netqty"))
-            parsed = parse_noren_tsym(r.get("tsym") or "") if netqty else None
+            parsed = parse_noren_tsym(r.get("tsym") or "", r.get("dname")) if netqty else None
             if not parsed:
                 continue
             leg = _chain_leg(store, parsed["symbol"], parsed["expiry"], parsed["strike"], parsed["optionType"])

@@ -957,3 +957,17 @@ export interface ShortGuardLeg {
   } | null;
   reason: string | null;
 }
+
+/** One day of live Flattrade trading, reviewed. */
+export interface JournalReview {
+  day: string;
+  days: string[];
+  orders: number;
+  filled: number;
+  rejected: number;
+  gross: number;
+  charges: number | null;
+  net: number | null;
+  byContract: { name: string; pnl: number }[];
+  flags: { kind: "reentry" | "flip" | "churn" | "rejected"; text: string }[];
+}

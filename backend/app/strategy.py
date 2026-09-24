@@ -520,7 +520,7 @@ def from_broker(positions: list[dict], preferred_symbol: str | None = None) -> d
             qty = 0.0
         if not qty:
             continue
-        parsed = parse_noren_tsym(p.get("tsym", ""))
+        parsed = parse_noren_tsym(p.get("tsym", ""), p.get("dname"))
         if not parsed:
             # not an option in the conventional tsym form (e.g. equity) --
             # logged so a genuine tsym-format miss (e.g. a BFO/Sensex

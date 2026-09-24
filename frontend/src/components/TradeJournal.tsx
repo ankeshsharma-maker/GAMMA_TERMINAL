@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { nf, sk, hhmm, signColor } from "../lib/format";
-import type { JournalStats, JournalTrade } from "../types";
+import type { JournalReview, JournalStats, JournalTrade } from "../types";
 
 function Card({
   label,
@@ -90,11 +90,87 @@ function DayBars({ days }: { days: { date: string; pnl: number; trades: number }
   );
 }
 
+const FLAG_ICON: Record<JournalReview["flags"][number]["kind"], string> = {
+  reentry: "↺",
+  flip: "⇄",
+  churn: "₹",
+  rejected: "⛔",
+};
+
+/** One day's live trading in plain words: result, costs, and the patterns
+ *  that cost money (re-entering after a loss, flipping sides, churn, rejections). */
+function DayReview({ refresh }: { refresh: number }) {
+  const [day, setDay] = useState<string | undefined>(undefined);
+  const [rv, setRv] = useState<JournalReview | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api.journalReview(day).then((d) => alive && setRv(d), () => {});
+    return () => {
+      alive = false;
+    };
+  }, [day, refresh]);
+  if (!rv || !rv.days.length) return null;
+  return (
+    <div className="mb-3 rounded border border-term-border bg-term-panel p-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-2xs">
+        <span className="font-semibold uppercase tracking-wide text-term-dim">Live day review</span>
+        <select
+          value={rv.day}
+          onChange={(e) => setDay(e.target.value)}
+          className="rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-2xs text-term-text"
+        >
+          {rv.days.map((d) => (
+            <option key={d} value={d}>
+              {new Date(`${d}T12:00:00+05:30`).toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" })}
+            </option>
+          ))}
+        </select>
+        <span className="num text-term-dim">
+          {rv.filled} filled · {rv.rejected} rejected
+        </span>
+        <span className="num ml-auto">
+          gross <span className={signColor(rv.gross)}>{rupee(rv.gross)}</span>
+          {rv.charges != null && (
+            <>
+              {" "}
+              · charges <span className="text-term-dim">₹{nf(rv.charges, 0)}</span> · net{" "}
+              <span className={`font-semibold ${signColor(rv.net ?? 0)}`}>{rupee(rv.net)}</span>
+            </>
+          )}
+        </span>
+      </div>
+      {rv.flags.length ? (
+        <ul className="space-y-1 text-xs">
+          {rv.flags.map((f, i) => (
+            <li key={i} className="flex gap-2">
+              <span className="w-4 shrink-0 text-center text-amber-400">{FLAG_ICON[f.kind]}</span>
+              <span className="text-term-text">{f.text}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="text-xs text-term-dim">Nothing flagged — no re-entries after a loss, flips, churn or rejections.</div>
+      )}
+      {rv.byContract.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+          {rv.byContract.map((c) => (
+            <span key={c.name} className="num rounded border border-term-border px-1.5 py-0.5">
+              {c.name} <span className={signColor(c.pnl)}>{rupee(c.pnl)}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TradeJournal() {
   const [stats, setStats] = useState<JournalStats | null>(null);
   const [trades, setTrades] = useState<JournalTrade[]>([]);
   const [busy, setBusy] = useState(true);
   const [symbolFilter, setSymbolFilter] = useState("");
+  const [syncNote, setSyncNote] = useState<string | null>(null);
+  const [refresh, setRefresh] = useState(0);
 
   const load = async () => {
     setBusy(true);
@@ -102,8 +178,20 @@ export function TradeJournal() {
       const [st, tr] = await Promise.all([api.journalStats(), api.journal({ limit: 300 })]);
       setStats(st);
       setTrades(tr);
+      setRefresh((n) => n + 1);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const syncLive = async () => {
+    setSyncNote("syncing…");
+    try {
+      const r = await api.journalSyncLive();
+      setSyncNote(r.ok ? `synced · ${r.new ?? 0} new order${r.new === 1 ? "" : "s"}` : r.reason ?? "sync failed");
+      await load();
+    } catch (e: any) {
+      setSyncNote(String(e?.message || e));
     }
   };
 
@@ -117,24 +205,34 @@ export function TradeJournal() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto p-4">
-      <div className="mb-3 flex items-center gap-3">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
         <h2 className="text-base font-semibold">Trade Journal</h2>
-        <span className="rounded bg-term-border px-1.5 py-0.5 text-2xs text-term-dim">Paper trades</span>
+        <span className="rounded bg-term-border px-1.5 py-0.5 text-2xs text-term-dim">Paper + live Flattrade</span>
+        {syncNote && <span className="text-2xs text-term-dim">{syncNote}</span>}
+        <button
+          onClick={syncLive}
+          title="Copy today's Flattrade order book into the journal now (it also syncs by itself every 5 min while connected)"
+          className="ml-auto rounded border border-term-dim/70 px-2 py-1 text-2xs text-term-dim hover:text-term-text"
+        >
+          ⟳ Sync live
+        </button>
         <button
           onClick={load}
           disabled={busy}
-          className="ml-auto rounded border border-term-dim/70 px-2 py-1 text-2xs text-term-dim hover:text-term-text disabled:opacity-50"
+          className="rounded border border-term-dim/70 px-2 py-1 text-2xs text-term-dim hover:text-term-text disabled:opacity-50"
         >
           {busy ? "…" : "Refresh"}
         </button>
       </div>
 
+      <DayReview refresh={refresh} />
+
       {busy && !stats ? (
         <div className="p-6 text-center text-sm text-term-dim">Loading…</div>
       ) : !stats || stats.totalTrades === 0 ? (
         <div className="rounded border border-term-border bg-term-panel p-6 text-center text-sm text-term-dim">
-          No closed paper trades yet. Trades appear here once a position is closed — manually,
-          via the Close button, or via an SL/target hit.
+          No closed trades yet. Paper trades appear once a position is closed; live Flattrade trades are
+          copied in every 5 minutes while the broker is connected (or tap ⟳ Sync live).
         </div>
       ) : (
         <>
@@ -232,7 +330,16 @@ export function TradeJournal() {
                       })}{" "}
                       {hhmm(t.closedTs)}
                     </td>
-                    <td className="px-2 py-1 font-medium text-term-text">{t.symbol}</td>
+                    <td className="px-2 py-1 font-medium text-term-text">
+                      {t.symbol}
+                      <span
+                        className={`ml-1 rounded px-1 text-[8px] font-bold ${
+                          t.mode === "live" ? "bg-down/20 text-down" : "bg-term-border text-term-dim"
+                        }`}
+                      >
+                        {t.mode === "live" ? "LIVE" : "PAPER"}
+                      </span>
+                    </td>
                     <td className="px-2 py-1">
                       {t.side === "BUY" ? "B" : "S"} {sk(t.strike)}
                       {t.optionType}

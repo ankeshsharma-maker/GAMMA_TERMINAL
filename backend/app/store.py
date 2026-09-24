@@ -1266,20 +1266,23 @@ class Store:
         self.journal.appendleft(entry)
         db.save_row("journal", entry["id"], entry, ts=entry["closedTs"])
 
-    def get_journal(self, limit: int = 200, symbol: str | None = None) -> list[dict]:
+    def get_journal(self, limit: int = 200, symbol: str | None = None, extra: list[dict] | None = None) -> list[dict]:
+        """Paper trades, plus `extra` (live Flattrade round trips) merged newest-first."""
         with _lock:
             rows = list(self.journal)
+        if extra:
+            rows = sorted(rows + extra, key=lambda r: -r["closedTs"])
         if symbol:
             rows = [r for r in rows if r["symbol"] == symbol.upper()]
         return rows[: max(1, min(limit, _JOURNAL_MAXLEN))]
 
-    def journal_stats(self) -> dict:
+    def journal_stats(self, extra: list[dict] | None = None) -> dict:
         from datetime import datetime
 
         from .processing import IST
 
         with _lock:
-            rows_chrono = list(reversed(self.journal))
+            rows_chrono = sorted(list(self.journal) + (extra or []), key=lambda r: r["closedTs"])
 
         n = len(rows_chrono)
         wins = [r for r in rows_chrono if r["pnl"] > 0]

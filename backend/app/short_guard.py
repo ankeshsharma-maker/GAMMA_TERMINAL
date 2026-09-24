@@ -42,7 +42,7 @@ def _short_legs() -> list[dict]:
         qty = _f(r.get("netqty"))
         if qty >= 0:
             continue
-        parsed = parse_noren_tsym(r.get("tsym") or "")
+        parsed = parse_noren_tsym(r.get("tsym") or "", r.get("dname"))
         if not parsed:
             continue
         legs.append({"src": "live", "symbol": parsed["symbol"], "expiry": parsed["expiry"],

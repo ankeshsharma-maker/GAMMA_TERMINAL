@@ -64,7 +64,7 @@ def from_broker(rows: list[dict]) -> tuple[list[dict], list[str]]:
         tsym = str(r.get("tsym") or "")
         entry = _f(r.get("netavgprc") or r.get("daybuyavgprc") or r.get("daysellavgprc"))
         ltp = _f(r.get("lp")) or entry
-        parsed = parse_noren_tsym(tsym)
+        parsed = parse_noren_tsym(tsym, r.get("dname"))
         if parsed:
             out.append({"source": "broker", "symbol": parsed["symbol"], "expiry": parsed["expiry"],
                         "strike": parsed["strike"], "type": parsed["optionType"], "qty": qty,
