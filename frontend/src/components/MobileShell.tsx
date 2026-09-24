@@ -314,6 +314,31 @@ function ScrollTabs({ view, setView }: { view: View; setView: (v: View) => void 
   );
 }
 
+/** four-corners glyph as SVG — the ⛶ character is missing from some Android fonts */
+function FullIcon({ exit }: { exit?: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="13"
+      height="13"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path
+        d={
+          exit
+            ? "M6 1.5V6H1.5M10 1.5V6h4.5M6 14.5V10H1.5M10 14.5V10h4.5"
+            : "M1.5 6V1.5H6M10 1.5h4.5V6M1.5 10v4.5H6M14.5 10v4.5H10"
+        }
+      />
+    </svg>
+  );
+}
+
 const BOTTOM_NAV: { v: View; icon: string; label: string }[] = [
   { v: "watchlist", icon: "★", label: "Watchlist" },
   { v: "orders", icon: "📋", label: "Orders" },
@@ -408,6 +433,27 @@ export function MobileShell() {
   const [brokerOpen, setBrokerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // full screen on Chart / Scalp: the top bar, tab row and bottom bar go away
+  const [full, setFull] = useState(false);
+  const fullOk = view === "chart" || view === "scalper";
+  const isFull = full && fullOk;
+  useEffect(() => {
+    if (!fullOk) setFull(false); // left via the chart's own view switcher
+  }, [fullOk]);
+  // the phone's Back button (and browser back) leaves full screen rather than
+  // the app: entering pushes a history entry, Back pops it
+  useEffect(() => {
+    if (!isFull) return;
+    window.history.pushState({ gtFull: true }, "");
+    const onPop = () => setFull(false);
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      // left by the button or a view switch, not Back — drop the entry we pushed
+      if (window.history.state?.gtFull) window.history.back();
+    };
+  }, [isFull]);
+
   return (
     <div
       className="relative flex h-full flex-col bg-term-bg text-term-text"
@@ -420,77 +466,93 @@ export function MobileShell() {
         paddingRight: "env(safe-area-inset-right)",
       }}
     >
-      {/* ── top bar ─────────────────────────────────────────── */}
-      <div
-        className={`flex items-center gap-1.5 border-b bg-term-panel px-1.5 py-1.5 ${
-          orderMode === "live" ? "border-down" : "border-term-border"
-        }`}
-      >
-        <LogoMark size={22} />
-        <TopIndices />
-        <PcrChip />
-        <button
-          onClick={() => setBrokerOpen((o) => !o)}
-          className={`relative ml-auto shrink-0 rounded border px-1.5 py-1 text-[11px] ${
-            brokerOpen ? "border-term-accent text-term-accent" : "border-term-dim/70 text-term-dim"
-          }`}
-          title="Broker · mode · alerts"
-        >
-          ⚿
-          {alertsUnseen > 0 && !brokerOpen && (
-            <span className="absolute -right-1.5 -top-1.5 min-w-[15px] rounded-full bg-down px-1 text-[9px] font-bold leading-4 text-white">
-              {alertsUnseen}
-            </span>
-          )}
-        </button>
-      </div>
-
-      {/* ── top tab row — ONE row, however many tabs there are ──── */}
-      <ScrollTabs view={view} setView={setView} />
-
-      {brokerOpen && (
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-2 py-1.5">
-          <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
-            Mode <OrderModePill />
-          </span>
-          <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
-            Show <ClassFilter />
-          </span>
-          <BrokerPill />
-          <UpstoxPill />
-          <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
-            Text <FontScale />
-          </span>
-          <LegRuleBell />
-          <button
-            onClick={() => (notifOpen ? closeNotif() : openNotif())}
-            className={`ml-auto rounded border px-2 py-1 text-2xs ${
-              notifOpen
-                ? "border-term-accent text-term-accent"
-                : "border-term-dim/70 text-term-dim hover:text-term-text"
+      {!isFull && (
+        <>
+          {/* ── top bar ─────────────────────────────────────────── */}
+          <div
+            className={`flex items-center gap-1.5 border-b bg-term-panel px-1.5 py-1.5 ${
+              orderMode === "live" ? "border-down" : "border-term-border"
             }`}
-            title="Alerts & unusual activity"
           >
-            Alerts{alertsUnseen > 0 ? ` (${alertsUnseen})` : ""}
-          </button>
-          <button
-            onClick={() => {
-              setBrokerOpen(false);
-              setSettingsOpen(true);
-            }}
-            className="rounded border border-term-dim/70 px-2 py-1 text-2xs text-term-dim hover:text-term-text"
-            title="Settings"
-          >
-            ⚙ Settings
-          </button>
-          <button
-            onClick={lockNow}
-            className="rounded border border-term-dim/70 px-2 py-1 text-2xs text-term-dim hover:text-term-text"
-            title="Lock the app — require the password / PIN again"
-          >
-            🔒 Lock
-          </button>
-        </div>
+            <LogoMark size={22} />
+            <TopIndices />
+            <PcrChip />
+            {fullOk && (
+              <button
+                onClick={() => {
+                  setBrokerOpen(false);
+                  setFull(true);
+                }}
+                className="shrink-0 rounded border border-term-dim/70 px-1.5 py-1 text-term-dim"
+                title="Full screen — hide the bars (Back or the corner button brings them back)"
+              >
+                <FullIcon />
+              </button>
+            )}
+            <button
+              onClick={() => setBrokerOpen((o) => !o)}
+              className={`relative ml-auto shrink-0 rounded border px-1.5 py-1 text-[11px] ${
+                brokerOpen ? "border-term-accent text-term-accent" : "border-term-dim/70 text-term-dim"
+              }`}
+              title="Broker · mode · alerts"
+            >
+              ⚿
+              {alertsUnseen > 0 && !brokerOpen && (
+                <span className="absolute -right-1.5 -top-1.5 min-w-[15px] rounded-full bg-down px-1 text-[9px] font-bold leading-4 text-white">
+                  {alertsUnseen}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* ── top tab row — ONE row, however many tabs there are ──── */}
+          <ScrollTabs view={view} setView={setView} />
+
+          {brokerOpen && (
+            <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-2 py-1.5">
+              <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
+                Mode <OrderModePill />
+              </span>
+              <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
+                Show <ClassFilter />
+              </span>
+              <BrokerPill />
+              <UpstoxPill />
+              <span className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-term-dim">
+                Text <FontScale />
+              </span>
+              <LegRuleBell />
+              <button
+                onClick={() => (notifOpen ? closeNotif() : openNotif())}
+                className={`ml-auto rounded border px-2 py-1 text-2xs ${
+                  notifOpen
+                    ? "border-term-accent text-term-accent"
+                    : "border-term-dim/70 text-term-dim hover:text-term-text"
+                }`}
+                title="Alerts & unusual activity"
+              >
+                Alerts{alertsUnseen > 0 ? ` (${alertsUnseen})` : ""}
+              </button>
+              <button
+                onClick={() => {
+                  setBrokerOpen(false);
+                  setSettingsOpen(true);
+                }}
+                className="rounded border border-term-dim/70 px-2 py-1 text-2xs text-term-dim hover:text-term-text"
+                title="Settings"
+              >
+                ⚙ Settings
+              </button>
+              <button
+                onClick={lockNow}
+                className="rounded border border-term-dim/70 px-2 py-1 text-2xs text-term-dim hover:text-term-text"
+                title="Lock the app — require the password / PIN again"
+              >
+                🔒 Lock
+              </button>
+            </div>
+          )}
+        </>
       )}
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
 
@@ -501,26 +563,42 @@ export function MobileShell() {
         <MobileBody view={view} />
       </main>
 
+      {isFull && (
+        <button
+          onClick={() => setFull(false)}
+          className="fixed z-40 rounded-full border border-term-dim/70 bg-term-panel/85 p-2 text-term-text shadow-lg"
+          style={{
+            right: "calc(env(safe-area-inset-right) + 6px)",
+            bottom: "calc(env(safe-area-inset-bottom) + 6px)",
+          }}
+          title="Exit full screen"
+        >
+          <FullIcon exit />
+        </button>
+      )}
+
       {/* ── bottom tab bar ────────────────────────────────────── */}
-      <nav className="flex shrink-0 border-t border-term-border bg-term-panel2">
-        {BOTTOM_NAV.map((n) => {
-          const active = view === n.v;
-          return (
-            <button
-              key={n.v}
-              onClick={() => setView(n.v)}
-              className={`flex flex-1 flex-col items-center gap-0.5 border-t-2 py-1.5 ${
-                active
-                  ? "border-term-accent bg-term-accent/15 font-semibold text-term-accent"
-                  : "border-term-border bg-term-border/25 text-term-dim active:bg-term-border"
-              }`}
-            >
-              <span className="text-[17px] leading-none">{n.icon}</span>
-              <span className="text-[8px] uppercase tracking-wide">{n.label}</span>
-            </button>
-          );
-        })}
-      </nav>
+      {!isFull && (
+        <nav className="flex shrink-0 border-t border-term-border bg-term-panel2">
+          {BOTTOM_NAV.map((n) => {
+            const active = view === n.v;
+            return (
+              <button
+                key={n.v}
+                onClick={() => setView(n.v)}
+                className={`flex flex-1 flex-col items-center gap-0.5 border-t-2 py-1.5 ${
+                  active
+                    ? "border-term-accent bg-term-accent/15 font-semibold text-term-accent"
+                    : "border-term-border bg-term-border/25 text-term-dim active:bg-term-border"
+                }`}
+              >
+                <span className="text-[17px] leading-none">{n.icon}</span>
+                <span className="text-[8px] uppercase tracking-wide">{n.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+      )}
 
       <OrderConfirm />
     </div>
