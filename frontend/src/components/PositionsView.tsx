@@ -204,7 +204,7 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto bg-term-bg p-2 md:p-3">
       {/* MTM | P&L + the book total */}
-      <div className="flex items-center justify-between gap-3 rounded-lg bg-term-panel px-4 py-3">
+      <div className="flex items-center justify-between gap-3 rounded-lg bg-term-panel px-4 py-2.5">
         <div className="flex overflow-hidden rounded-lg border border-term-dim/60">
           {(
             [
@@ -215,7 +215,7 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
             <button
               key={k}
               onClick={() => setMode(k)}
-              className={`px-5 py-1.5 text-[15px] ${
+              className={`px-4 py-1 text-[14px] ${
                 mode === k ? "rounded-lg bg-term-accent text-white" : "text-term-text"
               }`}
               title={k === "mtm" ? "Profit / loss against your entry price" : "Day M2M from the previous close"}
@@ -225,7 +225,7 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
           ))}
         </div>
         <div className="min-w-0 text-right">
-          <div className={`tabular-nums truncate text-[26px] font-medium leading-tight ${signColor(total)}`}>
+          <div className={`tabular-nums truncate text-[20px] font-medium leading-tight ${signColor(total)}`}>
             {nf(total, 2)}
           </div>
           <div className="mt-0.5 flex items-center justify-end gap-1.5 text-[10px] text-term-dim">
