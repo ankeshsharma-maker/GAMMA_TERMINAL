@@ -18,6 +18,9 @@ const PUT_OI = "#15803d"; // dark green   — total Put OI
 // red = OI reduced (unwinding). Leg (call/put) stays shown by column position.
 const OI_ADD = "#22c55e";
 const OI_CUT = "#ef4444";
+// the Change-in-OI bars: calls red, puts green (added solid, cut faded)
+const CALL_CHG = "#ef4444";
+const PUT_CHG = "#22c55e";
 
 const zClamp = (z: number) => Math.min(3, Math.max(0.5, z));
 
@@ -36,41 +39,52 @@ const DeltaOIBars = ({
   peCut: number;
 }) => {
   const W = 200;
-  const H = 150;
-  const base = 76; // zero line
-  const span = 48; // tallest bar
+  const H = 200;
+  const base = 100; // zero line
+  const span = 70; // tallest bar
   const m = Math.max(1, ceAdd, -ceCut, peAdd, -peCut);
   const hgt = (v: number) => (Math.abs(v) / m) * span;
-  const bw = 32;
+  const bw = 40;
   const signed = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${compact(Math.abs(v))}`;
+  // call bars red, put bars green; added rises (solid), cut falls (faded)
   const group = (cx: number, add: number, cut: number, label: string, col: string) => {
     const net = add + cut;
     const ha = hgt(add);
     const hc = hgt(cut);
     return (
       <g>
-        <text x={cx} y={13} textAnchor="middle" fontSize="12" fontWeight="700" fill={net >= 0 ? OI_ADD : OI_CUT}>
+        <text x={cx} y={14} textAnchor="middle" fontSize="13" fontWeight="700" fill={col}>
           net {signed(net)}
         </text>
-        <rect x={cx - bw - 2} y={base - ha} width={bw} height={Math.max(ha, add > 0 ? 1.5 : 0)} rx="2" fill={OI_ADD} />
-        <rect x={cx + 2} y={base} width={bw} height={Math.max(hc, cut < 0 ? 1.5 : 0)} rx="2" fill={OI_CUT} />
-        <text x={cx - bw / 2 - 2} y={base - ha - 3} textAnchor="middle" fontSize="10" className="fill-term-text">
+        <rect x={cx - bw - 2} y={base - ha} width={bw} height={Math.max(ha, add > 0 ? 1.5 : 0)} rx="2" fill={col} />
+        <rect
+          x={cx + 2}
+          y={base}
+          width={bw}
+          height={Math.max(hc, cut < 0 ? 1.5 : 0)}
+          rx="2"
+          fill={col}
+          fillOpacity={0.4}
+          stroke={col}
+          strokeWidth="1"
+        />
+        <text x={cx - bw / 2 - 2} y={base - ha - 4} textAnchor="middle" fontSize="11" fontWeight="600" className="fill-term-text">
           {add > 0 ? `+${compact(add)}` : ""}
         </text>
-        <text x={cx + bw / 2 + 2} y={base + hc + 11} textAnchor="middle" fontSize="10" className="fill-term-text">
+        <text x={cx + bw / 2 + 2} y={base + hc + 13} textAnchor="middle" fontSize="11" fontWeight="600" className="fill-term-text">
           {cut < 0 ? `−${compact(-cut)}` : ""}
         </text>
-        <text x={cx} y={H - 4} textAnchor="middle" fontSize="12" fontWeight="600" fill={col}>
+        <text x={cx} y={H - 4} textAnchor="middle" fontSize="13" fontWeight="700" fill={col}>
           {label}
         </text>
       </g>
     );
   };
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-[360px]">
-      <line x1="6" x2={W - 6} y1={base} y2={base} stroke="#64748b" strokeWidth="1" />
-      {group(W * 0.28, ceAdd, ceCut, "Call", "#f87171")}
-      {group(W * 0.72, peAdd, peCut, "Put", "#4ade80")}
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-[420px]">
+      <line x1="4" x2={W - 4} y1={base} y2={base} stroke="#64748b" strokeWidth="1" />
+      {group(W * 0.27, ceAdd, ceCut, "Call", CALL_CHG)}
+      {group(W * 0.73, peAdd, peCut, "Put", PUT_CHG)}
     </svg>
   );
 };
@@ -850,17 +864,17 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         }`}
         style={isMobile ? undefined : { width: donutW }}
       >
-        {/* PCR as a number -- the Total OI ring was too small to read */}
-        <div className="flex w-full flex-col items-center">
-          <div className="text-2xs font-semibold uppercase tracking-wide text-term-dim">PCR · whole chain</div>
-          <div
-            className={`text-[34px] font-bold leading-tight tabular-nums ${
+        {/* PCR: one small line, the size of the added / cut legend */}
+        <div className="text-[10px] text-term-dim">
+          PCR{" "}
+          <span
+            className={`font-semibold tabular-nums ${
               pcr == null ? "text-term-text" : pcr >= 1 ? "text-up" : "text-down"
             }`}
           >
             {pcr != null ? nf(pcr, 2) : "–"}
-          </div>
-          <div className="text-[10px] text-term-dim">put OI ÷ call OI</div>
+          </span>{" "}
+          · whole chain
         </div>
 
         <div className="mt-1 w-full border-t border-term-border/50 pt-2 text-center text-2xs font-semibold uppercase tracking-wide text-term-dim">
@@ -869,22 +883,24 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         {dtot > 0 ? (
           <>
             <DeltaOIBars ceAdd={flow.ceAdd} ceCut={flow.ceCut} peAdd={flow.peAdd} peCut={flow.peCut} />
-            <div className="flex w-full justify-center gap-3 text-[10px] text-term-dim">
+            <div className="flex w-full flex-wrap justify-center gap-x-3 text-[10px] text-term-dim">
               <span className="flex items-center gap-1">
-                <Sw c={OI_ADD} /> OI added
+                <Sw c={CALL_CHG} /> Call
               </span>
               <span className="flex items-center gap-1">
-                <Sw c={OI_CUT} /> OI cut
+                <Sw c={PUT_CHG} /> Put
               </span>
+              <span>▲ solid = OI added</span>
+              <span>▼ faded = OI reduced</span>
             </div>
             <div className="w-full space-y-0.5">
               <Row
-                c={dCEnet >= 0 ? OI_ADD : OI_CUT}
+                c={CALL_CHG}
                 label={`Call ${dCEnet >= 0 ? "written" : "unwound"}`}
                 val={`${dCEnet >= 0 ? "+" : ""}${compact(dCEnet)}`}
               />
               <Row
-                c={dPEnet >= 0 ? OI_ADD : OI_CUT}
+                c={PUT_CHG}
                 label={`Put ${dPEnet >= 0 ? "written" : "unwound"}`}
                 val={`${dPEnet >= 0 ? "+" : ""}${compact(dPEnet)}`}
               />
