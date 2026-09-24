@@ -159,11 +159,17 @@ async def build_order(
     exp = expiry or store.nearest_expiry(symbol.upper()) or ""
     if not exp:
         raise HTTPException(status_code=400, detail=f"no expiry known for {symbol}; pass ?expiry=")
-    info = await b.resolve_nfo(symbol.upper(), exp, strike, ot)
+    info = await b.resolve_option(symbol.upper(), exp, strike, ot)
+    if not info["tsym"] or (info["exch"] == "BFO" and not info["confirmed"]):
+        # same refusal as the live path (_route_leg): no guessed BFO symbols
+        raise HTTPException(
+            status_code=400,
+            detail=f"{symbol.upper()} {exp} {strike:g} {ot} not found on {info['exch']} ({info.get('error')})",
+        )
     lot = info.get("lotSize") or lot_size(symbol)
     qty = lots * lot
     jdata_obj = b.build_order_payload(
-        exch="NFO", tsym=info["tsym"], qty=qty, side=side, order_type=order_type,
+        exch=info["exch"], tsym=info["tsym"], qty=qty, side=side, order_type=order_type,
         price=price, product="I" if product.upper() == "MIS" else "M",
     )
     jdata = _json_compact(jdata_obj)
@@ -321,13 +327,12 @@ async def order_tsym(body: dict):
     Positions B/S quick-trade buttons). `lots` (default 1) x that symbol's
     configured lot size -> qty; no strike/expiry resolution needed since the
     tsym is already known from the open position."""
-    from .brokers.flattrade import parse_noren_tsym
+    from .brokers.flattrade import is_bse_index, parse_noren_tsym
     from .processing import lot_size
 
     b = _require_auth()
     d = body or {}
     tsym = d.get("tsym")
-    exch = d.get("exch") or "NFO"
     prd = d.get("prd") or "M"
     side = str(d.get("side") or "").upper()
     try:
@@ -338,7 +343,11 @@ async def order_tsym(body: dict):
         raise HTTPException(status_code=422, detail="tsym and side (BUY/SELL) are required")
 
     parsed = parse_noren_tsym(tsym) or {}
-    qty = lots * (lot_size(parsed.get("symbol") or "") or 1)
+    if not parsed.get("symbol"):
+        # qty is lots x the underlying's lot size -- unknown underlying, unknown qty
+        raise HTTPException(status_code=422, detail=f"can't size an order for {tsym}: not a recognised option symbol")
+    exch = d.get("exch") or ("BFO" if is_bse_index(parsed["symbol"]) else "NFO")
+    qty = lots * lot_size(parsed["symbol"])
     log_base = {
         "mode": "live", "tsym": tsym, "side": side, "qty": qty,
         "symbol": parsed.get("symbol"), "strike": parsed.get("strike"),

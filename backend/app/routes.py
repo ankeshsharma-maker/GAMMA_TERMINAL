@@ -583,31 +583,43 @@ async def _route_leg(
         broker = get_broker()
         if not broker.authed:
             raise HTTPException(status_code=400, detail="Flattrade not connected")
-        info = await broker.resolve_nfo(symbol, exp, strike, option_type)
+        # NFO for NSE names; BFO (SearchScrip-matched) for SENSEX / BANKEX
+        info = await broker.resolve_option(symbol, exp, strike, option_type)
+        exch = info["exch"]
+        if not info["tsym"] or (exch == "BFO" and not info["confirmed"]):
+            # a BFO tsym can't be built blind -- never guess one for a real-money order
+            err = f"{symbol} {exp} {strike:g} {option_type} not found on {exch} ({info.get('error')}); order not sent"
+            store.log_live_order({
+                "mode": "live", "status": "REJECTED", "symbol": symbol, "expiry": exp,
+                "strike": strike, "optionType": option_type, "side": side,
+                "qtyLots": qty_lots, "exch": exch, "error": err,
+            })
+            raise HTTPException(status_code=400, detail=err)
         lot = info["lotSize"] or chain["lotSize"]
         qty = qty_lots * lot
         try:
             res = await broker.place_order(
-                exch="NFO",
+                exch=exch,
                 tsym=info["tsym"],
                 qty=qty,
                 side=side,
                 order_type=order_type,
                 price=price or 0.0,
                 product="I" if product == "MIS" else "M",
+                token=info.get("token"),
             )
         except Exception as exc:  # noqa: BLE001
             rec = {
                 "mode": "live", "status": "REJECTED", "symbol": symbol, "expiry": exp,
                 "strike": strike, "optionType": option_type, "side": side,
-                "qtyLots": qty_lots, "qty": qty, "tsym": info["tsym"], "error": str(exc),
+                "qtyLots": qty_lots, "qty": qty, "exch": exch, "tsym": info["tsym"], "error": str(exc),
             }
             store.log_live_order(rec)
             raise HTTPException(status_code=502, detail=f"broker rejected: {exc}")
         rec = {
             "mode": "live", "status": "PLACED", "symbol": symbol, "expiry": exp,
             "strike": strike, "optionType": option_type, "side": side,
-            "qtyLots": qty_lots, "qty": qty, "tsym": info["tsym"],
+            "qtyLots": qty_lots, "qty": qty, "exch": exch, "tsym": info["tsym"],
             "orderId": res.get("orderId"), "confirmed": info["confirmed"],
         }
         store.log_live_order(rec)
@@ -652,9 +664,20 @@ async def _route_future(
     if mode == "live":
         from .brokers import get_broker
 
+        from .brokers.flattrade import is_bse_index
+
         broker = get_broker()
         if not broker.authed:
             raise HTTPException(status_code=400, detail="Flattrade not connected")
+        if is_bse_index(symbol):
+            # resolve_nfo_future only builds NFO symbols; a BFO future would go out wrong
+            err = f"live {symbol.upper()} futures (BFO) aren't supported yet; order not sent"
+            store.log_live_order({
+                "mode": "live", "status": "REJECTED", "symbol": symbol, "expiry": expiry,
+                "strike": 0.0, "optionType": "FUT", "side": side, "qtyLots": qty_lots,
+                "exch": "BFO", "error": err,
+            })
+            raise HTTPException(status_code=400, detail=err)
         info = await broker.resolve_nfo_future(symbol, expiry)
         lot = info["lotSize"] or lot_size(symbol)
         qty = qty_lots * lot
@@ -667,6 +690,7 @@ async def _route_future(
                 order_type=order_type,
                 price=price or 0.0,
                 product="I" if product == "MIS" else "M",
+                token=info.get("token"),
             )
         except Exception as exc:  # noqa: BLE001
             rec = {

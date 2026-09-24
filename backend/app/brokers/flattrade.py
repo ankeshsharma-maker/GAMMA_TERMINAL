@@ -120,6 +120,11 @@ _BSE_INDICES = frozenset({"SENSEX", "BANKEX", "SENSEX50", "SNSX50"})
 _DNAME_RE = re.compile(r"^([A-Z0-9]+)\s+(\d{1,2})\s+([A-Z]{3})\s+(\d+(?:\.\d+)?)\s+(CE|PE)$")
 
 
+def is_bse_index(name: str) -> bool:
+    """True for underlyings whose F&O trades on BFO, not NFO."""
+    return (name or "").upper() in _BSE_INDICES
+
+
 def _bfo_month_expiry(name: str, year: int, mon: str) -> datetime | None:
     """A BFO YY+MON tsym has no day: the contract is that month's last expiry --
     taken from the expiries the app has already loaded for the underlying, else
@@ -559,22 +564,31 @@ class FlattradeBroker:
         """resolve_nfo plus `exch`, and BSE indices (SENSEX / BANKEX) on BFO. BFO
         tsyms can't be built blind (monthly contracts carry YY+MON, not the day),
         so a BFO leg is found by SearchScrip and matched on its parsed expiry,
-        strike and type -- `confirmed` stays False rather than guessing."""
+        strike and type -- `confirmed` stays False rather than guessing. The
+        row's dname must also spell out the same day: without it a YY+MON
+        tsym's day is only inferred (_bfo_month_expiry), not good enough for
+        a real-money order."""
         if name.upper() not in _BSE_INDICES:
             return {**await self.resolve_nfo(name, expiry, strike, opt_type), "exch": "NFO"}
         want = (name.upper(), expiry, float(strike), opt_type.upper())
+        wd = datetime.strptime(expiry, "%d-%b-%Y")
+        want_dname = (wd.day, wd.strftime("%b").upper(), float(strike), opt_type.upper())
         error = None
         try:
-            for r in await self.search_scrip("BFO", f"{name.upper()} {strike:g} {opt_type.upper()}"):
+            rows = await self.search_scrip("BFO", f"{name.upper()} {strike:g} {opt_type.upper()}")
+            for r in rows:
                 p = parse_noren_tsym(r.get("tsym", ""), r.get("dname"))
-                if p and (p["symbol"], p["expiry"], p["strike"], p["optionType"]) == want:
+                dm = _DNAME_RE.match(str(r.get("dname") or "").upper().strip())
+                if not dm or (int(dm.group(2)), dm.group(3), float(dm.group(4)), dm.group(5)) != want_dname:
+                    continue
+                if p and r.get("token") and (p["symbol"], p["expiry"], p["strike"], p["optionType"]) == want:
                     try:
                         lot = int(float(r.get("ls", 0))) or None
                     except (TypeError, ValueError):
                         lot = None
                     return {"tsym": r["tsym"], "token": r.get("token"), "lotSize": lot,
                             "confirmed": True, "error": None, "exch": "BFO"}
-            error = "no BFO contract matched"
+            error = f"no BFO contract matched in {len(rows)} SearchScrip results"
         except Exception as exc:  # noqa: BLE001
             error = str(exc)
         return {"tsym": None, "token": None, "lotSize": None, "confirmed": False, "error": error, "exch": "BFO"}
@@ -663,14 +677,16 @@ class FlattradeBroker:
         return str(rows[0]["token"]) if rows and rows[0].get("token") else None
 
     async def _marketable_limit(
-        self, *, exch: str, tsym: str, side: str
+        self, *, exch: str, tsym: str, side: str, token: str | None = None
     ) -> tuple[float, float]:
         """A limit price aggressive enough to fill like a market order, plus the
         tick size. BUY -> a few % above LTP (capped at the upper circuit),
         SELL -> a few % below (floored at the lower circuit). Flattrade's API
         rejects plain MKT for algo/API orders ("ALGO_CHK"), so every MKT order
-        is sent as this marketable LMT instead."""
-        token = await self._resolve_token(exch, tsym)
+        is sent as this marketable LMT instead. Pass the contract's `token` when
+        it's already resolved -- _resolve_token's first-row fallback could
+        otherwise price the order off a different contract."""
+        token = token or await self._resolve_token(exch, tsym)
         if not token:
             raise RuntimeError(f"MKT->LMT: could not resolve token for {tsym}")
         q = await self.quotes(exch, token)
@@ -717,10 +733,11 @@ class FlattradeBroker:
         price: float = 0.0,
         product: str = "M",
         validity: str = "DAY",
+        token: str | None = None,
     ) -> dict:
         ot = order_type.upper()
         if ot in ("MKT", "MARKET"):
-            px, _tick = await self._marketable_limit(exch=exch, tsym=tsym, side=side)
+            px, _tick = await self._marketable_limit(exch=exch, tsym=tsym, side=side, token=token)
             log.info("MKT->LMT %s %s x%s @ %.2f (marketable)", side, tsym, qty, px)
             order_type, price = "LMT", px
         payload = self.build_order_payload(
