@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, sk, signColor } from "../lib/format";
 import type { ScenarioData, ScenarioPosition } from "../types";
 
 /** Portfolio stress test: everything open (paper and/or broker) repriced under a spot shock
- *  x IV shift x days-forward grid. Click a cell to see which positions make or lose it. */
+ *  x IV shift x days-forward grid. Click a cell to see which positions make or lose it.
+ *  In a narrow panel (a phone) the grid turns on its side -- spot moves down, the 7 IV
+ *  shifts across -- and the tables become one block per row, so nothing scrolls sideways. */
 
 type Source = "paper" | "broker" | "all";
 const DAYS: [number, string][] = [
@@ -32,7 +34,7 @@ const ivLabel = (d: number) => (d === 0 ? "IV ±0" : `IV ${sign(d)}${Math.abs(d)
 
 function Stat({ label, value, cls = "", sub, title }: { label: string; value: string; cls?: string; sub?: string; title?: string }) {
   return (
-    <div className="flex min-w-[104px] flex-col rounded border border-term-border px-2.5 py-1.5" title={title}>
+    <div className="flex min-w-[96px] flex-1 flex-col rounded border border-term-border px-2.5 py-1.5" title={title}>
       <span className="text-[9px] uppercase tracking-wide text-term-dim">{label}</span>
       <span className={`num text-sm font-semibold ${cls}`}>{value}</span>
       {sub && <span className="num text-[10px] text-term-dim">{sub}</span>}
@@ -52,6 +54,9 @@ export function ScenarioGrid() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [sel, setSel] = useState<[number, number] | null>(null);
+  // narrow = the phone layout; decided by this panel's own width
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [narrow, setNarrow] = useState(() => window.matchMedia("(max-width: 900px)").matches);
 
   useEffect(() => {
     let alive = true;
@@ -78,6 +83,14 @@ export function ScenarioGrid() {
       clearInterval(id);
     };
   }, [source, days]);
+
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([e]) => setNarrow(e.contentRect.width < 640));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [data == null]);
 
   const worstIdx = useMemo<[number, number] | null>(() => {
     if (!data?.worst) return null;
@@ -142,7 +155,7 @@ export function ScenarioGrid() {
 
   if (!data) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div ref={rootRef} className="flex min-h-0 flex-1 flex-col">
         {controls}
         <div className="flex flex-1 items-center justify-center p-8">
           <div className="max-w-[360px] rounded-lg border border-term-dim/70 bg-term-panel/95 px-4 py-3 text-center text-xs">
@@ -168,8 +181,34 @@ export function ScenarioGrid() {
   const ivRows = data.ivShifts.map((v, i) => [v, i] as const).reverse(); // higher IV on top
   const g = data.greeks;
 
+  const ivCols = data.ivShifts.map((v, i) => [v, i] as const); // low IV left -> high IV right
+  const gridCell = (i: number, j: number, dv: number, x: number, pad: string) => {
+    const v = data.grid[i][j];
+    const isSel = cell && cell[0] === i && cell[1] === j;
+    const isNow = dv === 0 && x === 0;
+    return (
+      <td key={`${i}-${j}`} className="p-0">
+        <button
+          onClick={() => setSel([i, j])}
+          style={heat(v)}
+          className={`block w-full rounded text-term-text ${pad} ${
+            isSel
+              ? "outline outline-2 -outline-offset-1 outline-term-accent"
+              : isNow
+              ? "outline outline-1 -outline-offset-1 outline-term-dim"
+              : ""
+          }`}
+          title={`${pctLabel(x)} spot, ${ivLabel(dv)}: ${rupee(v)} ${showTotal ? "in total" : "change"}`}
+        >
+          {short(shown(v))}
+        </button>
+      </td>
+    );
+  };
+  const in1s = (x: number) => sigma != null && Math.abs(x) <= sigma && x !== 0;
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <div ref={rootRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {controls}
 
       {empty ? (
@@ -233,9 +272,40 @@ export function ScenarioGrid() {
                   : `${nf(data.daysForward, 1)} day${data.daysForward > 1 ? "s" : ""} from now`}
               </h3>
               <span className="text-[10px] text-term-dim">
-                Spot moves across, IV moves down. Every underlying moves by the same %{sigma != null ? `; a 1σ one-day move is about ±${nf(sigma, 2)}%` : ""}.
+                {narrow ? "Spot moves down the side, IV (vol points) across the top." : "Spot moves across, IV moves down."}{" "}
+                Every underlying moves by the same %{sigma != null ? `; a 1σ one-day move is about ±${nf(sigma, 2)}%` : ""}.
               </span>
             </div>
+            {narrow ? (
+              // phone: on its side -- spot moves down the side, IV shifts across
+              <table className="w-full table-fixed border-separate border-spacing-[2px] text-center text-[10px]">
+                <thead>
+                  <tr>
+                    <th className="w-[42px] text-right text-[9px] font-medium text-term-dim">spot/IV</th>
+                    {ivCols.map(([dv]) => (
+                      <th key={dv} className="py-1 font-semibold text-term-dim">
+                        {dv === 0 ? "±0" : `${sign(dv)}${Math.abs(dv)}`}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="tabular-nums">
+                  {data.spotShocks.map((x, j) => (
+                    <tr key={x}>
+                      <th
+                        className={`rounded px-0.5 py-1 text-right font-semibold ${
+                          in1s(x) ? "bg-term-accent/15 text-term-text" : "text-term-dim"
+                        }`}
+                        title={in1s(x) ? "Within a 1σ one-day move" : undefined}
+                      >
+                        {pctLabel(x)}
+                      </th>
+                      {ivCols.map(([dv, i]) => gridCell(i, j, dv, x, "px-0 py-1.5"))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
             <div className="overflow-x-auto">
               <table className="w-full border-separate border-spacing-0.5 text-center text-2xs">
                 <thead>
@@ -245,9 +315,9 @@ export function ScenarioGrid() {
                       <th
                         key={x}
                         className={`min-w-[58px] rounded px-1 py-1 font-semibold ${
-                          sigma != null && Math.abs(x) <= sigma && x !== 0 ? "bg-term-accent/15 text-term-text" : "text-term-dim"
+                          in1s(x) ? "bg-term-accent/15 text-term-text" : "text-term-dim"
                         }`}
-                        title={sigma != null && Math.abs(x) <= sigma && x !== 0 ? "Within a 1σ one-day move" : undefined}
+                        title={in1s(x) ? "Within a 1σ one-day move" : undefined}
                       >
                         {pctLabel(x)}
                       </th>
@@ -258,34 +328,13 @@ export function ScenarioGrid() {
                   {ivRows.map(([dv, i]) => (
                     <tr key={dv}>
                       <th className="px-1 py-1 text-right font-semibold text-term-dim">{ivLabel(dv)}</th>
-                      {data.spotShocks.map((x, j) => {
-                        const v = data.grid[i][j];
-                        const isSel = cell && cell[0] === i && cell[1] === j;
-                        const isNow = dv === 0 && x === 0;
-                        return (
-                          <td key={x} className="p-0">
-                            <button
-                              onClick={() => setSel([i, j])}
-                              style={heat(v)}
-                              className={`block w-full rounded px-1 py-1.5 text-term-text ${
-                                isSel
-                                  ? "outline outline-2 -outline-offset-1 outline-term-accent"
-                                  : isNow
-                                  ? "outline outline-1 -outline-offset-1 outline-term-dim"
-                                  : ""
-                              }`}
-                              title={`${pctLabel(x)} spot, ${ivLabel(dv)}: ${rupee(v)} ${showTotal ? "in total" : "change"}`}
-                            >
-                              {short(shown(v))}
-                            </button>
-                          </td>
-                        );
-                      })}
+                      {data.spotShocks.map((x, j) => gridCell(i, j, dv, x, "px-1 py-1.5"))}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            )}
             <p className="mt-1.5 text-[10px] text-term-dim">
               Each option is repriced with Black-Scholes using the IV that reproduces its current price, then IV is shifted in parallel.
               The outlined cell is the one shown in the table below — click any cell to inspect it.
@@ -296,6 +345,33 @@ export function ScenarioGrid() {
           {data.byUnderlying.length > 1 && (
             <section className="min-w-0 rounded border border-term-border bg-term-bg/20 p-3">
               <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-term-text">By underlying</h3>
+              {narrow ? (
+                <div className="flex flex-col gap-1.5 text-[11px] tabular-nums">
+                  {data.byUnderlying.map((u) => (
+                    <div key={u.symbol} className="rounded-md bg-term-bg/40 px-2.5 py-1.5">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="font-semibold text-term-text">
+                          {u.symbol} <span className="font-normal text-term-dim">{u.spot != null ? nf(u.spot, 1) : "–"}</span>
+                        </span>
+                        <span className={signColor(u.pnl)}>{rupee(u.pnl)}</span>
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap gap-x-3 text-term-dim">
+                        <span>
+                          Δ <span className={signColor(u.delta)}>{nf(u.delta, 1)}</span> ·{" "}
+                          <span className={signColor(u.deltaRs1pct)}>{rupee(u.deltaRs1pct)}</span>/1%
+                        </span>
+                        <span>
+                          Θ <span className={signColor(u.theta)}>{rupee(u.theta)}</span>/day
+                        </span>
+                        <span>
+                          V <span className={signColor(u.vega)}>{rupee(u.vega)}</span>
+                        </span>
+                        <span>1σ {u.sigma1dPct != null ? `±${nf(u.sigma1dPct, 2)}%` : "–"}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full whitespace-nowrap text-2xs">
                   <thead>
@@ -323,6 +399,7 @@ export function ScenarioGrid() {
                   </tbody>
                 </table>
               </div>
+              )}
             </section>
           )}
 
@@ -342,6 +419,58 @@ export function ScenarioGrid() {
                 </span>
               )}
             </div>
+            {narrow ? (
+              <div className="flex flex-col gap-1.5 text-[11px] tabular-nums">
+                {data.positions.map((p, i) => {
+                  const d = p.grid && cell ? p.grid[cell[0]][cell[1]] : null;
+                  return (
+                    <div key={i} className="rounded-md bg-term-bg/40 px-2.5 py-1.5">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="min-w-0 truncate font-semibold text-term-text">
+                          {legName(p)}
+                          {data.positions.some((q) => q.source !== p.source) && (
+                            <span className="ml-1.5 rounded border border-term-dim/60 px-1 text-[9px] font-normal uppercase text-term-dim">
+                              {p.source === "broker" ? "live" : "paper"}
+                            </span>
+                          )}
+                          {!p.priced && <span className="ml-1.5 font-normal text-amber-400">unpriced</span>}
+                        </span>
+                        <span className="whitespace-nowrap text-term-dim">
+                          scenario{" "}
+                          <span className={`font-semibold ${d == null ? "" : signColor(d)}`}>{d != null ? rupee(d) : "–"}</span>
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap gap-x-3 text-term-dim">
+                        <span>
+                          Qty <span className={signColor(p.qty)}>{nf(p.qty, 0)}</span> ({nf(p.lots, 1)}L)
+                        </span>
+                        <span>
+                          Entry <span className="text-term-text">{nf(p.entry, 2)}</span>
+                        </span>
+                        <span>
+                          LTP <span className="text-term-text">{nf(p.ltp, 2)}</span>
+                        </span>
+                        <span>IV {p.iv != null ? `${nf(p.iv, 1)}%` : "–"}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-x-3 text-term-dim">
+                        <span>
+                          Δ <span className={signColor(p.delta)}>{p.delta != null ? nf(p.delta, 1) : "–"}</span>
+                        </span>
+                        <span>
+                          Θ <span className={signColor(p.theta)}>{p.theta != null ? rupee(p.theta) : "–"}</span>/day
+                        </span>
+                        <span>
+                          V <span className={signColor(p.vega)}>{p.vega != null ? rupee(p.vega) : "–"}</span>
+                        </span>
+                        <span>
+                          now <span className={signColor(p.pnl)}>{rupee(p.pnl)}</span>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
             <div className="overflow-x-auto">
               <table className="w-full whitespace-nowrap text-2xs">
                 <thead>
@@ -387,6 +516,7 @@ export function ScenarioGrid() {
                 </tbody>
               </table>
             </div>
+            )}
           </section>
         </div>
       )}
