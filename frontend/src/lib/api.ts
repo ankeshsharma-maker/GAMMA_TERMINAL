@@ -125,16 +125,18 @@ export const api = {
   removeWatch: (symbol: string) =>
     j<{ watchlist: string[] }>(`/api/watchlist/${symbol}`, { method: "DELETE" }),
 
-  symbolSearch: (q: string) =>
+  /** names, plus option contracts for a strike query ("23400 CE"); `sym` = the
+   *  symbol on screen, whose contracts are listed first */
+  symbolSearch: (q: string, sym?: string) =>
     j<{
       results: {
         label: string;
         add: string;
-        kind: "index" | "stock" | "vix";
+        kind: "index" | "stock" | "vix" | "option";
         optionable: boolean;
         category?: string;
       }[];
-    }>(`/api/symbols/search?q=${encodeURIComponent(q)}`),
+    }>(`/api/symbols/search?q=${encodeURIComponent(q)}${sym ? `&sym=${encodeURIComponent(sym)}` : ""}`),
 
   chartDrawings: (key: string) =>
     j<{ drawings: import("./chartDrawings").Drawing[] }>(

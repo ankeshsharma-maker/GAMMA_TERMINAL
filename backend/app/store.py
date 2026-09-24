@@ -5,6 +5,7 @@ Raw NSE snapshots are keyed by (symbol, expiry) because the v3 API is per-expiry
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 import uuid
@@ -579,12 +580,67 @@ class Store:
         with _lock:
             return self.index_quotes.get(name)
 
-    def search_symbols(self, q: str, limit: int = 25) -> list[dict]:
+    # "23400 CE", "23400ce", "NIFTY 23400 PE", "nifty 29sep 23400 ce", "23400"
+    _OPT_Q = re.compile(
+        r"^(?:([A-Z][A-Z&-]*?)\s*)?(?:(\d{1,2})\s*([A-Z]{3})\s+)?(\d{2,6}(?:\.\d+)?)\s*(CE|PE|CALL|PUT|C|P)?$"
+    )
+
+    def search_options(self, q: str, hint: str | None = None, limit: int = 12) -> list[dict]:
+        """Option contracts for a strike-looking query, from the chains the app
+        already has: every underlying whose chain carries that strike, the next
+        three expiries, CE and/or PE. `hint` (the symbol on screen) comes first.
+        The `add` key is the same "SYM|DD-Mon-YYYY|STRIKE|OT" the strike tools
+        build, so the row prices like any other."""
+        ql = re.sub(r"\s+", " ", (q or "").strip().upper())
+        m = self._OPT_Q.match(ql)
+        if not m:
+            return []
+        sym, day, mon, strike_s, ot = m.groups()
+        strike = float(strike_s)
+        if strike <= 0:
+            return []
+        ots = ["CE", "PE"] if not ot else (["CE"] if ot in ("CE", "CALL", "C") else ["PE"])
+        with _lock:
+            exp_map = {s: list(v) for s, v in self.expiries.items()}
+        if sym:
+            cands = [s for s in exp_map if s == sym] or [s for s in exp_map if s.startswith(sym)]
+        else:
+            h = (hint or "").upper()
+            cands = ([h] if h in exp_map else []) + sorted(s for s in exp_map if s != h)
+        out: list[dict] = []
+        for s in cands:
+            exps = exp_map.get(s) or []
+            if day and mon:
+                exps = [e for e in exps if e.upper().startswith(f"{int(day):02d}-{mon}")]
+            # an expiry whose chain isn't loaded yet (the poller picks it up once
+            # the contract is in a list) is trusted to share the nearest one's strikes
+            base = self.get_chain(s, exp_map[s][0]) if exp_map.get(s) else None
+            base_has = bool(base) and any(r["strike"] == strike for r in base["rows"])
+            for e in exps[:3]:
+                chain = self.get_chain(s, e)
+                has = any(r["strike"] == strike for r in chain["rows"]) if chain else base_has
+                if not has:
+                    continue
+                k = int(strike) if strike.is_integer() else strike
+                for o in ots:
+                    out.append({
+                        "label": f"{s} {e[:2]} {e[3:6].upper()} {k} {o}",
+                        "add": f"{s}|{e}|{k}|{o}",
+                        "kind": "option",
+                        "optionable": False,
+                    })
+            if len(out) >= limit:
+                break
+        return out[:limit]
+
+    def search_symbols(self, q: str, limit: int = 25, hint: str | None = None) -> list[dict]:
         from .config import FO_UNIVERSE, INDEX_SYMBOLS
 
         ql = (q or "").strip().upper()
-        out: list[dict] = []
-        seen: set[str] = set()
+        # a strike-looking query ("23400 CE") lists option contracts first
+        opts = self.search_options(q, hint)
+        out: list[dict] = list(opts)
+        seen: set[str] = {r["add"] for r in opts}
 
         # F&O optionable symbols (indices + stocks)
         for sym in FO_UNIVERSE:
@@ -612,8 +668,9 @@ class Store:
             if len(out) >= limit * 2:
                 break
 
-        # optionable first, then shortest label
-        out.sort(key=lambda r: (not r["optionable"], len(r["label"])))
+        # option contracts first (in the order found -- the on-screen symbol
+        # leads), then optionable symbols, then shortest label
+        out.sort(key=lambda r: (r.get("kind") != "option", 0 if r.get("kind") == "option" else (not r["optionable"], len(r["label"]))))
         return out[:limit]
 
     # ---- live broker feed ---------------------------------------
@@ -901,6 +958,17 @@ class Store:
     def watchlist(self) -> list[str]:
         return list(self.watchlists["lists"][self.watchlists["active"]]["symbols"])
 
+    def watched_option_pairs(self) -> set[tuple[str, str]]:
+        """(symbol, expiry) of every option contract in the active watchlist --
+        the poller keeps those chains fresh, so a later-expiry row (e.g. added
+        from search) prices instead of sitting on "loading"."""
+        out: set[tuple[str, str]] = set()
+        for e in self.watchlist:
+            p = self._parse_opt(e)
+            if p:
+                out.add((p[0], p[1]))
+        return out
+
     def get_watchlists(self) -> dict:
         with _lock:
             return {
@@ -935,7 +1003,9 @@ class Store:
             return self.get_watchlists()
 
     def add_watch(self, symbol: str, index: int | None = None) -> list[str]:
-        symbol = symbol.upper().strip()
+        # an option key ("NIFTY|29-Sep-2026|23400|CE", from search) keeps the
+        # chain's mixed-case expiry -- uppercasing it broke every later match
+        symbol = symbol.strip() if "|" in symbol else symbol.upper().strip()
         with _lock:
             i = self.watchlists["active"] if index is None else self._wli(index)
             syms = self.watchlists["lists"][i]["symbols"]

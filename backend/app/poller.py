@@ -263,7 +263,7 @@ async def run_poller(stop: asyncio.Event) -> None:
             near = store.nearest_expiry(sym)
             if near:
                 pairs.add((sym, near))
-        for sym, exp in [*hub.subscriptions(), *short_pairs]:
+        for sym, exp in [*hub.subscriptions(), *short_pairs, *store.watched_option_pairs()]:
             resolved = store.resolve_expiry(sym, exp)
             if resolved:
                 pairs.add((sym.upper(), resolved))

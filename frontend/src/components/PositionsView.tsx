@@ -215,7 +215,7 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
             <button
               key={k}
               onClick={() => setMode(k)}
-              className={`px-4 py-1 text-[14px] ${
+              className={`px-3 py-0.5 text-[12px] ${
                 mode === k ? "rounded-lg bg-term-accent text-white" : "text-term-text"
               }`}
               title={k === "mtm" ? "Profit / loss against your entry price" : "Day M2M from the previous close"}
@@ -225,7 +225,7 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
           ))}
         </div>
         <div className="min-w-0 text-right">
-          <div className={`tabular-nums truncate text-[20px] font-medium leading-tight ${signColor(total)}`}>
+          <div className={`tabular-nums truncate text-[16px] font-medium leading-tight ${signColor(total)}`}>
             {nf(total, 2)}
           </div>
           <div className="mt-0.5 flex items-center justify-end gap-1.5 text-[10px] text-term-dim">
@@ -310,8 +310,22 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
               }`}
             >
               <div className="flex items-baseline justify-between gap-2 text-[14px]">
-                <span className="text-term-text">
+                <span className="flex items-center gap-2 text-term-text">
                   {prd} | {r.exch ?? "NFO"}
+                  {/* exit right from the card -- no need to open it first */}
+                  {!!qty && (
+                    <button
+                      disabled={isBusy}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        squareOff(r);
+                      }}
+                      className="rounded border border-down/60 bg-down/10 px-2 py-0.5 text-[11px] font-semibold leading-none text-down disabled:opacity-30"
+                      title="Exit this position with an opposite-side MARKET order"
+                    >
+                      {isBusy ? "…" : "Exit"}
+                    </button>
+                  )}
                 </span>
                 <span className="tabular-nums whitespace-nowrap">
                   <span className="text-term-dim">{mode === "mtm" ? "MTM" : "P&L"} : </span>
@@ -367,7 +381,7 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
                         className="ml-auto rounded border border-down/50 px-3 py-1 text-[11px] font-semibold text-down hover:bg-down/10 disabled:opacity-30"
                         title="Flatten this position with an opposite-side MARKET order"
                       >
-                        {isBusy ? "…" : "Square off"}
+                        {isBusy ? "…" : "Exit"}
                       </button>
                     )}
                   </div>

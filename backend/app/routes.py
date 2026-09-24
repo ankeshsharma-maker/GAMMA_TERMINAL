@@ -154,8 +154,10 @@ def indices_header_options():
 
 
 @router.get("/symbols/search")
-def symbols_search(q: str = "", limit: int = Query(25, ge=1, le=60)):
-    return {"results": store.search_symbols(q, limit)}
+def symbols_search(q: str = "", limit: int = Query(25, ge=1, le=60), sym: str | None = Query(None)):
+    """Indices / stocks by name, and option contracts for a strike query ("23400 CE");
+    `sym` = the symbol on screen, listed first among the option matches."""
+    return {"results": store.search_symbols(q, limit, hint=sym)}
 
 
 @router.get("/option-chain/{symbol}")

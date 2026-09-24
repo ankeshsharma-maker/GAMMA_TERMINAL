@@ -312,7 +312,7 @@ export function Watchlist({ band }: { band?: ReactNode } = {}) {
       return;
     }
     searchTimer.current = window.setTimeout(() => {
-      api.symbolSearch(q).then((d) => {
+      api.symbolSearch(q, useStore.getState().symbol).then((d) => {
         setResults(d.results);
         setOpenSearch(true);
       }, () => {});
@@ -328,7 +328,8 @@ export function Watchlist({ band }: { band?: ReactNode } = {}) {
     // persisted All/Indices/Stocks filter hides its class -- that looked
     // exactly like "adding does nothing" and cost a lot of back-and-forth
     // to actually diagnose, so never let a successful add go unseen.
-    if (!symClassOk(add)) setSymClass("all");
+    // an option key ("NIFTY|29-Sep-2026|23400|CE") is classed by its underlying
+    if (!symClassOk(add.split("|")[0])) setSymClass("all");
     if (optionable && !add.startsWith("IDX:")) selectSymbol(add);
   };
 
@@ -538,7 +539,7 @@ export function Watchlist({ band }: { band?: ReactNode } = {}) {
                   onChange={(e) => setInput(e.target.value)}
                   onFocus={() => results.length && setOpenSearch(true)}
                   onBlur={() => setTimeout(() => setOpenSearch(false), 250)}
-                  placeholder="Search index / VIX / stock…"
+                  placeholder="Symbol, or an option: 23400 CE"
                   className="w-full rounded-md border border-term-border bg-term-bg py-1 pl-6 pr-2 text-xs outline-none transition focus:border-term-accent"
                 />
               </div>
@@ -632,12 +633,14 @@ export function Watchlist({ band }: { band?: ReactNode } = {}) {
                     className={`rounded px-1 text-[9px] font-semibold ${
                       r.kind === "vix"
                         ? "bg-amber-500/20 text-amber-400"
+                        : r.kind === "option"
+                        ? "bg-term-accent/20 text-term-accent"
                         : r.optionable
                         ? "bg-up/20 text-up"
                         : "bg-term-border text-term-dim"
                     }`}
                   >
-                    {r.kind === "vix" ? "VIX" : r.optionable ? "F&O" : "INDEX"}
+                    {r.kind === "vix" ? "VIX" : r.kind === "option" ? "OPT" : r.optionable ? "F&O" : "INDEX"}
                   </span>
                 </button>
               ))}
