@@ -288,14 +288,11 @@ export function HomeDashboard() {
                       <td className={`${TD} text-term-text`}>{t.label}</td>
                       <td className={`${TD} text-center text-[14px] ${dirCls(t.ema)}`}>{arrow(t.ema)}</td>
                       <td className={`${TD} text-center text-[14px] ${dirCls(t.st)}`}>{arrow(t.st)}</td>
-                      <td className={`${TD} text-right font-semibold ${dirCls(t.pa?.dir ?? null)}`}>
-                        {t.pa ? (
-                          <>
-                            {arrow(t.pa.dir)} {t.pa.hi} · {t.pa.lo}
-                          </>
-                        ) : (
-                          "–"
-                        )}
+                      <td
+                        className={`${TD} text-right font-semibold ${dirCls(t.pa?.dir ?? null)}`}
+                        title={t.pa ? `${t.pa.hi} · ${t.pa.lo}${t.pa.broke ? ` · price ${t.pa.broke === "up" ? "above the last swing high" : "below the last swing low"}` : ""}` : undefined}
+                      >
+                        {t.pa ? `${arrow(t.pa.dir)} ${t.pa.dir === "up" ? "UP" : t.pa.dir === "down" ? "DOWN" : "MIXED"}` : "–"}
                       </td>
                     </tr>
                   ))}
@@ -359,14 +356,6 @@ export function HomeDashboard() {
                   </tbody>
                 </table>
               )}
-              <div className="text-[11px] text-term-dim">
-                {trend.up} up · {trend.down} down of {trend.total} signals. Structure: HH·HL (higher highs, higher lows) = up,
-                LH·LL (lower highs, lower lows) = down, from swing points (a candle beating the 2 on each side). A close through
-                the last swing confirms the trend — or, against it, is the first sign of a turn. ATR = the average candle range
-                in points: expanding = moves getting bigger than their last-20-candle average (the move has energy), contracting =
-                smaller (tiring, or a range). ATR is size, not up/down, so it doesn't vote. Confirms a trend once it's under way — it
-                lags at turns.
-              </div>
             </>
           ) : (
             <div className="text-[12px] text-term-dim">reading candles…</div>
