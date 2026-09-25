@@ -1,6 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RefreshChainBtn } from "./RefreshChainBtn";
-import { ClassFilter } from "./Header";
 import { useStore } from "../store";
 import { api, type OiWallPt } from "../lib/api";
 import { istTime } from "../lib/istTime";
@@ -2012,7 +2011,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
 
           <RefreshChainBtn />
 
-          <ClassFilter />
+          {/* All / Indices / Stocks lives in the main header (phone: ⚿ → Show) -- not repeated here */}
           {!isMobile && (
             <SelectMenu
               value={symbol}
