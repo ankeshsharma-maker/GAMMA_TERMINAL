@@ -24,7 +24,8 @@ import { StrategyChart } from "./StrategyChart";
 import { SelectMenu } from "./SelectMenu";
 import { VSplit, clamp, readNum } from "./VSplit";
 
-const IV_SHIFT_CHIPS = [-30, -20, -10, 0, 10, 20, 30];
+// IV points: +1 = IV 12% -> 13% (asked 25-Sep: 1-5% steps instead of 10 / 20 / 30)
+const IV_SHIFT_CHIPS = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5];
 const BUILDER_W_LS = "layout.builderW";
 
 /** compact labelled number input for the hedge finder's advanced targets */
@@ -622,7 +623,7 @@ export function StrategyBuilder() {
     if (!analysis) return [];
     const lot = analysis.lotSize || 1;
     return analysis.legs.map((leg) => {
-      const ivEff = ivShift ? Math.max(0.5, (leg.iv || 0) * (1 + ivShift / 100)) : leg.iv || 0;
+      const ivEff = ivShift ? Math.max(0.5, (leg.iv || 0) + ivShift) : leg.iv || 0;
       const g =
         leg.optionType === "FUT"
           ? { delta: 1, gamma: 0, theta: 0, vega: 0 }
@@ -2056,8 +2057,8 @@ export function StrategyBuilder() {
               <span className="font-semibold uppercase tracking-wide text-term-dim">IV shift</span>
               <input
                 type="range"
-                min={-50}
-                max={100}
+                min={-15}
+                max={15}
                 step={1}
                 value={ivShift}
                 onChange={(e) => setIvShift(Number(e.target.value))}
@@ -2080,7 +2081,7 @@ export function StrategyBuilder() {
                 <button
                   key={v}
                   onClick={() => setIvShift(v)}
-                  title={v === 0 ? "current IV" : `IV ${v > 0 ? "+" : ""}${v}%`}
+                  title={v === 0 ? "current IV" : `IV ${v > 0 ? "+" : ""}${v} points (e.g. 12% -> ${12 + v}%)`}
                   className={`chipbtn num ${ivShift === v ? "border-transparent bg-fuchsia-500 text-black" : ""}`}
                 >
                   {v === 0 ? "0" : `${v > 0 ? "+" : ""}${v}%`}

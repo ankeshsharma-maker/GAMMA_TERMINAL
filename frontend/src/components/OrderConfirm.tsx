@@ -32,9 +32,9 @@ export function OrderConfirm() {
     return pending.legs.filter((l) => l.optionType !== "FUT");
   }, [pending]);
 
-  const lotSize = chain?.lotSize ?? 1;
+  const lotSize = (pending?.kind === "single" && pending.lotSize) || chain?.lotSize || 1;
   const priceFor = (strike: number, ot: "CE" | "PE" | "FUT", knownPrice?: number | null) => {
-    if (ot === "FUT") return knownPrice || 0;
+    if (ot === "FUT" || knownPrice) return knownPrice || 0; // the sheet passes its own LTP / limit
     const row = chain?.rows.find((r) => r.strike === strike);
     if (!row) return 0;
     return (ot === "CE" ? row.call.ltp : row.put.ltp) || 0;
@@ -166,7 +166,11 @@ export function OrderConfirm() {
         </div>
 
         <div className="mb-3 flex items-center justify-between text-xs">
-          <span className="text-term-dim">Est. {net >= 0 ? "debit" : "credit"} · MKT order</span>
+          <span className="text-term-dim">
+            Est. {net >= 0 ? "debit" : "credit"} ·{" "}
+            {pending.kind === "single" && pending.orderType === "LMT" ? `LIMIT @ ${nf(pending.limitPrice ?? 0)}` : "MKT order"}
+            {pending.kind === "single" && pending.product ? ` · ${pending.product}` : ""}
+          </span>
           <span className="num font-semibold">₹{nf(Math.abs(net), 0)}</span>
         </div>
 
@@ -205,6 +209,16 @@ export function OrderConfirm() {
             ⚠ Against the trend: {pending.symbol} reads <b>{against}</b> ({trend.up}↑ {trend.down}↓ of {trend.total}{" "}
             signals across 5m / 15m / 1h + option flow). This order only makes money if the move{" "}
             {against === "UP" ? "stops or reverses down" : "stops or reverses up"} from here.
+          </div>
+        )}
+
+        {pending.kind === "single" && (pending.sl != null || pending.target != null) && (
+          <div className="mb-3 rounded border border-amber-500/50 bg-amber-500/10 px-2.5 py-1.5 text-2xs text-amber-300">
+            After it fills:{" "}
+            {pending.sl != null && <span className="text-down">SL {nf(pending.sl)}</span>}
+            {pending.sl != null && pending.target != null && " · "}
+            {pending.target != null && <span className="text-up">Target {nf(pending.target)}</span>} — watched by the
+            server, exits at market when hit.
           </div>
         )}
 

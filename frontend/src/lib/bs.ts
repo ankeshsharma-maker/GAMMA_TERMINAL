@@ -79,10 +79,11 @@ export function bsGreeks(
 
 const _sgn = (side: string) => (side === "BUY" ? 1 : -1);
 
-/** theoretical price of one leg at (S, tYears), optionally with IV shifted by `ivShiftPct` (%). */
+/** theoretical price of one leg at (S, tYears), optionally with IV shifted by `ivShiftPct` IV POINTS
+ *  (+1 = 12% -> 13%; was a relative %, which at 1-5% barely moved anything). */
 export function legPriceAt(leg: ResolvedLeg, S: number, tYears: number, ivShiftPct = 0): number {
   if (leg.optionType === "FUT") return S;
-  const iv = ivShiftPct ? Math.max(0.5, (leg.iv || 0) * (1 + ivShiftPct / 100)) : leg.iv || 0;
+  const iv = ivShiftPct ? Math.max(0.5, (leg.iv || 0) + ivShiftPct) : leg.iv || 0;
   return bsPrice(leg.optionType, S, leg.strike, Math.max(tYears, 0), R, Q, iv / 100);
 }
 
@@ -130,7 +131,7 @@ export function strategyPnlCurve(
       if (leg.optionType === "FUT") {
         total += sgn * (S - leg.entry) * leg.qty;
       } else {
-        const iv = ivShiftPct ? Math.max(0.5, (leg.iv || 0) * (1 + ivShiftPct / 100)) : leg.iv || 0;
+        const iv = ivShiftPct ? Math.max(0.5, (leg.iv || 0) + ivShiftPct) : leg.iv || 0;
         const px = bsPrice(leg.optionType, S, leg.strike, t, R, Q, iv / 100);
         total += sgn * (px - leg.entry) * leg.qty;
       }

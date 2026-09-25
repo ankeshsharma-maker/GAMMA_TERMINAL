@@ -395,14 +395,17 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
                   </div>
                 );
               })()}
+              {/* SL / target on this leg: always on the card (it used to hide in the tap-to-expand area) */}
+              {!!qty && (
+                <div className="mt-1.5 flex" onClick={(e) => e.stopPropagation()}>
+                  <LegBracketBadge r={r} bracket={findBracket(r, legRules)} onChanged={loadLegRules} />
+                </div>
+              )}
               {open && (
                 <div
                   className="mt-2 flex flex-col gap-1.5 border-t border-term-border/60 pt-2"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {!!qty && (
-                    <LegBracketBadge r={r} bracket={findBracket(r, legRules)} onChanged={loadLegRules} />
-                  )}
                   <div className="flex items-center gap-2 text-[11px]">
                     {!!qty && (
                       <label className="flex items-center gap-1.5 text-term-dim">

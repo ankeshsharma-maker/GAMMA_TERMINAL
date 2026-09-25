@@ -48,6 +48,14 @@ export type PendingOrder =
       /** known live price when there's no option chain to look one up from
        *  (futures) -- OrderConfirm uses this instead of a chain-row lookup */
       price?: number | null;
+      // from the watchlist order sheet:
+      orderType?: "MKT" | "LMT";
+      limitPrice?: number | null;
+      product?: "NRML" | "MIS";
+      /** SL / target PRICES attached to the leg once it fills */
+      sl?: number | null;
+      target?: number | null;
+      lotSize?: number;
     }
   | {
       kind: "strategy";
@@ -114,6 +122,22 @@ interface State {
   }) => Promise<void>;
   setOrderMode: (m: "paper" | "live") => Promise<string | null>;
   requestStrategyExecute: (legs: import("./types").StrategyLeg[]) => void;
+  /** the watchlist order sheet: LIVE -> the confirm dialog; paper -> filled now */
+  orderFromSheet: (o: {
+    symbol: string;
+    expiry: string;
+    strike: number;
+    optionType: "CE" | "PE" | "FUT";
+    side: "BUY" | "SELL";
+    lots: number;
+    orderType: "MKT" | "LMT";
+    limitPrice: number | null;
+    product: "NRML" | "MIS";
+    sl: number | null;
+    target: number | null;
+    lotSize: number;
+    ltp: number | null;
+  }) => Promise<void>;
   confirmPending: () => Promise<void>;
   cancelPending: () => void;
   selectSymbol: (s: string, keepView?: boolean) => void;
@@ -215,6 +239,37 @@ async function paperFill(o: {
   return r.paper;
 }
 
+/** After a live order from the sheet: wait (up to ~60 s, e.g. a limit order
+ *  filling) for the leg to appear in the PositionBook, then bracket it with the
+ *  SL / target PRICES. Tells the user if it never filled in that time. */
+async function attachWhenFilled(tsym: string, sl: number | null, target: number | null): Promise<void> {
+  for (let i = 0; i < 30; i++) {
+    await new Promise((res) => setTimeout(res, 2000));
+    try {
+      const d = await api.brokerPositions();
+      const row = (d.positions || []).find((x: any) => x.tsym === tsym && Number(x.netqty));
+      if (!row) continue;
+      await api.legRuleAttach({
+        tsym, exch: row.exch || "NFO", netqty: row.netqty, entryPx: Number(row.netavgprc), prd: row.prd,
+        unit: "px", sl, target, trail: null,
+      });
+      return;
+    } catch (e: any) {
+      try {
+        window.alert(`Order placed, but the SL / target couldn't be attached: ${e?.message || e}. Set it on the position card.`);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+  }
+  try {
+    window.alert("The order hasn't filled yet, so the SL / target wasn't attached. Set it on the position card once it fills.");
+  } catch {
+    /* ignore */
+  }
+}
+
 /** a view-only user can't trade LIVE: say so instead of sending an order the server refuses */
 function viewOnly(): boolean {
   if (!isViewer()) return false;
@@ -306,6 +361,21 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
+  orderFromSheet: async (o) => {
+    if (get().orderMode === "live" && !isViewer()) {
+      set({
+        pending: {
+          kind: "single", symbol: o.symbol, expiry: o.expiry, strike: o.strike, optionType: o.optionType,
+          side: o.side, lots: o.lots, price: o.orderType === "LMT" ? o.limitPrice : o.ltp,
+          orderType: o.orderType, limitPrice: o.limitPrice, product: o.product, sl: o.sl, target: o.target,
+          lotSize: o.lotSize,
+        },
+      });
+      return;
+    }
+    set({ paper: await paperFill({ symbol: o.symbol, expiry: o.expiry, strike: o.strike, optionType: o.optionType, side: o.side, lots: o.lots }) });
+  },
+
   confirmPending: async () => {
     const p = get().pending;
     if (!p) return;
@@ -330,8 +400,13 @@ export const useStore = create<State>((set, get) => ({
           side: p.side,
           qtyLots: p.lots,
           mode: "live",
+          ...(p.orderType ? { orderType: p.orderType, price: p.orderType === "LMT" ? p.limitPrice : null } : {}),
+          ...(p.product ? { product: p.product } : {}),
         });
         set({ paper: r.paper });
+        // SL / target from the order sheet: attach to the leg once it shows as filled
+        const tsym = r.result?.tsym;
+        if (tsym && (p.sl != null || p.target != null)) void attachWhenFilled(tsym, p.sl ?? null, p.target ?? null);
       }
     } else {
       const r = await api.executeStrategy({

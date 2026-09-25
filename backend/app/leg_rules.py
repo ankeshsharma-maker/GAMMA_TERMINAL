@@ -63,7 +63,7 @@ def add_rule(d: dict) -> dict:
         "sl": _f("sl"),
         "target": _f("target"),
         "trail": _f("trail"),
-        "unit": d.get("unit") or "pts",  # pts | pct | rs
+        "unit": d.get("unit") or "pts",  # px (prices) | pts | pct | rs
         "note": (d.get("note") or "").strip()[:80],
         "status": "waiting",  # waiting | active | done | cancelled
         "entryPx": None,
@@ -168,13 +168,20 @@ def _lot_size(store, sym: str) -> int:
 
 
 def _delta(r: dict, entry: float, lot_sz: int) -> dict:
-    """value -> price-delta for sl / target / trail, per `unit`."""
+    """value -> price-delta for sl / target / trail, per `unit`. "px": sl and
+    target are the actual PRICES (turned into the side-aware distance tick()
+    applies, so the stop / target land exactly there); trail stays points."""
     n = max(1, r["lots"]) * max(1, lot_sz)
+    long_ = r.get("side") == "BUY"
     out = {}
     for k in ("sl", "target", "trail"):
         v = r.get(k)
         if v is None:
             out[k] = None
+        elif r["unit"] == "px" and k == "sl":
+            out[k] = (entry - v) if long_ else (v - entry)
+        elif r["unit"] == "px" and k == "target":
+            out[k] = (v - entry) if long_ else (entry - v)
         elif r["unit"] == "pct":
             out[k] = entry * v / 100.0
         elif r["unit"] == "rs":

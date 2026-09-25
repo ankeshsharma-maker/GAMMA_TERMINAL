@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useStore } from "../store";
+import { OrderSheet } from "./OrderSheet";
 import { api } from "../lib/api";
 import { nf } from "../lib/format";
 import { SelectMenu } from "./SelectMenu";
@@ -105,6 +106,20 @@ function MarketRow({
   const has = pct != null || chg != null;
   const up = (pct ?? chg ?? 0) >= 0;
   const col = !has ? "text-term-text" : up ? "text-up" : "text-down";
+  const [sheet, setSheet] = useState(false);
+  // an option / future row opens the order sheet; an index / stock opens its chart
+  const tap = () => (w.kind === "option" || w.kind === "future" ? setSheet(true) : open());
+  const sheetEl = sheet && (
+    <OrderSheet
+      w={w}
+      name={wFull(w)}
+      onClose={() => setSheet(false)}
+      onChart={() => {
+        setSheet(false);
+        open();
+      }}
+    />
+  );
   const open = () => {
     setChartQueue("Watchlist", queue);
     selectSymbol(w.symbol, true);
@@ -134,7 +149,7 @@ function MarketRow({
           on ? "bg-term-accent/[0.07]" : "hover:bg-term-panel/60"
         }`}
       >
-        <button onClick={open} title={`Chart ${wName(w)}`} className="min-w-0 flex-1 px-2 py-1.5 text-left">
+        <button onClick={tap} title={`Chart ${wName(w)}`} className="min-w-0 flex-1 px-2 py-1.5 text-left">
           <span className="block truncate text-[12px] font-medium text-term-text">{wFull(w)}</span>
           <span className="mt-0.5 flex items-baseline gap-1.5 whitespace-nowrap">
             <span className="text-[10px] text-term-dim">{wSeg(w)}</span>
@@ -146,6 +161,7 @@ function MarketRow({
           </span>
         </button>
         {removeBtn}
+        {sheetEl}
       </div>
     );
   return (
@@ -155,7 +171,7 @@ function MarketRow({
       }`}
     >
       <button
-        onClick={open}
+        onClick={tap}
         title={`Chart ${wName(w)}`}
         className="flex min-w-0 flex-1 items-center gap-3 px-3.5 py-2.5 text-left active:bg-term-border/40"
       >
@@ -174,6 +190,7 @@ function MarketRow({
         </span>
       </button>
       {removeBtn}
+      {sheetEl}
     </div>
   );
 }

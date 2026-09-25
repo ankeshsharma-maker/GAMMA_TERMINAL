@@ -12,7 +12,7 @@ export type LegRule = {
   sl: number | null;
   target: number | null;
   trail: number | null;
-  unit: "pts" | "pct" | "rs";
+  unit: "px" | "pts" | "pct" | "rs";
   entryPx: number | null;
 };
 
@@ -39,13 +39,14 @@ export function findBracket(r: any, rules: LegRule[]): LegRule | undefined {
   );
 }
 
-const SEG = "px-1.5 py-0.5";
-const on = "bg-term-accent text-white";
-const off = "text-term-dim";
+/** round to the 0.05 tick */
+const tick = (v: number) => Math.round(v * 20) / 20;
 
-/** Attach / show / clear a target-stop-loss bracket on an already-open
- *  broker position (manual 1-click / scalp / anything AutoBot or a leg
- *  rule didn't itself open). Mirrors StopEditor's paper-position UI. */
+/** Set / show / edit / clear a stop-loss + target on ONE open broker leg. The
+ *  server watches that leg's price and squares it off at market when one is
+ *  hit -- even with the app closed. Default: actual PRICES (SL 120 / TGT 50),
+ *  pre-filled from the current price; points / % / ₹ distances from entry are
+ *  still there. */
 export function LegBracketBadge({
   r,
   bracket,
@@ -55,20 +56,50 @@ export function LegBracketBadge({
   bracket: LegRule | undefined;
   onChanged: () => void;
 }) {
+  const netqty = Number(r.netqty) || 0;
+  const long = netqty > 0;
+  const ltp = Number(r.lp) || 0;
+  const entryPx = Number(r.netavgprc ?? r.daybuyavgprc ?? r.daysellavgprc ?? 0);
+
   const [open, setOpen] = useState(false);
-  const [unit, setUnit] = useState<"pts" | "pct" | "rs">("pts");
+  const [unit, setUnit] = useState<"px" | "pts" | "pct" | "rs">("px");
   const [sl, setSl] = useState("");
   const [target, setTarget] = useState("");
   const [trail, setTrail] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const entryPx = Number(r.netavgprc ?? r.daybuyavgprc ?? r.daysellavgprc ?? 0);
+  // a sensible start from the current price: SL 25% against, target 50% for (price mode)
+  const startEdit = () => {
+    if (bracket) {
+      setUnit(bracket.unit);
+      setSl(bracket.sl != null ? String(bracket.sl) : "");
+      setTarget(bracket.target != null ? String(bracket.target) : "");
+      setTrail(bracket.trail != null ? String(bracket.trail) : "");
+    } else {
+      setUnit("px");
+      const base = ltp || entryPx;
+      setSl(base ? nf(tick(long ? base * 0.75 : base * 1.25), 2).replace(/,/g, "") : "");
+      setTarget(base ? nf(tick(long ? base * 1.5 : base * 0.5), 2).replace(/,/g, "") : "");
+      setTrail("");
+    }
+    setOpen(true);
+  };
 
-  const attach = async () => {
+  const save = async () => {
     if (!sl && !target && !trail) return alert("Set a stop-loss, target or trail");
     if (!entryPx) return alert("No entry price on this position yet — try again in a moment");
+    if (unit === "px" && ltp) {
+      const s = parseFloat(sl);
+      const t = parseFloat(target);
+      // a price stop / target on the wrong side of the market would fire at once
+      if (sl && (long ? s >= ltp : s <= ltp))
+        return alert(`SL ${s} is ${long ? "above" : "below"} the current price ${ltp} — it would exit immediately.`);
+      if (target && (long ? t <= ltp : t >= ltp))
+        return alert(`Target ${t} is ${long ? "below" : "above"} the current price ${ltp} — it would exit immediately.`);
+    }
     setBusy(true);
     try {
+      if (bracket) await api.legRuleDel(bracket.id); // edit = replace
       await api.legRuleAttach({
         tsym: r.tsym,
         exch: r.exch || "NFO",
@@ -81,9 +112,6 @@ export function LegBracketBadge({
         trail: trail || null,
       });
       setOpen(false);
-      setSl("");
-      setTarget("");
-      setTrail("");
       onChanged();
     } catch (e: any) {
       alert(String(e?.message || e));
@@ -105,21 +133,23 @@ export function LegBracketBadge({
 
   if (!open) {
     if (bracket) {
-      const u = bracket.unit === "pct" ? "%" : bracket.unit === "rs" ? "₹" : "pts";
+      const u = bracket.unit === "px" ? "" : bracket.unit === "pct" ? "%" : bracket.unit === "rs" ? "₹" : "pts";
       return (
-        <span className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1 text-[10px] text-amber-400">
-          <span title={`bracketed from entry ${nf(bracket.entryPx, 2)}`}>
-            {bracket.sl != null && <>SL {bracket.sl}{u}</>}
+        <span className="inline-flex items-center gap-1.5 rounded border border-amber-500/50 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-amber-300">
+          <span title={`watched by the server from entry ${nf(bracket.entryPx, 2)}; squares off at market when hit`}>
+            {bracket.sl != null && <span className="text-down">SL {bracket.sl}{u}</span>}
             {bracket.target != null && (
-              <span className={bracket.sl != null ? "ml-1 text-up" : "text-up"}>
-                TGT {bracket.target}{u}
+              <span className={bracket.sl != null ? "ml-1.5 text-up" : "text-up"}>
+                TGT {bracket.target}
+                {u}
               </span>
             )}
-            {bracket.trail != null && (
-              <span className="ml-1 rounded bg-amber-500/30 px-0.5 text-[8px]">TRL {bracket.trail}</span>
-            )}
+            {bracket.trail != null && <span className="ml-1.5 text-amber-300">TRL {bracket.trail}</span>}
           </span>
-          <button disabled={busy} onClick={clear} className="hover:text-down" title="Remove bracket">
+          <button disabled={busy} onClick={startEdit} className="text-term-dim hover:text-term-text" title="Edit">
+            ✎
+          </button>
+          <button disabled={busy} onClick={clear} className="text-term-dim hover:text-down" title="Remove">
             ×
           </button>
         </span>
@@ -127,60 +157,65 @@ export function LegBracketBadge({
     }
     return (
       <button
-        onClick={() => setOpen(true)}
-        className="rounded border border-term-dim/70 px-1 text-[10px] text-term-dim hover:text-term-text"
-        title="Auto square-off this position at a target / stop-loss"
+        onClick={startEdit}
+        className="rounded border border-amber-500/60 px-2 py-0.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10"
+        title="Stop-loss / target on this leg: the server squares it off at market when hit"
       >
         + SL / TGT
       </button>
     );
   }
 
+  const inp =
+    "num w-16 rounded border border-term-border bg-term-bg px-1.5 py-1 text-[12px] text-term-text outline-none focus:border-term-accent";
   return (
     <div
-      className="mt-1 flex flex-wrap items-center gap-1 rounded border border-amber-500/40 bg-term-panel p-1 text-[10px]"
+      className="mt-1 flex w-full flex-col gap-1.5 rounded border border-amber-500/40 bg-term-panel p-2 text-[11px]"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="segx">
-        {(["pts", "pct", "rs"] as const).map((u) => (
-          <button key={u} onClick={() => setUnit(u)} className={`${SEG} ${unit === u ? on : off}`}>
-            {u === "pts" ? "Pts" : u === "pct" ? "%" : "₹"}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center gap-2 text-term-dim">
+        <span>
+          LTP <span className="num text-term-text">{nf(ltp, 2)}</span> · entry{" "}
+          <span className="num text-term-text">{nf(entryPx, 2)}</span> · {long ? "long" : "short"}
+        </span>
+        <div className="seg ml-auto">
+          {(["px", "pts", "pct", "rs"] as const).map((u) => (
+            <button key={u} onClick={() => setUnit(u)} className={unit === u ? "on" : ""}>
+              {u === "px" ? "Price" : u === "pts" ? "Pts" : u === "pct" ? "%" : "₹"}
+            </button>
+          ))}
+        </div>
       </div>
-      <label className="flex items-center gap-1 text-down">
-        SL
-        <input
-          value={sl}
-          onChange={(e) => setSl(e.target.value.replace(/[^\d.]/g, ""))}
-          placeholder="0"
-          className="num w-12 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
-        />
-      </label>
-      <label className="flex items-center gap-1 text-up">
-        TGT
-        <input
-          value={target}
-          onChange={(e) => setTarget(e.target.value.replace(/[^\d.]/g, ""))}
-          placeholder="0"
-          className="num w-12 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
-        />
-      </label>
-      <label className="flex items-center gap-1 text-term-dim">
-        trail
-        <input
-          value={trail}
-          onChange={(e) => setTrail(e.target.value.replace(/[^\d.]/g, ""))}
-          placeholder="0"
-          className="num w-12 rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text outline-none focus:border-term-accent"
-        />
-      </label>
-      <button disabled={busy} onClick={attach} className="rounded bg-amber-500/30 px-1.5 py-0.5 text-amber-300">
-        {busy ? "…" : "Set"}
-      </button>
-      <button onClick={() => setOpen(false)} className="px-1 text-term-dim hover:text-term-text">
-        ✕
-      </button>
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-1 text-down">
+          SL
+          <input id={`sl-${r.tsym}`} value={sl} onChange={(e) => setSl(e.target.value.replace(/[^\d.]/g, ""))} placeholder="–" className={inp} />
+        </label>
+        <label className="flex items-center gap-1 text-up">
+          Target
+          <input id={`tgt-${r.tsym}`} value={target} onChange={(e) => setTarget(e.target.value.replace(/[^\d.]/g, ""))} placeholder="–" className={inp} />
+        </label>
+        <label className="flex items-center gap-1 text-term-dim">
+          trail pts
+          <input id={`trl-${r.tsym}`} value={trail} onChange={(e) => setTrail(e.target.value.replace(/[^\d.]/g, ""))} placeholder="–" className={inp} />
+        </label>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] leading-snug text-term-dim">
+          {unit === "px"
+            ? long
+              ? "Prices: SL below, target above the current price."
+              : "Prices: SL above, target below the current price."
+            : "Distances from your entry price."}{" "}
+          The server exits at market when one is hit.
+        </span>
+        <button onClick={() => setOpen(false)} className="ml-auto rounded border border-term-border px-2 py-1 text-term-dim">
+          Cancel
+        </button>
+        <button disabled={busy} onClick={save} className="rounded bg-amber-500 px-3 py-1 font-semibold text-black">
+          {busy ? "…" : bracket ? "Update" : "Set"}
+        </button>
+      </div>
     </div>
   );
 }
