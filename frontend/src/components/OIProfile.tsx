@@ -2145,7 +2145,8 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       </div>
 
       {/* overall OI verdict (phone: the summary row shows the bias; reasons behind ⚙) */}
-      {verdict && (!isMobile || tools) && (
+      {/* not in the Ladder / Table: they need the height (the bias is in the phone summary row and on Home) */}
+      {verdict && (!isMobile || tools) && layout !== "ladder" && layout !== "table" && (
         <div
           className={`flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b px-3 py-1 text-[10px] ${
             verdict.bias === "BULLISH"
