@@ -870,6 +870,29 @@ async def _get_retry(ux, path: str) -> dict:
         return await ux.get(path, v3=True)
 
 
+def _day_bar(rows) -> dict | None:
+    """Today's 1-min Upstox rows -> ONE daily bar at IST midnight of their date."""
+    from datetime import datetime, timedelta, timezone
+
+    ist = timezone(timedelta(hours=5, minutes=30))
+    bars = sorted(
+        ((_candle_ts(c[0]), c) for c in rows or [] if len(c) >= 5 and _candle_ts(c[0])),
+        key=lambda x: x[0],
+    )
+    if not bars:
+        return None
+    d = datetime.fromtimestamp(bars[0][0], ist).date()
+    bars = [(t, c) for t, c in bars if datetime.fromtimestamp(t, ist).date() == d]
+    return {
+        "time": int(datetime(d.year, d.month, d.day, tzinfo=ist).timestamp()),
+        "open": _num(bars[0][1][1]),
+        "high": max(_num(c[2]) for _, c in bars),
+        "low": min(_num(c[3]) for _, c in bars),
+        "close": _num(bars[-1][1][4]),
+        "volume": sum(_num(c[5]) if len(c) > 5 else 0.0 for _, c in bars),
+    }
+
+
 async def fetch_underlying_candles(symbol: str, interval_s: int) -> list[dict]:
     """OHLCV candles for an index / F&O-stock underlying from Upstox v3
     historical-candle, shaped for charting.build_chart(). `interval_s` picks
@@ -922,6 +945,21 @@ async def fetch_underlying_candles(symbol: str, interval_s: int) -> list[dict]:
         except Exception as exc:  # noqa: BLE001
             intra_ok = False
             log.warning("upstox intraday candles %s failed: %s", symbol, exc)
+    else:
+        # Daily history stops at yesterday: without today's bar the chart's live
+        # price was pushed into YESTERDAY's candle (wrong colour, yesterday lost).
+        # Build today's one daily bar from today's 1-min bars, stamped like
+        # Upstox's own daily bars (IST midnight), so every daily consumer sees
+        # one bar per day.
+        try:
+            h = await _get_retry(ux, _hc_intraday(key, "minutes", 1))
+            day = _day_bar(h.get("data", {}).get("candles", []))
+            if day and day["time"] not in seen:
+                seen.add(day["time"])
+                out.append(day)
+        except Exception as exc:  # noqa: BLE001
+            intra_ok = False
+            log.warning("upstox intraday (today's daily bar) %s failed: %s", symbol, exc)
 
     out.sort(key=lambda c: c["time"])
     if hist_ok and intra_ok and len(out) >= 40:

@@ -1129,6 +1129,10 @@ export function Chart() {
   useEffect(() => {
     if (!chartRef.current || !data || !priceCandles.length || livePx == null) return;
     const last = priceCandles[priceCandles.length - 1];
+    // only the bar that is still forming moves with the live price: nudging a
+    // closed one (yesterday's daily bar when today's hasn't arrived, the 15:29
+    // bar after the close) repaints it with today's price
+    if (bucketStart(Math.floor(Date.now() / 1000), intervalS) !== (last.time as number)) return;
     if (ctype === "line") {
       (s.current.lineS as ISeriesApi<"Line">).update({ time: last.time as any, value: livePx });
       return;
@@ -1146,7 +1150,7 @@ export function Chart() {
     };
     (s.current.candle as ISeriesApi<"Candlestick">).update(bar);
     (s.current.barS as ISeriesApi<"Bar">).update(bar);
-  }, [livePx, symbol, priceCandles, data, ctype]);
+  }, [livePx, symbol, priceCandles, data, ctype, intervalS]);
 
   // log / linear price scale
   useEffect(() => {
