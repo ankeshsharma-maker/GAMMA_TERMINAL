@@ -1844,21 +1844,26 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   // row (one row saved); on mobile they stay a separate ⚙-collapsible row.
   const chartControls = (
     <>
-      <span className="ml-1">View</span>
-      <div className="seg">
-        <button onClick={() => setMetric("oi")} className={metric === "oi" ? "on" : ""}>
-          OI
-        </button>
-        <button onClick={() => setMetric("chg")} className={metric === "chg" ? "on" : ""}>
-          ΔOI bars
-        </button>
-        <button
-          onClick={() => setMetric("combined")}
-          className={metric === "combined" ? "on" : ""}
-        >
-          OI + Δ caps
-        </button>
-      </div>
+      {/* View only changes the Chart; Table / Ladder always show OI and its change */}
+      {layout === "chart" && (
+        <>
+          <span className="ml-1">View</span>
+          <div className="seg">
+            <button onClick={() => setMetric("oi")} className={metric === "oi" ? "on" : ""}>
+              OI
+            </button>
+            <button onClick={() => setMetric("chg")} className={metric === "chg" ? "on" : ""}>
+              ΔOI bars
+            </button>
+            <button
+              onClick={() => setMetric("combined")}
+              className={metric === "combined" ? "on" : ""}
+            >
+              OI + Δ caps
+            </button>
+          </div>
+        </>
+      )}
 
       <span className="ml-1">Strikes ±</span>
       <div className="seg">
