@@ -234,22 +234,54 @@ async def run_broker_feed(stop: asyncio.Event) -> None:
     log.info("broker feed stopped")
 
 
+# the open legs as (exch, token), for the REST price poll below
+_leg_keys: list[tuple[str, str]] = []
+_POS_POLL_S = 2.0  # PositionBook: quantities / new + closed legs / realised P&L
+_LEG_QUOTE_S = 1.0  # leg prices over REST while the live socket is refused
+
+
+async def _poll_leg_quotes(broker) -> None:
+    """While Flattrade refuses the live socket (1008: its one-socket-per-login
+    slot is held by the Flattrade app the user trades from -- all of 24-Sep),
+    the leg ticks never came, so MTM only moved on the PositionBook polls. The
+    REST quote service isn't limited to one session: price each open leg from
+    it and feed the same re-mark path the socket ticks use."""
+    for exch, token in list(_leg_keys):
+        try:
+            q = await broker.quotes(exch, token)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("leg quote failed for %s|%s: %s", exch, token, exc)
+            continue
+        ltp = _num((q or {}).get("lp"))
+        if ltp is not None and token in _leg_tokens:
+            store.set_leg_ltp(token, ltp)
+    await _emit_positions()
+
+
 async def run_position_feed(stop: asyncio.Event) -> None:
-    """Poll the broker PositionBook a few times a minute, keep the open legs
-    subscribed on the live socket, and fan out a `positions` message. Between
-    polls the per-leg ticks (see `_on_tick`) re-mark the MTM tick-by-tick."""
+    """Poll the broker PositionBook every 2 s, keep the open legs subscribed on
+    the live socket, and fan out a `positions` message. Between polls the
+    per-leg ticks (see `_on_tick`) re-mark the MTM tick-by-tick -- or, while the
+    socket is refused, the per-leg REST quotes every second."""
     broker = get_broker()
     if not broker.configured:
         return
+    last_book = 0.0
     while not stop.is_set():
         try:
-            await asyncio.wait_for(stop.wait(), timeout=4)
+            await asyncio.wait_for(stop.wait(), timeout=_LEG_QUOTE_S)
         except asyncio.TimeoutError:
             pass
         if stop.is_set():
             break
         if not broker.authed:
             continue
+        if time.time() - last_book < _POS_POLL_S:
+            # between PositionBook polls: live leg prices when the socket is down
+            if _leg_keys and not broker.status().get("wsConnected"):
+                await _poll_leg_quotes(broker)
+            continue
+        last_book = time.time()
         try:
             rows = await broker.positions()
         except Exception as exc:  # noqa: BLE001
@@ -268,6 +300,7 @@ async def run_position_feed(stop: asyncio.Event) -> None:
             keys.add(f"{r.get('exch') or 'NFO'}|{tok}")
         _leg_tokens.clear()
         _leg_tokens.update(toks)
+        _leg_keys[:] = [(k.split("|", 1)[0], k.split("|", 1)[1]) for k in sorted(keys)]
         if keys:
             try:
                 await broker.subscribe(keys)
