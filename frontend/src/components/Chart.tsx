@@ -18,6 +18,7 @@ import { getDataSrc, getIntervalS } from "../lib/prefs";
 import { computeGammaFlip } from "../lib/gammaFlip";
 import { DrawingPrimitive, describeDrawing, type Drawing, type Point } from "../lib/chartDrawings";
 import { bucketStart } from "../lib/istTime";
+import { detectPatterns, PATTERN_LEGEND, type PatternHit } from "../lib/candlePatterns";
 import { TrendCompass } from "./TrendCompass";
 import {
   bollinger,
@@ -98,6 +99,7 @@ const TOGGLES = [
   ["straddle", "ATM Straddle"],
   ["score", "Blast Score"],
   ["greeks", "Greeks"],
+  ["patterns", "Candle patterns"],
 ] as const;
 type ToggleKey = (typeof TOGGLES)[number][0];
 
@@ -267,6 +269,10 @@ export function Chart() {
   const gfRef = useRef<any>(null);
   const drawToolRef = useRef<typeof drawTool>("none");
   const [legend, setLegend] = useState<string>("");
+  // candlestick patterns on screen, by bar time -- the crosshair legend names the one under the cursor
+  const patternsRef = useRef<Map<number, PatternHit>>(new Map());
+  // px per bar (zoom), so pattern labels are spaced to what fits on screen
+  const [barSpacing, setBarSpacing] = useState(6);
   const [rsiVal, setRsiVal] = useState<number | null>(null);
   const lastRsiRef = useRef<number | null>(null);
   useEffect(() => {
@@ -310,6 +316,7 @@ export function Chart() {
     straddle: false, // ATM CE+PE price (a volatility proxy) — opt-in, it was crowding every chart
     score: false,
     greeks: false,
+    patterns: true,
   });
   // hide the time (x) axis labels for a cleaner chart
   const [showTime, setShowTime] = useState(() => {
@@ -448,6 +455,12 @@ export function Chart() {
       visible: false,
     });
 
+    // zoom level for the pattern-label spacing (only re-renders on a real zoom change)
+    chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+      const b = chart.timeScale().options().barSpacing;
+      setBarSpacing((prev) => (Math.abs(b - prev) / prev > 0.2 ? b : prev));
+    });
+
     // crosshair OHLC legend
     chart.subscribeCrosshairMove((p) => {
       const cs = s.current.candle as ISeriesApi<"Candlestick">;
@@ -459,10 +472,11 @@ export function Chart() {
       }
       const ch = bar.close - bar.open;
       const chp = bar.open ? (ch / bar.open) * 100 : 0;
+      const pat = patternsRef.current.get(bar.time as number);
       setLegend(
         `O ${bar.open.toFixed(1)}  H ${bar.high.toFixed(1)}  L ${bar.low.toFixed(1)}  C ${bar.close.toFixed(1)}  ${
           ch >= 0 ? "+" : ""
-        }${ch.toFixed(1)} (${chp.toFixed(2)}%)`
+        }${ch.toFixed(1)} (${chp.toFixed(2)}%)${pat ? `  ·  ${pat.name} ${pat.bias === "bull" ? "▲" : pat.bias === "bear" ? "▼" : "◆"}` : ""}`
       );
       if (onRef.current.rsi) {
         const rp: any = p.seriesData?.get(s.current.rsi as any);
@@ -1151,6 +1165,45 @@ export function Chart() {
     (s.current.candle as ISeriesApi<"Candlestick">).update(bar);
     (s.current.barS as ISeriesApi<"Bar">).update(bar);
   }, [livePx, symbol, priceCandles, data, ctype, intervalS]);
+
+  // candlestick patterns: a symbol on the bar that completes one. Found on the REAL
+  // candles (not Heikin-Ashi) and on closed bars only -- the forming bar would
+  // flash a pattern in and out with every tick.
+  useEffect(() => {
+    const c = s.current;
+    if (!chartRef.current || !c.candle) return;
+    const show = eff.patterns && (ctype === "candle" || ctype === "heikin" || ctype === "bar") && candles.length > 0;
+    let hits: PatternHit[] = [];
+    if (show) {
+      const last = candles[candles.length - 1];
+      const forming = bucketStart(Math.floor(Date.now() / 1000), intervalS) === (last.time as number);
+      hits = detectPatterns(forming ? candles.slice(0, -1) : candles);
+    }
+    patternsRef.current = new Map(hits.map((h) => [h.time, h]));
+    // labels on bars close together run into each other on a phone ("HRIH"): a
+    // pattern closer than ~26 px (at this zoom) to the previous labelled one on
+    // the same side keeps its arrow and drops the label (the crosshair legend
+    // still names it); zooming in brings the labels back
+    const gap = Math.max(1, Math.ceil(26 / Math.max(0.5, barSpacing)));
+    const idx = new Map(candles.map((k, i) => [k.time as number, i]));
+    const lastAt: Record<string, number> = {};
+    const markers = hits.map((h) => {
+      const side = h.bias === "bull" ? "below" : "above";
+      const i = idx.get(h.time) ?? 0;
+      const crowded = lastAt[side] != null && i - lastAt[side] < gap;
+      if (!crowded) lastAt[side] = i;
+      return { h, text: crowded ? "" : h.short };
+    }).map(({ h, text }) => ({
+      time: h.time as any,
+      position: h.bias === "bull" ? ("belowBar" as const) : ("aboveBar" as const),
+      shape: h.bias === "bull" ? ("arrowUp" as const) : h.bias === "bear" ? ("arrowDown" as const) : ("circle" as const),
+      color: h.bias === "bull" ? "#16a34a" : h.bias === "bear" ? "#dc2626" : "#eab308",
+      text,
+      size: 1,
+    }));
+    (c.candle as ISeriesApi<"Candlestick">).setMarkers(ctype === "bar" ? [] : markers);
+    (c.barS as ISeriesApi<"Bar">).setMarkers(ctype === "bar" ? markers : []);
+  }, [candles, priceCandles, data, eff.patterns, ctype, intervalS, barSpacing]);
 
   // log / linear price scale
   useEffect(() => {
@@ -1862,6 +1915,25 @@ export function Chart() {
                         <span>{lbl}</span>
                         {on[k] && <span className="text-term-accent">✓</span>}
                       </button>
+                      {k === "patterns" && on.patterns && (
+                        <div className="mb-1 ml-2 mt-0.5 grid grid-cols-1 gap-y-0.5 rounded border border-term-dim/40 px-1.5 py-1 text-[10px]">
+                          {PATTERN_LEGEND.map((p) => (
+                            <div key={p.name} className="flex items-center gap-1.5">
+                              <span
+                                className={`w-11 shrink-0 whitespace-nowrap font-semibold ${
+                                  p.bias === "bull" ? "text-up" : p.bias === "bear" ? "text-down" : "text-amber-400"
+                                }`}
+                              >
+                                {p.bias === "bull" ? "▲" : p.bias === "bear" ? "▼" : "●"} {p.short}
+                              </span>
+                              <span className="text-term-dim">{p.name}</span>
+                            </div>
+                          ))}
+                          <div className="mt-0.5 text-[9px] leading-snug text-term-dim">
+                            Marked when the bar closes. Reversal patterns only count after a move into them.
+                          </div>
+                        </div>
+                      )}
                       {k === "greeks" && on.greeks && !dis && (
                         <div
                           className="mb-1 mt-0.5 ml-2 grid grid-cols-2 gap-1 overflow-hidden rounded border border-term-dim/70"
