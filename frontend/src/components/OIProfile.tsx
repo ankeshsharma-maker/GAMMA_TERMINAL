@@ -1851,7 +1851,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         value={tf}
         options={
           [
-            ["Full day", 0],
+            ["Day", 0],
             ["1m", 1],
             ["2m", 2],
             ["3m", 3],
