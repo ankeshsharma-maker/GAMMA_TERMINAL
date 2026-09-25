@@ -1492,7 +1492,7 @@ export function Chart() {
         )}
 
         {/* fast execution — trades the strike picked above, at scalpLots */}
-        {!isViewer() && strikes.length > 0 && chain?.expiry && pickStrike > 0 && (
+        {strikes.length > 0 && chain?.expiry && pickStrike > 0 && (
           <div className="flex items-center gap-0.5 rounded border border-term-dim/70 px-1" title={`${pickStrike} × ${scalpLots} lot(s)`}>
             <button
               onClick={() => quickTradeAt(symbol, chain.expiry, pickStrike, "CE", "BUY")}

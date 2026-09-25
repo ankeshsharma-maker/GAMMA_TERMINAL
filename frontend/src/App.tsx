@@ -16,7 +16,7 @@ import { VolatilityView } from "./components/VolatilityView";
 import { TradeJournal } from "./components/TradeJournal";
 import { Chart } from "./components/Chart";
 import { StrategyBuilder } from "./components/StrategyBuilder";
-import { PositionsView } from "./components/PositionsView";
+import { PositionsView, OrdersTab } from "./components/PositionsView";
 import { HomeDashboard } from "./components/HomeDashboard";
 import { ScalpPanel } from "./components/ScalpPanel";
 import { ScalpCharts } from "./components/ScalpCharts";
@@ -135,8 +135,8 @@ function DesktopShell() {
     } catch {}
   }, [hideRight]);
 
-  // the right column is the owner's paper positions / scalp panel -- not for a viewer
-  const showRight = !wide && !hideRight && !isViewer();
+  // the right column: paper positions (a viewer's are their own) / the scalp panel
+  const showRight = !wide && !hideRight;
   const leftCols = hideLeft ? "0px" : `${leftW}px 4px`;
   const notifCols = notifDock ? ` 4px ${notifW}px` : "";
   const cols =
@@ -152,7 +152,7 @@ function DesktopShell() {
             <span>Watchlist panel</span>
             <span className="text-[10px] opacity-70">{hideLeft ? "Hidden" : "Shown"}</span>
           </MenuRow>
-          {!wide && !isViewer() && (
+          {!wide && (
             <MenuRow onClick={() => setHideRight((v) => !v)} active={!hideRight}>
               <span>Right panel</span>
               <span className="text-[10px] opacity-70">{hideRight ? "Hidden" : "Shown"}</span>
@@ -203,8 +203,8 @@ function DesktopShell() {
           {view === "chart" && <Chart />}
           {view === "scalper" && <ScalpCharts />}
           {view === "builder" && <StrategyBuilder />}
-          {view === "positions" && <PositionsView />}
-          {view === "orders" && <PositionsView initialTab="orders" />}
+          {view === "positions" && (isViewer() ? <Positions /> : <PositionsView />)}
+          {view === "orders" && (isViewer() ? <OrdersTab /> : <PositionsView initialTab="orders" />)}
           {view === "auto" && <AutoBotView />}
           {view === "funds" && <Funds />}
           {view === "journal" && <TradeJournal />}

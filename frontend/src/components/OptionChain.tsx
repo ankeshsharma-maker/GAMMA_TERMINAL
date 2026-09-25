@@ -316,8 +316,8 @@ function ActivityCell({
   const a = classifyLeg(leg, ot);
   return (
     <button
-      onClick={isViewer() ? undefined : onTicket}
-      title={isViewer() ? undefined : "tap to trade this strike"}
+      onClick={onTicket}
+      title={isViewer() ? "tap to paper-trade this strike" : "tap to trade this strike"}
       className={`w-full whitespace-nowrap rounded px-1 py-0.5 text-[9px] font-semibold leading-tight ${a.cls} hover:brightness-110`}
     >
       {a.label}
@@ -849,7 +849,7 @@ export function OptionChain({ paneNav, expiryRow = false }: { paneNav?: ReactNod
         </table>
       </div>
 
-      {ticket && !isViewer() && (
+      {ticket && (
         <OrderTicket
           strike={ticket.strike}
           optionType={ticket.ot}

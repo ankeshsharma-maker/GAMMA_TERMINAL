@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
 import { StopEditor } from "./StopEditor";
 import { useLiveMtm } from "../lib/useLiveMtm";
+import { isViewer } from "../lib/auth";
 import { useIsMobile } from "../lib/useIsMobile";
 import { LegBracketBadge, findBracket, type LegRule } from "./LegBracketBadge";
 import { ScenarioGrid } from "./ScenarioGrid";
@@ -787,7 +788,7 @@ export function OrdersTab() {
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto bg-term-bg p-2 md:p-3">
         <div className="flex items-center gap-2 px-1 text-[11px] text-term-dim">
           <div className="seg text-[11px]">
-            {(["live", "paper"] as const).map((s) => (
+            {(isViewer() ? (["paper"] as const) : (["live", "paper"] as const)).map((s) => (
               <button key={s} onClick={() => setSrc(s)} className={src === s ? "on" : ""}>
                 {s === "live" ? "Live" : "Paper"}
               </button>

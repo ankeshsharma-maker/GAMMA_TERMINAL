@@ -64,7 +64,8 @@ export const NAV_GROUPS: NavGroup[] = [
 
 /** views a view-only user never gets: they place orders or show the owner's
  *  book (the server refuses the data anyway -- this just keeps them out of the nav) */
-export const OWNER_ONLY_VIEWS: View[] = ["scalper", "positions", "orders", "auto", "journal", "funds"];
+export const OWNER_ONLY_VIEWS: View[] = ["scalper", "auto", "journal", "funds"];
+// (Positions / Orders are open to viewers: they show THEIR paper book)
 
 /** the nav for whoever is signed in -- a viewer's has no trading / account views */
 export function navGroups(): NavGroup[] {

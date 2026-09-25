@@ -288,13 +288,20 @@ export const api = {
     symbol: string;
     expiry: string;
     strike: number;
-    option_type: "CE" | "PE";
+    option_type: "CE" | "PE" | "FUT";
     side: "BUY" | "SELL";
     qty_lots: number;
     price?: number | null;
     note?: string;
   }) =>
     j<{ state: PaperState }>("/api/paper/order", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  /** a strategy's legs as PAPER fills only (view-only users' Builder Execute) */
+  paperStrategy: (body: { symbol: string; expiry: string; legs: StrategyLeg[] }) =>
+    j<{ mode: "paper"; paper: PaperState }>("/api/paper/strategy", {
       method: "POST",
       body: JSON.stringify(body),
     }),

@@ -1416,9 +1416,18 @@ export function StrategyBuilder() {
         )}
 
         {isViewer() ? (
-          <div className="border-t border-term-border p-2 text-2xs text-term-dim lg:mt-auto">
-            View-only account: build and study strategies here — payoff, Greeks, hedges, backtest.
-            Executing, scheduling and saving are off.
+          <div className="flex flex-col gap-2 border-t border-term-border p-2 lg:mt-auto">
+            <button
+              disabled={legs.length === 0 || runLegCount === 0}
+              onClick={doExecute}
+              className="btn btn-buy py-2 font-semibold disabled:opacity-40"
+            >
+              Execute (paper) · {runLegCount} leg{runLegCount === 1 ? "" : "s"}
+              {mult > 1 && <span className="ml-1 text-2xs">(×{mult})</span>}
+            </button>
+            <div className="text-2xs text-term-dim">
+              Paper trades only — they go to your own paper positions. Scheduling and saving are off.
+            </div>
           </div>
         ) : (
         <div className="flex flex-col gap-2 border-t border-term-border p-2 lg:mt-auto">

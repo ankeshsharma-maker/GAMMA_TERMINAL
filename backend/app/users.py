@@ -92,6 +92,7 @@ def delete(uid: str) -> None:
         raise KeyError(uid)
     _save(left)
     db.set_kv(f"watchlists:{uid}", None)
+    db.set_kv(f"paper:{uid}", None)
 
 
 def _sign(u: dict) -> str:
@@ -149,6 +150,10 @@ _ALLOW: list[tuple[str, re.Pattern]] = [
         ("DELETE", r"/api/watchlists/\d+"),
         ("POST", r"/api/watchlists/\d+/(rename|add|clear|add-strikes|add-future)"),
         ("DELETE", rf"/api/watchlists/\d+/{_SYM}"),
+        # their own PAPER book: positions, orders, paper fills, close (never live;
+        # /order, /order/future and /strategy/execute can go live and stay off)
+        ("GET", r"/api/paper"),
+        ("POST", r"/api/paper/(order|close|strategy)"),
         # the strategy builder, analysis only (no execute / import / save / schedule)
         ("GET", r"/api/strategy/templates"),
         ("POST", r"/api/strategy/(analyze|chart|hedge)"),

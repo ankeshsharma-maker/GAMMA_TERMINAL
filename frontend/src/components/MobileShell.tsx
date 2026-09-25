@@ -205,6 +205,7 @@ import { Settings } from "./Settings";
 import { NotificationPanel } from "./NotificationPanel";
 import { OrderConfirm } from "./OrderConfirm";
 import { Watchlist } from "./Watchlist";
+import { Positions } from "./Positions";
 import { OptionChain } from "./OptionChain";
 import { ScripView } from "./ScripView";
 import { HomeDashboard } from "./HomeDashboard";
@@ -490,8 +491,8 @@ const BOTTOM_NAV: { v: View; icon: string; label: string }[] = [
 const VIEWER_BOTTOM_NAV: { v: View; icon: string; label: string }[] = [
   { v: "watchlist", icon: "★", label: "Watchlist" },
   { v: "home", icon: "🏠", label: "Home" },
-  { v: "chart", icon: "📈", label: "Chart" },
-  { v: "scanner", icon: "📡", label: "Screener" },
+  { v: "orders", icon: "📋", label: "Orders" },
+  { v: "positions", icon: "💼", label: "Paper" },
 ];
 
 function MobileBody({ view: want }: { view: View }) {
@@ -545,6 +546,7 @@ function MobileBody({ view: want }: { view: View }) {
     case "builder":
       return <StrategyBuilder />;
     case "positions":
+      if (isViewer()) return <Positions />; // their paper book
       return (
         <div className="flex min-h-0 flex-1 flex-col">
           {/* live: the Positions tab has its own broker-style MTM | P&L card */}

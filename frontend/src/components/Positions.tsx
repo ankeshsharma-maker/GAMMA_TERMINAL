@@ -3,6 +3,7 @@ import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
 import { StopEditor } from "./StopEditor";
+import { isViewer } from "../lib/auth";
 
 function PnlTile({ label, value }: { label: string; value: number }) {
   return (
@@ -136,7 +137,7 @@ export function Positions() {
                       {p.qty > 0 ? "LONG" : "SHORT"} {Math.abs(p.qty / p.lotSize)}L @ {nf(p.avgPrice)}
                     </div>
                     <div className="mt-0.5">
-                      <StopEditor p={p} />
+                      {!isViewer() && <StopEditor p={p} />}
                     </div>
                   </td>
                   <td className="num px-2 py-1.5 text-right">{nf(p.ltp)}</td>

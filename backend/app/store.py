@@ -91,6 +91,7 @@ class Store:
         self._iv_hist_last_save = 0.0
         self._user_wls: dict[str, dict] = {}         # view-only users' watchlists, by user id
         self.watchlists: dict = self._load_watchlists()
+        self._user_papers: dict[str, dict] = {}      # view-only users' paper books, by user id
         self.paper: dict = db.get_kv("paper") or {"positions": [], "orders": [], "realized": 0.0}
         self.journal: deque = deque(
             db.load_rows("journal", order="DESC")[:_JOURNAL_MAXLEN], maxlen=_JOURNAL_MAXLEN
@@ -920,6 +921,29 @@ class Store:
     # `self.watchlists` means is decided by the request / socket's user
     # (users.current_user, None = the owner), so every watchlist method below
     # works on the right user's lists without knowing about users at all.
+    # ---- paper book: the owner's, plus one per view-only user ----------
+    # Same pattern as the watchlists: `self.paper` is the book of the request's
+    # user (users.current_user, None = the owner). Background jobs (stop checks,
+    # AutoBot, short guard) run without a user, so they only ever see the owner's.
+    @property
+    def paper(self) -> dict:
+        uid = current_user.get()
+        if uid is None:
+            return self._owner_paper
+        book = self._user_papers.get(uid)
+        if book is None:
+            book = db.get_kv(f"paper:{uid}") or {"positions": [], "orders": [], "realized": 0.0}
+            self._user_papers[uid] = book
+        return book
+
+    @paper.setter
+    def paper(self, v: dict) -> None:
+        self._owner_paper = v
+
+    def _save_paper(self) -> None:
+        uid = current_user.get()
+        db.set_kv("paper" if uid is None else f"paper:{uid}", self.paper)
+
     @property
     def watchlists(self) -> dict:
         uid = current_user.get()
@@ -993,6 +1017,10 @@ class Store:
         fresh, so a later-expiry row (e.g. added from search) prices instead of
         sitting on "loading"."""
         out: set[tuple[str, str]] = set()
+        for book in self._user_papers.values():  # viewers' paper positions stay priced
+            for pos in book.get("positions", []):
+                if pos.get("symbol") and pos.get("expiry"):
+                    out.add((str(pos["symbol"]).upper(), pos["expiry"]))
         for wl in [self._owner_wl, *self._user_wls.values()]:
             for e in wl["lists"][wl["active"]]["symbols"]:
                 p = self._parse_opt(e)
@@ -1325,7 +1353,7 @@ class Store:
             }
             self.paper["orders"].insert(0, order)
             self._apply_fill(order)
-            db.set_kv("paper", self.paper)
+            self._save_paper()
             return order
 
     def _apply_fill(self, order: dict) -> None:
@@ -1372,6 +1400,8 @@ class Store:
         `_apply_fill` for every fill that reduces/closes/flips a position --
         the single choke point every paper close (manual, "Close" button, or
         auto SL/target via check_stops) already funnels through."""
+        if current_user.get() is not None:
+            return  # a view-only user's paper trade: the journal is the owner's
         entry = {
             "id": uuid.uuid4().hex[:10],
             "mode": "paper",
@@ -1497,7 +1527,7 @@ class Store:
             if not anchor or anchor.get("date") != today:
                 anchor = {"date": today, "realized": realized}
                 self.paper["dayAnchor"] = anchor
-                db.set_kv("paper", self.paper)
+                self._save_paper()
             today_realized = realized - anchor["realized"]
             today_pnl = today_realized + unrealized
 
@@ -1587,7 +1617,7 @@ class Store:
                 "peak": ltp,
                 "createdTs": time.time(),
             }
-            db.set_kv("paper", self.paper)
+            self._save_paper()
             return self.paper_state()
 
     def clear_stop(self, position_id: str) -> dict:
@@ -1595,7 +1625,7 @@ class Store:
             for p in self.paper["positions"]:
                 if p["id"] == position_id:
                     p.pop("sl", None)
-            db.set_kv("paper", self.paper)
+            self._save_paper()
             return self.paper_state()
 
     def check_stops(self) -> list[dict]:

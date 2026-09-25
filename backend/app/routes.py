@@ -322,6 +322,7 @@ async def users_delete(uid: str):
         raise HTTPException(status_code=404, detail="no such user")
     await hub.kick_viewer(uid)
     store._user_wls.pop(uid, None)
+    store._user_papers.pop(uid, None)
     return {"users": users.list_users(), "max": users.MAX_VIEWERS}
 
 
@@ -552,9 +553,41 @@ def paper_state():
 
 
 @router.post("/paper/order")
-def paper_order(body: PaperOrderIn):
+async def paper_order(body: PaperOrderIn):
+    if body.price is None and body.option_type != "FUT":
+        # load the chain first so the fill prices off the live LTP (it was 0
+        # for a symbol / expiry the poller wasn't already keeping)
+        try:
+            await _ensure_chain(body.symbol, body.expiry)
+        except Exception:  # noqa: BLE001
+            pass
     order = store.place_paper_order(body)
     return {"order": order, "state": store.paper_state()}
+
+
+@router.post("/paper/strategy")
+async def paper_strategy(body: dict):
+    """A strategy's legs as PAPER fills only -- the Builder's Execute for
+    view-only users (/strategy/execute can go live, so it stays owner-only)."""
+    legs = body.get("legs") or []
+    if not legs:
+        raise HTTPException(status_code=422, detail="at least one leg required")
+    try:
+        await _ensure_chain(body.get("symbol") or "", body.get("expiry") or None)
+    except Exception:  # noqa: BLE001
+        pass
+    for leg in legs:
+        ot = leg.get("optionType") or leg.get("option_type")
+        if ot not in ("CE", "PE"):
+            continue
+        store.place_paper_order(
+            PaperOrderIn(
+                symbol=body.get("symbol") or "", expiry=body.get("expiry") or "", strike=float(leg.get("strike") or 0),
+                option_type=ot, side=leg.get("side") or "BUY", qty_lots=int(leg.get("lots") or 1),
+                price=leg.get("price"),
+            )
+        )
+    return {"mode": "paper", "paper": store.paper_state()}
 
 
 @router.post("/paper/close")

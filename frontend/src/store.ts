@@ -189,7 +189,33 @@ interface State {
   autobotResume: (id: string) => Promise<void>;
 }
 
-/** a view-only user can't trade: say so instead of sending an order the server refuses */
+/** a paper fill: the owner via /api/order (mode paper); a view-only user via the
+ *  paper-only route (/api/order can go live, so it's closed to them) */
+async function paperFill(o: {
+  symbol: string;
+  expiry: string;
+  strike: number;
+  optionType: "CE" | "PE" | "FUT";
+  side: "BUY" | "SELL";
+  lots: number;
+}): Promise<import("./types").PaperState> {
+  if (isViewer()) {
+    const r = await api.placeOrder({
+      symbol: o.symbol, expiry: o.expiry, strike: o.strike, option_type: o.optionType, side: o.side, qty_lots: o.lots,
+    });
+    return r.state;
+  }
+  if (o.optionType === "FUT") {
+    const r = await api.placeFutureOrder({ symbol: o.symbol, expiry: o.expiry, side: o.side, qtyLots: o.lots, mode: "paper" });
+    return r.paper;
+  }
+  const r = await api.placeUnifiedOrder({
+    symbol: o.symbol, expiry: o.expiry, strike: o.strike, optionType: o.optionType, side: o.side, qtyLots: o.lots, mode: "paper",
+  });
+  return r.paper;
+}
+
+/** a view-only user can't trade LIVE: say so instead of sending an order the server refuses */
 function viewOnly(): boolean {
   if (!isViewer()) return false;
   try {
@@ -260,7 +286,13 @@ export const useStore = create<State>((set, get) => ({
   },
 
   requestStrategyExecute: (legs) => {
-    if (viewOnly()) return;
+    if (isViewer()) {
+      const { symbol, chain, expiry } = get();
+      const exp = expiry ?? chain?.expiry;
+      if (!exp || legs.length === 0) return;
+      api.paperStrategy({ symbol, expiry: exp, legs }).then((r) => set({ paper: r.paper }), () => {});
+      return;
+    }
     const { symbol, chain, expiry, orderMode } = get();
     const exp = expiry ?? chain?.expiry;
     if (!exp || legs.length === 0) return;
@@ -420,12 +452,6 @@ export const useStore = create<State>((set, get) => ({
         (d) => set({ orderMode: d.mode }),
         () => {}
       );
-      // paper / autobot polls skip while the tab is hidden and only `set()` when
-      // something actually changed, so idle re-renders stop between real updates.
-      get().refreshPaper();
-      setInterval(() => {
-        if (!(typeof document !== "undefined" && document.hidden)) get().refreshPaper();
-      }, 8000);
       get().loadAutobot();
       setInterval(() => {
         if (!(typeof document !== "undefined" && document.hidden)) get().loadAutobot();
@@ -433,6 +459,12 @@ export const useStore = create<State>((set, get) => ({
     } else if (viewFor(get().view) !== get().view) {
       set({ view: "home" });
     }
+    // the paper book (a view-only user's is their own): polls skip while the tab
+    // is hidden and only `set()` when something actually changed
+    get().refreshPaper();
+    setInterval(() => {
+      if (!(typeof document !== "undefined" && document.hidden)) get().refreshPaper();
+    }, 8000);
     api.symbols().then(
       (d) =>
         d.indices?.length &&
@@ -657,7 +689,6 @@ export const useStore = create<State>((set, get) => ({
   setScalpLots: (n) => set({ scalpLots: Math.max(1, n) }),
 
   quickTrade: async (symbol, ot, side, lots) => {
-    if (viewOnly()) return;
     symbol = symbol.toUpperCase();
     const qty = lots ?? get().scalpLots;
     const wq = get().watch.find((w) => w.symbol === symbol);
@@ -678,20 +709,10 @@ export const useStore = create<State>((set, get) => ({
       });
       return;
     }
-    const r = await api.placeUnifiedOrder({
-      symbol,
-      expiry,
-      strike,
-      optionType: ot,
-      side,
-      qtyLots: qty,
-      mode: "paper",
-    });
-    set({ paper: r.paper });
+    set({ paper: await paperFill({ symbol, expiry, strike, optionType: ot, side, lots: qty }) });
   },
 
   quickTradeAt: async (symbol, expiry, strike, ot, side, lots) => {
-    if (viewOnly()) return;
     symbol = symbol.toUpperCase();
     const qty = lots ?? get().scalpLots;
     if (get().orderMode === "live") {
@@ -700,20 +721,10 @@ export const useStore = create<State>((set, get) => ({
       });
       return;
     }
-    const r = await api.placeUnifiedOrder({
-      symbol,
-      expiry,
-      strike,
-      optionType: ot,
-      side,
-      qtyLots: qty,
-      mode: "paper",
-    });
-    set({ paper: r.paper });
+    set({ paper: await paperFill({ symbol, expiry, strike, optionType: ot, side, lots: qty }) });
   },
 
   quickTradeFuture: async (symbol, expiry, side, lots) => {
-    if (viewOnly()) return;
     symbol = symbol.toUpperCase();
     const qty = lots ?? get().scalpLots;
     // known live price, if any -- lets the LIVE confirm dialog show a real
@@ -730,10 +741,7 @@ export const useStore = create<State>((set, get) => ({
       });
       return;
     }
-    const r = await api.placeFutureOrder({
-      symbol, expiry, side, qtyLots: qty, mode: "paper",
-    });
-    set({ paper: r.paper });
+    set({ paper: await paperFill({ symbol, expiry, strike: 0, optionType: "FUT", side, lots: qty }) });
   },
 
   refreshPaper: async () => {
@@ -754,7 +762,6 @@ export const useStore = create<State>((set, get) => ({
   },
 
   placeOrder: async ({ strike, optionType, side, lots }) => {
-    if (viewOnly()) return;
     const { symbol, chain, expiry, orderMode } = get();
     const exp = expiry ?? chain?.expiry;
     if (!exp) return;
@@ -764,16 +771,7 @@ export const useStore = create<State>((set, get) => ({
       });
       return;
     }
-    const r = await api.placeUnifiedOrder({
-      symbol,
-      expiry: exp,
-      strike,
-      optionType,
-      side,
-      qtyLots: lots,
-      mode: "paper",
-    });
-    set({ paper: r.paper });
+    set({ paper: await paperFill({ symbol, expiry: exp, strike, optionType, side, lots }) });
   },
 
   closePosition: async (id) => {
