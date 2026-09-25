@@ -83,6 +83,13 @@ def _evaluate(lg: dict) -> dict:
     level = 2 if ad >= LEVELS[1] else 1 if ad >= LEVELS[0] else 0
     # positive = still out of the money by that many points, negative = in the money
     dist = (lg["strike"] - spot) if lg["ot"] == "CE" else (spot - lg["strike"])
+    # DANGER only when the strike is in the money or within half a strike of
+    # it; further out it's a WARNING at most (a SENSEX put 114 pts out of the
+    # money reads delta 0.41 on 100-pt strikes -- it was flagged DANGER while
+    # 22% in profit)
+    step = float(chain.get("strikeStep") or 50)
+    if level == 2 and dist > 0.5 * step:
+        level = 1
     out.update(delta=round(side.get("delta") or 0.0, 3), absDelta=round(ad, 3), level=level,
                spot=spot, distance=round(dist, 1), ltp=side.get("ltp"))
     # in money, not Greeks: what exiting costs right now, the leg's P&L at that

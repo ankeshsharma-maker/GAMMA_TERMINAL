@@ -46,8 +46,8 @@ export function ShortGuard() {
   );
 }
 
-/** "+₹102" / "−₹3,600" */
-export const rs = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}₹${nf(Math.abs(v), 0)}`;
+/** "+₹102" / "−₹3,600" -- a word joiner keeps the sign on the same line as the amount */
+export const rs = (v: number) => `${v > 0 ? "+\u2060" : v < 0 ? "−\u2060" : ""}₹${nf(Math.abs(v), 0)}`;
 
 /** the leg's status in plain words: how far the market is from the strike,
  *  P&L now, what the next move against it costs, and the exit price */
@@ -66,7 +66,7 @@ export function guardText(r: ShortGuardLeg) {
         : `${r.symbol} is ${nf(Math.abs(d), 0)} pts ${side} your strike`,
     next:
       r.moveCost != null && r.move != null
-        ? `next ${nf(r.move, 0)} pts ${put ? "down" : "up"} ≈ ${rs(-r.moveCost)}`
+        ? `next ${nf(r.move, 0)} pts ${put ? "down" : "up"} ≈\u00a0${rs(-r.moveCost)}`
         : null,
   };
 }

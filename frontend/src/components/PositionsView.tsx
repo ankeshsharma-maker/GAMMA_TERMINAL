@@ -308,8 +308,10 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
           const avg = qty ? n(r.netavgprc) ?? n(r.daybuyavgprc) ?? n(r.daysellavgprc) ?? 0 : 0;
           const lp = n(r.lp);
           const pnl = mode === "mtm" ? today : day;
-          // the % the broker shows: LTP against the average price
-          const pct = avg && lp != null ? ((lp - avg) / avg) * 100 : 0;
+          // the trade's return on its price: a short gains when the price falls,
+          // so its sign flips (-22% on a winning short read like a loss)
+          const pct = avg && lp != null ? ((lp - avg) / avg) * 100 * (qty < 0 ? -1 : 1) : 0;
+          const closed = !qty;
           const sel = selected.has(key);
           const open = openKey === key;
           const prd = r.s_prdt_ali ?? PRD[String(r.prd ?? "")] ?? r.prd ?? "NRML";
@@ -348,11 +350,20 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
                 <span className="truncate text-[16px] text-term-text">
                   {r.dname ?? r.tsym ?? r.symname ?? "—"}
                 </span>
-                <span className={`tabular-nums whitespace-nowrap text-[15px] ${signColor(pct)}`}>
-                  ({nf(pct, 2)} %)
-                </span>
+                {!closed && (
+                  <span className={`tabular-nums whitespace-nowrap text-[15px] ${signColor(pct)}`}>
+                    ({pct > 0 ? "+" : ""}
+                    {nf(pct, 2)} %)
+                  </span>
+                )}
               </div>
               <div className="mt-1 flex items-baseline justify-between gap-2 text-[14px]">
+                {closed ? (
+                  // a closed leg: what it booked, not "Qty 0 · Price 0.00"
+                  <span className="tabular-nums whitespace-nowrap text-term-dim">
+                    Closed · booked <span className={signColor(n(r.rpnl) ?? 0)}>{nf(n(r.rpnl) ?? 0, 2)}</span>
+                  </span>
+                ) : (
                 <span className="tabular-nums flex gap-4 whitespace-nowrap">
                   <span className={qty > 0 ? "text-up" : qty < 0 ? "text-down" : "text-term-dim"}>
                     Qty : {qty}
@@ -362,6 +373,7 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
                     <span className="text-term-text">{avg.toFixed(2)}</span>
                   </span>
                 </span>
+                )}
                 <span className="tabular-nums whitespace-nowrap">
                   <span className="text-term-dim">LTP </span>
                   <span className="text-term-text">{lp != null ? lp.toFixed(2) : "–"}</span>
