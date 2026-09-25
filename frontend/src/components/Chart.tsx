@@ -1548,36 +1548,39 @@ export function Chart() {
           </div>
         )}
 
-        {/* fast execution — trades the strike picked above, at scalpLots */}
-        {strikes.length > 0 && chain?.expiry && pickStrike > 0 && (
-          <div className="flex items-center gap-0.5 rounded border border-term-dim/70 px-1" title={`${pickStrike} × ${scalpLots} lot(s)`}>
-            <button
-              onClick={() => quickTradeAt(symbol, chain.expiry, pickStrike, "CE", "BUY")}
-              className="rounded border border-up/50 bg-up/20 px-1.5 py-0.5 text-[10px] font-bold text-up hover:bg-up/30"
+        {/* fast execution -- BUY / SELL the contract this chart is showing, at scalpLots.
+            An index / the straddle can't be bought itself: greyed out until a CE / PE is charted. */}
+        {(() => {
+          const [iSym, iExp, iK, iOt] = isOption ? instrument.split("|") : [];
+          const tradable = isOption && !!iExp && Number(iK) > 0 && (iOt === "CE" || iOt === "PE");
+          const what = tradable ? `${iSym} ${iK} ${iOt}` : "";
+          const go = (side: "BUY" | "SELL") =>
+            tradable && quickTradeAt(iSym, iExp, Number(iK), iOt as "CE" | "PE", side);
+          return (
+            <div
+              className="flex items-center gap-1 rounded border border-term-dim/70 px-1"
+              title={tradable ? `${what} × ${scalpLots} lot(s)` : "Chart a CE or PE (buttons on the left) to trade it from here"}
             >
-              B CE
-            </button>
-            <button
-              onClick={() => quickTradeAt(symbol, chain.expiry, pickStrike, "CE", "SELL")}
-              className="rounded border border-down/70 px-1.5 py-0.5 text-[10px] font-bold text-down/90 hover:bg-down/10"
-            >
-              S CE
-            </button>
-            <span className="mx-0.5 h-3 w-px bg-term-border" />
-            <button
-              onClick={() => quickTradeAt(symbol, chain.expiry, pickStrike, "PE", "BUY")}
-              className="rounded border border-down/70 bg-down/20 px-1.5 py-0.5 text-[10px] font-bold text-down hover:bg-down/30"
-            >
-              B PE
-            </button>
-            <button
-              onClick={() => quickTradeAt(symbol, chain.expiry, pickStrike, "PE", "SELL")}
-              className="rounded border border-up/50 px-1.5 py-0.5 text-[10px] font-bold text-up/90 hover:bg-up/10"
-            >
-              S PE
-            </button>
-          </div>
-        )}
+              <button
+                disabled={!tradable}
+                onClick={() => go("BUY")}
+                className="rounded bg-up px-2 py-0.5 text-[10px] font-bold text-white hover:bg-up/80 disabled:bg-term-border disabled:text-term-dim"
+              >
+                BUY
+              </button>
+              <button
+                disabled={!tradable}
+                onClick={() => go("SELL")}
+                className="rounded bg-down px-2 py-0.5 text-[10px] font-bold text-white hover:bg-down/80 disabled:bg-term-border disabled:text-term-dim"
+              >
+                SELL
+              </button>
+              <span className="whitespace-nowrap text-[10px] text-term-dim">
+                {tradable ? `${iK} ${iOt} · ${scalpLots} lot${scalpLots === 1 ? "" : "s"}` : "chart a CE / PE"}
+              </span>
+            </div>
+          );
+        })()}
 
         <SelectMenu
           value={intervalS}
