@@ -2078,19 +2078,8 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
             </div>
           )}
 
+          {/* Spot / PCR / Max Pain are in the main header -- only γ-flip is unique to this tab */}
           <div className="num ml-auto flex flex-wrap items-center gap-1.5 text-[10px]">
-            <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
-              <span className="text-term-dim">Spot </span>
-              <span className="text-term-text">{nf(spot, 1)}</span>
-            </span>
-            <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
-              <span className="text-term-dim">PCR </span>
-              <span className="text-term-text">{nf(chain.pcr, 2)}</span>
-            </span>
-            <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
-              <span className="text-term-dim">Max Pain </span>
-              <span className="text-term-text">{nf(chain.maxPain, 0)}</span>
-            </span>
             {gammaFlip && (
               <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
                 <span className="text-term-dim">γ-flip </span>
