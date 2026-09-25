@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
-import { compact, lakhs, nf, sk } from "../lib/format";
+import { compact, oiCr, nf, sk } from "../lib/format";
 import { istTime } from "../lib/istTime";
 import { scoreOI } from "../lib/oiVerdict";
 import { useTrend, type Dir, type Overall } from "./TrendCompass";
@@ -79,7 +79,7 @@ const TR = "";
 const TD = "border-b border-r border-term-dim/50 px-2 py-1";
 // a totals row: filled + bold
 const TOT = "font-semibold [&>td]:bg-term-border/50";
-const L = (v: number | null | undefined) => (v == null ? "–" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${lakhs(Math.abs(v))}`);
+const L = (v: number | null | undefined) => (v == null ? "–" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${oiCr(Math.abs(v))}`);
 const pct = (v: number | null | undefined) => (v == null ? "–" : `${nf(v, 1)}%`);
 const tone3 = (v: number | null | undefined, pos: string, neg: string) =>
   v == null || v === 0 ? "text-term-dim" : v > 0 ? pos : neg;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { SelectMenu } from "./SelectMenu";
@@ -9,7 +9,8 @@ const monthKey = (e: string) => {
   return p.length === 3 ? `${p[1]}-${p[2]}` : e;
 };
 
-export function ExpiryTabs() {
+/** `extra`: controls that ride the end of this row (the Option Chain's ΔOI window) */
+export function ExpiryTabs({ extra }: { extra?: ReactNode } = {}) {
   const { chain, expiry, selectExpiry, symbol, selectSymbol, symClass, symClassOk } = useStore();
 
   const [symChoices, setSymChoices] = useState<string[]>([]);
@@ -45,6 +46,7 @@ export function ExpiryTabs() {
       <div className="flex items-center gap-1 border-b border-term-border bg-term-panel2 px-3 py-1.5">
         {symSelect}
         <span className="text-2xs text-term-dim">loading chain…</span>
+        {extra && <span className="ml-auto flex shrink-0 items-center text-2xs text-term-dim">{extra}</span>}
       </div>
     );
   }
@@ -94,6 +96,7 @@ export function ExpiryTabs() {
           </span>
         )}
       </div>
+      {extra && <span className="flex shrink-0 items-center text-2xs text-term-dim">{extra}</span>}
     </div>
   );
 }

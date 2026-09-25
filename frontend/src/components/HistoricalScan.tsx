@@ -2,7 +2,7 @@ import { Fragment, useMemo, useState } from "react";
 import { RangePresets } from "./RangePresets";
 import { useStore } from "../store";
 import { api } from "../lib/api";
-import { lakhs, nf } from "../lib/format";
+import { oiCr, nf } from "../lib/format";
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 type Row = Awaited<ReturnType<typeof api.upstoxScanHistory>>["rows"][number];
@@ -209,7 +209,7 @@ export function HistoricalScan() {
                           r.netOI >= 0 ? "text-term-text" : "text-amber-400"
                         }`}
                       >
-                        {lakhs(r.netOI)}
+                        {oiCr(r.netOI)}
                       </td>
                       <td className="num border-b border-term-border/40 px-3 py-1">
                         {r.pcr != null ? nf(r.pcr, 2) : "–"}

@@ -3,7 +3,6 @@ import { useStore } from "../store";
 import { useIsMobile } from "../lib/useIsMobile";
 import { OIProfile } from "./OIProfile";
 import { OIHistory } from "./OIHistory";
-import { ExpiryTabs } from "./ExpiryTabs";
 import { OptionChain } from "./OptionChain";
 
 /**
@@ -35,7 +34,7 @@ export function ScripView() {
   // toolbar row (one row saved). Keep the standalone bar for History, on
   // mobile, and while the chain is still loading (those panes show only a
   // spinner then, no toolbar to ride on).
-  const showOwnBar = isMobile || pane === "history" || !chain;
+  const showOwnBar = isMobile || !chain;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -55,13 +54,12 @@ export function ScripView() {
       )}
       {pane === "chain" && (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <ExpiryTabs />
-          <OptionChain paneNav={isMobile ? undefined : paneSeg} />
+          <OptionChain expiryRow paneNav={isMobile ? undefined : paneSeg} />
         </div>
       )}
       {pane === "history" && (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <OIHistory />
+          <OIHistory paneNav={isMobile ? undefined : paneSeg} />
         </div>
       )}
     </div>

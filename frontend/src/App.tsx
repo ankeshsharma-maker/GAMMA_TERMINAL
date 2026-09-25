@@ -4,7 +4,6 @@ import { Header } from "./components/Header";
 import { HeaderMenu, MenuRow } from "./components/HeaderMenu";
 import { applyFontScale } from "./components/FontScale";
 import { Watchlist } from "./components/Watchlist";
-import { ExpiryTabs } from "./components/ExpiryTabs";
 import { OptionChain } from "./components/OptionChain";
 import { OIProfile } from "./components/OIProfile";
 import { ScripView } from "./components/ScripView";
@@ -190,8 +189,7 @@ function DesktopShell() {
         <main className="flex min-h-0 flex-col overflow-hidden">
           {view === "chain" && (
             <>
-              <ExpiryTabs />
-              <OptionChain />
+              <OptionChain expiryRow />
             </>
           )}
           {view === "oiprofile" && <OIProfile />}

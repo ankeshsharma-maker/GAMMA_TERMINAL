@@ -4,7 +4,8 @@ import { isViewer } from "../lib/auth";
 import { api } from "../lib/api";
 import { RefreshChainBtn } from "./RefreshChainBtn";
 import { SelectMenu } from "./SelectMenu";
-import { compact, lakhs, nf, signColor, sk } from "../lib/format";
+import { ExpiryTabs } from "./ExpiryTabs";
+import { compact, oiCr, nf, signColor, sk } from "../lib/format";
 import type { ChainRow, Leg, UnusualKind } from "../types";
 import { OrderTicket } from "./OrderTicket";
 
@@ -324,11 +325,30 @@ function ActivityCell({
   );
 }
 
-export function OptionChain({ paneNav }: { paneNav?: ReactNode } = {}) {
+/** `expiryRow`: render the symbol / expiry row on top, carrying the ΔOI window */
+export function OptionChain({ paneNav, expiryRow = false }: { paneNav?: ReactNode; expiryRow?: boolean } = {}) {
   const { chain, chainError } = useStore();
   const [tab, setTab] = useState<TabKey>("ltp");
   const [count, setCount] = useState<number>(0); // strikes each side of ATM; 0 = All
-  const [oiTf, setOiTf] = useState(0); // ΔOI window in minutes; 0 = day (since open)
+  // ΔOI window in minutes; 0 = day (since open) -- remembered on the device
+  const [oiTf, setOiTfState] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem("oc.tf");
+      if (v != null && Number.isFinite(+v)) return +v;
+    } catch {
+      /* private mode */
+    }
+    return 0;
+  });
+  const setOiTf = (v: number) => {
+    setOiTfState(v);
+    try {
+      localStorage.setItem("oc.tf", String(v));
+    } catch {
+      /* ignore */
+    }
+  };
+  const [gear, setGear] = useState(false); // the ⚙ menu: strikes + legend
   const [winMap, setWinMap] = useState<Record<string, { ce: number; pe: number }>>({});
 
   useEffect(() => {
@@ -650,10 +670,35 @@ export function OptionChain({ paneNav }: { paneNav?: ReactNode } = {}) {
     );
   };
 
+  const tfControl = (
+    <span className="flex items-center gap-1.5" title="Change-in-OI window (the shorter ones need a few minutes of live history)">
+      <span>ΔOI</span>
+      <SelectMenu
+        value={oiTf}
+        options={
+          [
+            ["Day", 0],
+            ["1m", 1],
+            ["2m", 2],
+            ["3m", 3],
+            ["5m", 5],
+            ["15m", 15],
+            ["30m", 30],
+            ["1h", 60],
+            ["4h", 240],
+          ] as const
+        }
+        onChange={setOiTf}
+        title="ΔOI window"
+      />
+    </span>
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {expiryRow && <ExpiryTabs extra={tfControl} />}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
-        {paneNav ?? <span className="font-semibold uppercase tracking-wide">Option Chain</span>}
+        {paneNav ?? <span className="hidden font-semibold uppercase tracking-wide sm:inline">Option Chain</span>}
         <RefreshChainBtn />
         <div className="seg">
           {TABS.map((t) => (
@@ -667,39 +712,65 @@ export function OptionChain({ paneNav }: { paneNav?: ReactNode } = {}) {
           ))}
         </div>
 
-        <span className="ml-1">Strikes</span>
-        <div className="seg">
-          {[10, 20, 30, 0].map((n) => (
-            <button key={n} onClick={() => setCount(n)} className={count === n ? "on" : ""}>
-              {n === 0 ? "All" : n}
-            </button>
-          ))}
-        </div>
-
-        <span
-          className="ml-1"
-          title="Change-in-OI window (needs a few minutes of live history for the shorter ones)"
-        >
-          ΔOI
+        {/* ⚙: strikes shown + the colour legend (they used to fill the row) */}
+        <div className="relative">
+          <button
+            onClick={() => setGear((g) => !g)}
+            className={`rounded border px-2 py-0.5 ${gear ? "border-term-accent text-term-accent" : "border-term-dim/70 text-term-dim hover:text-term-text"}`}
+            title="Settings: strikes shown, legend"
+          >
+            ⚙ {count === 0 ? "All" : `±${count}`}
+          </button>
+          {gear && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setGear(false)} />
+              <div className="absolute left-0 top-full z-50 mt-1 flex w-max max-w-[92vw] flex-col gap-2 rounded-lg border border-term-border bg-term-panel p-3 text-2xs shadow-2xl">
+                <div className="flex items-center gap-2">
+                  <span className="w-14 shrink-0">Strikes ±</span>
+                  <div className="seg">
+                    {[10, 20, 30, 0].map((n) => (
+                      <button key={n} onClick={() => setCount(n)} className={count === n ? "on" : ""}>
+                        {n === 0 ? "All" : n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1 whitespace-normal leading-snug [&>span]:ml-0">
+        <span className="text-up">■ CALLS</span>
+        <span className="text-down">■ PUTS</span>
+        <span className="text-term-dim">
+          · Activity: <span className="text-up">Buying</span> /{" "}
+          <span className="text-down">Writing</span> /{" "}
+          <span className="text-sky-400">Short covering</span> /{" "}
+          <span className="text-amber-400">Long unwinding</span> — tap to trade
         </span>
-        <SelectMenu
-          value={oiTf}
-          options={
-            [
-              ["Day", 0],
-              ["1m", 1],
-              ["2m", 2],
-              ["3m", 3],
-              ["5m", 5],
-              ["15m", 15],
-              ["30m", 30],
-              ["1h", 60],
-              ["4h", 240],
-            ] as const
-          }
-          onChange={setOiTf}
-          title="ΔOI window"
-        />
+        {tab === "oi" ? (
+          <span className="">
+            <span className="text-down">■ Call OI = Resistance</span>
+            {"  "}
+            <span className="text-up">■ Put OI = Support</span>
+            {"  "}
+            <span className="text-term-dim">R/S = max wall ·</span>{" "}
+            <span className="text-amber-400">▲ biggest build · ▽ biggest unwind</span>
+          </span>
+        ) : tab === "greeks" ? (
+          <span className="">
+            <span className="text-term-accent">! delta jump</span> ·{" "}
+            <span className="text-amber-400">▲ gamma spike</span> ·{" "}
+            <span className="text-down">▼ gamma collapse</span>{" "}
+            <span className="text-term-dim">→ Unusual Activity 🔔</span>
+          </span>
+        ) : (
+          <span className="text-term-dim">
+            from STRIKE outward: LTP · Chg% · Δ · Γ · Θ · V{"  "}
+            <span className="text-up">■ up</span> <span className="text-down">■ down</span> bars
+          </span>
+        )}
+                      </div>
+              </div>
+            </>
+          )}
+        </div>
 
         {chain.forward != null && (
           <span
@@ -720,36 +791,6 @@ export function OptionChain({ paneNav }: { paneNav?: ReactNode } = {}) {
           </span>
         )}
 
-        <span className="ml-3 text-up">■ CALLS</span>
-        <span className="text-down">■ PUTS</span>
-        <span className="text-term-dim">
-          · Activity: <span className="text-up">Buying</span> /{" "}
-          <span className="text-down">Writing</span> /{" "}
-          <span className="text-sky-400">Short covering</span> /{" "}
-          <span className="text-amber-400">Long unwinding</span> — tap to trade
-        </span>
-        {tab === "oi" ? (
-          <span className="ml-auto">
-            <span className="text-down">■ Call OI = Resistance</span>
-            {"  "}
-            <span className="text-up">■ Put OI = Support</span>
-            {"  "}
-            <span className="text-term-dim">R/S = max wall ·</span>{" "}
-            <span className="text-amber-400">▲ biggest build · ▽ biggest unwind</span>
-          </span>
-        ) : tab === "greeks" ? (
-          <span className="ml-auto">
-            <span className="text-term-accent">! delta jump</span> ·{" "}
-            <span className="text-amber-400">▲ gamma spike</span> ·{" "}
-            <span className="text-down">▼ gamma collapse</span>{" "}
-            <span className="text-term-dim">→ Unusual Activity 🔔</span>
-          </span>
-        ) : (
-          <span className="ml-auto text-term-dim">
-            from STRIKE outward: LTP · Chg% · Δ · Γ · Θ · V{"  "}
-            <span className="text-up">■ up</span> <span className="text-down">■ down</span> bars
-          </span>
-        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
@@ -762,7 +803,7 @@ export function OptionChain({ paneNav }: { paneNav?: ReactNode } = {}) {
               >
                 Calls ▸{" "}
                 <span className="num text-[9px] font-semibold normal-case text-up/80">
-                  Total OI {lakhs(chain.totals.ceOI)}
+                  Total OI {oiCr(chain.totals.ceOI)}
                 </span>
               </th>
               <th className="border-x-2 border-term-border bg-term-bg" />
@@ -772,7 +813,7 @@ export function OptionChain({ paneNav }: { paneNav?: ReactNode } = {}) {
               >
                 ◂ Puts{" "}
                 <span className="num text-[9px] font-semibold normal-case text-down/80">
-                  Total OI {lakhs(chain.totals.peOI)}
+                  Total OI {oiCr(chain.totals.peOI)}
                 </span>
               </th>
             </tr>

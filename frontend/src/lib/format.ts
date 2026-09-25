@@ -7,6 +7,11 @@ export const nf = (n: number | null | undefined, d = 2): string =>
 export const lakhs = (n: number | null | undefined): string =>
   n === null || n === undefined || Number.isNaN(n) ? "–" : `${(n / 1e5).toFixed(2)}L`;
 
+/** OI in crores -- every OI figure in the app (asked 25-Sep): 2 decimals,
+ *  3 under 0.1 Cr so small strikes / SENSEX don't read 0.00 */
+export const oiCr = (n: number | null | undefined): string =>
+  n === null || n === undefined || Number.isNaN(n) ? "–" : `${(n / 1e7).toFixed(Math.abs(n) < 1e6 ? 3 : 2)}Cr`;
+
 /** always-crores formatter, e.g. "1.04 Cr" */
 export const crores = (n: number | null | undefined): string =>
   n === null || n === undefined || Number.isNaN(n) ? "–" : `${(n / 1e7).toFixed(2)} Cr`;

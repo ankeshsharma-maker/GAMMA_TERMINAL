@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
-import { compact, nf, sk, signColor } from "../lib/format";
+import { compact, nf, sk, signColor, oiCr } from "../lib/format";
 import type { HotStrike, ScanRow } from "../types";
 import { Num } from "./Screener";
 
@@ -75,13 +75,13 @@ function HotCell({ hs }: { hs?: HotStrike[] }) {
         <span
           key={`${h.strike}${h.side}`}
           className={`num whitespace-nowrap text-[10.5px] font-semibold ${hotStyle(h)}`}
-          title={`${h.side} OI now ${nf(h.oi / 1e5, 1)}L · ${h.chg >= 0 ? "built" : "unwound"} ${nf(
-            Math.abs(h.chg) / 1e5,
+          title={`${h.side} OI now ${oiCr(h.oi)} · ${h.chg >= 0 ? "built" : "unwound"} ${nf(
+            Math.abs(h.chg) / 1e7,
             1
           )}L (${nf(Math.abs(h.pct), 0)}%) in ~${h.mins} min`}
         >
           {sk(h.strike)} {h.side} {h.chg >= 0 ? "+" : "−"}
-          {nf(Math.abs(h.chg) / 1e5, 1)}L{" "}
+          {nf(Math.abs(h.chg) / 1e7, 2)}Cr{" "}
           <span className="font-normal opacity-80">
             ({h.pct >= 0 ? "+" : "−"}
             {nf(Math.abs(h.pct), 0)}%)

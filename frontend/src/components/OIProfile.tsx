@@ -4,7 +4,7 @@ import { ClassFilter } from "./Header";
 import { useStore } from "../store";
 import { api, type OiWallPt } from "../lib/api";
 import { istTime } from "../lib/istTime";
-import { compact, nf, sk } from "../lib/format";
+import { compact, nf, oiCr, sk } from "../lib/format";
 import { PcrChart } from "./PcrChart";
 import { SelectMenu } from "./SelectMenu";
 import { useIsMobile } from "../lib/useIsMobile";
@@ -877,11 +877,12 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       </div>
     </div>
   );
-  // lakhs on both sides (compact() mixed K and L: 7.0K calls beside 13.24L puts)
-  const ldp = stats.maxOI < 10e5 ? 2 : 1;
-  const lk = (v: number) => nf(v / 1e5, ldp);
+  // crores on both sides (compact() mixed K and L: 7.0K calls beside 13.24L puts);
+  // 3 decimals when the biggest strike is under 1 Cr
+  const ldp = stats.maxOI < 1e7 ? 3 : 2;
+  const lk = (v: number) => nf(v / 1e7, ldp);
   const slk = (v: number) => {
-    const l = Math.round(v / 10 ** (5 - ldp)) / 10 ** ldp;
+    const l = Math.round(v / 10 ** (7 - ldp)) / 10 ** ldp;
     return `${l > 0 ? "+" : l < 0 ? "−" : ""}${nf(Math.abs(l), ldp)}`;
   };
   const ladderEl = (
@@ -894,7 +895,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           <span className="flex items-center gap-1"><Sw c={PUT_OI} /> put</span>
           <span className="flex items-center gap-1"><Sw c={OI_ADD} /> added</span>
           <span className="flex items-center gap-1"><Sw c={OI_CUT} /> cut · {tf === 0 ? "day" : `${tf}m`}</span>
-          <span>· lakhs</span>
+          <span>· Cr</span>
         </div>
       </div>
       <div className={isMobile ? "" : "mx-auto max-w-3xl"}>
@@ -932,12 +933,12 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   // with a bar inside the OI cell (call bars grow toward the strike from the
   // left, put bars from the right), change over the chosen window, R / S on
   // the biggest call / put strike, and the spot line between strikes ----
-  // lakhs: 1 decimal, 2 when the biggest strike is under 10 lakh (SENSEX /
-  // BANKEX / stocks -- with 1 decimal most of their strikes read 0.0)
-  const dp = stats.maxOI < 10e5 ? 2 : 1;
-  const L1 = (v: number) => nf(v / 1e5, dp);
+  // crores: 2 decimals, 3 when the biggest strike is under 1 Cr (SENSEX /
+  // BANKEX / stocks -- otherwise most of their strikes read 0.00)
+  const dp = stats.maxOI < 1e7 ? 3 : 2;
+  const L1 = (v: number) => nf(v / 1e7, dp);
   const S1 = (v: number) => {
-    const l = Math.round(v / 10 ** (5 - dp)) / 10 ** dp; // rounded first, so a tiny change reads 0.0, not +0.0
+    const l = Math.round(v / 10 ** (7 - dp)) / 10 ** dp; // rounded first, so a tiny change reads 0.00, not +0.00
     return `${l > 0 ? "+" : l < 0 ? "−" : ""}${nf(Math.abs(l), dp)}`;
   };
   const tone = (v: number, pos: string, neg: string) => (v > 0 ? pos : v < 0 ? neg : "text-term-dim");
@@ -1049,7 +1050,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         </tbody>
       </table>
       <div className="mx-auto mt-1.5 max-w-3xl text-[10px] leading-snug text-term-dim">
-        OI in lakhs · strikes: {count === 0 ? "all" : `ATM ±${count}`} · Chg = {tfName} · bar = OI vs the biggest strike shown · R / S = most call / put OI · PCR{" "}
+        OI in crores · strikes: {count === 0 ? "all" : `ATM ±${count}`} · Chg = {tfName} · bar = OI vs the biggest strike shown · R / S = most call / put OI · PCR{" "}
         {chain?.pcr != null ? nf(chain.pcr, 2) : "–"} (whole chain)
       </div>
     </div>
@@ -1147,13 +1148,13 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           <tbody>
             <tr>
               <td className={`${GTD} text-term-dim`}>Biggest</td>
-              <td className={`${GTD} text-right font-semibold text-down`}>{sk(last.cw)} · {L1(last.cwOI)}L</td>
-              <td className={`${GTD} text-right font-semibold text-up`}>{sk(last.pw)} · {L1(last.pwOI)}L</td>
+              <td className={`${GTD} text-right font-semibold text-down`}>{sk(last.cw)} · {L1(last.cwOI)}Cr</td>
+              <td className={`${GTD} text-right font-semibold text-up`}>{sk(last.pw)} · {L1(last.pwOI)}Cr</td>
             </tr>
             <tr>
               <td className={`${GTD} rounded-bl-lg text-term-dim`}>Next</td>
-              <td className={`${GTD} text-right text-term-text`}>{last.cw2 != null ? `${sk(last.cw2)} · ${L1(last.cw2OI ?? 0)}L` : "–"}</td>
-              <td className={`${GTD} rounded-br-lg text-right text-term-text`}>{last.pw2 != null ? `${sk(last.pw2)} · ${L1(last.pw2OI ?? 0)}L` : "–"}</td>
+              <td className={`${GTD} text-right text-term-text`}>{last.cw2 != null ? `${sk(last.cw2)} · ${L1(last.cw2OI ?? 0)}Cr` : "–"}</td>
+              <td className={`${GTD} rounded-br-lg text-right text-term-text`}>{last.pw2 != null ? `${sk(last.pw2)} · ${L1(last.pw2OI ?? 0)}Cr` : "–"}</td>
             </tr>
           </tbody>
         </table>
@@ -2145,7 +2146,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
               ] as const
             ).map(([side, oi, add, cut, wall, tag, addCls, cutCls], i) => {
               const net = add + cut;
-              const l1 = (v: number) => `${nf(v / 1e5, dp)}L`;
+              const l1 = (v: number) => `${nf(v / 1e7, dp)}Cr`;
               const sgn = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${l1(Math.abs(v))}`;
               return (
                 <tr key={side}>

@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { RangePresets } from "./RangePresets";
 import { useStore } from "../store";
 import { api } from "../lib/api";
-import { crores, lakhs, nf } from "../lib/format";
+import { crores, oiCr, nf } from "../lib/format";
 
 type Row = {
   date: string;
@@ -28,7 +28,8 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 /** Historical daily chain metrics over a date range — spot, total Call/Put OI,
  *  PCR, max-pain and the day-over-day OI state. Data from Upstox
  *  (/api/upstox/history-chain); needs Upstox connected (index or F&O stock). */
-export function OIHistory() {
+/** `paneNav`: the OI Profile / Option Chain / History switch, riding this toolbar on the web */
+export function OIHistory({ paneNav }: { paneNav?: ReactNode } = {}) {
   const symbol = useStore((s) => s.symbol);
   const chain = useStore((s) => s.chain);
   const expiry = useStore((s) => s.expiry) ?? chain?.expiry ?? "";
@@ -133,7 +134,7 @@ export function OIHistory() {
               className="text-term-dim"
             />
             <text x={4} y={pad.t + f * (H - pad.t - pad.b) + 3} fontSize={10} className="fill-term-dim">
-              {lakhs(omax * (1 - f))}
+              {oiCr(omax * (1 - f))}
             </text>
             <text
               x={W - pad.r + 4}
@@ -184,7 +185,7 @@ export function OIHistory() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
-        <span className="font-semibold uppercase tracking-wide">OI History</span>
+        {paneNav ?? <span className="hidden font-semibold uppercase tracking-wide sm:inline">OI History</span>}
         <span className="num font-semibold text-term-text">{symbol}</span>
         <span className="num">{expiry || "—"}</span>
         <label className="flex items-center gap-1">
@@ -218,7 +219,7 @@ export function OIHistory() {
         >
           {busy ? "loading…" : "Load"}
         </button>
-        <span className="ml-auto">
+        <span className="ml-auto hidden sm:inline">
           <span className="text-[#f87171]">■</span> Call OI &nbsp;
           <span className="text-[#4ade80]">■</span> Put OI &nbsp;
           <span className="text-sky-400">─</span> Spot

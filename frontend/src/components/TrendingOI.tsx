@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
-import { lakhs, nf, compact } from "../lib/format";
+import { oiCr, nf, compact } from "../lib/format";
 import { SelectMenu } from "./SelectMenu";
 
 type Pt = {
@@ -27,7 +27,7 @@ const SENT_COL: Record<string, string> = {
 };
 
 // OI figures in lakh ("35.35L", not "35,35,080") -- asked for 24-Sep
-const inr = (v: number) => `${(v / 1e5).toFixed(2)}L`;
+const inr = (v: number) => oiCr(v); // crores (asked 25-Sep; was lakhs)
 const sInr = (v: number) => (v >= 0 ? "+" : "") + inr(v);
 const sentCls = (s: string) =>
   s === "Bullish" ? "text-up" : s === "Bearish" ? "text-down" : "text-term-dim";
@@ -814,7 +814,7 @@ function TrendingOIClassic() {
           Call +
         </text>
         <text x={padL - 6} y={colTop + colH / 2 - 3} textAnchor="end" fontSize={8} className="fill-term-dim">
-          {lakhs(cmax)}
+          {oiCr(cmax)}
         </text>
         {bars.map((b, i) => {
           const cx = x(b.t);
@@ -985,22 +985,22 @@ function TrendingOIClassic() {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel px-3 py-1 text-2xs">
         <Tile
           label="Call Δ"
-          value={last ? lakhs(last.ce) : "–"}
+          value={last ? oiCr(last.ce) : "–"}
           cls={last && last.ce >= 0 ? "text-down" : "text-up"}
         />
         <Tile
           label="Put Δ"
-          value={last ? lakhs(last.pe) : "–"}
+          value={last ? oiCr(last.pe) : "–"}
           cls={last && last.pe >= 0 ? "text-up" : "text-down"}
         />
         <Tile
           label={netOi >= 0 ? "Net +" : "Net −"}
-          value={last ? lakhs(netOi) : "–"}
+          value={last ? oiCr(netOi) : "–"}
           cls={netOi >= 0 ? "text-term-text" : "text-amber-400"}
         />
         <Tile
           label="Bias"
-          value={last ? lakhs(net) : "–"}
+          value={last ? oiCr(net) : "–"}
           cls={net >= 0 ? "text-up" : "text-down"}
         />
         <Tile
@@ -1109,14 +1109,14 @@ function TrendingOIClassic() {
                       style={{ color: CE }}
                     >
                       {r.dce >= 0 ? "+" : ""}
-                      {lakhs(r.dce)}
+                      {oiCr(r.dce)}
                     </td>
                     <td
                       className="num px-3 py-1 text-right"
                       style={{ color: PE }}
                     >
                       {r.dpe >= 0 ? "+" : ""}
-                      {lakhs(r.dpe)}
+                      {oiCr(r.dpe)}
                     </td>
                     <td
                       className={`num px-3 py-1 text-right ${

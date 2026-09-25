@@ -205,7 +205,6 @@ import { Settings } from "./Settings";
 import { NotificationPanel } from "./NotificationPanel";
 import { OrderConfirm } from "./OrderConfirm";
 import { Watchlist } from "./Watchlist";
-import { ExpiryTabs } from "./ExpiryTabs";
 import { OptionChain } from "./OptionChain";
 import { ScripView } from "./ScripView";
 import { HomeDashboard } from "./HomeDashboard";
@@ -502,8 +501,7 @@ function MobileBody({ view: want }: { view: View }) {
     case "chain":
       return (
         <>
-          <ExpiryTabs />
-          <OptionChain />
+          <OptionChain expiryRow />
         </>
       );
     case "watchlist":
