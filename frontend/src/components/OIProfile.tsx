@@ -741,18 +741,10 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
               }`}
               style={{ width: COLW }}
             >
-              <div className="flex h-4 w-full items-end justify-center">
-                {isRes && (
-                  <span className="whitespace-nowrap rounded-sm bg-down px-1 text-[8px] font-bold leading-tight text-white">
-                    WALL
-                  </span>
-                )}
-                {isFloor && (
-                  <span className="whitespace-nowrap rounded-sm bg-up px-1 text-[8px] font-bold leading-tight text-white">
-                    FLOOR
-                  </span>
-                )}
-              </div>
+              {/* the WALL / FLOOR tags used to sit up here and ran into the table above
+                  on some screens -- the wall / floor is now marked R / S on the strike
+                  label below (plus the column tint); this row is just the spacing */}
+              <div className="h-4 w-full" />
               <div className="w-full pt-1">{content}</div>
               <div className="flex h-14 w-full items-center justify-center border-t border-term-border/60 bg-term-panel/40">
                 <div
@@ -767,6 +759,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
                   }`}
                 >
                   {sk(r.strike)}
+                  {isRes ? " R" : isFloor ? " S" : ""}
                 </div>
               </div>
             </div>
