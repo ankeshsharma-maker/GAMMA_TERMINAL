@@ -537,6 +537,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const PLOT_H = TAG + AREA + LBL;
   const chartEl = (
     <div
+      ref={jumpBoxRef}
       className={`w-full p-3 ${
         isMobile ? "overflow-x-auto" : "min-h-0 flex-1 overflow-auto"
       }`}
@@ -726,8 +727,11 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           return (
             <div
               key={r.strike}
-              className={`flex flex-col items-center border-r border-term-border/40 last:border-r-0 ${
-                isRes
+              data-strike={r.strike}
+              className={`flex flex-col items-center border-r border-term-border/40 transition-colors last:border-r-0 ${
+                flash === r.strike
+                  ? "bg-term-accent/25"
+                  : isRes
                   ? "bg-down/10 ring-1 ring-inset ring-down/50"
                   : isFloor
                   ? "bg-up/10 ring-1 ring-inset ring-up/50"
@@ -794,13 +798,16 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     return { ce: ce.v > 0 ? ce.k : null, pe: pe.v > 0 ? pe.k : null };
   })();
   const jumpTo = (k: number | "spot") => {
+    const box = jumpBoxRef.current;
     const el =
-      k === "spot"
+      layout === "chart"
+        ? box?.querySelector<HTMLElement>(`[data-strike="${k === "spot" ? chain.atmStrike : k}"]`)
+        : k === "spot"
         ? layout === "table"
           ? tableSpotRef.current
           : spotRef.current
-        : jumpBoxRef.current?.querySelector<HTMLElement>(`[data-strike="${k}"]`);
-    el?.scrollIntoView({ block: "center" });
+        : box?.querySelector<HTMLElement>(`[data-strike="${k}"]`);
+    el?.scrollIntoView(layout === "chart" ? { block: "nearest", inline: "center" } : { block: "center" });
     if (k !== "spot") {
       setFlash(k);
       window.clearTimeout(flashT.current);
@@ -2078,18 +2085,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
             </div>
           )}
 
-          {/* Spot / PCR / Max Pain are in the main header -- only γ-flip is unique to this tab */}
-          <div className="num ml-auto flex flex-wrap items-center gap-1.5 text-[10px]">
-            {gammaFlip && (
-              <span className="rounded border border-term-border bg-term-bg/40 px-2 py-0.5">
-                <span className="text-term-dim">γ-flip </span>
-                <span className="text-fuchsia-400">{sk(gammaFlip.strike)}</span>{" "}
-                <span className={spot >= gammaFlip.strike ? "text-up" : "text-down"}>
-                  {spot >= gammaFlip.strike ? "long-γ" : "short-γ"}
-                </span>
-              </span>
-            )}
-          </div>
+          {/* the Spot / PCR / Max Pain / γ-flip readouts are gone (header has the first three; asked to free the row) */}
         </div>
 
         {/* mobile: chart controls stay a separate ⚙-collapsible row */}
@@ -2186,6 +2182,8 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         </div>
       )}
 
+      {/* Go to: the walls can be 15-20 columns off screen from ATM */}
+      {layout === "chart" && <div className="border-b border-term-border/60 px-3 py-1">{jumpBar}</div>}
       {layout === "chart" && (
         <div className={`flex ${isMobile ? "flex-col-reverse" : "min-h-0 flex-1 flex-row"}`}>
           {donutEl && (
