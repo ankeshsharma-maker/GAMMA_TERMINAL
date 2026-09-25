@@ -33,20 +33,23 @@ const DeltaOIBars = ({
   ceCut,
   peAdd,
   peCut,
+  tall = false,
 }: {
   ceAdd: number;
   ceCut: number;
   peAdd: number;
   peCut: number;
+  /** web: a taller shape, filling the panel's height */
+  tall?: boolean;
 }) => {
   const W = 200;
-  const H = 200;
-  const base = 100; // zero line
-  const span = 70; // tallest bar
+  const H = tall ? 330 : 200;
+  const base = H / 2; // zero line
+  const span = H * 0.35; // tallest bar
   const m = Math.max(1, ceAdd, -ceCut, peAdd, -peCut);
   const hgt = (v: number) => (Math.abs(v) / m) * span;
   const bw = 40;
-  const signed = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${compact(Math.abs(v))}`;
+  const signed = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${oiCr(Math.abs(v))}`;
   // call bars red, put bars green; added rises (solid), cut falls (faded)
   const group = (cx: number, add: number, cut: number, label: string, col: string) => {
     const net = add + cut;
@@ -70,10 +73,10 @@ const DeltaOIBars = ({
           strokeWidth="1"
         />
         <text x={cx - bw / 2 - 2} y={base - ha - 4} textAnchor="middle" fontSize="11" fontWeight="600" className="fill-term-text">
-          {add > 0 ? `+${compact(add)}` : ""}
+          {add > 0 ? `+${oiCr(add)}` : ""}
         </text>
         <text x={cx + bw / 2 + 2} y={base + hc + 13} textAnchor="middle" fontSize="11" fontWeight="600" className="fill-term-text">
-          {cut < 0 ? `−${compact(-cut)}` : ""}
+          {cut < 0 ? `−${oiCr(-cut)}` : ""}
         </text>
         <text x={cx} y={H - 4} textAnchor="middle" fontSize="13" fontWeight="700" fill={col}>
           {label}
@@ -384,17 +387,19 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const dPE = (r: ChainRow) =>
     tf === 0 ? r.put.oiChg : win[String(Math.round(r.strike))]?.peOiChg ?? 0;
 
+  // bar scale: the strikes shown; walls (R / S): the WHOLE chain, like Home --
+  // with a strike window the biggest call OI can sit outside it (23500 vs 24000)
   const stats = useMemo(() => {
     let maxOI = 1;
     let maxCallOI = { v: -1, k: -1 };
     let maxPutOI = { v: -1, k: -1 };
-    for (const r of rows) {
-      maxOI = Math.max(maxOI, r.call.oi, r.put.oi);
+    for (const r of rows) maxOI = Math.max(maxOI, r.call.oi, r.put.oi);
+    for (const r of chain?.rows ?? rows) {
       if (r.call.oi > maxCallOI.v) maxCallOI = { v: r.call.oi, k: r.strike };
       if (r.put.oi > maxPutOI.v) maxPutOI = { v: r.put.oi, k: r.strike };
     }
     return { maxOI, resistance: maxCallOI.k, floor: maxPutOI.k };
-  }, [rows]);
+  }, [rows, chain]);
 
   // total Call / Put OI across the visible strike window (for the donut)
   const oiTotals = useMemo(() => {
@@ -555,7 +560,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
               style={{ bottom: t.bottom }}
             >
               {diverging && t.v > 0 ? "+" : ""}
-              {compact(t.v)}
+              {oiCr(t.v)}
             </div>
           ))}
           <div className="absolute right-1 text-[8px] uppercase tracking-wide text-term-dim" style={{ bottom: LBL - 12 }}>
@@ -611,12 +616,12 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
             content = (
               <div className="flex items-end justify-center gap-[3px]" style={{ height: AREA }}>
                 <div
-                  title={`Call OI ${compact(r.call.oi)} @ ${r.strike}`}
+                  title={`Call OI ${oiCr(r.call.oi)} @ ${r.strike}`}
                   className="rounded-t-sm"
                   style={{ width: BARW, height: (r.call.oi / oiMax) * AREA, background: CALL_OI }}
                 />
                 <div
-                  title={`Put OI ${compact(r.put.oi)} @ ${r.strike}`}
+                  title={`Put OI ${oiCr(r.put.oi)} @ ${r.strike}`}
                   className="rounded-t-sm"
                   style={{ width: BARW, height: (r.put.oi / oiMax) * AREA, background: PUT_OI }}
                 />
@@ -633,7 +638,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
                 <div className="flex flex-1 items-end justify-center">
                   {up && (
                     <div
-                      title={`${label} +${compact(delta)} · OI added`}
+                      title={`${label} +${oiCr(delta)} · OI added`}
                       className="rounded-t-sm"
                       style={{ width: BARW, height: Math.max(h > 0 ? 2 : 0, h), background: OI_ADD }}
                     />
@@ -642,7 +647,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
                 <div className="flex flex-1 items-start justify-center">
                   {!up && (
                     <div
-                      title={`${label} ${compact(delta)} · OI reduced`}
+                      title={`${label} ${oiCr(delta)} · OI reduced`}
                       className="rounded-b-sm"
                       style={{
                         width: BARW,
@@ -710,7 +715,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
                   CALL_OI,
                   "#f87171",
                   "rgba(185,28,28,0.45)",
-                  `Call OI ${compact(r.call.oi)} · Δ ${compact(cChg)}`
+                  `Call OI ${oiCr(r.call.oi)} · Δ ${oiCr(cChg)}`
                 )}
                 {seg(
                   r.put.oi,
@@ -718,7 +723,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
                   PUT_OI,
                   "#4ade80",
                   "rgba(21,128,61,0.45)",
-                  `Put OI ${compact(r.put.oi)} · Δ ${compact(pChg)}`
+                  `Put OI ${oiCr(r.put.oi)} · Δ ${oiCr(pChg)}`
                 )}
               </div>
             );
@@ -791,6 +796,11 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     return { ce: ce.v > 0 ? ce.k : null, pe: pe.v > 0 ? pe.k : null };
   })();
   const jumpTo = (k: number | "spot") => {
+    if (k !== "spot" && count !== 0 && !rows.some((r) => r.strike === k)) {
+      setCount(0); // the strike is outside the window -- show all, then jump
+      window.setTimeout(() => jumpTo(k), 120);
+      return;
+    }
     const box = jumpBoxRef.current;
     const el =
       layout === "chart"
@@ -1252,7 +1262,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         </div>
         {dtot > 0 ? (
           <>
-            <DeltaOIBars ceAdd={flow.ceAdd} ceCut={flow.ceCut} peAdd={flow.peAdd} peCut={flow.peCut} />
+            <DeltaOIBars ceAdd={flow.ceAdd} ceCut={flow.ceCut} peAdd={flow.peAdd} peCut={flow.peCut} tall={!isMobile} />
             <div className="flex w-full flex-wrap justify-center gap-x-3 text-[10px] text-term-dim">
               <span className="flex items-center gap-1">
                 <Sw c={CALL_CHG} /> Call
@@ -1267,12 +1277,12 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
               <Row
                 c={CALL_CHG}
                 label={`Call ${dCEnet >= 0 ? "written" : "unwound"}`}
-                val={`${dCEnet >= 0 ? "+" : ""}${compact(dCEnet)}`}
+                val={`${dCEnet >= 0 ? "+" : "−"}${oiCr(Math.abs(dCEnet))}`}
               />
               <Row
                 c={PUT_CHG}
                 label={`Put ${dPEnet >= 0 ? "written" : "unwound"}`}
-                val={`${dPEnet >= 0 ? "+" : ""}${compact(dPEnet)}`}
+                val={`${dPEnet >= 0 ? "+" : "−"}${oiCr(Math.abs(dPEnet))}`}
               />
             </div>
           </>
@@ -1919,6 +1929,48 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     </>
   );
 
+  // totals: OI | Added | Cut | Net | Wall per side (walls: whole chain)
+  const totalsTable = (
+    <table className="w-full max-w-2xl border-separate border-spacing-0 whitespace-nowrap text-[11px] tabular-nums [&_tr>*:first-child]:border-l">
+      <thead>
+        <tr className="[&>th]:border-b [&>th]:border-r [&>th]:border-t [&>th]:border-term-dim/50 [&>th]:bg-term-panel2 [&>th]:px-1.5 [&>th]:py-0.5 [&>th]:text-[10px] [&>th]:font-medium [&>th]:text-term-dim">
+          <th className="rounded-tl-lg text-left" title={`strikes counted: ${count === 0 ? "all" : `ATM ${sk(chain.atmStrike)} ±${count}`}`}>
+            {count === 0 ? "All" : `±${count}`} · {tf === 0 ? "day" : `${tf}m`}
+          </th>
+          <th className="text-right">OI</th>
+          <th className="text-right" title={`over ${tfName}`}>Added</th>
+          <th className="text-right">Cut</th>
+          <th className="text-right">Net</th>
+          <th className="rounded-tr-lg text-right">Wall</th>
+        </tr>
+      </thead>
+      <tbody className="[&_td]:border-b [&_td]:border-r [&_td]:border-term-dim/50 [&_td]:px-1.5 [&_td]:py-0.5">
+        {(
+          [
+            ["Calls", oiTotals.ce, flow.ceAdd, flow.ceCut, stats.resistance, "R", "text-down", "text-up"],
+            ["Puts", oiTotals.pe, flow.peAdd, flow.peCut, stats.floor, "S", "text-up", "text-down"],
+          ] as const
+        ).map(([side, oi, add, cut, wall, tag, addCls, cutCls], i) => {
+          const net = add + cut;
+          const l1 = (v: number) => `${nf(v / 1e7, dp)}Cr`;
+          const sgn = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${l1(Math.abs(v))}`;
+          return (
+            <tr key={side}>
+              <td className={`font-semibold ${addCls} ${i === 1 ? "rounded-bl-lg" : ""}`}>{side}</td>
+              <td className="text-right text-term-text">{l1(oi)}</td>
+              <td className={`text-right ${add > 0 ? addCls : "text-term-dim"}`}>{sgn(add)}</td>
+              <td className={`text-right ${cut < 0 ? cutCls : "text-term-dim"}`}>{sgn(cut)}</td>
+              <td className={`text-right font-semibold ${net > 0 ? addCls : net < 0 ? cutCls : "text-term-dim"}`}>{sgn(net)}</td>
+              <td className={`text-right font-semibold ${addCls} ${i === 1 ? "rounded-br-lg" : ""}`}>
+                {wall > 0 ? `${sk(wall)} ${tag}` : "–"}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+
   return (
     <div
       className={`flex min-h-0 flex-1 flex-col ${isMobile ? "overflow-y-auto" : ""}`}
@@ -2093,53 +2145,13 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         )}
       </div>
 
-      {/* OI totals (phone: behind ⚙) -- ONE scope, the strikes shown ("Strikes ±"),
-          all in lakhs: total OI, added / cut over the ΔOI window, net, and the
-          wall on each side. (It used to mix whole-chain totals in crores with
-          windowed changes in lakhs, and a windowed resistance.) */}
+      {/* OI totals (phone: behind ⚙; web Chart: on the right, above the chart) */}
       <div
         className={`border-b border-term-border bg-term-panel px-3 py-1.5 ${
-          (isMobile && !tools) || layout === "table" || layout === "ladder" ? "hidden" : ""
+          (isMobile && !tools) || layout === "table" || layout === "ladder" || (layout === "chart" && !isMobile) ? "hidden" : ""
         }`}
       >
-        <table className="w-full max-w-2xl border-separate border-spacing-0 whitespace-nowrap text-[11px] tabular-nums [&_tr>*:first-child]:border-l">
-          <thead>
-            <tr className="[&>th]:border-b [&>th]:border-r [&>th]:border-t [&>th]:border-term-dim/50 [&>th]:bg-term-panel2 [&>th]:px-1.5 [&>th]:py-0.5 [&>th]:text-[10px] [&>th]:font-medium [&>th]:text-term-dim">
-              <th className="rounded-tl-lg text-left" title={`strikes counted: ${count === 0 ? "all" : `ATM ${sk(chain.atmStrike)} ±${count}`}`}>
-                {count === 0 ? "All" : `±${count}`} · {tf === 0 ? "day" : `${tf}m`}
-              </th>
-              <th className="text-right">OI</th>
-              <th className="text-right" title={`over ${tfName}`}>Added</th>
-              <th className="text-right">Cut</th>
-              <th className="text-right">Net</th>
-              <th className="rounded-tr-lg text-right">Wall</th>
-            </tr>
-          </thead>
-          <tbody className="[&_td]:border-b [&_td]:border-r [&_td]:border-term-dim/50 [&_td]:px-1.5 [&_td]:py-0.5">
-            {(
-              [
-                ["Calls", oiTotals.ce, flow.ceAdd, flow.ceCut, stats.resistance, "R", "text-down", "text-up"],
-                ["Puts", oiTotals.pe, flow.peAdd, flow.peCut, stats.floor, "S", "text-up", "text-down"],
-              ] as const
-            ).map(([side, oi, add, cut, wall, tag, addCls, cutCls], i) => {
-              const net = add + cut;
-              const l1 = (v: number) => `${nf(v / 1e7, dp)}Cr`;
-              const sgn = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${l1(Math.abs(v))}`;
-              return (
-                <tr key={side}>
-                  <td className={`font-semibold ${addCls} ${i === 1 ? "rounded-bl-lg" : ""}`}>{side}</td>
-                  <td className="text-right text-term-text">{l1(oi)}</td>
-                  <td className={`text-right ${add > 0 ? addCls : "text-term-dim"}`}>{sgn(add)}</td>
-                  <td className={`text-right ${cut < 0 ? cutCls : "text-term-dim"}`}>{sgn(cut)}</td>
-                  <td className={`text-right font-semibold ${net > 0 ? addCls : net < 0 ? cutCls : "text-term-dim"}`}>{sgn(net)}</td>
-                  <td className={`text-right font-semibold ${addCls} ${i === 1 ? "rounded-br-lg" : ""}`}>
-                    {wall > 0 ? `${sk(wall)} ${tag}` : "–"}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        {totalsTable}
       </div>
 
       {/* overall OI verdict (phone: the summary row shows the bias; reasons behind ⚙) */}
@@ -2175,8 +2187,8 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         </div>
       )}
 
-      {/* Go to: the walls can be 15-20 columns off screen from ATM */}
-      {layout === "chart" && <div className="border-b border-term-border/60 px-3 py-1">{jumpBar}</div>}
+      {/* Go to: the walls can be 15-20 columns off screen from ATM (web: in the right column) */}
+      {layout === "chart" && isMobile && <div className="border-b border-term-border/60 px-3 py-1">{jumpBar}</div>}
       {layout === "chart" && (
         <div className={`flex ${isMobile ? "flex-col-reverse" : "min-h-0 flex-1 flex-row"}`}>
           {donutEl && (
@@ -2191,7 +2203,15 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
               )}
             </>
           )}
-          {chartEl}
+          {isMobile ? (
+            chartEl
+          ) : (
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <div className="border-b border-term-border/60 px-3 py-1.5">{totalsTable}</div>
+              <div className="border-b border-term-border/60 px-3 py-1">{jumpBar}</div>
+              {chartEl}
+            </div>
+          )}
         </div>
       )}
       {layout === "ladder" && ladderEl}
