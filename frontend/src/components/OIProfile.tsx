@@ -159,6 +159,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
 
   const isMobile = useIsMobile();
   const [tools, setTools] = useState(false); // mobile: show the extra control rows
+  const [gear, setGear] = useState(false); // web: the ⚙ settings menu (Strikes ±, View, Zoom)
   const [metric, setMetric] = useState<Metric>("combined");
   const [layout, setLayout] = useState<"chart" | "table" | "ladder" | "walls" | "pcr" | "gex" | "dex">("chart");
   // Table / Ladder open centred on the spot line (with All strikes they'd
@@ -1842,39 +1843,10 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
 
   // View / Strikes / ΔOI-over / Zoom — on the web portal these ride the "Show"
   // row (one row saved); on mobile they stay a separate ⚙-collapsible row.
-  const chartControls = (
-    <>
-      {/* View only changes the Chart; Table / Ladder always show OI and its change */}
-      {layout === "chart" && (
-        <>
-          <span className="ml-1">View</span>
-          <div className="seg">
-            <button onClick={() => setMetric("oi")} className={metric === "oi" ? "on" : ""}>
-              OI
-            </button>
-            <button onClick={() => setMetric("chg")} className={metric === "chg" ? "on" : ""}>
-              ΔOI bars
-            </button>
-            <button
-              onClick={() => setMetric("combined")}
-              className={metric === "combined" ? "on" : ""}
-            >
-              OI + Δ caps
-            </button>
-          </div>
-        </>
-      )}
-
-      <span className="ml-1">Strikes ±</span>
-      <div className="seg">
-        {[5, 10, 15, 20, 25, 0].map((n) => (
-          <button key={n} onClick={() => setCount(n)} className={count === n ? "on" : ""}>
-            {n === 0 ? "All" : n}
-          </button>
-        ))}
-      </div>
-
-      <span className="ml-1">ΔOI over</span>
+  // ΔOI window -- top row, next to symbol / expiry, in every view
+  const tfControl = (
+    <span className="flex items-center gap-1.5">
+      <span>ΔOI</span>
       <SelectMenu
         value={tf}
         options={
@@ -1892,32 +1864,57 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           ] as const
         }
         onChange={setTf}
-        title="ΔOI window"
+        title="ΔOI window: OI change over this time"
       />
       {tf > 0 && winCov > 0 && winCov < tf - 0.5 && (
         <span className="text-amber-400">
-          history {winCov}m / {tf}m — still filling
+          {winCov}m / {tf}m so far
         </span>
       )}
-      {tf > 0 && winCov === 0 && (
-        <span className="text-amber-400">collecting OI history…</span>
-      )}
+      {tf > 0 && winCov === 0 && <span className="text-amber-400">collecting…</span>}
+    </span>
+  );
 
+  // ⚙ settings: Strikes ± in every view; View and Zoom only change the Chart
+  const settingsControls = (
+    <>
+      <div className="flex items-center gap-2">
+        <span className="w-16 shrink-0">Strikes ±</span>
+        <div className="seg">
+          {[5, 10, 15, 20, 25, 0].map((n) => (
+            <button key={n} onClick={() => setCount(n)} className={count === n ? "on" : ""}>
+              {n === 0 ? "All" : n}
+            </button>
+          ))}
+        </div>
+      </div>
       {layout === "chart" && (
-        <>
-          <span className="ml-1">Zoom</span>
+        <div className="flex items-center gap-2">
+          <span className="w-16 shrink-0">View</span>
           <div className="seg">
-            {[100, 95, 90, 85, 80].map((p) => (
-              <button
-                key={p}
-                onClick={() => setZoom(p / 100)}
-                className={Math.round(zoom * 100) === p ? "on" : ""}
-              >
-                {p}
+            <button onClick={() => setMetric("oi")} className={metric === "oi" ? "on" : ""}>
+              OI
+            </button>
+            <button onClick={() => setMetric("chg")} className={metric === "chg" ? "on" : ""}>
+              ΔOI bars
+            </button>
+            <button onClick={() => setMetric("combined")} className={metric === "combined" ? "on" : ""}>
+              OI + Δ caps
+            </button>
+          </div>
+        </div>
+      )}
+      {layout === "chart" && (
+        <div className="flex items-center gap-2">
+          <span className="w-16 shrink-0">Zoom</span>
+          <div className="seg">
+            {[100, 95, 90, 85, 80].map((pc) => (
+              <button key={pc} onClick={() => setZoom(pc / 100)} className={Math.round(zoom * 100) === pc ? "on" : ""}>
+                {pc}
               </button>
             ))}
           </div>
-        </>
+        </div>
       )}
     </>
   );
@@ -1950,6 +1947,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
                   width={130}
                 />
               )}
+              {tfControl}
               <button
                 onClick={() => setTools((t) => !t)}
                 className={`ml-auto rounded border px-2 py-0.5 ${
@@ -2033,6 +2031,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
               width={130}
             />
           )}
+          {!isMobile && tfControl}
 
           {!isMobile && (
           <>
@@ -2058,9 +2057,25 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           </>
           )}
 
-          {/* web portal: chart controls ride the "Show" row (saves a row) */}
+          {/* web: Strikes ± (and the Chart's View / Zoom) in a ⚙ menu */}
           {!isMobile && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">{chartControls}</div>
+            <div className="relative">
+              <button
+                onClick={() => setGear((g) => !g)}
+                className={`rounded border px-2 py-0.5 ${gear ? "border-term-accent text-term-accent" : "border-term-dim/70 text-term-dim hover:text-term-text"}`}
+                title="Settings: strikes shown, chart view, zoom"
+              >
+                ⚙ {count === 0 ? "All" : `±${count}`}
+              </button>
+              {gear && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setGear(false)} />
+                  <div className="absolute left-0 top-full z-50 mt-1 flex w-max flex-col gap-2 rounded-lg border border-term-border bg-term-panel p-3 shadow-2xl">
+                    {settingsControls}
+                  </div>
+                </>
+              )}
+            </div>
           )}
 
           <div className="num ml-auto flex flex-wrap items-center gap-1.5 text-[10px]">
@@ -2095,7 +2110,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
               tools ? "flex" : "hidden"
             }`}
           >
-            {chartControls}
+            {settingsControls}
           </div>
         )}
       </div>
