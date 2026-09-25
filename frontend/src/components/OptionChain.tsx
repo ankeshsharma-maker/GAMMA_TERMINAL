@@ -349,6 +349,8 @@ export function OptionChain({ paneNav, expiryRow = false }: { paneNav?: ReactNod
     }
   };
   const [gear, setGear] = useState(false); // the ⚙ menu: strikes + legend
+  // where it opens: under the button, kept inside the screen (it ran off a phone's edge)
+  const [gearPos, setGearPos] = useState({ top: 0, left: 0 });
   const [winMap, setWinMap] = useState<Record<string, { ce: number; pe: number }>>({});
 
   useEffect(() => {
@@ -715,7 +717,12 @@ export function OptionChain({ paneNav, expiryRow = false }: { paneNav?: ReactNod
         {/* ⚙: strikes shown + the colour legend (they used to fill the row) */}
         <div className="relative">
           <button
-            onClick={() => setGear((g) => !g)}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              const w = Math.min(380, window.innerWidth - 16);
+              setGearPos({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) });
+              setGear((g) => !g);
+            }}
             className={`rounded border px-2 py-0.5 ${gear ? "border-term-accent text-term-accent" : "border-term-dim/70 text-term-dim hover:text-term-text"}`}
             title="Settings: strikes shown, legend"
           >
@@ -724,7 +731,10 @@ export function OptionChain({ paneNav, expiryRow = false }: { paneNav?: ReactNod
           {gear && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setGear(false)} />
-              <div className="absolute left-0 top-full z-50 mt-1 flex w-max max-w-[92vw] flex-col gap-2 rounded-lg border border-term-border bg-term-panel p-3 text-2xs shadow-2xl">
+              <div
+                className="fixed z-50 flex w-max max-w-[min(380px,calc(100vw-16px))] flex-col gap-2 rounded-lg border border-term-border bg-term-panel p-3 text-2xs shadow-2xl"
+                style={{ top: gearPos.top, left: gearPos.left }}
+              >
                 <div className="flex items-center gap-2">
                   <span className="w-14 shrink-0">Strikes ±</span>
                   <div className="seg">

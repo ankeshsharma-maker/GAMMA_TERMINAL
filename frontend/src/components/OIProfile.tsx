@@ -1878,7 +1878,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   // ⚙ settings: Strikes ± in every view; View and Zoom only change the Chart
   const settingsControls = (
     <>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="w-16 shrink-0">Strikes ±</span>
         <div className="seg">
           {[5, 10, 15, 20, 25, 0].map((n) => (
@@ -1889,7 +1889,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         </div>
       </div>
       {layout === "chart" && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="w-16 shrink-0">View</span>
           <div className="seg">
             <button onClick={() => setMetric("oi")} className={metric === "oi" ? "on" : ""}>
@@ -1905,7 +1905,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         </div>
       )}
       {layout === "chart" && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="w-16 shrink-0">Zoom</span>
           <div className="seg">
             {[100, 95, 90, 85, 80].map((pc) => (
@@ -2070,7 +2070,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
               {gear && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setGear(false)} />
-                  <div className="absolute left-0 top-full z-50 mt-1 flex w-max flex-col gap-2 rounded-lg border border-term-border bg-term-panel p-3 shadow-2xl">
+                  <div className="absolute right-0 top-full z-50 mt-1 flex w-max max-w-[calc(100vw-24px)] flex-col gap-2 rounded-lg border border-term-border bg-term-panel p-3 shadow-2xl">
                     {settingsControls}
                   </div>
                 </>
