@@ -1911,18 +1911,15 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         onChange={setTf}
         title="ΔOI window: OI change over this time"
       />
-      {tf > 0 && !marketOpenNow() && (
-        // OI doesn't move while the market is shut: every rolling window reads 0
-        <span className="text-term-dim" title="Pick Day for the whole session's change vs yesterday's close">
-          market closed · no change now (Day = session)
+      {/* kept to a few characters: a longer note wrapped the Chart / Ladder row onto a new line */}
+      {tf > 0 && marketOpenNow() && winCov < tf - 0.5 && (
+        <span
+          className="whitespace-nowrap text-amber-400"
+          title={`ΔOI covers only ${winCov} of the ${tf} minutes so far -- the window is still filling`}
+        >
+          {Math.round(winCov)}/{tf}m
         </span>
       )}
-      {tf > 0 && marketOpenNow() && winCov > 0 && winCov < tf - 0.5 && (
-        <span className="text-amber-400" title="The server has readings for only this much of the window so far">
-          {winCov}m / {tf}m so far
-        </span>
-      )}
-      {tf > 0 && marketOpenNow() && winCov === 0 && <span className="text-amber-400">collecting…</span>}
     </span>
   );
 
