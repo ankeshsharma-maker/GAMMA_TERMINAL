@@ -107,6 +107,8 @@ const TOGGLES = [
   ["structure", "Market structure"],
 ] as const;
 type ToggleKey = (typeof TOGGLES)[number][0];
+/** drawn-on-price analysis: its own "Patterns" button, not the ƒx indicator list */
+const PATTERN_KEYS = new Set<ToggleKey>(["patterns", "ranges", "chartpat", "structure"]);
 
 const dedupe = (pts: Pt[] = []) => {
   const m = new Map<number, number>();
@@ -395,8 +397,10 @@ export function Chart() {
 
   // ƒx indicator picker + MTF overlay picker
   const [fxOpen, setFxOpen] = useState(false);
+  const [patOpen, setPatOpen] = useState(false);
   const [mtfOpen, setMtfOpen] = useState(false);
-  const activeInd = TOGGLES.filter(([k]) => on[k]).length;
+  const activeInd = TOGGLES.filter(([k]) => on[k] && !PATTERN_KEYS.has(k)).length;
+  const activePat = TOGGLES.filter(([k]) => on[k] && PATTERN_KEYS.has(k)).length;
 
   const onRef = useRef(eff);
   useEffect(() => {
@@ -1938,7 +1942,9 @@ export function Chart() {
                       onClick={() =>
                         setOn((o) => {
                           const z = { ...o };
-                          (Object.keys(z) as ToggleKey[]).forEach((k) => (z[k] = false));
+                          (Object.keys(z) as ToggleKey[]).forEach((k) => {
+                            if (!PATTERN_KEYS.has(k)) z[k] = false;
+                          });
                           return z;
                         })
                       }
@@ -1948,7 +1954,7 @@ export function Chart() {
                     </button>
                   )}
                 </div>
-                {TOGGLES.map(([k, lbl]) => {
+                {TOGGLES.filter(([k]) => !PATTERN_KEYS.has(k)).map(([k, lbl]) => {
                   const dis = isOption && (k === "straddle" || k === "score" || k === "greeks");
                   return (
                     <div key={k}>
@@ -1966,6 +1972,84 @@ export function Chart() {
                         <span>{lbl}</span>
                         {on[k] && <span className="text-term-accent">✓</span>}
                       </button>
+                      {k === "greeks" && on.greeks && !dis && (
+                        <div
+                          className="mb-1 mt-0.5 ml-2 grid grid-cols-2 gap-1 overflow-hidden rounded border border-term-dim/70"
+                          title="ATM call (red) / put (green) — from the same per-poll history the live chain reads"
+                        >
+                          {(["delta", "gamma", "theta", "vega"] as const).map((g) => (
+                            <button
+                              key={g}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setGreek(g);
+                              }}
+                              className={`px-1.5 py-0.5 capitalize ${
+                                greekSel === g
+                                  ? "bg-term-accent/25 text-term-text"
+                                  : "text-term-dim hover:bg-term-border hover:text-term-text"
+                              }`}
+                            >
+                              {g}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {indHidden && activeInd > 0 && (
+                  <div className="px-2 py-1 text-[9px] text-amber-400">
+                    indicators are hidden — “▨ hide indicators” to show them
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </span>
+        <span className="relative">
+          <button
+            onClick={() => setPatOpen((o) => !o)}
+            title="Candle patterns, range breakouts, chart patterns, market structure"
+            className={`rounded border px-2 py-0.5 font-semibold ${
+              patOpen || activePat
+                ? "border-amber-500/50 bg-amber-500/15 text-term-text"
+                : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
+            }`}
+          >
+            ◇ Patterns{activePat ? ` · ${activePat}` : ""}
+          </button>
+          {patOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setPatOpen(false)} />
+              <div className="absolute left-0 top-full z-50 mt-1 max-h-[60vh] w-[210px] overflow-y-auto rounded-lg border border-term-border bg-term-panel p-1 text-2xs shadow-2xl">
+                <div className="flex items-center justify-between px-2 py-1 text-term-dim">
+                  <span className="font-semibold uppercase tracking-wide">Patterns</span>
+                  <button
+                    onClick={() =>
+                      setOn((o) => {
+                        const all = [...PATTERN_KEYS].every((k) => o[k]);
+                        const z = { ...o };
+                        PATTERN_KEYS.forEach((k) => (z[k] = !all));
+                        return z;
+                      })
+                    }
+                    className="underline underline-offset-2 hover:text-term-text"
+                  >
+                    {activePat === PATTERN_KEYS.size ? "none" : "all"}
+                  </button>
+                </div>
+                {TOGGLES.filter(([k]) => PATTERN_KEYS.has(k)).map(([k, lbl]) => (
+                  <div key={k}>
+                    <button
+                      onClick={() => setOn((o) => ({ ...o, [k]: !o[k] }))}
+                      className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left ${
+                        on[k] ? "bg-amber-500/15 text-term-text" : "text-term-dim hover:bg-term-border hover:text-term-text"
+                      }`}
+                    >
+                      <span>{lbl}</span>
+                      {on[k] && <span className="text-amber-400">✓</span>}
+                    </button>
                       {k === "patterns" && on.patterns && (
                         <div className="mb-1 ml-2 mt-0.5 grid grid-cols-1 gap-y-0.5 rounded border border-term-dim/40 px-1.5 py-1 text-[10px]">
                           {PATTERN_LEGEND.map((p) => (
@@ -2021,35 +2105,11 @@ export function Chart() {
                           <div>Marker = neckline / line broken on a close. Dashed with “?” = not confirmed yet.</div>
                         </div>
                       )}
-                      {k === "greeks" && on.greeks && !dis && (
-                        <div
-                          className="mb-1 mt-0.5 ml-2 grid grid-cols-2 gap-1 overflow-hidden rounded border border-term-dim/70"
-                          title="ATM call (red) / put (green) — from the same per-poll history the live chain reads"
-                        >
-                          {(["delta", "gamma", "theta", "vega"] as const).map((g) => (
-                            <button
-                              key={g}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setGreek(g);
-                              }}
-                              className={`px-1.5 py-0.5 capitalize ${
-                                greekSel === g
-                                  ? "bg-term-accent/25 text-term-text"
-                                  : "text-term-dim hover:bg-term-border hover:text-term-text"
-                              }`}
-                            >
-                              {g}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {indHidden && activeInd > 0 && (
+                  </div>
+                ))}
+                {indHidden && activePat > 0 && (
                   <div className="px-2 py-1 text-[9px] text-amber-400">
-                    indicators are hidden — “▨ hide indicators” to show them
+                    hidden — “▨ hide indicators” is on
                   </div>
                 )}
               </div>
