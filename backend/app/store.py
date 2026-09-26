@@ -916,6 +916,28 @@ class Store:
             db.set_kv("chart_drawings", data)
             return drawings
 
+    # ---- chart layouts (named, TradingView-style), one set per user ----
+    # {"active": id | None, "layouts": [{id, name, saved, layout: {...}}]} under the
+    # request's user (users.current_user, None = the owner) in one kv blob.
+    def get_chart_layouts(self) -> dict:
+        uid = current_user.get()
+        with _lock:
+            data = db.get_kv("chart_layouts")
+            mine = (data or {}).get(str(uid) if uid is not None else "owner")
+            return mine if isinstance(mine, dict) else {"active": None, "layouts": []}
+
+    def save_chart_layouts(self, value: dict) -> dict:
+        uid = current_user.get()
+        layouts = [x for x in (value.get("layouts") or []) if isinstance(x, dict) and x.get("id")][:20]
+        active = value.get("active")
+        clean = {"active": active if any(x["id"] == active for x in layouts) else None, "layouts": layouts}
+        with _lock:
+            data = db.get_kv("chart_layouts")
+            data = dict(data) if isinstance(data, dict) else {}
+            data[str(uid) if uid is not None else "owner"] = clean
+            db.set_kv("chart_layouts", data)
+            return clean
+
     # ---- watchlists (5 named lists) --------------------------------
     # The owner's lists, plus one set per view-only user (users.py). Which set
     # `self.watchlists` means is decided by the request / socket's user

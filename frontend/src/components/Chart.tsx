@@ -109,6 +109,73 @@ const TOGGLES = [
 type ToggleKey = (typeof TOGGLES)[number][0];
 /** drawn-on-price analysis: its own "Patterns" button, not the ƒx indicator list */
 const PATTERN_KEYS = new Set<ToggleKey>(["patterns", "ranges", "chartpat", "structure"]);
+const DEFAULT_ON: Record<ToggleKey, boolean> = {
+  ema9: true,
+  ema21: true,
+  ema50: false,
+  sma20: false,
+  vwap: true,
+  boll: false,
+  supertrend: false,
+  vol: true,
+  rsi: false,
+  macd: false,
+  oi: false,
+  oichg: false,
+  pivot: false,
+  gammaFlip: false,
+  fibpivot: false,
+  straddle: false, // ATM CE+PE price (a volatility proxy) — opt-in, it was crowding every chart
+  score: false,
+  greeks: false,
+  // drawn-on-price analysis (◇ Patterns) starts off -- the user turns on what they want
+  patterns: false,
+  ranges: false,
+  chartpat: false,
+  structure: false,
+};
+
+/** Everything a saved chart layout brings back (TradingView-style). */
+type ChartLayout = {
+  on: Partial<Record<ToggleKey, boolean>>;
+  intervalS: number;
+  rangeD: number;
+  ctype: "candle" | "heikin" | "line" | "area" | "bar";
+  logScale: boolean;
+  greekSel: "delta" | "gamma" | "theta" | "vega";
+  mtf: { ind: string; len: number; tf: number; period?: PivotPeriod } | null;
+  split: boolean;
+  cmpInstrument: string;
+  showTime: boolean;
+  indHidden: boolean;
+  barOpen: boolean;
+  symbol?: string;
+  instrument?: string;
+};
+type SavedLayout = { id: string; name: string; saved: number; layout: ChartLayout };
+type LayoutBook = { active: string | null; layouts: SavedLayout[] };
+const LAYOUT_CACHE = "chart.layouts";
+const readLayoutCache = (): LayoutBook => {
+  try {
+    const v = JSON.parse(localStorage.getItem(LAYOUT_CACHE) || "null");
+    return v && Array.isArray(v.layouts) ? v : { active: null, layouts: [] };
+  } catch {
+    return { active: null, layouts: [] };
+  }
+};
+const writeLayoutCache = (b: LayoutBook) => {
+  try {
+    localStorage.setItem(LAYOUT_CACHE, JSON.stringify(b));
+  } catch {
+    /* ignore */
+  }
+};
+/** a saved option leg that has expired can't be charted any more */
+const instrumentLive = (ins: string) => {
+  if (!ins || ins === "STRADDLE") return true;
+  const exp = Date.parse(ins.split("|")[1] || "");
+  return !Number.isNaN(exp) && exp + 86400000 > Date.now();
+};
 
 const dedupe = (pts: Pt[] = []) => {
   const m = new Map<number, number>();
@@ -308,30 +375,7 @@ export function Chart() {
   const chartLeg = (ot: "CE" | "PE") => {
     if (chain && pickStrike) setInstrument(`${symbol}|${chain.expiry}|${pickStrike}|${ot}`);
   };
-  const [on, setOn] = useState<Record<ToggleKey, boolean>>({
-    ema9: true,
-    ema21: true,
-    ema50: false,
-    sma20: false,
-    vwap: true,
-    boll: false,
-    supertrend: false,
-    vol: true,
-    rsi: false,
-    macd: false,
-    oi: false,
-    oichg: false,
-    pivot: false,
-    gammaFlip: false,
-    fibpivot: false,
-    straddle: false, // ATM CE+PE price (a volatility proxy) — opt-in, it was crowding every chart
-    score: false,
-    greeks: false,
-    patterns: true,
-    ranges: true,
-    chartpat: true,
-    structure: true,
-  });
+  const [on, setOn] = useState<Record<ToggleKey, boolean>>(() => ({ ...DEFAULT_ON }));
   // hide the time (x) axis labels for a cleaner chart
   const [showTime, setShowTime] = useState(() => {
     try {
@@ -415,6 +459,13 @@ export function Chart() {
       return true;
     }
   });
+  // ---- saved layouts (TradingView-style): named snapshots of every setting on this chart ----
+  const [book, setBook] = useState<LayoutBook>(readLayoutCache);
+  const [layoutOpen, setLayoutOpen] = useState<{ top: number; left: number } | null>(null);
+  const [layoutName, setLayoutName] = useState("");
+  const pendingRangeRef = useRef<number | null>(null);
+  const activeLayout = book.layouts.find((l) => l.id === book.active) ?? null;
+
   const setBar = (v: boolean) => {
     setBarOpen(v);
     try {
@@ -422,6 +473,126 @@ export function Chart() {
     } catch {
       /* ignore */
     }
+  };
+
+  const currentLayout = (): ChartLayout => ({
+    on: { ...on },
+    intervalS,
+    rangeD,
+    ctype,
+    logScale,
+    greekSel,
+    mtf,
+    split,
+    cmpInstrument,
+    showTime,
+    indHidden,
+    barOpen,
+    symbol,
+    instrument,
+  });
+  // "•" on the button: the chart differs from the active layout (symbol / instrument aside --
+  // browsing another symbol isn't an edit of the layout)
+  const layoutKey = (l: ChartLayout) => {
+    const { symbol: _s, instrument: _i, ...rest } = l;
+    return JSON.stringify({ ...rest, on: { ...DEFAULT_ON, ...rest.on } });
+  };
+  const layoutModified = !!activeLayout && layoutKey(currentLayout()) !== layoutKey(activeLayout.layout);
+
+  /** Put a layout on the chart. `withSymbol`: also switch to its symbol / instrument (picking one
+   *  from the menu); on app start only the settings come back, not the symbol you were on. */
+  const applyLayout = (L: ChartLayout, withSymbol: boolean) => {
+    setOn({ ...DEFAULT_ON, ...(L.on || {}) });
+    setCtype(L.ctype || "candle");
+    setLogScale(!!L.logScale);
+    setGreek(L.greekSel || "delta");
+    setMtf(L.mtf ?? null);
+    setSplit(!!L.split);
+    setCmpInstrument(L.cmpInstrument ?? "STRADDLE");
+    setShowTime(L.showTime !== false);
+    try {
+      localStorage.setItem("chart.showTime", L.showTime !== false ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+    setInd(!!L.indHidden);
+    setBar(L.barOpen !== false);
+    if (withSymbol && L.symbol) {
+      selectSymbol(L.symbol, true);
+      if (instrumentLive(L.instrument ?? "")) setInstrument(L.instrument ?? "");
+    }
+    const iv = L.intervalS || getIntervalS();
+    if (iv === intervalRef.current) setRangeD(L.rangeD ?? defaultRangeDays(iv));
+    else {
+      pendingRangeRef.current = L.rangeD ?? defaultRangeDays(iv);
+      setIntervalS(iv);
+    }
+  };
+  const defaultLayout = (): ChartLayout => ({
+    on: { ...DEFAULT_ON },
+    intervalS: getIntervalS(),
+    rangeD: defaultRangeDays(getIntervalS()),
+    ctype: "candle",
+    logScale: false,
+    greekSel: "delta",
+    mtf: null,
+    split: false,
+    cmpInstrument: "STRADDLE",
+    showTime: true,
+    indHidden: false,
+    barOpen: true,
+  });
+
+  // on open: the active layout's settings (device copy first, then the server's, which wins)
+  useEffect(() => {
+    const cached = readLayoutCache();
+    const c = cached.layouts.find((l) => l.id === cached.active);
+    if (c) applyLayout(c.layout, false);
+    api
+      .chartLayouts()
+      .then((d) => {
+        const b: LayoutBook = { active: d.active ?? null, layouts: (d.layouts as SavedLayout[]) ?? [] };
+        setBook(b);
+        writeLayoutCache(b);
+        const sv = b.layouts.find((l) => l.id === b.active);
+        if (sv && JSON.stringify(sv) !== JSON.stringify(c)) applyLayout(sv.layout, false);
+      })
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const persistBook = (b: LayoutBook) => {
+    setBook(b);
+    writeLayoutCache(b);
+    api.saveChartLayouts(b).catch((e) => alert(`Couldn't save the layout on the server: ${e?.message || e}`));
+  };
+  const saveLayout = () => {
+    if (!activeLayout) return;
+    persistBook({
+      ...book,
+      layouts: book.layouts.map((l) => (l.id === activeLayout.id ? { ...l, saved: Date.now(), layout: currentLayout() } : l)),
+    });
+  };
+  const saveLayoutAs = () => {
+    const name = layoutName.trim().slice(0, 40);
+    if (!name) return;
+    if (book.layouts.length >= 20) return alert("Up to 20 layouts -- delete one first.");
+    const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    persistBook({ active: id, layouts: [...book.layouts, { id, name, saved: Date.now(), layout: currentLayout() }] });
+    setLayoutName("");
+  };
+  const loadLayout = (l: SavedLayout) => {
+    applyLayout(l.layout, true);
+    persistBook({ ...book, active: l.id });
+    setLayoutOpen(null);
+  };
+  const deleteLayout = (l: SavedLayout) => {
+    if (!confirm(`Delete the layout “${l.name}”?`)) return;
+    persistBook({ active: book.active === l.id ? null : book.active, layouts: book.layouts.filter((x) => x.id !== l.id) });
+  };
+  const resetLayout = () => {
+    applyLayout(defaultLayout(), false);
+    persistBook({ ...book, active: null });
+    setLayoutOpen(null);
   };
 
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -1115,6 +1286,7 @@ export function Chart() {
   // window (e.g. the "1D" range preset) would only fit a couple of daily
   // bars on screen -- default it out to 6 months, same as a human would.
   useEffect(() => {
+    if (pendingRangeRef.current != null) return; // a layout is setting its own window
     if (intervalS >= 86400 && rangeD > 0 && rangeD < 180) setRangeD(180);
   }, [intervalS]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1123,6 +1295,11 @@ export function Chart() {
   // manual pick) would try to cram months of intraday bars on screen --
   // snap back to that timeframe's default window.
   useEffect(() => {
+    if (pendingRangeRef.current != null) {
+      setRangeD(pendingRangeRef.current);
+      pendingRangeRef.current = null;
+      return;
+    }
     if (intervalS < 86400) setRangeD(defaultRangeDays(intervalS));
   }, [intervalS]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2112,6 +2289,92 @@ export function Chart() {
                     hidden — “▨ hide indicators” is on
                   </div>
                 )}
+              </div>
+            </>
+          )}
+        </span>
+        <span className="relative">
+          <button
+            onClick={(e) => {
+              if (layoutOpen) return setLayoutOpen(null);
+              const r = e.currentTarget.getBoundingClientRect();
+              setLayoutOpen({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - 248)) });
+            }}
+            title="Save / load chart layouts: timeframe, indicators, patterns, chart type and every other setting"
+            className={`max-w-[150px] truncate rounded border px-2 py-0.5 font-semibold ${
+              layoutOpen || activeLayout
+                ? "border-sky-500/50 bg-sky-500/15 text-term-text"
+                : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
+            }`}
+          >
+            ▦ {activeLayout ? activeLayout.name : "Layout"}
+            {layoutModified && <span className="text-amber-400"> •</span>}
+          </button>
+          {layoutOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setLayoutOpen(null)} />
+              <div
+                className="fixed z-50 max-h-[70vh] w-[240px] overflow-y-auto rounded-lg border border-term-border bg-term-panel p-1.5 text-2xs shadow-2xl"
+                style={{ top: layoutOpen.top, left: layoutOpen.left }}
+              >
+                <div className="px-1.5 py-1 font-semibold uppercase tracking-wide text-term-dim">Chart layouts</div>
+                {activeLayout && (
+                  <button
+                    onClick={saveLayout}
+                    className={`mb-1 w-full rounded px-2 py-1.5 text-left font-semibold ${
+                      layoutModified ? "bg-sky-600 text-white" : "bg-term-border/60 text-term-dim"
+                    }`}
+                  >
+                    💾 Save “{activeLayout.name}”{layoutModified ? "" : " · saved ✓"}
+                  </button>
+                )}
+                <div className="mb-1.5 flex gap-1">
+                  <input
+                    id="chart-layout-name"
+                    value={layoutName}
+                    onChange={(e) => setLayoutName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && saveLayoutAs()}
+                    placeholder="New layout name"
+                    className="min-w-0 flex-1 rounded border border-term-border bg-term-bg px-1.5 py-1 text-[12px] text-term-text outline-none focus:border-sky-500"
+                  />
+                  <button
+                    disabled={!layoutName.trim()}
+                    onClick={saveLayoutAs}
+                    className="rounded bg-sky-600 px-2 py-1 font-semibold text-white disabled:opacity-40"
+                  >
+                    Save as
+                  </button>
+                </div>
+                {book.layouts.map((l) => (
+                  <div
+                    key={l.id}
+                    className={`flex items-center gap-1 rounded ${l.id === book.active ? "bg-sky-500/15" : "hover:bg-term-border"}`}
+                  >
+                    <button onClick={() => loadLayout(l)} className="min-w-0 flex-1 px-2 py-1 text-left">
+                      <div className="truncate text-[12px] text-term-text">
+                        {l.id === book.active ? "✓ " : ""}
+                        {l.name}
+                      </div>
+                      <div className="truncate text-[10px] text-term-dim">
+                        {l.layout.symbol ?? ""} · {TIMEFRAMES.find(([, v]) => v === l.layout.intervalS)?.[0] ?? `${l.layout.intervalS}s`} ·{" "}
+                        {new Date(l.saved).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })}
+                      </div>
+                    </button>
+                    <button onClick={() => deleteLayout(l)} title="Delete" className="px-2 py-1 text-term-dim hover:text-down">
+                      ×
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={resetLayout}
+                  className={`mt-1 w-full rounded px-2 py-1 text-left ${book.active ? "text-term-dim hover:bg-term-border hover:text-term-text" : "bg-sky-500/15 text-term-text"}`}
+                >
+                  {book.active ? "" : "✓ "}Default (EMA 9 / 21, VWAP, volume)
+                </button>
+                <div className="mt-1.5 px-1.5 text-[10px] leading-snug text-term-dim">
+                  Saves the timeframe, history window, indicators, patterns, chart type, log scale, split view and toolbar.
+                  Same layouts on the web and the app. Drawings are kept per chart already.
+                </div>
               </div>
             </>
           )}

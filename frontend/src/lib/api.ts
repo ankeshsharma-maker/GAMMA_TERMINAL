@@ -192,6 +192,12 @@ export const api = {
     j<{ drawings: import("./chartDrawings").Drawing[] }>(
       `/api/chart/drawings?key=${encodeURIComponent(key)}`
     ),
+  chartLayouts: () => j<{ active: string | null; layouts: any[] }>("/api/chart/layouts"),
+  saveChartLayouts: (d: { active: string | null; layouts: any[] }) =>
+    j<{ active: string | null; layouts: any[] }>("/api/chart/layouts", {
+      method: "POST",
+      body: JSON.stringify(d),
+    }),
   saveChartDrawings: (key: string, drawings: import("./chartDrawings").Drawing[]) =>
     j<{ drawings: import("./chartDrawings").Drawing[] }>("/api/chart/drawings", {
       method: "POST",

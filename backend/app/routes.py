@@ -350,6 +350,18 @@ def screener_symbol(symbol: str):
     }
 
 
+@router.get("/chart/layouts")
+def get_chart_layouts():
+    return store.get_chart_layouts()
+
+
+@router.post("/chart/layouts")
+def save_chart_layouts(body: dict):
+    if len(str(body)) > 200_000:
+        raise HTTPException(status_code=413, detail="layouts too large")
+    return store.save_chart_layouts(body)
+
+
 @router.get("/chart/drawings")
 def get_chart_drawings(key: str):
     return {"drawings": store.get_chart_drawings(key)}
