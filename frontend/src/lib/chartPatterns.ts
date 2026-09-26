@@ -4,7 +4,8 @@ import { IST_OFFSET_S } from "./istTime";
 /** Something drawn on the price pane, in chart units (bar time, price). */
 export type Shape =
   | { kind: "line"; t1: number; p1: number; t2: number; p2: number; color: string; dash?: boolean; label?: string }
-  | { kind: "box"; t1: number; t2: number; top: number; bottom: number; color: string; label?: string };
+  | { kind: "box"; t1: number; t2: number; top: number; bottom: number; color: string; label?: string; labelBelow?: boolean }
+  | { kind: "text"; t: number; p: number; text: string; color: string; above: boolean };
 
 /** A breakout / confirmation on one bar -- drawn as a marker on that bar. */
 export interface ChartEvent {
@@ -116,6 +117,8 @@ function ranges(cs: Candle[], a: number[]): AutoPatterns {
       bottom: r.bot,
       color,
       label: `${r.bo ? "" : "in range "}${r.bot.toFixed(0)}–${r.top.toFixed(0)}`,
+      // a breakdown's marker sits above the bar: its label goes under the box instead
+      labelBelow: r.bo?.dir === "down",
     });
     if (r.bo) events.push(r.bo);
   }
@@ -296,17 +299,76 @@ function triangle(cs: Candle[], a: number[], zz: Pivot[]): AutoPatterns {
   return { shapes, events };
 }
 
+/** Market structure: every swing labelled against the one before it (HH / LH for highs,
+ *  HL / LL for lows), and the close that breaks the latest swing -- a BOS (break of
+ *  structure) when it goes with the trend, a CHoCH (change of character) when it's the
+ *  first break against it. Swings count only once confirmed (k bars later), so nothing
+ *  here is drawn with hindsight the live chart didn't have. Latest 8 labels / 4 breaks. */
+function structure(cs: Candle[], a: number[]): AutoPatterns {
+  const K = 5;
+  const zz = zigzag(cs, a, K, 0.8);
+  const shapes: Shape[] = [];
+  const t = (i: number) => cs[i].time as number;
+
+  const labels: Shape[] = [];
+  let lastH: Pivot | null = null;
+  let lastL: Pivot | null = null;
+  for (const p of zz) {
+    if (p.hi) {
+      if (lastH) {
+        const hh = p.price > lastH.price;
+        labels.push({ kind: "text", t: t(p.i), p: p.price, text: hh ? "HH" : "LH", color: hh ? UP : DOWN, above: true });
+      }
+      lastH = p;
+    } else {
+      if (lastL) {
+        const hl = p.price > lastL.price;
+        labels.push({ kind: "text", t: t(p.i), p: p.price, text: hl ? "HL" : "LL", color: hl ? UP : DOWN, above: false });
+      }
+      lastL = p;
+    }
+  }
+
+  // walk the bars: a swing becomes the level to break once it's confirmed (K bars on)
+  const breaks: Shape[] = [];
+  let trend: "up" | "down" | null = null;
+  let actH: Pivot | null = null;
+  let actL: Pivot | null = null;
+  let z = 0;
+  for (let j = 0; j < cs.length; j++) {
+    while (z < zz.length && zz[z].i + K <= j) {
+      if (zz[z].hi) actH = zz[z];
+      else actL = zz[z];
+      z++;
+    }
+    if (actH && cs[j].close > actH.price) {
+      const kind = trend === "down" ? "CHoCH" : "BOS";
+      breaks.push({ kind: "line", t1: t(actH.i), p1: actH.price, t2: t(j), p2: actH.price, color: UP, dash: true, label: kind });
+      trend = "up";
+      actH = null;
+    } else if (actL && cs[j].close < actL.price) {
+      const kind = trend === "up" ? "CHoCH" : "BOS";
+      breaks.push({ kind: "line", t1: t(actL.i), p1: actL.price, t2: t(j), p2: actL.price, color: DOWN, dash: true, label: kind });
+      trend = "down";
+      actL = null;
+    }
+  }
+  shapes.push(...breaks.slice(-4), ...labels.slice(-8));
+  return { shapes, events: [] };
+}
+
 /** Everything auto-detected for the chart. Pass CLOSED bars only. */
 export function detectChartPatterns(
   cs: Candle[],
   intervalS: number,
-  want: { ranges: boolean; patterns: boolean }
+  want: { ranges: boolean; patterns: boolean; structure?: boolean }
 ): AutoPatterns {
   const out: AutoPatterns = { shapes: [], events: [] };
   if (cs.length < 30) return out;
   const a = atr(cs);
   const parts: AutoPatterns[] = [];
   if (want.ranges) parts.push(ranges(cs, a), openingRange(cs, intervalS));
+  if (want.structure) parts.push(structure(cs, a));
   if (want.patterns) {
     const zz = zigzag(cs, a);
     parts.push(reversals(cs, a, zz), triangle(cs, a, zz));

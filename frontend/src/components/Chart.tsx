@@ -104,6 +104,7 @@ const TOGGLES = [
   ["patterns", "Candle patterns"],
   ["ranges", "Range breakouts"],
   ["chartpat", "Chart patterns"],
+  ["structure", "Market structure"],
 ] as const;
 type ToggleKey = (typeof TOGGLES)[number][0];
 
@@ -327,6 +328,7 @@ export function Chart() {
     patterns: true,
     ranges: true,
     chartpat: true,
+    structure: true,
   });
   // hide the time (x) axis labels for a cleaner chart
   const [showTime, setShowTime] = useState(() => {
@@ -1206,8 +1208,8 @@ export function Chart() {
     const hits: PatternHit[] = priceType && eff.patterns ? detectPatterns(full) : [];
     // range boxes / opening range / double tops, H&S, triangles -- lines + breakout markers
     const auto =
-      priceType && (eff.ranges || eff.chartpat)
-        ? detectChartPatterns(closed, intervalS, { ranges: eff.ranges, patterns: eff.chartpat })
+      priceType && (eff.ranges || eff.chartpat || eff.structure)
+        ? detectChartPatterns(closed, intervalS, { ranges: eff.ranges, patterns: eff.chartpat, structure: eff.structure })
         : { shapes: [], events: [] };
     autoPrimRef.current?.candle.setShapes(ctype === "bar" ? [] : auto.shapes);
     autoPrimRef.current?.bar.setShapes(ctype === "bar" ? auto.shapes : []);
@@ -1249,7 +1251,7 @@ export function Chart() {
     markers.sort((x, y) => (x.time as number) - (y.time as number));
     (c.candle as ISeriesApi<"Candlestick">).setMarkers(ctype === "bar" ? [] : markers);
     (c.barS as ISeriesApi<"Bar">).setMarkers(ctype === "bar" ? markers : []);
-  }, [candles, priceCandles, data, eff.patterns, eff.ranges, eff.chartpat, ctype, intervalS, barSpacing]);
+  }, [candles, priceCandles, data, eff.patterns, eff.ranges, eff.chartpat, eff.structure, ctype, intervalS, barSpacing]);
 
   // log / linear price scale
   useEffect(() => {
@@ -1993,6 +1995,16 @@ export function Chart() {
                             <span className="text-violet-400">ORH / ORL</span> = 09:15–09:30 high / low,{" "}
                             <span className="text-term-text">ORB</span> = first close beyond (15m and below)
                           </div>
+                        </div>
+                      )}
+                      {k === "structure" && on.structure && (
+                        <div className="mb-1 ml-2 mt-0.5 rounded border border-term-dim/40 px-1.5 py-1 text-[10px] leading-snug text-term-dim">
+                          <div>
+                            <span className="text-up">HH / HL</span> = higher high / low (uptrend),{" "}
+                            <span className="text-down">LH / LL</span> = lower high / low (downtrend)
+                          </div>
+                          <div>BOS = close beyond the last swing, with the trend (continuation)</div>
+                          <div>CHoCH = first close beyond it against the trend (possible reversal)</div>
                         </div>
                       )}
                       {k === "chartpat" && on.chartpat && (
