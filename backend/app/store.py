@@ -5,6 +5,7 @@ Raw NSE snapshots are keyed by (symbol, expiry) because the v3 API is per-expiry
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
 import time
@@ -36,8 +37,11 @@ _WL_DEFAULT = 3
 _WL_MAX = 8
 _HIST_DIR = DATA_DIR / "history"
 _HIST_DIR.mkdir(parents=True, exist_ok=True)
+_OI_DIR = DATA_DIR / "oi_series"  # the ΔOI-window readings, so a restart doesn't empty the window
+_OI_DIR.mkdir(parents=True, exist_ok=True)
 _JOURNAL_MAXLEN = 5000
 _lock = threading.RLock()
+log = logging.getLogger(__name__)
 
 
 def _load(path, fallback):
@@ -86,7 +90,9 @@ class Store:
         self.opt_history: dict[str, deque] = {}       # option key -> deque[{t, ltp}]
         self.oi_series: dict[tuple, deque] = {}       # (symbol,expiry) -> deque[{t, oi:{strike:(ceOi,peOi)}}]
         self._hist_writes = 0
+        self._oi_last_save: dict[tuple, float] = {}
         self._load_history()
+        self._load_oi_series()
         self._load_iv_history()
         self._iv_hist_last_save = 0.0
         self._user_wls: dict[str, dict] = {}         # view-only users' watchlists, by user id
@@ -175,10 +181,58 @@ class Store:
         }
         if not snap:
             return
-        dq = self.oi_series.setdefault((symbol.upper(), expiry), deque(maxlen=self._OI_SERIES_MAXLEN))
+        key = (symbol.upper(), expiry)
+        dq = self.oi_series.setdefault(key, deque(maxlen=self._OI_SERIES_MAXLEN))
         dq.append({"t": now, "oi": snap})
+        if now - self._oi_last_save.get(key, 0.0) >= 60:
+            self._oi_last_save[key] = now
+            self._persist_oi_series(key)
         # the day's OI walls (biggest call / put strikes) -- kept on disk too
         oi_walls.record(symbol, expiry, snap, chain.get("spot"), now)
+
+    # ---- the ΔOI-window readings on disk ----------------------------
+    # Only in memory before: every restart (a deploy, a crash) emptied every ΔOI
+    # window, which then showed "11m / 30m so far" until it refilled. The last
+    # ~3.3 h per (symbol, expiry) -- the longest window is 3 h -- is written at
+    # most once a minute (atomically) and read back on start.
+    _OI_PERSIST_SNAPS = 200
+
+    @staticmethod
+    def _oi_file(key: tuple):
+        return _OI_DIR / f"{key[0]}__{key[1]}.json"
+
+    def _persist_oi_series(self, key: tuple) -> None:
+        dq = self.oi_series.get(key)
+        if not dq:
+            return
+        try:
+            snaps = list(dq)[-self._OI_PERSIST_SNAPS:]
+            doc = [{"t": s["t"], "oi": {str(k): [v[0], v[1]] for k, v in s["oi"].items()}} for s in snaps]
+            f = self._oi_file(key)
+            tmp = f.with_suffix(".tmp")
+            tmp.write_text(json.dumps(doc, separators=(",", ":")), "utf-8")
+            tmp.replace(f)
+        except Exception as exc:  # noqa: BLE001 -- saving must never break polling
+            log.warning("oi_series save %s failed: %s", key, exc)
+
+    def _load_oi_series(self) -> None:
+        cutoff = time.time() - 2 * 86400
+        for f in _OI_DIR.glob("*.json"):
+            try:
+                if f.stat().st_mtime < cutoff:  # an expired / long-gone expiry
+                    f.unlink(missing_ok=True)
+                    continue
+                sym, _, exp = f.stem.partition("__")
+                doc = json.loads(f.read_text("utf-8"))
+                snaps = [
+                    {"t": float(s["t"]), "oi": {int(float(k)): (v[0], v[1]) for k, v in s["oi"].items()}}
+                    for s in doc
+                    if isinstance(s, dict) and "t" in s and isinstance(s.get("oi"), dict)
+                ]
+                if sym and exp and snaps:
+                    self.oi_series[(sym.upper(), exp)] = deque(snaps, maxlen=self._OI_SERIES_MAXLEN)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("oi_series load %s failed: %s", f.name, exc)
 
     def oi_change_window(self, symbol: str, expiry: str, minutes: int) -> dict:
         """Per-strike OI change over a rolling window (vs the snapshot ~`minutes` ago)."""

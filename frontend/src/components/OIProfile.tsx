@@ -148,6 +148,13 @@ const MiniDonut = ({
   );
 };
 
+/** NSE / BSE F&O hours, Mon-Fri 09:15-15:30 IST (exchange holidays aside). */
+function marketOpenNow(): boolean {
+  const ist = new Date(Date.now() + (330 + new Date().getTimezoneOffset()) * 60_000);
+  const m = ist.getHours() * 60 + ist.getMinutes();
+  return ist.getDay() >= 1 && ist.getDay() <= 5 && m >= 9 * 60 + 15 && m <= 15 * 60 + 30;
+}
+
 export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const chain = useStore((s) => s.chain);
   const chainError = useStore((s) => s.chainError);
@@ -1904,12 +1911,18 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         onChange={setTf}
         title="ΔOI window: OI change over this time"
       />
-      {tf > 0 && winCov > 0 && winCov < tf - 0.5 && (
-        <span className="text-amber-400">
+      {tf > 0 && !marketOpenNow() && (
+        // OI doesn't move while the market is shut: every rolling window reads 0
+        <span className="text-term-dim" title="Pick Day for the whole session's change vs yesterday's close">
+          market closed · no change now (Day = session)
+        </span>
+      )}
+      {tf > 0 && marketOpenNow() && winCov > 0 && winCov < tf - 0.5 && (
+        <span className="text-amber-400" title="The server has readings for only this much of the window so far">
           {winCov}m / {tf}m so far
         </span>
       )}
-      {tf > 0 && winCov === 0 && <span className="text-amber-400">collecting…</span>}
+      {tf > 0 && marketOpenNow() && winCov === 0 && <span className="text-amber-400">collecting…</span>}
     </span>
   );
 
