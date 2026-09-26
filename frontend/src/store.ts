@@ -472,7 +472,13 @@ export const useStore = create<State>((set, get) => ({
           set({ autobot: msg.data });
         } else if (msg.type === "positions") {
           _posLiveBuf = msg.data;
-          if (_posLiveTimer == null) {
+          const prev = get().positionsLive;
+          if (!prev || Date.now() / 1000 - (prev.feedTs || prev.ts || 0) > 5) {
+            // stale on screen (just unlocked / reconnected): show this one now
+            if (_posLiveTimer != null) window.clearTimeout(_posLiveTimer);
+            _posLiveTimer = null;
+            set({ positionsLive: msg.data });
+          } else if (_posLiveTimer == null) {
             _posLiveTimer = window.setTimeout(() => {
               _posLiveTimer = null;
               if (_posLiveBuf) set({ positionsLive: _posLiveBuf });
@@ -498,6 +504,19 @@ export const useStore = create<State>((set, get) => ({
     socket.connect();
     socket.subscribe(get().symbol, get().expiry);
     set({ socket });
+    // phone unlocked / app back in front: live data again at once, not after the socket
+    // notices it died + a 2 s retry + the next timer ticks (was ~3-4 s of stale MTM)
+    if (typeof document !== "undefined") {
+      let lastResume = 0;
+      const onResume = () => {
+        if (document.hidden || Date.now() - lastResume < 1000) return;
+        lastResume = Date.now();
+        socket.resume();
+        window.dispatchEvent(new Event("gt-resume"));
+      };
+      document.addEventListener("visibilitychange", onResume);
+      window.addEventListener("focus", onResume);
+    }
     api.chain(get().symbol).then(
       (c) => set({ chain: c, expiry: c.expiry, chainError: null }),
       (e) => set({ chainError: String(e.message || e) })
@@ -523,6 +542,7 @@ export const useStore = create<State>((set, get) => ({
       };
       pollBroker();
       setInterval(pollBroker, 10000);
+      window.addEventListener("gt-resume", pollBroker);
       api.orderModeGet().then(
         (d) => set({ orderMode: d.mode }),
         () => {}

@@ -449,9 +449,11 @@ export function useBookPnl():
       api.brokerPositions().then((d) => alive && setBpos(d.positions || []), () => {});
     load();
     const t = setInterval(load, 5000);
+    window.addEventListener("gt-resume", load); // unlocked: fresh MTM now
     return () => {
       alive = false;
       clearInterval(t);
+      window.removeEventListener("gt-resume", load);
     };
   }, [broker?.authed]);
 

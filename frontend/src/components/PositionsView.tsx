@@ -109,9 +109,12 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
     loadRef.current = load;
     load();
     const t = setInterval(load, 5000);
+    // back from a locked phone: fresh positions now, not at the next 5 s tick
+    window.addEventListener("gt-resume", load);
     return () => {
       alive = false;
       clearInterval(t);
+      window.removeEventListener("gt-resume", load);
     };
   }, [broker?.authed]);
 

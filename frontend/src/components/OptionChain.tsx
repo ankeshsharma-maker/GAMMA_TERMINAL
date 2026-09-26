@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useStore } from "../store";
 import { isViewer } from "../lib/auth";
 import { api } from "../lib/api";
-import { RefreshChainBtn } from "./RefreshChainBtn";
 import { SelectMenu } from "./SelectMenu";
 import { ExpiryTabs } from "./ExpiryTabs";
 import { compact, oiCr, nf, signColor, sk } from "../lib/format";
@@ -701,7 +700,6 @@ export function OptionChain({ paneNav, expiryRow = false }: { paneNav?: ReactNod
       {expiryRow && <ExpiryTabs extra={tfControl} />}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
         {paneNav ?? <span className="hidden font-semibold uppercase tracking-wide sm:inline">Option Chain</span>}
-        <RefreshChainBtn />
         <div className="seg">
           {TABS.map((t) => (
             <button

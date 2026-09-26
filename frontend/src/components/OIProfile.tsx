@@ -1,5 +1,4 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { RefreshChainBtn } from "./RefreshChainBtn";
 import { useStore } from "../store";
 import { api, type OiWallPt } from "../lib/api";
 import { bucketStart, istTime } from "../lib/istTime";
@@ -2090,7 +2089,6 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
             <span className="font-semibold uppercase tracking-wide">OI Profile</span>
           )}
 
-          <RefreshChainBtn />
 
           {/* All / Indices / Stocks lives in the main header (phone: ⚿ → Show) -- not repeated here */}
           {!isMobile && (

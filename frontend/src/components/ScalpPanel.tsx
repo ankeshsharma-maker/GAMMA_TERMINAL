@@ -86,9 +86,11 @@ export function ScalpPanel() {
     loadRef.current = load;
     load();
     const t = window.setInterval(load, 5000);
+    window.addEventListener("gt-resume", load); // unlocked: fresh MTM now
     return () => {
       alive = false;
       window.clearInterval(t);
+      window.removeEventListener("gt-resume", load);
     };
   }, [broker?.authed]);
 
