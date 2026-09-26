@@ -171,6 +171,19 @@ const COND_DEFS: Record<
   },
 
   /* ---- smart-money / market-structure ---- */
+  market_structure: {
+    label: "Market structure (bullish / bearish)",
+    group: "smart",
+    fields: [
+      {
+        key: "op",
+        label: "when",
+        type: "sel",
+        def: "bullish",
+        opts: ["bullish", "bearish", "turns_bullish", "turns_bearish"],
+      },
+    ],
+  },
   bos: {
     label: "Break of structure (swing high/low)",
     group: "smart",
@@ -2343,6 +2356,13 @@ function describe(c: AutoCondition): string {
       return `spot ${g("op")} maxpain${Number(g("bufferPct")) ? ` ±${g("bufferPct")}%` : ""}`;
     case "net_gex":
       return `net GEX ${g("op")}`;
+    case "market_structure":
+      return {
+        bullish: "market structure is bullish (last break up)",
+        bearish: "market structure is bearish (last break down)",
+        turns_bullish: "market structure turns bullish (CHoCH up)",
+        turns_bearish: "market structure turns bearish (CHoCH down)",
+      }[String(g("op"))] ?? `market structure ${g("op")}`;
     case "bos":
       return `break of structure ${g("dir")} (${g("lookback")} bars)`;
     case "opening_range":

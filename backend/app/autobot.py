@@ -61,6 +61,7 @@ Indicator (computed from the spot series in ``store.history``):
     {"kind":"price_vs_ema","period":20,"op":"above"|"below"|"cross_up"|"cross_down"}
     {"kind":"macd","fast":12,"slow":26,"signal":9,"op":"hist_up"|"hist_down"|"cross_up"|"cross_down"}
     {"kind":"spot_move_pct","op":"<"|">","value":0.5}   # % change from the day's first sample
+    {"kind":"market_structure","op":"bullish"|"bearish"|"turns_bullish"|"turns_bearish"}  # as the chart's ◇ Patterns
 
 OI / chain:
     {"kind":"pcr","op":"<"|">"|"cross_up"|"cross_down","value":0.9}
@@ -420,6 +421,77 @@ class _Ctx:
         return False
 
     # -- smart-money / structure conditions ------------------------------ #
+    def _structure_trend(self) -> list:
+        """Market structure the way the chart's ◇ Patterns draws it (lib/chartPatterns.ts
+        `structure`), on CLOSED candles only (the last, still-forming one is left out, like the
+        chart): swings from a zig-zag (a bar that is the extreme of the 5 bars each side, legs of
+        at least 0.8 x the plain 14-bar ATR); a swing becomes the level to break once confirmed 5
+        bars on; a close above the latest swing high -> trend "up", below the latest swing low ->
+        "down". Returns the trend after every closed candle (None until the first break)."""
+        cs = self.candles[:-1]
+        n = len(cs)
+        if n < 20:
+            return []
+        K, MIN_MOVE, N_ATR = 5, 0.8, 14
+        tr = [cs[0]["h"] - cs[0]["l"]] + [
+            max(cs[i]["h"] - cs[i]["l"], abs(cs[i]["h"] - cs[i - 1]["c"]), abs(cs[i]["l"] - cs[i - 1]["c"]))
+            for i in range(1, n)
+        ]
+        atr, run = [], 0.0
+        for i in range(n):
+            run += tr[i]
+            if i >= N_ATR:
+                run -= tr[i - N_ATR]
+            atr.append(run / min(i + 1, N_ATR))
+        raw = []
+        for i in range(K, n - K):
+            win = range(i - K, i + K + 1)
+            if all(cs[j]["h"] <= cs[i]["h"] for j in win if j != i):
+                raw.append((i, cs[i]["h"], True))
+            if all(cs[j]["l"] >= cs[i]["l"] for j in win if j != i):
+                raw.append((i, cs[i]["l"], False))
+        zz: list = []
+        for p in raw:
+            if not zz:
+                zz.append(p)
+            elif zz[-1][2] == p[2]:
+                if (p[2] and p[1] >= zz[-1][1]) or (not p[2] and p[1] <= zz[-1][1]):
+                    zz[-1] = p  # same side again: keep the more extreme one
+            elif abs(p[1] - zz[-1][1]) >= MIN_MOVE * atr[p[0]]:
+                zz.append(p)
+        trend, act_h, act_l, z, out = None, None, None, 0, []
+        for j in range(n):
+            while z < len(zz) and zz[z][0] + K <= j:
+                if zz[z][2]:
+                    act_h = zz[z]
+                else:
+                    act_l = zz[z]
+                z += 1
+            if act_h and cs[j]["c"] > act_h[1]:
+                trend, act_h = "up", None
+            elif act_l and cs[j]["c"] < act_l[1]:
+                trend, act_l = "down", None
+            out.append(trend)
+        return out
+
+    def _market_structure(self, c) -> bool:
+        """op: bullish / bearish = the last structure break was up / down (HH-HL side vs LH-LL side);
+        turns_bullish / turns_bearish = that flip happened on the last closed candle (a CHoCH, or
+        the very first break)."""
+        tr = self._structure_trend()
+        if len(tr) < 2:
+            return False
+        op = str(c.get("op", "bullish"))
+        if op == "bullish":
+            return tr[-1] == "up"
+        if op == "bearish":
+            return tr[-1] == "down"
+        if op == "turns_bullish":
+            return tr[-1] == "up" and tr[-2] != "up"
+        if op == "turns_bearish":
+            return tr[-1] == "down" and tr[-2] != "down"
+        return False
+
     def _bos(self, c) -> bool:
         """Break of structure: spot takes out the prior N-bar swing high/low."""
         lb = int(c.get("lookback", 20))
@@ -923,7 +995,7 @@ class _Ctx:
         "rsi": _rsi, "ema_cross": _ema_cross, "price_vs_ema": _price_vs_ema,
         "macd": _macd, "spot_move_pct": _spot_move_pct, "pcr": _pcr,
         "oi_change": _oi_change, "spot_vs_maxpain": _spot_vs_maxpain, "net_gex": _net_gex,
-        "bos": _bos, "opening_range": _opening_range, "oi_velocity": _oi_velocity,
+        "bos": _bos, "market_structure": _market_structure, "opening_range": _opening_range, "oi_velocity": _oi_velocity,
         "vol_surge": _vol_surge, "oi_divergence": _oi_divergence,
         "maxpain_shift": _maxpain_shift, "pcr_roc": _pcr_roc, "iv_skew": _iv_skew,
         "gamma_flip": _gamma_flip,
