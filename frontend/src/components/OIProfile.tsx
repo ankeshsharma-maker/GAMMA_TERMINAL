@@ -24,71 +24,78 @@ const PUT_CHG = "#22c55e";
 
 const zClamp = (z: number) => Math.min(3, Math.max(0.5, z));
 
-/** Change in OI as bars from a zero line: per side, OI added rises (green)
- *  and OI cut falls (red), with the net over each pair -- read at a glance,
- *  where the old ring only showed which side's net was bigger. */
-const DeltaOIBars = ({
-  ceAdd,
-  ceCut,
-  peAdd,
-  peCut,
-  tall = false,
-}: {
-  ceAdd: number;
-  ceCut: number;
-  peAdd: number;
-  peCut: number;
-  /** web: a taller shape, filling the panel's height */
-  tall?: boolean;
-}) => {
-  const W = 200;
-  const H = tall ? 330 : 200;
-  const base = H / 2; // zero line
-  const span = H * 0.35; // tallest bar
-  const m = Math.max(1, ceAdd, -ceCut, peAdd, -peCut);
-  const hgt = (v: number) => (Math.abs(v) / m) * span;
-  const bw = 40;
-  const signed = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${oiCr(Math.abs(v))}`;
-  // call bars red, put bars green; added rises (solid), cut falls (faded)
-  const group = (cx: number, add: number, cut: number, label: string, col: string) => {
-    const net = add + cut;
-    const ha = hgt(add);
-    const hc = hgt(cut);
-    return (
-      <g>
-        <text x={cx} y={14} textAnchor="middle" fontSize="13" fontWeight="700" fill={col}>
-          net {signed(net)}
-        </text>
-        <rect x={cx - bw - 2} y={base - ha} width={bw} height={Math.max(ha, add > 0 ? 1.5 : 0)} rx="2" fill={col} />
-        <rect
-          x={cx + 2}
-          y={base}
-          width={bw}
-          height={Math.max(hc, cut < 0 ? 1.5 : 0)}
-          rx="2"
-          fill={col}
-          fillOpacity={0.4}
-          stroke={col}
-          strokeWidth="1"
-        />
-        <text x={cx - bw / 2 - 2} y={base - ha - 4} textAnchor="middle" fontSize="11" fontWeight="600" className="fill-term-text">
-          {add > 0 ? `+${oiCr(add)}` : ""}
-        </text>
-        <text x={cx + bw / 2 + 2} y={base + hc + 13} textAnchor="middle" fontSize="11" fontWeight="600" className="fill-term-text">
-          {cut < 0 ? `−${oiCr(-cut)}` : ""}
-        </text>
-        <text x={cx} y={H - 4} textAnchor="middle" fontSize="13" fontWeight="700" fill={col}>
-          {label}
-        </text>
-      </g>
-    );
-  };
+/** One side's Change in OI as two small bars from a zero line: OI added rises (solid),
+ *  OI reduced falls (faded). Scaled to `m`, the biggest move of either side. */
+const SideBars = ({ add, cut, m, col }: { add: number; cut: number; m: number; col: string }) => {
+  const W = 90;
+  const H = 70;
+  const base = H / 2;
+  const hgt = (v: number) => (Math.abs(v) / (m || 1)) * (base - 3);
+  const ha = hgt(add);
+  const hc = hgt(cut);
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-[420px]">
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="mx-auto block" aria-hidden="true">
       <line x1="4" x2={W - 4} y1={base} y2={base} stroke="#64748b" strokeWidth="1" />
-      {group(W * 0.27, ceAdd, ceCut, "Call", CALL_CHG)}
-      {group(W * 0.73, peAdd, peCut, "Put", PUT_CHG)}
+      <rect x={W / 2 - 30} y={base - ha} width="26" height={Math.max(ha, add > 0 ? 1.5 : 0)} rx="2" fill={col} />
+      <rect x={W / 2 + 4} y={base} width="26" height={Math.max(hc, cut < 0 ? 1.5 : 0)} rx="2" fill={col} fillOpacity={0.4} stroke={col} strokeWidth="1" />
     </svg>
+  );
+};
+
+/** Change in OI as a table split into Call | Put: each side's bars, then OI added, OI reduced,
+ *  the Net and what it means (written / unwound). */
+const DeltaOITable = ({ ceAdd, ceCut, peAdd, peCut }: { ceAdd: number; ceCut: number; peAdd: number; peCut: number }) => {
+  const m = Math.max(1, ceAdd, -ceCut, peAdd, -peCut);
+  const signed = (v: number) => (v ? `${v > 0 ? "+" : "−"}${oiCr(Math.abs(v))}` : "0");
+  const ceNet = ceAdd + ceCut;
+  const peNet = peAdd + peCut;
+  const netCls = (v: number) => (v > 0 ? "text-up" : v < 0 ? "text-down" : "text-term-dim");
+  const rows: [string, React.ReactNode, React.ReactNode][] = [
+    ["Added", <span className="text-term-text">{signed(ceAdd)}</span>, <span className="text-term-text">{signed(peAdd)}</span>],
+    ["Reduced", <span className="text-term-dim">{signed(ceCut)}</span>, <span className="text-term-dim">{signed(peCut)}</span>],
+    [
+      "Net",
+      <span className={`font-semibold ${netCls(ceNet)}`}>{signed(ceNet)}</span>,
+      <span className={`font-semibold ${netCls(peNet)}`}>{signed(peNet)}</span>,
+    ],
+    [
+      "Reads",
+      <span className="text-term-text">{ceNet >= 0 ? "Call written" : "Call unwound"}</span>,
+      <span className="text-term-text">{peNet >= 0 ? "Put written" : "Put unwound"}</span>,
+    ],
+  ];
+  return (
+    <table className="w-full border-collapse text-[12px]">
+      <thead>
+        <tr>
+          <th className="w-[26%] border border-term-border px-2 py-1" />
+          <th className="border border-term-border px-2 py-1 text-center font-semibold" style={{ color: CALL_CHG }}>
+            Call
+          </th>
+          <th className="border border-term-border px-2 py-1 text-center font-semibold" style={{ color: PUT_CHG }}>
+            Put
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td className="border border-term-border px-2 py-1 text-[11px] text-term-dim">ΔOI</td>
+          <td className="border border-term-border px-1 py-1">
+            <SideBars add={ceAdd} cut={ceCut} m={m} col={CALL_CHG} />
+          </td>
+          <td className="border border-term-border px-1 py-1">
+            <SideBars add={peAdd} cut={peCut} m={m} col={PUT_CHG} />
+          </td>
+        </tr>
+        {rows.map(([k, c, p]) => (
+          <tr key={k}>
+            <td className="border border-term-border px-2 py-1 text-[11px] text-term-dim">{k}</td>
+            <td className="num border border-term-border px-2 py-1 text-center">{c}</td>
+            <td className="num border border-term-border px-2 py-1 text-center">{p}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 };
 
@@ -1279,28 +1286,10 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         </div>
         {dtot > 0 ? (
           <>
-            <DeltaOIBars ceAdd={flow.ceAdd} ceCut={flow.ceCut} peAdd={flow.peAdd} peCut={flow.peCut} tall={!isMobile} />
+            <DeltaOITable ceAdd={flow.ceAdd} ceCut={flow.ceCut} peAdd={flow.peAdd} peCut={flow.peCut} />
             <div className="flex w-full flex-wrap justify-center gap-x-3 text-[10px] text-term-dim">
-              <span className="flex items-center gap-1">
-                <Sw c={CALL_CHG} /> Call
-              </span>
-              <span className="flex items-center gap-1">
-                <Sw c={PUT_CHG} /> Put
-              </span>
               <span>▲ solid = OI added</span>
               <span>▼ faded = OI reduced</span>
-            </div>
-            <div className="w-full space-y-0.5">
-              <Row
-                c={CALL_CHG}
-                label={`Call ${dCEnet >= 0 ? "written" : "unwound"}`}
-                val={`${dCEnet >= 0 ? "+" : "−"}${oiCr(Math.abs(dCEnet))}`}
-              />
-              <Row
-                c={PUT_CHG}
-                label={`Put ${dPEnet >= 0 ? "written" : "unwound"}`}
-                val={`${dPEnet >= 0 ? "+" : "−"}${oiCr(Math.abs(dPEnet))}`}
-              />
             </div>
           </>
         ) : (
