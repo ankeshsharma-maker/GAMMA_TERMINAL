@@ -353,8 +353,15 @@ export function PayoffChart(props: Props) {
                 {nf(((cur.k - spot) / spot) * 100, 1)}%)
               </span>
             </div>
-            <div className={`num ${cur.exp >= 0 ? "text-up" : "text-down"}`}>On expiry: ₹{nf(cur.exp, 0)}</div>
-            <div className="num" style={{ color: TARGET }}>
+            <div className={`num ${cur.exp >= 0 ? "text-up" : "text-down"}`}>
+              <i
+                className="mr-1 inline-block h-[3px] w-3 rounded align-middle"
+                style={{ background: `linear-gradient(90deg, ${UP} 50%, ${DOWN} 50%)` }}
+              />
+              On expiry: ₹{nf(cur.exp, 0)}
+            </div>
+            <div className={`num ${cur.tgt >= 0 ? "text-up" : "text-down"}`}>
+              <i className="mr-1 inline-block h-[3px] w-3 rounded align-middle" style={{ background: TARGET }} />
               {hasT ? tLabel ?? "Target" : "Today"}: ₹{nf(cur.tgt, 0)}
             </div>
           </div>
