@@ -9,6 +9,8 @@ from __future__ import annotations
 
 _IST_S = 19800                    # IST = UTC+5:30
 _OPEN_S = 9 * 3600 + 15 * 60      # the 09:15 session open, in seconds after IST midnight
+WEEK_S = 604800                   # the 1W chart interval: calendar weeks from Monday (IST)
+MONTH_S = 2592000                 # the 1M chart interval: calendar months (IST); the number is only a label
 
 
 def bucket_start(t: float, interval_s: int) -> int:
@@ -24,9 +26,18 @@ def bucket_start(t: float, interval_s: int) -> int:
 
     A daily candle sits on IST midnight of its trading date. Upstox stamps its daily bars 00:00 +05:30, which is
     18:30 UTC the day BEFORE; bucketing on epoch days filed every one of them under the previous date (Monday's
-    candle drawn on Sunday, and a month's first candle counted in the month before). Weekly and longer keep epoch
-    alignment. The frontend's `bucketStart` (lib/istTime.ts) must match this exactly."""
+    candle drawn on Sunday, and a month's first candle counted in the month before). A weekly candle sits on the
+    Monday of its week, a monthly one on the 1st of its month (IST midnight, like the daily). The frontend's
+    `bucketStart` (lib/istTime.ts) must match this exactly."""
     t = int(t)
+    if interval_s == WEEK_S:
+        day = (t + _IST_S) // 86400  # IST day number; day 0 (1 Jan 1970) was a Thursday
+        return (day - (day + 3) % 7) * 86400 - _IST_S
+    if interval_s == MONTH_S:
+        import datetime as _dt
+
+        d = _dt.datetime.fromtimestamp(t + _IST_S, _dt.timezone.utc)
+        return int(_dt.datetime(d.year, d.month, 1, tzinfo=_dt.timezone.utc).timestamp()) - _IST_S
     if interval_s == 86400:
         return (t + _IST_S) // 86400 * 86400 - _IST_S
     if 1800 <= interval_s < 86400:

@@ -449,20 +449,23 @@ def _guard_chart(key: tuple, payload: dict) -> dict:
 @router.get("/chart/{symbol}")
 async def chart(
     symbol: str,
-    interval: int = Query(60, ge=15, le=86400),
+    interval: int = Query(60, ge=15, le=2592000),  # up to 1M (2592000); 1W = 604800
     instrument: str | None = Query(None),
     src: str = Query("auto"),  # auto | broker | upstox
     lite: bool = Query(False),  # candles only (the trend strip): no option-data lines
 ):
     symbol = symbol.upper()
     src = (src or "auto").lower()
+    # weekly / monthly are built from the daily candles (build_chart groups them), so they
+    # share the daily fetch and its cache instead of asking the data source again
+    fetch_iv = min(interval, 86400)
 
     # ---- specific option contract ----
     opt = store._parse_opt(instrument) if instrument else None
     if opt:
         sym, exp, strike, ot = opt
         candles, src_label = await candle_sources.option_candles(
-            sym, exp, strike, ot, interval, src
+            sym, exp, strike, ot, fetch_iv, src
         )
 
         if not candles:
@@ -507,7 +510,7 @@ async def chart(
             )
         # no ticks yet — fall through and show 1-min until they accumulate
 
-    base_candles, src_label = await candle_sources.underlying_candles(symbol, interval)
+    base_candles, src_label = await candle_sources.underlying_candles(symbol, fetch_iv)
 
     return _guard_chart(
         (symbol, interval, src, lite),

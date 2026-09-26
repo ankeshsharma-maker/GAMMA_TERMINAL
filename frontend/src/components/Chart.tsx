@@ -80,6 +80,8 @@ const TIMEFRAMES: [string, number][] = [
   ["2h", 7200],
   ["4h", 14400],
   ["1D", 86400],
+  ["1W", 604800],
+  ["1M", 2592000],
 ];
 
 const TOGGLES = [
@@ -200,8 +202,16 @@ const istDate = (t: number) =>
 const IST_LOCALIZATION = {
   timeFormatter: (t: number) => `${istDate(t)} ${istTime(t)}`,
 };
+/** axis labels: a year's first tick shows the year (1W / 1M charts span years), a month's first the month,
+ *  a day its date, else the time (tickType 0 year, 1 month, 2 day of month, 3+ time) */
 const istTickFormatter = (t: number, tickType: number) =>
-  tickType <= 2 ? istDate(t) : istTime(t);
+  tickType === 0
+    ? new Date(t * 1000).toLocaleDateString("en-GB", { timeZone: IST, year: "numeric" })
+    : tickType === 1
+    ? new Date(t * 1000).toLocaleDateString("en-GB", { timeZone: IST, month: "short" })
+    : tickType === 2
+    ? istDate(t)
+    : istTime(t);
 
 /** OHLC resample to a coarser bucket, for multi-timeframe indicator overlays. */
 function resampleCandles(cs: Candle[], sec: number): Candle[] {
@@ -1294,7 +1304,8 @@ export function Chart() {
   // bars on screen -- default it out to 6 months, same as a human would.
   useEffect(() => {
     if (pendingRangeRef.current != null) return; // a layout is setting its own window
-    if (intervalS >= 86400 && rangeD > 0 && rangeD < 180) setRangeD(180);
+    if (intervalS > 86400) setRangeD(0); // 1W / 1M: every bar (about 5 years)
+    else if (intervalS >= 86400 && rangeD > 0 && rangeD < 180) setRangeD(180);
   }, [intervalS]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // mirror case: coming back down to an intraday timeframe while the window

@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useStore } from "../store";
 import { api, type VolRow, type VolSnapshot } from "../lib/api";
 import { nf } from "../lib/format";
 
 /** shares: 1,33,45,678 -> "1.33Cr", 12,40,000 -> "12.4L" (no space: the columns are narrow) */
-export const qty = (v: number) => (v >= 1e7 ? `${(v / 1e7).toFixed(2)}Cr` : v >= 1e5 ? `${(v / 1e5).toFixed(1)}L` : nf(v, 0));
+export const qty = (v: number) => (v >= 1e7 ? `${(v / 1e7).toFixed(v >= 1e8 ? 1 : 2)}Cr` : v >= 1e5 ? `${(v / 1e5).toFixed(1)}L` : nf(v, 0));
 /** rupees -> "1.6KCr" / "151Cr" / "4.2Cr" / "85L" (short enough for a phone column) */
 export const cr = (v: number) =>
   v >= 1e10
@@ -15,7 +15,7 @@ export const cr = (v: number) =>
     ? `${(v / 1e7).toFixed(1)}Cr`
     : `${nf(v / 1e5, 0)}L`;
 /** a price: 1 decimal from 10,000 up so "10,770.0" fits the column */
-const px = (v: number) => (v >= 10000 ? nf(v, 1) : nf(v));
+const px = (v: number) => (v >= 10000 ? nf(v, 0) : v >= 1000 ? nf(v, 1) : nf(v));
 
 /** fo = stocks with options, cash = NSE stocks WITHOUT options, all = every NSE stock */
 export type Universe = "fo" | "cash" | "all";
@@ -134,23 +134,47 @@ export type Metric = {
 
 type SortKey = "symbol" | "ltp" | "chg" | "dir" | "metric" | "vol" | "value";
 type Col = SortKey;
-/** default column widths (px) for 12-px numbers: wider than a phone -- the table swipes
- *  sideways with the SYMBOL column frozen on the left */
-const DEF_W: Record<Col, number> = { symbol: 84, ltp: 72, chg: 60, dir: 44, metric: 54, vol: 62, value: 58 };
-const W_KEY = "scan.colWidths.v3"; // v3: + the direction column, bigger text
+const COLS: Col[] = ["symbol", "ltp", "chg", "dir", "metric", "vol", "value"];
+/** the narrowest each column can go with 12-px numbers (measured on a 360-px phone; Dir shows
+ *  only its arrow below DIR_WORD). SYMBOL may go down to 76 (long names end in "…"). */
+const MIN_W: Record<Col, number> = { symbol: 76, ltp: 45, chg: 47, dir: 26, metric: 44, vol: 41, value: 41 };
+/** SYMBOL is filled first up to this (a 10-letter symbol in full), then spare room is shared by GROW */
+const SYMBOL_WANT = 92;
+const GROW: Record<Col, number> = { symbol: 2, ltp: 1, chg: 1, dir: 1, metric: 1, vol: 1, value: 1 };
+const DIR_WORD = 40; // Dir wide enough for "▲ Buy" rather than just "▲"
+const STAR_W = 22;
+/** only the columns someone has dragged are stored; the rest fit the screen every time */
+const W_KEY = "scan.colWidths.v4";
+/** widths that fill `avail` px: the dragged ones as set, the others from their minimum up,
+ *  spare room shared by GROW. Narrower than the minimums -> the table swipes (SYMBOL frozen). */
+const fitWidths = (avail: number, fixed: Partial<Record<Col, number>>): Record<Col, number> => {
+  const out = {} as Record<Col, number>;
+  for (const c of COLS) out[c] = fixed[c] ?? MIN_W[c];
+  let room = avail - COLS.reduce((s, c) => s + out[c], 0);
+  if (room <= 0) return out;
+  if (fixed.symbol == null) {
+    const add = Math.min(room, SYMBOL_WANT - out.symbol);
+    out.symbol += add;
+    room -= add;
+  }
+  const free = COLS.filter((c) => fixed[c] == null);
+  const grow = free.reduce((s, c) => s + GROW[c], 0);
+  if (grow) for (const c of free) out[c] += Math.floor((room * GROW[c]) / grow);
+  return out;
+};
 const DIR: Record<string, { label: string; cls: string; n: number }> = {
   BUY: { label: "▲ Buy", cls: "text-up", n: 1 },
   SELL: { label: "▼ Sell", cls: "text-down", n: -1 },
   MIXED: { label: "◆", cls: "text-term-dim", n: 0 },
 };
-const readWidths = (): Record<Col, number> => {
+const readWidths = (): Partial<Record<Col, number>> => {
   try {
-    return { ...DEF_W, ...JSON.parse(localStorage.getItem(W_KEY) || "{}") };
+    return JSON.parse(localStorage.getItem(W_KEY) || "{}");
   } catch {
-    return { ...DEF_W };
+    return {};
   }
 };
-const saveWidths = (w: Record<Col, number>) => {
+const saveWidths = (w: Partial<Record<Col, number>>) => {
   try {
     localStorage.setItem(W_KEY, JSON.stringify(w));
   } catch {
@@ -212,19 +236,37 @@ export function ScanTable({
       .slice(0, 150);
   }, [rows, sort, metric]);
 
-  // ---- column widths: drag a header's right edge to resize; remembered on this device ----
-  const [w, setW] = useState<Record<Col, number>>(readWidths);
+  // ---- column widths: fit the box by default; drag a header's right edge to resize (that
+  //      column is then remembered on this device), double-tap it to go back to fitting ----
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [boxW, setBoxW] = useState(0);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const measure = () => setBoxW(el.clientWidth);
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener("resize", measure); // phone rotation, in case the observer is late
+    measure();
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+  const [fixed, setFixed] = useState<Partial<Record<Col, number>>>(readWidths);
+  const w = useMemo(() => fitWidths(Math.max(0, boxW - STAR_W), fixed), [boxW, fixed]);
   const drag = (c: Col) => (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
     const x0 = e.clientX;
     const w0 = w[c];
-    const move = (ev: PointerEvent) => setW((p) => ({ ...p, [c]: Math.max(40, Math.min(280, Math.round(w0 + ev.clientX - x0))) }));
+    const move = (ev: PointerEvent) =>
+      setFixed((p) => ({ ...p, [c]: Math.max(c === "dir" ? 24 : 36, Math.min(280, Math.round(w0 + ev.clientX - x0))) }));
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
-      setW((p) => {
+      setFixed((p) => {
         saveWidths(p);
         return p;
       });
@@ -234,8 +276,9 @@ export function ScanTable({
     window.addEventListener("pointercancel", up);
   };
   const resetWidth = (c: Col) =>
-    setW((p) => {
-      const n = { ...p, [c]: DEF_W[c] };
+    setFixed((p) => {
+      const n = { ...p };
+      delete n[c];
       saveWidths(n);
       return n;
     });
@@ -247,7 +290,7 @@ export function ScanTable({
     >
       <button
         onClick={() => setSort((s) => (s.key === k ? { key: k, dir: (s.dir * -1) as 1 | -1 } : { key: k, dir: k === "symbol" ? 1 : -1 }))}
-        className={`w-full whitespace-nowrap px-1 py-1.5 text-[10px] font-semibold uppercase ${right ? "text-right" : "text-left"} ${
+        className={`w-full px-[3px] py-1.5 text-[10px] leading-tight font-semibold uppercase ${right ? "text-right" : "text-left"} ${
           sort.key === k ? "text-term-accent" : "text-term-dim"
         }`}
       >
@@ -268,7 +311,7 @@ export function ScanTable({
   const cell = (c: Col, cls: string, body: ReactNode) => (
     <div
       style={{ width: w[c] }}
-      className={`shrink-0 overflow-hidden whitespace-nowrap border-r border-term-border px-1 py-1.5 ${
+      className={`shrink-0 overflow-hidden whitespace-nowrap border-r border-term-border px-[3px] py-1.5 ${
         c === "symbol" ? "sticky left-0 z-[2] bg-inherit" : ""
       } ${cls}`}
     >
@@ -278,7 +321,7 @@ export function ScanTable({
 
   return (
     // shrink-0: a flex child of the scrolling tab, it must grow with its rows, not get its own scroll box
-    <div className="mx-1 my-2 shrink-0 overflow-x-auto rounded-md border border-term-border">
+    <div ref={boxRef} className="mx-1 my-2 shrink-0 overflow-x-auto rounded-md border border-term-border">
       <div className="min-w-max">
         <div className="flex border-b border-term-border bg-term-panel">
           {head("symbol", "Symbol", false)}
@@ -286,9 +329,9 @@ export function ScanTable({
           {head("chg", "%Chg", true)}
           {head("dir", "Dir", true)}
           {head("metric", metric.label, true)}
-          {head("vol", "Volume", true)}
+          {head("vol", "Vol", true)}
           {head("value", "Value", true)}
-          <div className="w-7 shrink-0" />
+          <div style={{ width: STAR_W }} className="shrink-0" />
         </div>
         {sorted.length === 0 && <div className="p-6 text-center text-[12px] text-term-dim">{empty}</div>}
         {sorted.map((r, i) => {
@@ -312,7 +355,7 @@ export function ScanTable({
                 "min-w-0",
                 <>
                   <span className="flex items-center gap-1">
-                    <span className="truncate text-[12.5px] font-semibold text-term-text">{r.symbol}</span>
+                    <span className="truncate text-[12px] font-semibold text-term-text">{r.symbol}</span>
                     {!r.fo && <span className="shrink-0 rounded bg-term-border px-0.5 text-[8px] font-semibold text-term-dim">CASH</span>}
                   </span>
                   {/* the breakout tag / company name sit on a small second line so the symbol keeps its room */}
@@ -324,22 +367,22 @@ export function ScanTable({
                   )}
                 </>
               )}
-              {cell("ltp", "num flex items-center justify-end text-term-text", px(r.ltp))}
+              {cell("ltp", "tabular-nums flex items-center justify-end text-term-text", px(r.ltp))}
               {cell(
                 "chg",
-                `num flex items-center justify-end ${r.chgPct == null ? "text-term-dim" : r.chgPct >= 0 ? "text-up" : "text-down"}`,
-                r.chgPct == null ? "–" : `${r.chgPct >= 0 ? "+" : ""}${nf(r.chgPct)}%`
+                `tabular-nums flex items-center justify-end ${r.chgPct == null ? "text-term-dim" : r.chgPct >= 0 ? "text-up" : "text-down"}`,
+                r.chgPct == null ? "–" : `${r.chgPct >= 0 ? "+" : ""}${nf(r.chgPct, Math.abs(r.chgPct) >= 10 ? 1 : 2)}%`
               )}
               {cell(
                 "dir",
                 `flex items-center justify-center font-semibold ${DIR[r.dir]?.cls ?? "text-term-dim"}`,
                 <span title="Buying = above the day's VWAP and high in the day's range; selling = the opposite. An estimate.">
-                  {DIR[r.dir]?.label ?? "–"}
+                  {w.dir >= DIR_WORD ? DIR[r.dir]?.label ?? "–" : DIR[r.dir]?.label.split(" ")[0] ?? "–"}
                 </span>
               )}
-              {cell("metric", "num flex items-center justify-end", metric.cell(r))}
-              {cell("vol", "num flex items-center justify-end text-term-text", qty(r.vol))}
-              {cell("value", "num flex items-center justify-end text-term-dim", cr(r.value))}
+              {cell("metric", "tabular-nums flex items-center justify-end", metric.cell(r))}
+              {cell("vol", "tabular-nums flex items-center justify-end text-term-text", qty(r.vol))}
+              {cell("value", "tabular-nums flex items-center justify-end text-term-dim", cr(r.value))}
               <button
                 disabled={has}
                 onClick={(e) => {
@@ -347,7 +390,8 @@ export function ScanTable({
                   addWatch(key);
                   setAdded((a) => new Set(a).add(key));
                 }}
-                className="w-7 shrink-0 text-center text-[15px] text-term-dim disabled:text-amber-400"
+                style={{ width: STAR_W }}
+                className="shrink-0 text-center text-[15px] text-term-dim disabled:text-amber-400"
                 title={has ? "In your watchlist" : "Add to watchlist"}
               >
                 {has ? "★" : "☆"}
