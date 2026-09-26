@@ -73,12 +73,14 @@ function SymbolSheet({
   onClose,
   onChart,
   onView,
+  onRemove,
 }: {
   w: WatchQuote;
   name: string;
   px: number | null | undefined;
   chg: number | null | undefined;
   pct: number | null | undefined;
+  onRemove: () => void;
   onClose: () => void;
   onChart: () => void;
   onView: (v: "chain" | "oiprofile" | "trendingoi" | "flow") => void;
@@ -132,6 +134,9 @@ function SymbolSheet({
           ))}
         </div>
         )}
+        <button onClick={onRemove} className="mt-3 w-full py-1 text-center text-[12px] font-semibold text-down">
+          ✕ Remove from watchlist
+        </button>
       </div>
     </div>
   );
@@ -186,15 +191,52 @@ function MarketRow({
   const [sheet, setSheet] = useState(false);
   // an option / future row opens the order sheet, a stock a quick sheet (Chart + its OI views);
   // an index goes straight to its chart
-  const isIndex = w.kind === "index" || w.kind === "equity" || INDEX_RE.test(w.symbol);
-  const tap = () => (isIndex ? open() : setSheet(true));
   const tradable = w.kind === "option" || w.kind === "future";
+  // NB: an option / future row carries its underlying's symbol ("NIFTY"), so the index
+  // test must not catch it -- it opened the chart instead of the order sheet
+  const isIndex = !tradable && (w.kind === "index" || w.kind === "equity" || INDEX_RE.test(w.symbol));
+  const askRemove = () => {
+    if (window.confirm(`Remove ${wFull(w)} from this list?`)) {
+      setSheet(false);
+      removeWatch(w.key);
+    }
+  };
+  // long-press (~0.5 s) a row = remove it, like broker apps; the tap that ends it doesn't also open
+  const pressT = useRef<number | null>(null);
+  const pressed = useRef(false);
+  const press = {
+    onPointerDown: () => {
+      pressed.current = false;
+      pressT.current = window.setTimeout(() => {
+        pressed.current = true;
+        try {
+          navigator.vibrate?.(20);
+        } catch {
+          /* ignore */
+        }
+        askRemove();
+      }, 550);
+    },
+    onPointerUp: () => pressT.current != null && window.clearTimeout(pressT.current),
+    onPointerLeave: () => pressT.current != null && window.clearTimeout(pressT.current),
+    onPointerCancel: () => pressT.current != null && window.clearTimeout(pressT.current),
+    onContextMenu: (e: { preventDefault: () => void }) => e.preventDefault(), // no browser menu on a long-press
+  };
+  const tap = () => {
+    if (pressed.current) {
+      pressed.current = false;
+      return;
+    }
+    if (isIndex) open();
+    else setSheet(true);
+  };
   const sheetEl =
     sheet &&
     (tradable ? (
       <OrderSheet
         w={w}
         name={wFull(w)}
+        onRemove={askRemove}
         onClose={() => setSheet(false)}
         onChart={() => {
           setSheet(false);
@@ -208,6 +250,7 @@ function MarketRow({
         px={px}
         chg={chg}
         pct={pct}
+        onRemove={askRemove}
         onClose={() => setSheet(false)}
         onChart={() => {
           setSheet(false);
@@ -249,7 +292,7 @@ function MarketRow({
           on ? "bg-term-accent/[0.07]" : "hover:bg-term-panel/60"
         }`}
       >
-        <button onClick={tap} title={`Chart ${wName(w)}`} className="min-w-0 flex-1 px-2 py-1.5 text-left">
+        <button onClick={tap} {...press} title={`Chart ${wName(w)} · long-press to remove`} className="min-w-0 flex-1 select-none px-2 py-1.5 text-left">
           <span className="block truncate text-[12px] font-medium text-term-text">{wFull(w)}</span>
           <span className="mt-0.5 flex items-baseline gap-1.5 whitespace-nowrap">
             <span className="text-[10px] text-term-dim">{wSeg(w)}</span>
@@ -272,8 +315,9 @@ function MarketRow({
     >
       <button
         onClick={tap}
-        title={`Chart ${wName(w)}`}
-        className="flex min-w-0 flex-1 items-center gap-3 px-3.5 py-2.5 text-left active:bg-term-border/40"
+        {...press}
+        title={`Chart ${wName(w)} · long-press to remove`}
+        className="flex min-w-0 flex-1 select-none items-center gap-3 px-3.5 py-2.5 text-left active:bg-term-border/40"
       >
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-medium text-term-text">{wFull(w)}</span>

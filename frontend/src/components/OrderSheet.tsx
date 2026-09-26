@@ -10,7 +10,19 @@ import type { WatchQuote } from "../types";
  *  PRICE that's attached to the leg once it fills (the server then squares it
  *  off at market when one is hit). Live orders still go through the LIVE
  *  confirm; paper (and view-only users) fill on paper. */
-export function OrderSheet({ w, name, onClose, onChart }: { w: WatchQuote; name: string; onClose: () => void; onChart: () => void }) {
+export function OrderSheet({
+  w,
+  name,
+  onClose,
+  onChart,
+  onRemove,
+}: {
+  w: WatchQuote;
+  name: string;
+  onClose: () => void;
+  onChart: () => void;
+  onRemove?: () => void;
+}) {
   const orderMode = useStore((s) => s.orderMode);
   const orderFromSheet = useStore((s) => s.orderFromSheet);
   const live = orderMode === "live" && !isViewer();
@@ -203,6 +215,11 @@ export function OrderSheet({ w, name, onClose, onChart }: { w: WatchQuote; name:
           {px ? <span className="ml-1.5 text-[12px] font-normal opacity-90">≈ ₹{nf(value, 0)}</span> : null}
           {live && <span className="ml-1.5 text-[11px] font-normal opacity-90">· review next</span>}
         </button>
+        {onRemove && (
+          <button onClick={onRemove} className="mt-2 w-full py-1 text-center text-[12px] font-semibold text-down">
+            ✕ Remove from watchlist
+          </button>
+        )}
       </div>
     </div>
   );
