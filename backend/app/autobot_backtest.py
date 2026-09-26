@@ -43,7 +43,7 @@ from . import autobot_groups as G
 from . import autobot_structures as ST
 from . import charges as chg
 from . import nse_bhavcopy, upstox_data
-from .autobot import _Ctx, _entry_filter_ok, _parse_hhmm, _resolve_instrument
+from .autobot import _Ctx, _entry_filter_ok, _parse_hhmm, _resolve_instrument, hl_stop_level
 from .autobot_sim import SimPosition
 from .autobot_stats import summarize
 from .brokers.upstox import get_upstox
@@ -259,6 +259,9 @@ def _not_simulated(rule: dict, interval: int | None = None) -> list[str]:
         out.append("days-to-expiry gate (a backtest has no real expiry calendar)")
     if _f(rule.get("maxSpreadPct"), 0.0) > 0:
         out.append("spread guard (no historical quotes)")
+    if any((c or {}).get("kind") == "market_structure" and (c or {}).get("op") in ("breaks_high", "breaks_low")
+           and _f((c or {}).get("volMult"), 1.5) > 0 for c in (rule.get("entry") or []) + (rule.get("exit") or [])):
+        out.append("the volume check on a structure break (no historical option volume -- every break counts)")
     if any((c or {}).get("kind") in X.TRADE_KINDS for c in (rule.get("exit") or [])):
         out.append("trade stop-loss / target conditions are judged at each bar's close, not on a touch inside it "
                    "(the SL / target boxes do catch touches inside a bar)")
@@ -465,13 +468,13 @@ async def backtest_rule(
     for i, d in enumerate(dates):
         if d < first_tradable and not open_pos:
             continue
-        ctx = _Ctx(symbol, hist[: i + 1])  # daily bars -- entryTf resample n/a
+        ctx = _Ctx(symbol, hist[: i + 1], row_s=86400, backtest=True)  # daily bars -- entryTf resample n/a
         last = i == len(dates) - 1
 
         if open_pos:
             ei = open_pos["i"]
             px, leg_px = _pos_px(open_pos, lambda k, ot: _premium(k, ot, d, by_date[d], i - ei))
-            sig = bool(exit_conds) and ctx.eval_conds(exit_conds, exit_logic, trade=_trade_of(open_pos["sim"], px), groups=exit_groups)
+            sig = bool(exit_conds) and ctx.eval_conds(exit_conds, exit_logic, trade={**_trade_of(open_pos["sim"], px), "hlStop": open_pos.get("hlStop")}, groups=exit_groups)
             evs = open_pos["sim"].step(px, exit_signal=sig)
             if not open_pos["sim"].closed and last:
                 evs += open_pos["sim"].force_close(px, "range end")
@@ -513,6 +516,7 @@ async def backtest_rule(
         gates.opened(d)
         if positional:
             open_pos = {
+                "hlStop": hl_stop_level(rule, ctx),
                 "k": strike, "ot": ot, "entry": px, "date": d, "i": i, "side": pos_side,
                 "sim": SimPosition(rule, buy=(pos_side == "BUY"), base=px, lots=lots0, lot_size=lot),
                 **({"legs": legs, "structure": rule["structure"], "entry_px": entry_px_legs} if legs else {}),
@@ -639,7 +643,8 @@ async def _backtest_intraday(
         dkey = _dstr(ts)
         clk = datetime.fromtimestamp(ts, IST).time()
         tradable = ts >= first_ts
-        ctx = _Ctx(symbol, hist[: i + 1], tf=int(rule.get("entryTf") or 0))
+        # each row is a whole finished bar: structure conditions may use it (no one-bar lag)
+        ctx = _Ctx(symbol, hist[: i + 1], tf=int(rule.get("entryTf") or 0), row_s=interval, backtest=True)
         last = i == len(series) - 1
         # The trading day's last bar: the next bar is on another date. (The range's own final bar is left to
         # "range end" -- a cut-off range says nothing about the session.)
@@ -661,7 +666,7 @@ async def _backtest_intraday(
             ps = [value_at(c["open"])[0], value_at(c["low"])[0], value_at(c["high"])[0], value_at(spot)[0]]
             px = ps[3]
             leg_px = value_at(spot)[1]
-            sig = bool(exit_conds) and ctx.eval_conds(exit_conds, exit_logic, trade=_trade_of(open_pos["sim"], px), groups=exit_groups)
+            sig = bool(exit_conds) and ctx.eval_conds(exit_conds, exit_logic, trade={**_trade_of(open_pos["sim"], px), "hlStop": open_pos.get("hlStop")}, groups=exit_groups)
             evs = open_pos["sim"].step(
                 px, lo=min(ps), hi=max(ps), opn=ps[0], exit_signal=sig,
                 square_off=bool(not positional and ((sq and clk >= sq) or spans_sq or eod)),
@@ -712,6 +717,7 @@ async def _backtest_intraday(
         if not ok:
             continue
         open_pos = {
+            "hlStop": hl_stop_level(rule, ctx),
             "k": strike, "ot": ot, "entry": px, "d": dkey, "t": _clock(ts), "ts": ts, "i": i, "side": pos_side,
             "sim": SimPosition(rule, buy=(pos_side == "BUY"), base=px, lots=lots0, lot_size=lot),
             **({"legs": legs, "structure": rule["structure"], "entry_px": entry_px_legs} if legs else {}),

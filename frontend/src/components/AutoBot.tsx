@@ -180,7 +180,17 @@ const COND_DEFS: Record<
         label: "when",
         type: "sel",
         def: "bullish",
-        opts: ["bullish", "bearish", "turns_bullish", "turns_bearish"],
+        opts: ["bullish", "bearish", "turns_bullish", "turns_bearish", "breaks_high", "breaks_low", "above_hl", "below_hl"],
+        hint:
+          "bullish / bearish = the last structure break was up / down · turns = that flip on the last closed candle · breaks_high / breaks_low = a close past the latest swing high / low · above_hl = the latest swing low is a higher low and price is above it · below_hl (exit) = a close under the HL frozen when the trade opened",
+      },
+      {
+        key: "volMult",
+        label: "vol ×",
+        type: "num",
+        def: 1.5,
+        hint: "the breaking candle's option volume vs the 20 candles before it (0 = no volume check)",
+        show: (c) => c.op === "breaks_high" || c.op === "breaks_low",
       },
     ],
   },
@@ -657,6 +667,23 @@ const fmtTime = (t: number) => new Date(t * 1000).toLocaleTimeString();
 type Template = { key: string; title: string; blurb: string; tag: string; rule: Partial<AutoRule> };
 const between = (from: string, to: string): AutoCondition => ({ kind: "time_of_day", op: "between", from, to });
 const TEMPLATES: Template[] = [
+  {
+    key: "hhbreak",
+    title: "HH breakout on volume",
+    blurb: "Price breaks the last swing high on 1.5× volume, above a higher low → buy CE; stop: a close below that HL.",
+    tag: "structure · 15m",
+    rule: {
+      instrument: "ATM_CE", side: "BUY", entryTf: 900,
+      entry: [
+        { kind: "market_structure", op: "breaks_high", volMult: 1.5 },
+        { kind: "market_structure", op: "above_hl" },
+        between("09:30", "14:45"),
+      ],
+      exit: [{ kind: "market_structure", op: "below_hl" }],
+      // the HL close is the stop; -40% on the premium is only a backstop for a gap through it
+      slPct: 40, targetPct: 0, maxTradesPerDay: 2,
+    },
+  },
   {
     key: "structure",
     title: "Structure reversal",
@@ -2309,6 +2336,7 @@ function RuleCard({
               {open.label ?? `${open.strike}${open.ot}`} · entry {open.entryPx.toFixed(1)}
               {open.peak != null && ` · peak ${open.peak.toFixed(1)}`}
               {open.stopPx != null && <span className="text-amber-400"> · stop {open.stopPx.toFixed(1)}</span>}
+              {open.hlStop != null && <span className="text-amber-400"> · out if {r.symbol} closes below HL {open.hlStop.toFixed(1)}</span>}
             </span>
           </div>
         )}
@@ -2739,6 +2767,10 @@ function describe(c: AutoCondition): string {
         bearish: "market structure is bearish (last break down)",
         turns_bullish: "market structure turns bullish (CHoCH up)",
         turns_bearish: "market structure turns bearish (CHoCH down)",
+        breaks_high: `price breaks above the last swing high${Number(g("volMult")) > 0 ? ` on ${g("volMult")}× volume` : ""}`,
+        breaks_low: `price breaks below the last swing low${Number(g("volMult")) > 0 ? ` on ${g("volMult")}× volume` : ""}`,
+        above_hl: "structure has a higher low (HL) and price is above it",
+        below_hl: "price closes below the HL at entry",
       }[String(g("op"))] ?? `market structure ${g("op")}`;
     case "bos":
       return `break of structure ${g("dir")} (${g("lookback")} bars)`;

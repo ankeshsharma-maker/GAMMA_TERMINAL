@@ -439,6 +439,8 @@ export interface AutoRule {
       mode: string;
       peak?: number;
       stopPx?: number | null;
+      /** a "closes below the entry HL" exit: the swing low frozen when the trade opened (underlying price) */
+      hlStop?: number | null;
       /** e.g. "23350CE", or a structure's summary */
       label?: string;
       structure?: string;

@@ -62,6 +62,10 @@ Indicator (computed from the spot series in ``store.history``):
     {"kind":"macd","fast":12,"slow":26,"signal":9,"op":"hist_up"|"hist_down"|"cross_up"|"cross_down"}
     {"kind":"spot_move_pct","op":"<"|">","value":0.5}   # % change from the day's first sample
     {"kind":"market_structure","op":"bullish"|"bearish"|"turns_bullish"|"turns_bearish"}  # as the chart's ◇ Patterns
+    {"kind":"market_structure","op":"breaks_high"|"breaks_low","volMult":1.5}  # close past the latest swing high / low,
+                                        # option volume >= volMult x the 20-candle average (0 = no volume check)
+    {"kind":"market_structure","op":"above_hl"}   # latest swing low is a higher low and price is above it
+    {"kind":"market_structure","op":"below_hl"}   # EXIT: close under the HL frozen at entry
 
 OI / chain:
     {"kind":"pcr","op":"<"|">"|"cross_up"|"cross_down","value":0.9}
@@ -188,11 +192,17 @@ def _crossed(a_prev: float, a_cur: float, b_prev: float, b_cur: float, direction
 class _Ctx:
     """Series snapshot for one symbol, derived from ``store.history``."""
 
-    def __init__(self, symbol: str, hist: list | None = None, tf: int = 0, bars: int = 0):
+    def __init__(self, symbol: str, hist: list | None = None, tf: int = 0, bars: int = 0,
+                 row_s: int = 0, backtest: bool = False):
         hist = list(store.history.get(symbol, [])) if hist is None else list(hist)
         self.n = len(hist)
         self.hist = hist
         self.tf = int(tf or 0)
+        # a replay (backtest) row is a whole bar `row_s` seconds long, so the candle it ends is
+        # finished; live rows are snapshots, and the last candle is still forming
+        self.row_s = int(row_s or 0)
+        self.backtest = bool(backtest)
+        self._trade: dict | None = None  # the open trade, while an Exit list is being judged
         self.ts = [float(h.get("t") or 0) for h in hist]
         raw_spot = [float(h["spot"]) for h in hist if h.get("spot") is not None]
 
@@ -231,9 +241,25 @@ class _Ctx:
         # labeled for) -- PCR/GEX/OI/IV series below stay at full history,
         # since several of those conditions already index relative to their
         # own array end (e.g. _maxpain_shift's series[-1-bars]).
+        # option volume traded inside each candle (the chain's day-cumulative CE+PE volume, differenced)
+        # -- NIFTY the index has no volume of its own; this is what the "with volume" checks read
+        vol_by: dict[int, float] = {}
+        prev_cum, prev_day = None, None
+        for h in hist:
+            if h.get("t") is None or (h.get("ceVol") is None and h.get("peVol") is None):
+                continue
+            t = float(h["t"])
+            cum = float(h.get("ceVol") or 0) + float(h.get("peVol") or 0)
+            day = int((t + 19800) // 86400)
+            d = cum if (prev_cum is None or day != prev_day or cum < prev_cum) else cum - prev_cum
+            k = bucket_start(t, self.tf) if self.tf > 0 else int(t)
+            vol_by[k] = vol_by.get(k, 0.0) + max(0.0, d)
+            prev_cum, prev_day = cum, day
+        self.cvol = [vol_by.get(int(c["t"])) for c in self.candles] if vol_by else []
         if bars and bars > 0:
             self.candles = self.candles[-bars:]
             self.spot = self.spot[-bars:]
+            self.cvol = self.cvol[-bars:] if self.cvol else []
         self.pcr = [float(h["pcr"]) for h in hist if h.get("pcr") is not None]
         self.gex = [float(h["netGex"]) for h in hist if h.get("netGex") is not None]
         self.maxpain = [float(h["maxPain"]) for h in hist if h.get("maxPain")]
@@ -421,6 +447,89 @@ class _Ctx:
         return False
 
     # -- smart-money / structure conditions ------------------------------ #
+    def _closed(self) -> list:
+        """The finished candles: live, the last one is still forming and is left out; in a replay the
+        row that just ended may have completed its candle, which then counts."""
+        cs = self.candles
+        if self.row_s and cs and self.ts:
+            last = self.ts[-1]
+            if self.tf <= 0 or bucket_start(last + self.row_s, self.tf) != bucket_start(last, self.tf):
+                return cs
+        return cs[:-1]
+
+    def _structure_levels(self) -> dict:
+        """The structure walk (same rules as `_structure_trend`) with its levels: the latest confirmed
+        swing high / low and the one before each, and whether the last closed candle broke a swing
+        high / low (a close past it)."""
+        out = {"trend": [], "hi": None, "hiPrev": None, "lo": None, "loPrev": None, "brokeUp": False, "brokeDn": False}
+        cs = self._closed()
+        n = len(cs)
+        if n < 20:
+            return out
+        K, MIN_MOVE, N_ATR = 5, 0.8, 14
+        tr = [cs[0]["h"] - cs[0]["l"]] + [
+            max(cs[i]["h"] - cs[i]["l"], abs(cs[i]["h"] - cs[i - 1]["c"]), abs(cs[i]["l"] - cs[i - 1]["c"]))
+            for i in range(1, n)
+        ]
+        atr, run = [], 0.0
+        for i in range(n):
+            run += tr[i]
+            if i >= N_ATR:
+                run -= tr[i - N_ATR]
+            atr.append(run / min(i + 1, N_ATR))
+        raw = []
+        for i in range(K, n - K):
+            win = range(i - K, i + K + 1)
+            if all(cs[j]["h"] <= cs[i]["h"] for j in win if j != i):
+                raw.append((i, cs[i]["h"], True))
+            if all(cs[j]["l"] >= cs[i]["l"] for j in win if j != i):
+                raw.append((i, cs[i]["l"], False))
+        zz: list = []
+        for p in raw:
+            if not zz:
+                zz.append(p)
+            elif zz[-1][2] == p[2]:
+                if (p[2] and p[1] >= zz[-1][1]) or (not p[2] and p[1] <= zz[-1][1]):
+                    zz[-1] = p
+            elif abs(p[1] - zz[-1][1]) >= MIN_MOVE * atr[p[0]]:
+                zz.append(p)
+        trend, act_h, act_l, z, trends = None, None, None, 0, []
+        highs: list = []
+        lows: list = []
+        for j in range(n):
+            while z < len(zz) and zz[z][0] + K <= j:
+                if zz[z][2]:
+                    act_h = zz[z]
+                    highs.append(zz[z][1])
+                else:
+                    act_l = zz[z]
+                    lows.append(zz[z][1])
+                z += 1
+            up = dn = False
+            if act_h and cs[j]["c"] > act_h[1]:
+                trend, act_h, up = "up", None, True
+            elif act_l and cs[j]["c"] < act_l[1]:
+                trend, act_l, dn = "down", None, True
+            trends.append(trend)
+            if j == n - 1:
+                out["brokeUp"], out["brokeDn"] = up, dn
+        out["trend"] = trends
+        out["hi"], out["hiPrev"] = (highs[-1] if highs else None), (highs[-2] if len(highs) > 1 else None)
+        out["lo"], out["loPrev"] = (lows[-1] if lows else None), (lows[-2] if len(lows) > 1 else None)
+        return out
+
+    def _vol_ok(self, mult: float) -> bool:
+        """The last closed candle's option volume is at least `mult` x the average of the 20 before it.
+        A backtest has no historical option volume, so there the check is skipped (and flagged)."""
+        if mult <= 0 or self.backtest:
+            return True
+        n = len(self._closed())
+        v = self.cvol[:n] if self.cvol else []
+        if len(v) < 6 or v[-1] is None:
+            return False
+        base = [x for x in v[-21:-1] if x]
+        return bool(base) and v[-1] >= mult * (sum(base) / len(base))
+
     def _structure_trend(self) -> list:
         """Market structure the way the chart's ◇ Patterns draws it (lib/chartPatterns.ts
         `structure`), on CLOSED candles only (the last, still-forming one is left out, like the
@@ -428,7 +537,7 @@ class _Ctx:
         at least 0.8 x the plain 14-bar ATR); a swing becomes the level to break once confirmed 5
         bars on; a close above the latest swing high -> trend "up", below the latest swing low ->
         "down". Returns the trend after every closed candle (None until the first break)."""
-        cs = self.candles[:-1]
+        cs = self._closed()
         n = len(cs)
         if n < 20:
             return []
@@ -478,10 +587,25 @@ class _Ctx:
         """op: bullish / bearish = the last structure break was up / down (HH-HL side vs LH-LL side);
         turns_bullish / turns_bearish = that flip happened on the last closed candle (a CHoCH, or
         the very first break)."""
+        op = str(c.get("op", "bullish"))
+        if op in ("breaks_high", "breaks_low", "above_hl", "below_hl"):
+            lv = self._structure_levels()
+            cs = self._closed()
+            if not lv["trend"] or not cs:
+                return False
+            close = cs[-1]["c"]
+            if op == "breaks_high":  # closed above the latest swing high (a BOS / CHoCH up) on this candle
+                return lv["brokeUp"] and self._vol_ok(float(c.get("volMult", 1.5) or 0))
+            if op == "breaks_low":
+                return lv["brokeDn"] and self._vol_ok(float(c.get("volMult", 1.5) or 0))
+            if op == "above_hl":  # the latest swing low is a higher low, and price is above it
+                return lv["lo"] is not None and lv["loPrev"] is not None and lv["lo"] > lv["loPrev"] and close > lv["lo"]
+            # below_hl: an exit -- a close under the HL frozen when the trade was opened
+            hl = (self._trade or {}).get("hlStop")
+            return hl is not None and close < float(hl)
         tr = self._structure_trend()
         if len(tr) < 2:
             return False
-        op = str(c.get("op", "bullish"))
         if op == "bullish":
             return tr[-1] == "up"
         if op == "bearish":
@@ -1020,7 +1144,11 @@ class _Ctx:
             fn = self._DISPATCH.get(kind)
             if not fn:
                 return False
-            return bool(fn(self, cond))
+            self._trade = trade
+            try:
+                return bool(fn(self, cond))
+            finally:
+                self._trade = None
         except Exception as exc:  # noqa: BLE001
             log.debug("condition %s failed: %s", cond, exc)
             return False
@@ -1036,6 +1164,15 @@ class _Ctx:
         """AND ('all') or OR ('any') over the condition list -- or, when `groups` is given, over each group first
         and then over the groups (see autobot_groups)."""
         return G.evaluate(conds, groups, (logic or "all"), lambda i: self.eval_one(conds[i], trade))
+
+
+def hl_stop_level(rule: dict, cx: "_Ctx") -> float | None:
+    """The swing low to freeze as this trade's stop, when its Exit list has "closes below the entry
+    HL" -- taken at entry so a later, lower swing low can never drag the stop down."""
+    if not any((c or {}).get("kind") == "market_structure" and (c or {}).get("op") == "below_hl" for c in rule.get("exit") or []):
+        return None
+    lo = cx._structure_levels().get("lo")
+    return round(float(lo), 2) if lo is not None else None
 
 
 # --------------------------------------------------------------------------- #
@@ -1651,7 +1788,7 @@ class AutoBot:
             st["live"] = cx.prev_candle_live(conds)
             # the open trade, for the trade_stoploss / trade_target conditions: the same numbers the
             # fixed SL / target above were just judged on
-            trade = {"buy": buy, "base": pos["entryPx"] or 1.0, "ltp": ltp, "qty": qty}
+            trade = {"buy": buy, "base": pos["entryPx"] or 1.0, "ltp": ltp, "qty": qty, "hlStop": pos.get("hlStop")}
             exit_res = [cx.eval_one(c, trade=trade) for c in conds]
             exit_logic, exit_groups = G.spec(rule, "exit")
             why_grp = G.why_fields(conds, exit_groups)
@@ -1842,6 +1979,7 @@ class AutoBot:
             "lotSize": chain.get("lotSize", 1), "ts": now_ts, "tid": str(int(now_ts * 1000)),
             "mode": res.get("mode", "paper"),
             "peak": float(entry_px), "stopPx": None,
+            "hlStop": hl_stop_level(rule, cx),
         }
         st["tradesToday"] = st.get("tradesToday", 0) + 1
         st["weekTrades"] = st.get("weekTrades", 0) + 1
