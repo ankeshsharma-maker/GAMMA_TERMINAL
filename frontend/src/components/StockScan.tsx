@@ -1,24 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
 import type { VolRow } from "../lib/api";
 import { nf } from "../lib/format";
-import { Chips, MinTraded, ScanHeader, ScanTable, useStockScan, type Metric } from "./StockScanTable";
+import { Chips, MinTraded, ScanHeader, ScanTable, useStockScan, type Metric, type Universe } from "./StockScanTable";
 
-type Mode = "hi" | "lo" | "gapup" | "gapdn";
+type Mode = "gain" | "lose" | "hi" | "lo" | "gapup" | "gapdn";
 
 const pct = (v: number) => `${v >= 0 ? "+" : ""}${nf(v)}%`;
 
-/** 52-week highs / lows and opening gaps, for the F&O stocks or all of NSE. */
+/** Price movers (top gainers / losers), 52-week highs / lows and opening gaps, for the
+ *  F&O stocks or all of NSE. */
 export function StockScan() {
-  const [universe, setUniverse] = useState<"fo" | "all">("fo");
-  const [mode, setMode] = useState<Mode>("hi");
+  const [universe, setUniverse] = useState<Universe>("fo");
+  const [mode, setMode] = useState<Mode>("gain");
   const [minCr, setMinCr] = useState(0);
   const [near, setNear] = useState(2); // % from the 52-week high / low that still counts
   const [gapMin, setGapMin] = useState(1); // % gap
   const { data, err } = useStockScan(universe);
-  useEffect(() => setMinCr(universe === "all" ? 5 : 0), [universe]);
+  useEffect(() => setMinCr(universe !== "fo" ? 5 : 0), [universe]);
 
   const rows = useMemo(() => {
     const r = (data?.rows ?? []).filter((x) => x.value >= minCr * 1e7);
+    if (mode === "gain") return r.filter((x) => x.chgPct != null && x.chgPct > 0);
+    if (mode === "lose") return r.filter((x) => x.chgPct != null && x.chgPct < 0);
     if (mode === "hi") return r.filter((x) => x.new52h || (x.fromHighPct != null && x.fromHighPct >= -near));
     if (mode === "lo") return r.filter((x) => x.new52l || (x.fromLowPct != null && x.fromLowPct <= near));
     if (mode === "gapup") return r.filter((x) => x.gapPct != null && x.gapPct >= gapMin);
@@ -27,7 +30,21 @@ export function StockScan() {
 
   // new highs / lows sort first: they get a large sort value
   const metric: Metric =
-    mode === "hi"
+    mode === "gain" || mode === "lose"
+      ? {
+          // the move's volume: a big % on thin trading means less than one on heavy trading
+          label: "x usual",
+          cell: (r: VolRow) =>
+            r.rvol == null ? (
+              <span className="text-term-dim">…</span>
+            ) : (
+              <span className={r.rvol >= 3 ? "font-bold text-amber-400" : r.rvol >= 2 ? "text-term-accent" : "text-term-dim"}>
+                {nf(r.rvol, 1)}x
+              </span>
+            ),
+          sort: (r) => r.rvol,
+        }
+      : mode === "hi"
       ? {
           label: "vs 52W H",
           cell: (r: VolRow) =>
@@ -54,9 +71,13 @@ export function StockScan() {
 
   const empty =
     !data || data.rows.length === 0
-      ? universe === "all"
+      ? universe !== "fo"
         ? "Loading all NSE stocks — prices arrive in a minute or two."
         : "No quotes yet — they arrive within a minute."
+      : mode === "gain"
+      ? "No gainers right now."
+      : mode === "lose"
+      ? "No losers right now."
       : mode === "hi"
       ? `No stock within ${near}% of its 52-week high.`
       : mode === "lo"
@@ -67,9 +88,11 @@ export function StockScan() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-term-bg">
       <div className="space-y-2 border-b border-term-border bg-term-panel2 px-3 py-2">
-        <ScanHeader title="52W / Gaps" universe={universe} setUniverse={setUniverse} data={data} />
+        <ScanHeader title="Movers" universe={universe} setUniverse={setUniverse} data={data} />
         <Chips<Mode>
           items={[
+            ["gain", "Top gainers"],
+            ["lose", "Top losers"],
             ["hi", "52W high"],
             ["lo", "52W low"],
             ["gapup", "Gap up"],
@@ -79,7 +102,7 @@ export function StockScan() {
           onChange={setMode}
         />
         <MinTraded value={minCr} onChange={setMinCr} />
-        {mode === "hi" || mode === "lo" ? (
+        {mode === "gain" || mode === "lose" ? null : mode === "hi" || mode === "lo" ? (
           <div className="flex items-center gap-2 text-[11px] text-term-dim">
             <span>Within</span>
             <Chips<number>
@@ -111,7 +134,7 @@ export function StockScan() {
         {base && base.ready < base.total && (
           <div className="text-[11px] text-amber-400">
             Loading each stock's 52-week range: {base.ready} / {base.total} ready
-            {universe === "all" ? " — the first time for all NSE takes about 45 min" : ""}.
+            {universe !== "fo" ? " — the first time for all NSE takes about 45 min" : ""}.
           </div>
         )}
       </div>
@@ -124,12 +147,16 @@ export function StockScan() {
         <ScanTable
           rows={rows}
           metric={metric}
-          sort={{ key: "metric", dir: mode === "lo" || mode === "gapdn" ? 1 : -1 }}
+          sort={
+            mode === "gain" || mode === "lose"
+              ? { key: "chg", dir: mode === "gain" ? -1 : 1 }
+              : { key: "metric", dir: mode === "lo" || mode === "gapdn" ? 1 : -1 }
+          }
           empty={empty}
         />
       )}
       <div className="px-3 py-3 text-[10px] leading-snug text-term-dim">
-        52W = the last 52 weeks of sessions before today; NEW = today's range went past it. Gap = today's open vs
+        Gainers / losers = % change vs yesterday's close, with the move's volume vs usual beside it. 52W = the last 52 weeks of sessions before today; NEW = today's range went past it. Gap = today's open vs
         yesterday's close; F = filled (price has traded back to yesterday's close). Tap a header to sort, a stock for its
         chart; ☆ adds it to the watchlist.
       </div>

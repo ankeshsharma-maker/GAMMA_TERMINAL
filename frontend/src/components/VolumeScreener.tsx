@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, type VolRow } from "../lib/api";
 import { nf } from "../lib/format";
 import { isViewer } from "../lib/auth";
-import { Chips, MinTraded, ScanHeader, ScanTable, qty, useStockScan, type Metric } from "./StockScanTable";
+import { Chips, MinTraded, ScanHeader, ScanTable, qty, useStockScan, type Metric, type Universe } from "./StockScanTable";
 
 type Mode = "spikes" | "volume" | "value" | "breakouts";
 const SIGNAL: Record<string, { label: string; up: boolean; title: string }> = {
@@ -25,11 +25,11 @@ const VOL: Metric = { label: "Volume", cell: (r) => <span className="text-term-t
  *  traded, the biggest value, and volume-backed breakouts -- F&O stocks or all of NSE. */
 export function VolumeScreener() {
   const viewer = isViewer();
-  const [universe, setUniverse] = useState<"fo" | "all">("fo");
+  const [universe, setUniverse] = useState<Universe>("fo");
   const [mode, setMode] = useState<Mode>("spikes");
   const [minCr, setMinCr] = useState(0);
   const { data, setData, err } = useStockScan(universe);
-  useEffect(() => setMinCr(universe === "all" ? 5 : 0), [universe]); // illiquid small caps swamp "all" otherwise
+  useEffect(() => setMinCr(universe !== "fo" ? 5 : 0), [universe]); // illiquid small caps swamp "all" otherwise
 
   const rows = useMemo(() => {
     const r = (data?.rows ?? []).filter((x) => x.value >= minCr * 1e7);
@@ -81,7 +81,7 @@ export function VolumeScreener() {
         {base && base.ready < base.total && (
           <div className="text-[11px] text-amber-400">
             Working out each stock's usual volume: {base.ready} / {base.total} ready
-            {universe === "all" ? " — the first time for all NSE takes about 45 min" : ""}.
+            {universe !== "fo" ? " — the first time for all NSE takes about 45 min" : ""}.
           </div>
         )}
       </div>
@@ -110,7 +110,7 @@ export function VolumeScreener() {
           }
           empty={
             data.rows.length === 0
-              ? universe === "all"
+              ? universe !== "fo"
                 ? "Loading all NSE stocks — prices arrive in a minute or two."
                 : "No quotes yet — they arrive within a minute."
               : mode === "breakouts"

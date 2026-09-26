@@ -15,16 +15,19 @@ export const cr = (v: number) =>
     ? `${(v / 1e7).toFixed(1)} Cr`
     : `${nf(v / 1e5, 0)} L`;
 
-/** the Volume and 52W / Gaps tabs' data: F&O or all NSE, refreshed every 20 s */
-export function useStockScan(universe: "fo" | "all") {
+/** fo = stocks with options, cash = NSE stocks WITHOUT options, all = every NSE stock */
+export type Universe = "fo" | "cash" | "all";
+
+/** the Volume and Movers tabs' data, refreshed every 20 s ("cash" = the all-NSE list minus F&O) */
+export function useStockScan(universe: Universe) {
   const [data, setData] = useState<VolSnapshot | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
     setData(null);
     const load = () =>
-      api.volumeScreener(universe).then(
-        (d) => alive && (setData(d), setErr(null)),
+      api.volumeScreener(universe === "fo" ? "fo" : "all").then(
+        (d) => alive && (setData(universe === "cash" ? { ...d, rows: d.rows.filter((r) => !r.fo) } : d), setErr(null)),
         (e) => alive && setErr(String(e?.message || e))
       );
     load();
@@ -48,8 +51,8 @@ export function ScanHeader({
   data,
 }: {
   title: string;
-  universe: "fo" | "all";
-  setUniverse: (u: "fo" | "all") => void;
+  universe: Universe;
+  setUniverse: (u: Universe) => void;
   data: VolSnapshot | null;
 }) {
   const asOf = data?.asOf ? new Date(data.asOf * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : null;
@@ -58,7 +61,10 @@ export function ScanHeader({
       <span className="text-[13px] font-bold uppercase tracking-wide text-term-text">{title}</span>
       <div className="flex overflow-hidden rounded border border-term-border">
         <button onClick={() => setUniverse("fo")} className={segCls(universe === "fo")}>
-          F&amp;O stocks
+          F&amp;O
+        </button>
+        <button onClick={() => setUniverse("cash")} className={segCls(universe === "cash")} title="NSE stocks that have no options">
+          Cash
         </button>
         <button onClick={() => setUniverse("all")} className={segCls(universe === "all")}>
           All NSE

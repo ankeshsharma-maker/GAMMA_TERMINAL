@@ -246,7 +246,7 @@ const TOP_NAV: TopTab[] = [
   { v: "vol", label: "Vol", group: "analysis" },
   { v: "scanner", label: "Screener", group: "analysis" },
   { v: "volume", label: "Volume", group: "analysis" },
-  { v: "stockscan", label: "52W / Gaps", group: "analysis" },
+  { v: "stockscan", label: "Movers", group: "analysis" },
   { v: "builder", label: "Build", group: "trade" },
   { v: "auto", label: "Auto", group: "trade" },
   { v: "scalper", label: "Scalp", group: "trade" },
