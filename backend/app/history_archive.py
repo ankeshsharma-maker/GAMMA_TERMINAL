@@ -110,4 +110,10 @@ def read(symbol: str, day: str) -> list[dict]:
                     rows.append(r)
     except OSError:
         return []
+    # a reading in other OI units (the first chain after a restart came from NSE in lots,
+    # Upstox gives shares) -- drop anything >20x off the day's median total
+    tots = sorted((r.get("ceOI") or 0) + (r.get("peOI") or 0) for r in rows)
+    med = tots[len(tots) // 2] if tots else 0
+    if med > 0:
+        rows = [r for r in rows if not (lambda t: t > 0 and (t / med > 20 or med / t > 20))((r.get("ceOI") or 0) + (r.get("peOI") or 0))]
     return rows

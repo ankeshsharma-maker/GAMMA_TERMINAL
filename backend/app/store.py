@@ -55,6 +55,25 @@ def _save(path, obj):
     path.write_text(json.dumps(obj, indent=2, default=str), "utf-8")
 
 
+# A reading whose total OI is more than this many times off the one before is in other
+# units, not a real move: NSE counts OI in lots, Upstox in shares (x lot size, 15-75).
+# The first chain after a restart comes from NSE while the Upstox login is still loading.
+_OI_UNIT_JUMP = 20.0
+
+
+def _oi_unit_clash(a, b) -> bool:
+    try:
+        a, b = float(a or 0), float(b or 0)
+    except (TypeError, ValueError):
+        return False
+    return a > 0 and b > 0 and (a / b > _OI_UNIT_JUMP or b / a > _OI_UNIT_JUMP)
+
+
+def _same_units(rows: list, total) -> list:
+    """Keep the rows whose total OI is in the same units as `total` (the latest reading)."""
+    return [r for r in rows if not _oi_unit_clash(total(r), total(rows[-1]))] if rows else rows
+
+
 def _fnum(v):
     try:
         return float(v)
@@ -91,6 +110,7 @@ class Store:
         self.oi_series: dict[tuple, deque] = {}       # (symbol,expiry) -> deque[{t, oi:{strike:(ceOi,peOi)}}]
         self._hist_writes = 0
         self._oi_last_save: dict[tuple, float] = {}
+        self._oi_unit_bad: dict[object, int] = {}  # readings in a row in other units, per series
         self._load_history()
         self._load_oi_series()
         self._load_iv_history()
@@ -183,12 +203,32 @@ class Store:
             return
         key = (symbol.upper(), expiry)
         dq = self.oi_series.setdefault(key, deque(maxlen=self._OI_SERIES_MAXLEN))
+        tot = sum(v[0] + v[1] for v in snap.values())
+        if dq:
+            prev = sum(v[0] + v[1] for v in dq[-1]["oi"].values())
+            if not self._oi_units_ok(("oi", key), tot, prev):
+                return  # a reading in other units -- it would read as a huge ΔOI
+            if _oi_unit_clash(tot, prev):
+                dq.clear()  # the source really changed units: start the window afresh
         dq.append({"t": now, "oi": snap})
         if now - self._oi_last_save.get(key, 0.0) >= 60:
             self._oi_last_save[key] = now
             self._persist_oi_series(key)
         # the day's OI walls (biggest call / put strikes) -- kept on disk too
         oi_walls.record(symbol, expiry, snap, chain.get("spot"), now)
+
+    def _oi_units_ok(self, key, total, prev_total) -> bool:
+        """False for a reading in other OI units than the series (see _OI_UNIT_JUMP). Three in a row
+        means the source really changed: accept (the caller starts the series afresh)."""
+        if not _oi_unit_clash(total, prev_total):
+            self._oi_unit_bad.pop(key, None)
+            return True
+        n = self._oi_unit_bad.get(key, 0) + 1
+        if n < 3:
+            self._oi_unit_bad[key] = n
+            return False
+        self._oi_unit_bad.pop(key, None)
+        return True
 
     # ---- the ΔOI-window readings on disk ----------------------------
     # Only in memory before: every restart (a deploy, a crash) emptied every ΔOI
@@ -229,6 +269,7 @@ class Store:
                     for s in doc
                     if isinstance(s, dict) and "t" in s and isinstance(s.get("oi"), dict)
                 ]
+                snaps = _same_units(snaps, lambda s: sum(v[0] + v[1] for v in s["oi"].values()))
                 if sym and exp and snaps:
                     self.oi_series[(sym.upper(), exp)] = deque(snaps, maxlen=self._OI_SERIES_MAXLEN)
             except Exception as exc:  # noqa: BLE001
@@ -306,6 +347,7 @@ class Store:
         for f in _HIST_DIR.glob("*.json"):
             pts = _load(f, [])
             if isinstance(pts, list) and pts:
+                pts = _same_units(pts, lambda r: (r.get("ceOI") or 0) + (r.get("peOI") or 0))
                 self.history[f.stem.upper()] = deque(pts[-HISTORY_MAXLEN:], maxlen=HISTORY_MAXLEN)
 
     def _persist_history(self, symbol: str) -> None:
@@ -338,6 +380,9 @@ class Store:
         if self.nearest_expiry(symbol) not in (None, expiry):
             return  # only track the front-month series
         dq = self.history.setdefault(symbol, deque(maxlen=HISTORY_MAXLEN))
+        tot = (chain.get("totals", {}).get("ceOI") or 0) + (chain.get("totals", {}).get("peOI") or 0)
+        if dq and not self._oi_units_ok(("hist", symbol), tot, (dq[-1].get("ceOI") or 0) + (dq[-1].get("peOI") or 0)):
+            return  # a reading in other OI units (see _OI_UNIT_JUMP): not history, not the archive
         atm_row = next(
             (r for r in chain.get("rows", []) if r["strike"] == chain.get("atmStrike")), None
         )
