@@ -497,6 +497,27 @@ def from_paper(positions: list[dict]) -> dict | None:
     return {"symbol": symbol, "expiry": expiry, "legs": legs}
 
 
+def _entry_price(p: dict) -> float:
+    """What the leg was actually opened at. For a leg carried over from an earlier day Noren's
+    `netavgprc` is re-marked to the last close (26-Sep: SENSEX 73600 PE netavgprc 237.15 = Friday's
+    close, sold at 438.10), so the builder showed ~0 P&L and a smaller max profit; the original
+    price is `netupldprc` (net upload price, which also folds in any same-day trades on that leg).
+    Legs opened today keep `netavgprc`."""
+
+    def f(k: str) -> float:
+        try:
+            return float(p.get(k) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    carried = f("cfbuyqty") + f("cfsellqty") > 0
+    if carried and f("netupldprc") > 0:
+        return f("netupldprc")
+    if carried and f("upldprc") > 0:
+        return f("upldprc")
+    return f("netavgprc") or f("daybuyavgprc") or f("daysellavgprc")
+
+
 def from_broker(positions: list[dict], preferred_symbol: str | None = None) -> dict | None:
     """Turn live Flattrade PositionBook rows (open option legs only) into
     strategy legs, same shape as from_paper. Groups open legs by (symbol,
@@ -528,11 +549,7 @@ def from_broker(positions: list[dict], preferred_symbol: str | None = None) -> d
             # silently vanishing.
             skipped.append(f"{p.get('exch')}:{p.get('tsym')}")
             continue
-        avg = p.get("netavgprc") or p.get("daybuyavgprc") or p.get("daysellavgprc") or 0
-        try:
-            avg = float(avg)
-        except (TypeError, ValueError):
-            avg = 0.0
+        avg = _entry_price(p)
         key = (parsed["symbol"], parsed["expiry"])
         groups.setdefault(key, []).append({**parsed, "qty": qty, "avg": avg})
     if not groups:
