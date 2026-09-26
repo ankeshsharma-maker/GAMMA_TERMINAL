@@ -17,6 +17,7 @@ from __future__ import annotations
 import gzip
 import io
 import json
+import os
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -297,6 +298,20 @@ class Upstox:
                     fut[(name, d)] = ik
         self._eq_keys, self._opt_keys, self._fut_keys, self._instr_date = eq, opt, fut, _today()
         self._eq_names, self._opt_names = eq_names, opt_names
+        # top the F&O list (search, screener, option features) up to every NSE stock that
+        # actually has options -- the built-in list is a hand-kept 132; NSE has ~220.
+        # Extended in place so every `from .config import FO_UNIVERSE` sees it.
+        try:
+            from ..config import FO_UNIVERSE
+
+            if not os.getenv("SCREENER_SYMBOLS"):
+                have = set(FO_UNIVERSE)
+                add = sorted(n for n in opt_names if n in eq_names and n not in have)
+                if add:
+                    FO_UNIVERSE.extend(add)
+                    log.info("F&O list: +%d stocks from the instrument master (%d total)", len(add), len(FO_UNIVERSE))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("F&O list top-up failed: %s", exc)
         if lots:
             try:
                 from ..processing import set_lot_sizes
