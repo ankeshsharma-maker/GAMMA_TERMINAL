@@ -93,6 +93,9 @@ function AlertDeliverySection() {
   const [minSeverity, setMinSeverity] = useState<"info" | "warning" | "critical">("warning");
   const [autobotAlerts, setAutobotAlerts] = useState<"all" | "important" | "off">("all");
   const [greeksAlerts, setGreeksAlerts] = useState<"big" | "all" | "off">("big");
+  // volume spikes: one setting, shared with the Volume tab's 🔔 (0 = off)
+  const [volLevel, setVolLevel] = useState<number | null>(null);
+  const [volMinCr, setVolMinCr] = useState<number>(5);
   const [alertSyms, setAlertSyms] = useState<string[]>([]);
   const [symInput, setSymInput] = useState("");
   const [webhookSet, setWebhookSet] = useState(false);
@@ -154,7 +157,22 @@ function AlertDeliverySection() {
     }, () => {});
   useEffect(() => {
     load();
+    api.volumeScreenerConfigGet().then(
+      (c) => {
+        setVolLevel(c.alertLevel);
+        setVolMinCr(c.minValueCr);
+      },
+      () => {}
+    );
   }, []);
+  const saveVol = (patch: { alertLevel?: number; minValueCr?: number }) =>
+    api.volumeScreenerConfig(patch).then(
+      (c) => {
+        setVolLevel(c.alertLevel);
+        setVolMinCr(c.minValueCr);
+      },
+      (e) => alert(String(e?.message || e))
+    );
 
   const save = async (patch: Record<string, unknown>) => {
     setBusy(true);
@@ -245,7 +263,7 @@ function AlertDeliverySection() {
       <Row
         label="Market alerts for"
         stack
-        hint="Gamma blast, OI surge, IV / straddle spikes, flow reversals and delta/gamma jumps only for the symbols picked here — none picked = every symbol. Alerts about your own positions (short-strike guard, SL / target) and alerts you set yourself always come through."
+        hint="Gamma blast, OI surge, IV / straddle spikes, flow reversals, volume spikes and delta/gamma jumps only for the symbols picked here — none picked = every symbol. Alerts about your own positions (short-strike guard, SL / target) and alerts you set yourself always come through."
       >
         {[...new Set(["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX", ...alertSyms])].map((s) => {
           const sel = alertSyms.includes(s);
@@ -306,6 +324,33 @@ function AlertDeliverySection() {
           </button>
         ))}
       </Row>
+
+      <Row
+        label="Volume spikes"
+        hint="A stock trading this many times its usual volume for the time of day (Volume tab). Once per level per stock per day, not before 09:30, only when at least the minimum value has traded. Same setting as the 🔔 in the Volume tab."
+      >
+        {(
+          [
+            [0, "Off"],
+            [2, "2x"],
+            [3, "3x"],
+            [5, "5x"],
+          ] as const
+        ).map(([k, label]) => (
+          <button key={k} onClick={() => saveVol({ alertLevel: k })} className={`${SEG} ${volLevel === k ? on : off}`}>
+            {label}
+          </button>
+        ))}
+      </Row>
+      {volLevel !== 0 && volLevel != null && (
+        <Row label="…with at least" hint="Rupee value traded today before a volume spike alerts — keeps thin stocks quiet.">
+          {[1, 5, 25, 100].map((v) => (
+            <button key={v} onClick={() => saveVol({ minValueCr: v })} className={`${SEG} ${volMinCr === v ? on : off}`}>
+              ₹{v} Cr
+            </button>
+          ))}
+        </Row>
+      )}
 
       <div className="flex flex-col gap-1">
         <div className="text-xs text-term-text">Webhook URL</div>

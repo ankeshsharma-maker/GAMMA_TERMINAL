@@ -225,6 +225,13 @@ def volume_screener_view(universe: str = Query("fo")):
     return volume_screener.snapshot(universe)
 
 
+@router.get("/volume-screener/config")
+def volume_screener_config_get():
+    from . import volume_screener
+
+    return volume_screener.cfg()
+
+
 @router.post("/volume-screener/config")
 def volume_screener_config(body: dict):
     """{alertLevel: 0 (off) | 2 | 3 | 5, minValueCr}: when a volume spike alerts."""

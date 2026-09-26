@@ -165,6 +165,7 @@ export const api = {
     }>(`/api/history/${symbol}`),
 
   volumeScreener: (universe: "fo" | "all") => j<VolSnapshot>(`/api/volume-screener?universe=${universe}`),
+  volumeScreenerConfigGet: () => j<VolSnapshot["cfg"]>("/api/volume-screener/config"),
   volumeScreenerConfig: (body: { alertLevel?: number; minValueCr?: number }) =>
     j<VolSnapshot["cfg"]>("/api/volume-screener/config", { method: "POST", body: JSON.stringify(body) }),
   gexIntraday: (symbol: string, day: string | null) =>

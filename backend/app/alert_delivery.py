@@ -163,6 +163,8 @@ def deliver(alert: dict) -> None:
         mode = cfg.get("greeksAlerts", "big")
         if mode == "off" or (mode == "big" and alert.get("severity") != "critical"):
             return
+    elif alert.get("category") == "volume":
+        pass  # its own level (Settings / Volume tab: off / 2x / 3x / 5x) decided it already
     else:
         sev = alert.get("severity") or "info"
         if _SEV_ORDER.get(sev, 0) < _SEV_ORDER.get(cfg.get("minSeverity", "warning"), 1):
