@@ -652,6 +652,142 @@ function blankRule(symbol: string): Partial<AutoRule> {
 const fmtTime = (t: number) => new Date(t * 1000).toLocaleTimeString();
 
 /* ------------------------------------------------------------------ */
+/* rule templates -- a whole rule filled in, to adjust before saving   */
+/* ------------------------------------------------------------------ */
+type Template = { key: string; title: string; blurb: string; tag: string; rule: Partial<AutoRule> };
+const between = (from: string, to: string): AutoCondition => ({ kind: "time_of_day", op: "between", from, to });
+const TEMPLATES: Template[] = [
+  {
+    key: "structure",
+    title: "Structure reversal",
+    blurb: "Buy an ATM CE when market structure turns bullish; out when it turns bearish.",
+    tag: "trend · 15m",
+    rule: {
+      instrument: "ATM_CE", side: "BUY", entryTf: 900,
+      entry: [{ kind: "market_structure", op: "turns_bullish" }, between("09:30", "14:45")],
+      exit: [{ kind: "market_structure", op: "turns_bearish" }],
+      slPct: 25, targetPct: 50, maxTradesPerDay: 2,
+    },
+  },
+  {
+    key: "supertrend",
+    title: "Supertrend flip",
+    blurb: "Buy when Supertrend(10,3) flips up with RSI above 50; trail the stop.",
+    tag: "trend · 5m",
+    rule: {
+      instrument: "ATM_CE", side: "BUY", entryTf: 300,
+      entry: [{ kind: "supertrend", period: 10, mult: 3, dir: "up", op: "flip" }, { kind: "rsi", period: 14, op: ">", value: 50 }],
+      exit: [{ kind: "supertrend", period: 10, mult: 3, dir: "down", op: "flip" }],
+      slPct: 25, targetPct: 60, trailPct: 15, trailArmPct: 20,
+    },
+  },
+  {
+    key: "ema",
+    title: "EMA 9 / 21 cross",
+    blurb: "Buy a CE on a golden cross while price holds above the 50 EMA.",
+    tag: "trend · 5m",
+    rule: {
+      instrument: "ATM_CE", side: "BUY", entryTf: 300,
+      entry: [{ kind: "ema_cross", fast: 9, slow: 21, dir: "up" }, { kind: "price_vs_ema", period: 50, op: "above" }],
+      exit: [{ kind: "ema_cross", fast: 9, slow: 21, dir: "down" }],
+      slPct: 25, targetPct: 50,
+    },
+  },
+  {
+    key: "orb",
+    title: "Opening-range breakout",
+    blurb: "The first 15 minutes' high breaks — one trade a day, entries till 11:30.",
+    tag: "breakout · 5m",
+    rule: {
+      instrument: "ATM_CE", side: "BUY", entryTf: 300,
+      entry: [{ kind: "opening_range", rangeMin: 15, dir: "up" }],
+      exit: [],
+      slPct: 25, targetPct: 50, maxTradesPerDay: 1, noEntryAfter: "11:30",
+    },
+  },
+  {
+    key: "rsi",
+    title: "RSI bounce",
+    blurb: "RSI(14) climbs back above 30 from oversold — quick 30% target.",
+    tag: "reversal · 5m",
+    rule: {
+      instrument: "ATM_CE", side: "BUY", entryTf: 300,
+      entry: [{ kind: "rsi", period: 14, op: "cross_up", value: 30 }],
+      exit: [{ kind: "rsi", period: 14, op: ">", value: 65 }],
+      slPct: 20, targetPct: 30,
+    },
+  },
+  {
+    key: "blast",
+    title: "Gamma Blast momentum",
+    blurb: "Gamma Blast score above 60 with Supertrend up — ride the burst.",
+    tag: "options · 5m",
+    rule: {
+      instrument: "ATM_CE", side: "BUY", entryTf: 300,
+      entry: [{ kind: "blast_score", op: ">", value: 60 }, { kind: "supertrend", period: 10, mult: 3, dir: "up", op: "is" }],
+      exit: [{ kind: "blast_score", op: "<", value: 40 }],
+      slPct: 25, targetPct: 60, trailPct: 15, trailArmPct: 25,
+    },
+  },
+  {
+    key: "pcr",
+    title: "PCR extreme fade",
+    blurb: "PCR drops back under 1.3 after an extreme — buy a PE for the pullback.",
+    tag: "options · 15m",
+    rule: {
+      instrument: "ATM_PE", side: "BUY", entryTf: 900,
+      entry: [{ kind: "pcr", op: "cross_down", value: 1.3 }],
+      exit: [{ kind: "pcr", op: "cross_up", value: 1.1 }],
+      slPct: 25, targetPct: 50,
+    },
+  },
+  {
+    key: "straddle",
+    title: "Expiry-day short straddle",
+    blurb: "Sell the ATM straddle at 09:45 on expiry day, hard stop, out by 15:10.",
+    tag: "premium · sell",
+    rule: {
+      structure: "short_straddle", offset: 0, entryTf: 300,
+      entry: [{ kind: "time_of_day", op: "after", from: "09:45" }],
+      exit: [],
+      minDte: 0, maxDte: 0, slPct: 30, targetPct: 40, maxTradesPerDay: 1, squareOff: "15:10",
+    },
+  },
+];
+
+function TemplatePicker({ onPick, onBlank, onCancel }: { onPick: (t: Template) => void; onBlank: () => void; onCancel: () => void }) {
+  return (
+    <div className="space-y-2 rounded-lg border border-term-accent/50 bg-term-panel p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-semibold text-term-text">New rule · start from a template</span>
+        <span className="text-2xs text-term-dim">everything is filled in — adjust it in the next steps; it starts switched off</span>
+        <span className="ml-auto flex gap-1">
+          <button className="btn px-2.5 py-1 text-2xs" onClick={onBlank}>
+            Start blank
+          </button>
+          <button className="btn px-2.5 py-1 text-2xs" onClick={onCancel}>
+            Cancel
+          </button>
+        </span>
+      </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {TEMPLATES.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => onPick(t)}
+            className="flex flex-col items-start gap-1 rounded-lg border border-term-border bg-term-bg/40 p-2.5 text-left hover:border-term-accent hover:bg-term-accent/10"
+          >
+            <span className="text-[13px] font-semibold text-term-text">{t.title}</span>
+            <span className="text-[11px] leading-snug text-term-dim">{t.blurb}</span>
+            <span className="mt-auto rounded bg-term-border/60 px-1.5 py-0.5 text-[10px] text-term-dim">{t.tag}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* condition editor                                                    */
 /* ------------------------------------------------------------------ */
 function CondRow({
@@ -1203,6 +1339,11 @@ function RuleEditor({
 }) {
   const [r, setR] = useState<Partial<AutoRule>>(seed);
   const set = (patch: Partial<AutoRule>) => setR((prev) => ({ ...prev, ...patch }));
+  // five steps instead of one long form; every field is still here, just one group at a time
+  const [step, setStep] = useState(1);
+  const [btOpen, setBtOpen] = useState(false);
+  const STEPS = ["What to trade", "When to enter", "When to exit", "Limits", "Review"];
+  const words = ruleSentence(r as AutoRule);
   const [defs, setDefs] = useState<AutoStructureDef[]>([]);
   useEffect(() => {
     api.autobotStructures().then((d) => setDefs(d.structures), () => {});
@@ -1231,18 +1372,42 @@ function RuleEditor({
 
   return (
     <div className="space-y-3 rounded-lg border border-term-accent/50 bg-term-panel p-3">
+      {/* the steps: click any to jump */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        {STEPS.map((lbl, i) => {
+          const n = i + 1;
+          const cls = n === step ? "text-term-accent" : n < step ? "text-up" : "text-term-dim";
+          return (
+            <button key={lbl} type="button" onClick={() => setStep(n)} className={`flex items-center gap-1.5 text-[12px] font-semibold ${cls}`}>
+              <span
+                className={`flex h-5 w-5 items-center justify-center rounded-full border text-[11px] ${
+                  n === step ? "border-term-accent bg-term-accent/15" : n < step ? "border-up" : "border-term-border"
+                }`}
+              >
+                {n < step ? "✓" : n}
+              </span>
+              {lbl}
+            </button>
+          );
+        })}
+      </div>
+
+      {step === 1 && (
       <label className="flex flex-col text-[10px] text-term-dim">
         name
         <input
           value={r.name ?? ""}
           onChange={(e) => set({ name: e.target.value })}
-          className="w-48 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
+          className="w-64 max-w-full rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
         />
       </label>
+      )}
 
-      {/* entry / exit conditions — kept above the instrument config */}
+      {/* entry / exit conditions */}
+      {(step === 2 || step === 3) && (
       <div className="space-y-3 rounded border border-term-border/60 bg-term-bg/40 p-2">
         {/* candle timeframe the indicator / pattern / ATR conditions run on */}
+        {step === 2 && (
         <div className="flex flex-wrap items-center gap-2 text-[10px] text-term-dim">
           <span className="font-semibold uppercase tracking-wide">Entry candles</span>
           <div className="seg">
@@ -1285,6 +1450,8 @@ function RuleEditor({
             slowest indicator's lookback
           </span>
         </div>
+        )}
+        {step === 2 && (
         <CondList
           title="Entry"
           hint="to open"
@@ -1292,6 +1459,8 @@ function RuleEditor({
           onChange={(s) => set({ entry: s.list, entryGroups: s.groups, entryLogic: s.logic })}
           joinDefault="all"
         />
+        )}
+        {step === 3 && (
         <CondList
           title="Exit"
           hint="(SL / target / square-off always apply)"
@@ -1300,14 +1469,19 @@ function RuleEditor({
           onChange={(s) => set({ exit: s.list, exitGroups: s.groups, exitLogic: s.logic })}
           joinDefault="any"
         />
+        )}
 
         {/* premium / delta entry filter — gates the resolved option */}
+        {step === 2 && (
         <EntryFilterEditor
           ef={r.entryFilter ?? {}}
           onChange={(ef) => set({ entryFilter: ef })}
         />
+        )}
       </div>
+      )}
 
+      {step === 1 && (
       <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
         <label className="flex flex-col text-[10px] text-term-dim">
           symbol
@@ -1425,10 +1599,11 @@ function RuleEditor({
         </label>
       </div>
 
-      <StructureBlock r={r} set={set} defs={defs} />
+      )}
+      {step === 1 && <StructureBlock r={r} set={set} defs={defs} />}
 
       {/* ---- exit levels: what protects the trade once it is open ---- */}
-      {(() => {
+      {step === 3 && (() => {
         const basis = r.slBasis ?? "pct";
         const u = basis === "pts" ? "pts" : basis === "rs" ? "₹" : "%";
         const unitNote =
@@ -1508,6 +1683,8 @@ function RuleEditor({
         );
       })()}
 
+      {step === 4 && (
+      <>
       {/* ---- timing: how often, and when in the day ---- */}
       <div className="rounded border border-term-border/70 p-2">
         <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-term-dim">Timing</div>
@@ -1641,8 +1818,63 @@ function RuleEditor({
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <button className="btn btn-buy" onClick={() => onSave(r)}>
+      </>
+      )}
+
+      {step === 5 && (
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+            {(
+              [
+                ["Trades", `${r.symbol ?? "–"} · ${r.structure && r.structure !== "single" ? r.structure.replace(/_/g, " ") : `${r.side ?? ""} ${r.instrument ?? ""}`} ×${r.lots ?? 1}`],
+                ["Candles", tfLabel(r.entryTf)],
+                ["Mode", r.mode === "live" ? "LIVE — real orders" : "paper"],
+                ["Holds", r.holdType === "positional" ? "overnight (positional)" : `intraday, out by ${r.squareOff || "15:20"}`],
+                ["Per day", `up to ${r.maxTradesPerDay ?? 3} trades`],
+                ["Entries", `${r.noEntryBefore || "09:15"} – ${r.noEntryAfter || "close"}`],
+                ["Stop / target", `${r.slPct ?? "–"} / ${r.targetPct ?? "–"}${r.slBasis === "pts" ? " pts" : r.slBasis === "rs" ? " ₹" : "%"}`],
+                ["Starts", seed.id ? (r.enabled ? "on" : "off") : "switched off — turn it on from its card"],
+              ] as [string, string][]
+            ).map(([k, v]) => (
+              <div key={k} className="rounded border border-term-border bg-term-bg/40 px-2 py-1">
+                <div className="text-[10px] uppercase tracking-wide text-term-dim">{k}</div>
+                <div className={`font-semibold ${k === "Mode" && r.mode === "live" ? "text-down" : "text-term-text"}`}>{v}</div>
+              </div>
+            ))}
+          </div>
+          <button className={`btn px-2.5 py-1 text-2xs ${btOpen ? "btn-buy" : ""}`} onClick={() => setBtOpen((v) => !v)}>
+            ⏱ Quick backtest before saving
+          </button>
+          {btOpen && <RuleBacktest rule={r as AutoRule} onClose={() => setBtOpen(false)} />}
+        </div>
+      )}
+
+      {/* in plain words -- kept up to date on every step */}
+      <div className="rounded border border-term-border bg-term-bg/40 px-2.5 py-2 text-[11px] leading-snug text-term-dim">
+        <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide">In plain words</span>
+        On <span className="text-term-text">{r.symbol}</span>, on {tfLabel(r.entryTf)} candles, enter when{" "}
+        <span className="text-term-text">{words.enter}</span>
+        {words.exit && (
+          <>
+            {" "}
+            · exit on <span className="text-term-text">{words.exit}</span>
+          </>
+        )}
+        {" "}· <span className={r.mode === "live" ? "text-down" : "text-term-text"}>{r.mode}</span>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {step > 1 && (
+          <button className="btn" onClick={() => setStep(step - 1)}>
+            Back
+          </button>
+        )}
+        {step < 5 && (
+          <button className="btn btn-buy" onClick={() => setStep(step + 1)}>
+            Next: {STEPS[step].toLowerCase()}
+          </button>
+        )}
+        <button className={step === 5 ? "btn btn-buy" : "btn"} onClick={() => onSave(r)} title="Save now (any step)">
           Save rule
         </button>
         <button className="btn" onClick={onCancel}>
@@ -1864,6 +2096,271 @@ function AutoPerformance() {
 /* ------------------------------------------------------------------ */
 /* main view                                                           */
 /* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ */
+/* rule card: status, plain words, scorecard, "Now"                     */
+/* ------------------------------------------------------------------ */
+const tfLabel = (tf?: number) => (!tf ? "tick" : tf < 3600 ? `${tf / 60}m` : tf < 86400 ? `${tf / 3600}h` : "1D");
+
+/** "Enter when A and B · exit on C or D, SL 25%, target 50%" */
+function ruleSentence(r: AutoRule): { enter: string; exit: string } {
+  const join = (list: AutoCondition[], logic: "all" | "any") => list.map(describe).join(logic === "any" ? " or " : " and ");
+  const en = r.entry ?? [];
+  const ex = r.exit ?? [];
+  const enter = en.length
+    ? r.entryGroups?.length
+      ? `${en.length} conditions in ${r.entryGroups.length} groups (${r.entryLogic === "any" ? "any group" : "every group"})`
+      : join(en, r.entryLogic ?? "all")
+    : "no entry conditions yet";
+  const u = r.slBasis === "pts" ? " pts" : r.slBasis === "rs" ? "" : "%";
+  const money = r.slBasis === "rs";
+  const amt = (v: number) => (money ? `₹${v}` : `${v}${u}`);
+  const bits = [
+    ex.length ? (r.exitGroups?.length ? `${ex.length} exit conditions` : join(ex, r.exitLogic ?? "any")) : "",
+    r.slPct ? `SL ${amt(r.slPct)}` : "",
+    r.targetPct ? `target ${amt(r.targetPct)}` : "",
+    r.trailPct ? `trail ${amt(r.trailPct)}` : "",
+    r.holdType === "positional" ? "held overnight" : r.squareOff ? `out by ${r.squareOff}` : "",
+  ].filter(Boolean);
+  return { enter, exit: bits.join(", ") };
+}
+
+type Status = { label: string; cls: string };
+function ruleStatus(r: AutoRule, masterOn: boolean): Status {
+  if (!r.enabled) return { label: "Off", cls: "bg-term-border/60 text-term-dim" };
+  if (!masterOn) return { label: "Engine off", cls: "bg-term-border/60 text-term-dim" };
+  if (r._state?.paused) return { label: "Paused", cls: "bg-amber-500/15 text-amber-400" };
+  if (r._state?.open) return { label: "In trade", cls: "bg-amber-500/15 text-amber-400" };
+  if (r._why?.phase === "blocked") return { label: "Blocked", cls: "bg-down/15 text-down" };
+  return { label: "Waiting", cls: "bg-term-accent/15 text-term-accent" };
+}
+
+function EquityLine({ pts }: { pts: number[] }) {
+  if (pts.length < 2) return null;
+  const lo = Math.min(0, ...pts);
+  const hi = Math.max(0, ...pts);
+  const W = 150;
+  const H = 34;
+  const y = (v: number) => (hi > lo ? H - 3 - ((v - lo) / (hi - lo)) * (H - 6) : H / 2);
+  const x = (i: number) => (i / (pts.length - 1)) * (W - 4) + 2;
+  const up = pts[pts.length - 1] >= 0;
+  return (
+    <svg width={W} height={H} className="shrink-0" aria-label="equity after each closed trade">
+      <line x1={0} x2={W} y1={y(0)} y2={y(0)} stroke="#334155" strokeDasharray="2 3" />
+      <polyline points={pts.map((v, i) => `${x(i)},${y(v)}`).join(" ")} fill="none" stroke={up ? "#22c55e" : "#ef4444"} strokeWidth={2} />
+    </svg>
+  );
+}
+
+function Kpi({ label, children, title }: { label: string; children: ReactNode; title?: string }) {
+  return (
+    <div className="flex min-w-[64px] flex-col leading-tight" title={title}>
+      <span className="whitespace-nowrap text-[10px] uppercase tracking-wide text-term-dim">{label}</span>
+      <span className="num whitespace-nowrap text-[13px] font-semibold text-term-text">{children}</span>
+    </div>
+  );
+}
+
+const kfmt = (v: number) => (Math.abs(v) >= 1000 ? `${v > 0 ? "+" : "−"}${nf(Math.abs(v) / 1000, 1)}k` : rs(v));
+
+function RuleCard({
+  r,
+  masterOn,
+  stat,
+  expanded,
+  onToggleExpanded,
+  btOpen,
+  onToggleBt,
+  onEdit,
+  editDisabled,
+  onEnable,
+  onDelete,
+  onResume,
+}: {
+  r: AutoRule;
+  masterOn: boolean;
+  stat?: AutoStats["rules"][string];
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  btOpen: boolean;
+  onToggleBt: () => void;
+  onEdit: () => void;
+  editDisabled: boolean;
+  onEnable: (on: boolean) => void;
+  onDelete: () => void;
+  onResume: () => void;
+}) {
+  const open = r._state?.open;
+  const st = ruleStatus(r, masterOn);
+  const words = ruleSentence(r);
+  const today = r._stats?.today ?? 0;
+  const entryLiveIdx = !open ? (r.entry ?? []).findIndex((c) => c.kind === "prev_candle") : -1;
+  const exitLiveIdx = open ? (r.exit ?? []).findIndex((c) => c.kind === "prev_candle") : -1;
+  const meta = `${r.symbol}${r.expiry ? ` ${r.expiry}` : ""} · ${tfLabel(r.entryTf)} · ${ruleWhat(r)} ×${r.lots}`;
+
+  const toggle = (
+    <button
+      onClick={() => onEnable(!r.enabled)}
+      className={`relative h-4 w-8 shrink-0 rounded-full transition-colors ${
+        r.enabled ? "bg-up" : "bg-term-border ring-1 ring-inset ring-term-dim/60"
+      }`}
+      title={r.enabled ? "On - click to switch the rule off" : "Off - click to switch the rule on"}
+    >
+      <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${r.enabled ? "left-4" : "left-0.5"}`} />
+    </button>
+  );
+  const modePill = (
+    <span className={`rounded px-1.5 py-0.5 text-2xs font-semibold ${r.mode === "live" ? "bg-down/20 text-down" : "bg-term-bg text-term-dim"}`}>
+      {r.mode}
+    </span>
+  );
+  const actions = (
+    <div className="ml-auto flex items-center gap-1">
+      <button className="btn px-2 py-0.5 text-2xs" onClick={onEdit} disabled={editDisabled}>
+        Edit
+      </button>
+      <button className={`btn px-2 py-0.5 text-2xs ${btOpen ? "btn-buy" : ""}`} onClick={onToggleBt} title="Backtest this rule">
+        ⏱ Backtest
+      </button>
+      <button className="btn px-1.5 py-0.5 text-2xs" onClick={onToggleExpanded} title={expanded ? "Hide the conditions" : "Show every entry / exit condition"}>
+        {expanded ? "▾" : "▸"}
+      </button>
+      <button className="btn px-1.5 py-0.5 text-2xs hover:text-down" onClick={onDelete} title="Delete this rule">
+        ✕
+      </button>
+    </div>
+  );
+
+  // a switched-off rule folds down to one line
+  if (!r.enabled) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-term-border bg-term-panel/60 px-2.5 py-2 opacity-80">
+        {toggle}
+        <span className="text-[13px] font-semibold text-term-text">{r.name}</span>
+        <span className={`rounded px-1.5 py-0.5 text-2xs font-semibold ${st.cls}`}>{st.label}</span>
+        <span className="text-2xs text-term-dim">
+          {meta} · {stat?.count ? `${stat.count} trades · ${rs(stat.total)}` : "no trades yet"}
+        </span>
+        {modePill}
+        {actions}
+        {btOpen && <div className="w-full"><RuleBacktest rule={r} onClose={onToggleBt} /></div>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-term-border bg-term-panel p-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        {toggle}
+        <span className="text-sm font-semibold text-term-text">{r.name}</span>
+        <span className={`rounded px-1.5 py-0.5 text-2xs font-semibold ${st.cls}`}>{st.label}</span>
+        <span className="text-2xs text-term-dim">{meta}</span>
+        {modePill}
+        {r._state?.paused && (
+          <button className="chipbtn" onClick={onResume} title={`${r._state.paused} - click to let it trade again today`}>
+            Resume
+          </button>
+        )}
+        {actions}
+      </div>
+
+      {/* what it does, in plain words */}
+      <div className="mt-1.5 text-[11px] leading-snug text-term-dim">
+        Enter when <span className="text-term-text">{words.enter}</span>
+        {words.exit && (
+          <>
+            {" "}
+            · exit on <span className="text-term-text">{words.exit}</span>
+          </>
+        )}
+        <span className="ml-1">
+          · {r._state?.tradesToday ?? 0}/{r.maxTradesPerDay} today
+          {r.maxTradesPerWeek ? ` · ${r._state?.weekTrades ?? 0}/${r.maxTradesPerWeek} this week` : ""}
+        </span>
+      </div>
+
+      {/* scorecard: this rule's closed trades, net of charges */}
+      {stat && stat.count > 0 ? (
+        <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2">
+          <Kpi label="Trades">{stat.count}</Kpi>
+          <Kpi label="Win rate">{nf(stat.winRate, 0)}%</Kpi>
+          <Kpi label="Net P&L" title="net of estimated charges">
+            <span className={toneCls(stat.total)}>{rs(stat.total)}</span>
+          </Kpi>
+          <Kpi label="Today">
+            <span className={toneCls(today)}>{rs(today)}</span>
+          </Kpi>
+          <Kpi label="Best / worst">
+            <span className="text-up">{kfmt(stat.best)}</span> / <span className="text-down">{kfmt(stat.worst)}</span>
+          </Kpi>
+          <Kpi label="Avg hold">{stat.avgHoldMin != null ? `${nf(stat.avgHoldMin, 0)} min` : "–"}</Kpi>
+          <EquityLine pts={[0, ...(stat.equity ?? [])]} />
+        </div>
+      ) : (
+        <div className="mt-2 text-[11px] text-term-dim">No closed trades yet — its scorecard fills in after the first one.</div>
+      )}
+
+      {/* now: what it holds, or what it is waiting for */}
+      <div className="mt-2 border-t border-term-border pt-1.5">
+        {open && (
+          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-2xs font-semibold text-amber-400">Now</span>
+            <span className="text-term-text">
+              Holding <span className={open.side === "BUY" ? "text-up" : "text-down"}>{open.side}</span>{" "}
+              {open.label ?? `${open.strike}${open.ot}`} · entry {open.entryPx.toFixed(1)}
+              {open.peak != null && ` · peak ${open.peak.toFixed(1)}`}
+              {open.stopPx != null && <span className="text-amber-400"> · stop {open.stopPx.toFixed(1)}</span>}
+            </span>
+          </div>
+        )}
+        <WhyLine r={r} masterOn={masterOn} />
+        {open?.legs && (
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-term-dim">
+            {open.unwind && <span className="text-down">unwinding — a leg failed to close</span>}
+            {open.legs.map((lg, i) => (
+              <span key={i} className="num">
+                <span className={lg.side === "BUY" ? "text-up" : "text-down"}>{lg.side}</span> {lg.strike} {lg.ot} @{lg.entryPx.toFixed(1)}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {btOpen && <RuleBacktest rule={r} onClose={onToggleBt} />}
+
+      {expanded && (
+        <div className="mt-2 grid grid-cols-1 gap-2 text-[10px] sm:grid-cols-2">
+          <div>
+            <span className="uppercase tracking-wide text-term-dim">
+              entry ({r.entryGroups?.length ? `groups: ${r.entryLogic === "any" ? "any" : "all"}` : r.entryLogic === "any" ? "any" : "all"}) ·{" "}
+              {tfLabel(r.entryTf)} candles
+            </span>
+            <CondBullets
+              state={{ list: r.entry ?? [], groups: r.entryGroups, logic: r.entryLogic ?? "all" }}
+              liveIdx={entryLiveIdx}
+              live={r._live}
+              empty="—"
+            />
+          </div>
+          <div>
+            <span className="uppercase tracking-wide text-term-dim">
+              exit ({r.exitGroups?.length ? `groups: ${r.exitLogic === "all" ? "all" : "any"}` : r.exitLogic === "all" ? "all" : "any"})
+              {r.beArmPct ? ` · BE@+${r.beArmPct}` : ""}
+              {r.target1Pct ? ` · scale-out ${r.target1LotsPct ?? 50}%@+${r.target1Pct}` : ""}
+              {r.noEntryBefore ? ` · from ${r.noEntryBefore}` : ""}
+            </span>
+            <CondBullets
+              state={{ list: r.exit ?? [], groups: r.exitGroups, logic: r.exitLogic ?? "any" }}
+              liveIdx={exitLiveIdx}
+              live={r._live}
+              empty="SL / target / square-off only"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AutoBotView() {
   const bot = useStore((s) => s.autobot);
   const load = useStore((s) => s.loadAutobot);
@@ -1884,6 +2381,7 @@ export function AutoBotView() {
     [allSymbols, symClass, symClassOk]
   );
   const [editing, setEditing] = useState<Partial<AutoRule> | null>(null);
+  const [picking, setPicking] = useState(false);
   const [btId, setBtId] = useState<string | null>(null);
   // collapsed by default -- a card's full entry/exit condition grid only
   // shows once expanded, so scanning several active rules doesn't mean
@@ -1898,6 +2396,17 @@ export function AutoBotView() {
   const [lossDraft, setLossDraft] = useState("");
   const [tab, setTab] = useState<"rules" | "performance" | "backtest">("rules");
   const prevTradesRef = useRef<Record<string, boolean>>({});
+  const [stats, setStats] = useState<AutoStats | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const get = () => api.autobotStats(60).then((d) => alive && setStats(d), () => {});
+    get();
+    const t = window.setInterval(() => !document.hidden && get(), 30_000);
+    return () => {
+      alive = false;
+      window.clearInterval(t);
+    };
+  }, []);
 
   useEffect(() => {
     load();
@@ -1977,6 +2486,24 @@ export function AutoBotView() {
         </label>
       </div>
 
+      {/* summary: the whole bot at a glance */}
+      <div className="grid grid-cols-3 gap-2 border-b border-term-border bg-term-panel2 px-3 py-2 sm:grid-cols-5">
+        {(
+          [
+            ["Engine", bot?.master ? <span className="text-up">● Running</span> : <span className="text-term-dim">○ Off</span>],
+            ["Today (net)", <span className={toneCls(bot?.dailyPnl ?? 0)}>{rs(bot?.dailyPnl ?? 0)}</span>],
+            ["Open now", `${rules.filter((r) => r._state?.open).length} position${rules.filter((r) => r._state?.open).length === 1 ? "" : "s"}`],
+            ["Rules on", `${rules.filter((r) => r.enabled).length} of ${rules.length}`],
+            ["All time (net)", stats?.overall?.count ? <span className={toneCls(stats.overall.total)}>{rs(stats.overall.total)}</span> : "–"],
+          ] as [string, ReactNode][]
+        ).map(([k, v], i) => (
+          <div key={k} className={`rounded-md border border-term-border bg-term-panel px-2.5 py-1.5 ${i > 2 ? "hidden sm:block" : ""}`}>
+            <div className="text-[10px] uppercase tracking-wide text-term-dim">{k}</div>
+            <div className="num text-[14px] font-semibold text-term-text">{v}</div>
+          </div>
+        ))}
+      </div>
+
       {anyLive && bot?.master && (
         <div className="border-b border-down/40 bg-down/10 px-3 py-1 text-2xs text-down">
           ⚠ one or more enabled rules are in LIVE mode — real orders will be placed when conditions
@@ -2018,9 +2545,9 @@ export function AutoBotView() {
             className="rounded bg-up px-3 py-1 text-xs font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_1px_3px_rgba(0,0,0,0.45)] hover:brightness-110 disabled:opacity-40"
             onClick={() => {
               setTab("rules");
-              setEditing(blankRule(storeSymbol));
+              setPicking(true);
             }}
-            disabled={!!editing}
+            disabled={!!editing || picking}
           >
             + New rule
           </button>
@@ -2046,6 +2573,19 @@ export function AutoBotView() {
       <div className="flex flex-col gap-3 p-3 md:min-h-0 md:flex-1 md:flex-row md:overflow-hidden">
         {/* rules + editor */}
         <div className="space-y-3 md:min-h-0 md:flex-1 md:overflow-auto md:pr-1">
+          {picking && !editing && (
+            <TemplatePicker
+              onPick={(t) => {
+                setPicking(false);
+                setEditing({ ...blankRule(storeSymbol), ...t.rule, name: t.title, enabled: false });
+              }}
+              onBlank={() => {
+                setPicking(false);
+                setEditing(blankRule(storeSymbol));
+              }}
+              onCancel={() => setPicking(false)}
+            />
+          )}
           {editing && (
             <RuleEditor
               seed={editing}
@@ -2058,193 +2598,30 @@ export function AutoBotView() {
             />
           )}
 
-          {rules.length === 0 && !editing && (
+          {rules.length === 0 && !editing && !picking && (
             <div className="rounded-lg border border-dashed border-term-border p-6 text-center text-xs text-term-dim">
               No rules yet. Click <span className="text-term-text">+ New rule</span> to build an
               indicator- or OI-based auto trade.
             </div>
           )}
 
-          {rules.map((r) => {
-            const open = r._state?.open;
-            // the live prev_candle readout reflects whichever condition list
-            // the engine just evaluated: exit while in a trade, entry while flat
-            const entryLiveIdx = !open
-              ? (r.entry ?? []).findIndex((c) => c.kind === "prev_candle")
-              : -1;
-            const exitLiveIdx = open
-              ? (r.exit ?? []).findIndex((c) => c.kind === "prev_candle")
-              : -1;
-            return (
-              <div
-                key={r.id}
-                className="rounded-lg border border-term-border bg-term-panel p-2.5"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => enableRule(r.id, !r.enabled)}
-                    className={`h-4 w-8 shrink-0 rounded-full transition-colors ${
-                      r.enabled ? "bg-up" : "bg-term-border ring-1 ring-inset ring-term-dim/60"
-                    } relative`}
-                    title={r.enabled ? "enabled" : "disabled"}
-                  >
-                    <span
-                      className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${
-                        r.enabled ? "left-4" : "left-0.5"
-                      }`}
-                    />
-                  </button>
-                  <span className="text-sm font-semibold text-term-text">{r.name}</span>
-                  <span className="rounded bg-term-bg px-1.5 py-0.5 text-2xs text-term-dim">
-                    {r.symbol}
-                    {r.expiry ? ` ${r.expiry}` : ""} · {ruleWhat(r)} ×{r.lots}
-                  </span>
-                  <span
-                    className={`rounded px-1.5 py-0.5 text-2xs ${
-                      r.mode === "live"
-                        ? "bg-down/20 text-down"
-                        : "bg-term-bg text-term-dim"
-                    }`}
-                  >
-                    {r.mode}
-                  </span>
-                  {open && (
-                    <span className="rounded bg-up/15 px-1.5 py-0.5 text-xs text-green-500">
-                      IN TRADE {open.side} {open.label ?? `${open.strike}${open.ot}`} @{open.entryPx.toFixed(1)}
-                      {open.peak != null && ` · peak ${open.peak.toFixed(1)}`}
-                      {open.stopPx != null && (
-                        <span className="text-amber-400"> · stop {open.stopPx.toFixed(1)}</span>
-                      )}
-                    </span>
-                  )}
-                  <span className="text-xs text-term-dim">
-                    {r._state?.tradesToday ?? 0}/{r.maxTradesPerDay} today
-                    {r.maxTradesPerWeek ? ` · ${r._state?.weekTrades ?? 0}/${r.maxTradesPerWeek} this week` : ""} ·{" "}
-                    {(r.entry ?? []).length} entry · {(r.exit ?? []).length} exit
-                  </span>
-                  {r._state?.paused && (
-                    <span className="flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-2xs text-amber-400">
-                      ⏸ paused
-                      <button
-                        className="chipbtn"
-                        onClick={() => resumeRule(r.id)}
-                        title={`${r._state.paused} - click to let it trade again today`}
-                      >
-                        Resume
-                      </button>
-                    </span>
-                  )}
-                  {r._stats && r._stats.trades > 0 && (
-                    <span className="text-xs text-term-dim" title="From this rule's closed trades, net of estimated charges">
-                      {r._stats.trades} trades · {nf(r._stats.winRate, 0)}% win ·{" "}
-                      <span className={`font-semibold ${toneCls(r._stats.net)}`}>{rs(r._stats.net)}</span>
-                      {r._stats.today ? (
-                        <>
-                          {" "}
-                          (today <span className={`font-semibold ${toneCls(r._stats.today)}`}>{rs(r._stats.today)}</span>)
-                        </>
-                      ) : null}
-                    </span>
-                  )}
-
-                  <div className="ml-auto flex items-center gap-1">
-                    <button
-                      className="btn px-1.5 py-0.5 text-2xs"
-                      onClick={() => toggleExpanded(r.id)}
-                      title={expanded.has(r.id) ? "Collapse" : "Show entry / exit conditions"}
-                    >
-                      {expanded.has(r.id) ? "▾" : "▸"}
-                    </button>
-                    <button
-                      className={`btn px-1.5 py-0.5 text-2xs ${btId === r.id ? "btn-buy" : ""}`}
-                      onClick={() => setBtId(btId === r.id ? null : r.id)}
-                      title="Backtest this rule on Upstox daily history"
-                    >
-                      ⏱ Backtest
-                    </button>
-                    <button
-                      className="btn px-1.5 py-0.5 text-2xs"
-                      onClick={() => setEditing(r)}
-                      disabled={!!editing}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="btn px-1.5 py-0.5 text-2xs hover:text-down"
-                      onClick={() => window.confirm(`Delete rule "${r.name}"?`) && deleteRule(r.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-
-                <WhyLine r={r} masterOn={!!bot?.master} />
-                {open?.legs && (
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-term-dim">
-                    {open.unwind && <span className="text-down">unwinding — a leg failed to close</span>}
-                    {open.legs.map((lg, i) => (
-                      <span key={i} className="num">
-                        <span className={lg.side === "BUY" ? "text-up" : "text-down"}>{lg.side}</span> {lg.strike} {lg.ot} @{lg.entryPx.toFixed(1)}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {btId === r.id && <RuleBacktest rule={r} onClose={() => setBtId(null)} />}
-
-                {expanded.has(r.id) && (
-                <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
-                  <div>
-                    <span className="uppercase tracking-wide text-term-dim">
-                      entry ({r.entryGroups?.length ? `groups: ${r.entryLogic === "any" ? "any" : "all"}` : r.entryLogic === "any" ? "any" : "all"}) ·{" "}
-                      {r.entryTf
-                        ? r.entryTf < 3600
-                          ? `${r.entryTf / 60}m`
-                          : `${r.entryTf / 3600}h`
-                        : "tick"}{" "}
-                      candles
-                    </span>
-                    <CondBullets
-                      state={{ list: r.entry ?? [], groups: r.entryGroups, logic: r.entryLogic ?? "all" }}
-                      liveIdx={entryLiveIdx}
-                      live={r._live}
-                      empty="—"
-                    />
-                  </div>
-                  <div>
-                    {(() => {
-                      const u = r.slBasis === "pts" ? "pts" : r.slBasis === "rs" ? "₹" : "%";
-                      return (
-                        <span className="uppercase tracking-wide text-term-dim">
-                          exit ({r.exitGroups?.length ? `groups: ${r.exitLogic === "all" ? "all" : "any"}` : r.exitLogic === "all" ? "all" : "any"}) · SL {r.slPct ?? "–"}
-                          {u} · tgt {r.targetPct ?? "–"}
-                          {u}
-                          {r.trailPct
-                            ? ` · trail ${r.trailPct}${u}${
-                                r.trailArmPct ? `@+${r.trailArmPct}${u}` : ""
-                              }`
-                            : ""}
-                          {r.beArmPct ? ` · BE@+${r.beArmPct}${u}` : ""}
-                          {r.target1Pct
-                            ? ` · scale-out ${r.target1LotsPct ?? 50}%@+${r.target1Pct}${u}`
-                            : ""}{" "}
-                          · {r.holdType === "positional" ? "positional" : `sq ${r.squareOff}`}
-                          {r.noEntryBefore ? ` · from ${r.noEntryBefore}` : ""}
-                        </span>
-                      );
-                    })()}
-                    <CondBullets
-                      state={{ list: r.exit ?? [], groups: r.exitGroups, logic: r.exitLogic ?? "any" }}
-                      liveIdx={exitLiveIdx}
-                      live={r._live}
-                      empty="SL / target / square-off only"
-                    />
-                  </div>
-                </div>
-                )}
-              </div>
-            );
-          })}
+          {rules.map((r) => (
+            <RuleCard
+              key={r.id}
+              r={r}
+              masterOn={!!bot?.master}
+              stat={stats?.rules?.[r.id]}
+              expanded={expanded.has(r.id)}
+              onToggleExpanded={() => toggleExpanded(r.id)}
+              btOpen={btId === r.id}
+              onToggleBt={() => setBtId(btId === r.id ? null : r.id)}
+              onEdit={() => setEditing(r)}
+              editDisabled={!!editing}
+              onEnable={(on) => enableRule(r.id, on)}
+              onDelete={() => window.confirm(`Delete rule "${r.name}"?`) && deleteRule(r.id)}
+              onResume={() => resumeRule(r.id)}
+            />
+          ))}
         </div>
 
         {/* activity log */}
