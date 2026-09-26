@@ -131,9 +131,28 @@ export type Metric = {
 };
 
 type SortKey = "symbol" | "ltp" | "chg" | "metric" | "value";
+type Col = SortKey;
+/** default column widths (px): fit a 360-px phone with the grid lines */
+const DEF_W: Record<Col, number> = { symbol: 82, ltp: 68, chg: 54, metric: 52, value: 58 };
+const W_KEY = "scan.colWidths";
+const readWidths = (): Record<Col, number> => {
+  try {
+    return { ...DEF_W, ...JSON.parse(localStorage.getItem(W_KEY) || "{}") };
+  } catch {
+    return { ...DEF_W };
+  }
+};
+const saveWidths = (w: Record<Col, number>) => {
+  try {
+    localStorage.setItem(W_KEY, JSON.stringify(w));
+  } catch {
+    /* ignore */
+  }
+};
 
-/** One line per stock: SYMBOL | LTP | %CHG | the scan's own number | VALUE | ☆.
- *  Tap a header to sort (again to flip); tap a row for its chart. */
+/** A grid, one line per stock: SYMBOL | LTP | %CHG | the scan's own number | VALUE | ☆.
+ *  Tap a header to sort (again to flip), drag a header's column line to resize it, tap a
+ *  row for its chart. */
 export function ScanTable({
   rows,
   metric,
@@ -172,75 +191,132 @@ export function ScanTable({
       .slice(0, 150);
   }, [rows, sort, metric]);
 
-  const head = (k: SortKey, label: string, cls: string) => (
-    <button
-      onClick={() => setSort((s) => (s.key === k ? { key: k, dir: (s.dir * -1) as 1 | -1 } : { key: k, dir: k === "symbol" ? 1 : -1 }))}
-      className={`${cls} whitespace-nowrap py-1.5 text-[9px] font-semibold uppercase ${sort.key === k ? "text-term-accent" : "text-term-dim"}`}
-    >
-      {label}
-      {sort.key === k ? (sort.dir === 1 ? "▲" : "▼") : ""}
-    </button>
+  // ---- column widths: drag a header's right edge to resize; remembered on this device ----
+  const [w, setW] = useState<Record<Col, number>>(readWidths);
+  const drag = (c: Col) => (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x0 = e.clientX;
+    const w0 = w[c];
+    const move = (ev: PointerEvent) => setW((p) => ({ ...p, [c]: Math.max(40, Math.min(280, Math.round(w0 + ev.clientX - x0))) }));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      setW((p) => {
+        saveWidths(p);
+        return p;
+      });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
+  const resetWidth = (c: Col) =>
+    setW((p) => {
+      const n = { ...p, [c]: DEF_W[c] };
+      saveWidths(n);
+      return n;
+    });
+
+  const head = (k: SortKey & Col, label: string, right: boolean) => (
+    <div style={{ width: w[k] }} className="relative shrink-0 border-r border-term-border">
+      <button
+        onClick={() => setSort((s) => (s.key === k ? { key: k, dir: (s.dir * -1) as 1 | -1 } : { key: k, dir: k === "symbol" ? 1 : -1 }))}
+        className={`w-full whitespace-nowrap px-1 py-1.5 text-[9px] font-semibold uppercase ${right ? "text-right" : "text-left"} ${
+          sort.key === k ? "text-term-accent" : "text-term-dim"
+        }`}
+      >
+        {label}
+        {sort.key === k ? (sort.dir === 1 ? "▲" : "▼") : ""}
+      </button>
+      {/* the column line is the handle: drag it (mouse or finger) to widen / narrow; double-tap resets */}
+      <span
+        onPointerDown={drag(k)}
+        onDoubleClick={() => resetWidth(k)}
+        title="Drag to resize · double-tap to reset"
+        className="absolute -right-[7px] top-0 z-10 flex h-full w-[13px] cursor-col-resize touch-none justify-center"
+      >
+        <span className="h-full w-[3px] rounded bg-term-border/0 hover:bg-term-accent/70 active:bg-term-accent" />
+      </span>
+    </div>
+  );
+  const cell = (c: Col, cls: string, body: ReactNode) => (
+    <div style={{ width: w[c] }} className={`shrink-0 whitespace-nowrap border-r border-term-border px-1 py-1.5 ${cls}`}>
+      {body}
+    </div>
   );
 
   return (
-    <div>
-      <div className="sticky top-0 z-[5] flex items-center border-b border-term-border bg-term-panel px-3">
-        {head("symbol", "Symbol", "min-w-0 flex-1 text-left")}
-        {head("ltp", "LTP", "w-[62px] text-right")}
-        {head("chg", "%Chg", "w-[52px] pl-1 text-right")}
-        {head("metric", metric.label, "w-[54px] pl-1 text-right")}
-        {head("value", "Value", "w-[56px] pl-1.5 text-right")}
-        <span className="w-7" />
-      </div>
-      {sorted.length === 0 && <div className="p-6 text-center text-[12px] text-term-dim">{empty}</div>}
-      {sorted.map((r) => {
-        const key = r.fo ? r.symbol : `EQ:${r.symbol}`;
-        const has = inWatch.has(key) || added.has(key);
-        return (
-          <div key={r.symbol} className="flex items-center border-b border-term-border/50 px-3 text-[11.5px]">
-            <button
-              onClick={() => {
-                selectSymbol(r.symbol, true);
-                setView("chart");
-              }}
-              className="flex min-w-0 flex-1 items-center py-2 text-left active:bg-term-border/40"
+    // shrink-0: a flex child of the scrolling tab, it must grow with its rows, not get its own scroll box
+    <div className="mx-1 my-2 shrink-0 overflow-x-auto rounded-md border border-term-border">
+      <div className="min-w-max">
+        <div className="flex border-b border-term-border bg-term-panel">
+          {head("symbol", "Symbol", false)}
+          {head("ltp", "LTP", true)}
+          {head("chg", "%Chg", true)}
+          {head("metric", metric.label, true)}
+          {head("value", "Value", true)}
+          <div className="w-7 shrink-0" />
+        </div>
+        {sorted.length === 0 && <div className="p-6 text-center text-[12px] text-term-dim">{empty}</div>}
+        {sorted.map((r, i) => {
+          const key = r.fo ? r.symbol : `EQ:${r.symbol}`;
+          const has = inWatch.has(key) || added.has(key);
+          const open = () => {
+            selectSymbol(r.symbol, true);
+            setView("chart");
+          };
+          return (
+            <div
+              key={r.symbol}
+              role="button"
+              onClick={open}
+              className={`flex cursor-pointer items-stretch text-[11px] active:bg-term-border/40 ${
+                i < sorted.length - 1 ? "border-b border-term-border" : ""
+              } ${i % 2 ? "bg-term-panel/40" : ""}`}
             >
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-1">
-                  <span className="truncate font-semibold text-term-text">{r.symbol}</span>
-                  {!r.fo && <span className="shrink-0 rounded bg-term-border px-0.5 text-[8px] font-semibold text-term-dim">CASH</span>}
-                </span>
-                {/* the breakout tag / company name sit on a small second line so the symbol keeps its room */}
-                {(tag?.(r) || r.name) && (
-                  <span className="flex items-center gap-1 text-[9px]">
-                    {tag?.(r)}
-                    {r.name && <span className="truncate text-term-dim/80">{r.name}</span>}
+              {cell(
+                "symbol",
+                "min-w-0",
+                <>
+                  <span className="flex items-center gap-1">
+                    <span className="truncate font-semibold text-term-text">{r.symbol}</span>
+                    {!r.fo && <span className="shrink-0 rounded bg-term-border px-0.5 text-[8px] font-semibold text-term-dim">CASH</span>}
                   </span>
-                )}
-              </span>
-              <span className="num w-[62px] text-right text-term-text">{nf(r.ltp)}</span>
-              <span
-                className={`num w-[52px] text-right ${r.chgPct == null ? "text-term-dim" : r.chgPct >= 0 ? "text-up" : "text-down"}`}
+                  {/* the breakout tag / company name sit on a small second line so the symbol keeps its room */}
+                  {(tag?.(r) || r.name) && (
+                    <span className="flex items-center gap-1 overflow-hidden text-[9px]">
+                      {tag?.(r)}
+                      {r.name && <span className="truncate text-term-dim/80">{r.name}</span>}
+                    </span>
+                  )}
+                </>
+              )}
+              {cell("ltp", "num flex items-center justify-end text-term-text", nf(r.ltp))}
+              {cell(
+                "chg",
+                `num flex items-center justify-end ${r.chgPct == null ? "text-term-dim" : r.chgPct >= 0 ? "text-up" : "text-down"}`,
+                r.chgPct == null ? "–" : `${r.chgPct >= 0 ? "+" : ""}${nf(r.chgPct)}%`
+              )}
+              {cell("metric", "num flex items-center justify-end", metric.cell(r))}
+              {cell("value", "num flex items-center justify-end text-term-dim", cr(r.value))}
+              <button
+                disabled={has}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  addWatch(key);
+                  setAdded((a) => new Set(a).add(key));
+                }}
+                className="w-7 shrink-0 text-center text-[15px] text-term-dim disabled:text-amber-400"
+                title={has ? "In your watchlist" : "Add to watchlist"}
               >
-                {r.chgPct == null ? "–" : `${r.chgPct >= 0 ? "+" : ""}${nf(r.chgPct)}%`}
-              </span>
-              <span className="num w-[54px] pl-1 text-right">{metric.cell(r)}</span>
-              <span className="num w-[56px] pl-1.5 text-right text-term-dim">{cr(r.value)}</span>
-            </button>
-            <button
-              disabled={has}
-              onClick={() => {
-                addWatch(key);
-                setAdded((a) => new Set(a).add(key));
-              }}
-              className="w-7 shrink-0 py-2 text-right text-[15px] text-term-dim disabled:text-amber-400"
-              title={has ? "In your watchlist" : "Add to watchlist"}
-            >
-              {has ? "★" : "☆"}
-            </button>
-          </div>
-        );
-      })}
+                {has ? "★" : "☆"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
