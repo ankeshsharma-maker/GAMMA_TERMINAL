@@ -17,7 +17,7 @@ from .upstox_feed import run_upstox_feed
 from .hub import hub
 from .nse_client import client
 from .poller import run_poller, run_universe_scan
-from . import volume_screener
+from . import positional, volume_screener
 from .routes import router
 from .routes_autobot import router as autobot_router
 from .routes_broker import router as broker_router
@@ -50,6 +50,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(run_upstox_feed(stop)),
         asyncio.create_task(volume_screener.run_baseline(stop)),
         asyncio.create_task(volume_screener.run_quotes(stop)),
+        asyncio.create_task(positional.run(stop)),
         asyncio.create_task(_load_lot_sizes()),
     ]
     try:

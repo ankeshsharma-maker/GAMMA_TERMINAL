@@ -53,6 +53,7 @@ export const NAV_GROUPS: NavGroup[] = [
       ["scanner", "Scan"],
       ["volume", "Volume"],
       ["stockscan", "Movers"],
+      ["positional", "Positional"],
     ],
   },
   {

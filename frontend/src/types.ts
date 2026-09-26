@@ -331,6 +331,7 @@ export type View =
   | "scanner"
   | "volume"
   | "stockscan"
+  | "positional"
   | "chart"
   | "builder"
   | "positions"

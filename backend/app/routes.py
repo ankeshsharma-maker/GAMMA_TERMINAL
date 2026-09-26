@@ -214,15 +214,19 @@ def history(symbol: str):
 
 
 @router.get("/volume-screener")
-def volume_screener_view(universe: str = Query("fo")):
+def volume_screener_view(universe: str = Query("fo"), pos: bool = Query(False)):
     """Stocks by traded volume: relative volume vs usual, value traded, volume-backed
-    breakouts. universe = fo (F&O stocks) | all (every NSE cash stock, on demand)."""
-    from . import volume_screener
+    breakouts. universe = fo (F&O stocks) | all (every NSE cash stock, on demand).
+    pos=1 adds the positional-scanner columns (averages, build-ups, breakouts, delivery, futures OI)."""
+    from . import positional, volume_screener
 
     volume_screener.viewed()
     if universe == "all":
         volume_screener.want_all()
-    return volume_screener.snapshot(universe)
+    snap = volume_screener.snapshot(universe, pos)
+    if pos:
+        snap["nse"] = positional.status()
+    return snap
 
 
 @router.get("/volume-screener/config")

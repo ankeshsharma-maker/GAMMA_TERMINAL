@@ -133,7 +133,7 @@ def viewed(seconds: float = 120) -> None:
 
 
 # ---------------------------------------------------------------- baseline
-_BASE_VERSION = 2  # 2: + 52-week high / low (a year of candles)
+_BASE_VERSION = 3  # 2: + 52-week high / low (a year of candles); 3: + positional stats ("pos")
 
 
 def _load_base() -> None:
@@ -153,6 +153,99 @@ def _save_base() -> None:
         tmp.replace(_BASE_FILE)
     except Exception as exc:  # noqa: BLE001
         log.warning("baseline save failed: %s", exc)
+
+
+def _pos_stats(past: list, today: date, avg_vol: float) -> dict:
+    """Positional-scanner numbers from the daily candles before the session day (newest first,
+    [ts, o, h, l, c, v, oi]): 20 / 50 / 200-day averages of the close, the last 5 sessions'
+    volumes, last completed week's and month's high / low, and the last 7 sessions' ranges
+    (NR7 / inside day)."""
+    cl = [x for c in past if (x := _num(c[4]))]
+    dma = {n: round(sum(cl[:n]) / n, 2) for n in (20, 50, 200) if len(cl) >= n}
+    v5 = [_num(c[5]) or 0.0 for c in past[:5] if len(c) > 5]
+    rng = [round(_num(c[2]) - _num(c[3]), 2) for c in past[:7] if _num(c[2]) and _num(c[3])]
+
+    def prev_period(key) -> tuple[float | None, float | None]:
+        cur = key(today)
+        groups: dict = {}
+        for c in past:
+            try:
+                d = date.fromisoformat(str(c[0])[:10])
+            except ValueError:
+                continue
+            k = key(d)
+            if k < cur:
+                groups.setdefault(k, []).append(c)
+        if not groups:
+            return None, None
+        cs = groups[max(groups)]
+        return max(_num(c[2]) or 0 for c in cs), min(_num(c[3]) or 1e18 for c in cs)
+
+    pw_h, pw_l = prev_period(lambda d: d.isocalendar()[:2])
+    pm_h, pm_l = prev_period(lambda d: (d.year, d.month))
+    return {
+        "dma": dma,
+        "v5": v5,
+        "c5": cl[5] if len(cl) > 5 else None,  # the close 5 sessions before the last one
+        "rng": rng,
+        "h1": _num(past[0][2]) if past else None,
+        "l1": _num(past[0][3]) if past else None,
+        "h2": _num(past[1][2]) if len(past) > 1 else None,
+        "l2": _num(past[1][3]) if len(past) > 1 else None,
+        "pwH": pw_h, "pwL": pw_l, "pmH": pm_h, "pmL": pm_l,
+    }
+
+
+def _session_done(now: datetime | None = None) -> bool:
+    """The session day's trading is over (after 15:30, or a weekend / pre-open looking back)."""
+    now = now or _now()
+    if now.weekday() >= 5 or _session_day(now) != now.date():
+        return True
+    return now.hour * 60 + now.minute >= 15 * 60 + 30
+
+
+def _pos_fields(q: dict, b: dict) -> dict:
+    """The positional columns for one stock: today's live price against its daily-candle history,
+    plus NSE's end-of-day delivery % and futures OI build-up (positional.summary)."""
+    from . import positional
+
+    p = b.get("pos") or {}
+    ltp = q["ltp"]
+    out: dict = {}
+    dma = p.get("dma") or {}
+    out["dma"] = {k: round((ltp / v - 1) * 100, 2) for k, v in dma.items() if v}
+    avg = b.get("avgVol")
+    done = _session_done()
+    # volume build-up: the last 5 sessions' average vs the 20-day average (today counted once it has closed)
+    v5 = list(p.get("v5") or [])
+    if done and q.get("vol") and len(v5) >= 4:
+        v5 = [q["vol"], *v5[:4]]
+    if avg and len(v5) >= 4:  # no daily history yet -> no build-up figure (today alone isn't 5 days)
+        out["volBuild"] = round(sum(v5) / len(v5) / avg, 2)
+        out["volUp"] = sum(1 for v in v5 if v > avg)  # of those 5 days, how many beat the average
+    c5 = p.get("c5")
+    if c5:
+        out["ret5"] = round((ltp / c5 - 1) * 100, 2)
+    # weekly / monthly breakout: past the last completed week's / month's high or low
+    for tag, hk, lk in (("wk", "pwH", "pwL"), ("mo", "pmH", "pmL")):
+        h, lo = p.get(hk), p.get(lk)
+        if h and ltp > h:
+            out[tag], out[tag + "Pct"] = "UP", round((ltp / h - 1) * 100, 2)
+        elif lo and ltp < lo:
+            out[tag], out[tag + "Pct"] = "DOWN", round((ltp / lo - 1) * 100, 2)
+    # NR7 / inside day: the last finished session -- today once it has closed, else the day before
+    rng = list(p.get("rng") or [])
+    if done and q.get("dayHigh") and q.get("dayLow"):
+        day_r = q["dayHigh"] - q["dayLow"]
+        out["nr7"] = bool(len(rng) >= 6 and day_r > 0 and day_r < min(rng[:6]))
+        out["inside"] = bool(p.get("h1") and p.get("l1") and q["dayHigh"] <= p["h1"] and q["dayLow"] >= p["l1"])
+        out["rangePct"] = round(day_r / ltp * 100, 2) if ltp else None
+    elif len(rng) >= 7:
+        out["nr7"] = bool(rng[0] > 0 and rng[0] < min(rng[1:7]))
+        out["inside"] = bool(p.get("h2") and p.get("l2") and p["h1"] <= p["h2"] and p["l1"] >= p["l2"])
+        out["rangePct"] = round(rng[0] / ltp * 100, 2) if ltp else None
+    out.update(positional.summary(q.get("sym") or b.get("sym") or ""))
+    return out
 
 
 async def _baseline_one(ux, sym: str, today: date) -> bool:
@@ -179,6 +272,7 @@ async def _baseline_one(ux, sym: str, today: date) -> bool:
     highs = [x for c in year if (x := _num(c[2]))]
     lows = [x for c in year if (x := _num(c[3]))]
     _base[sym] = {
+        "pos": _pos_stats(past, today, sum(vols) / len(vols)),
         "avgVol": sum(vols) / len(vols),
         "days": len(vols),
         "pdh": _num(last[2]),
@@ -285,7 +379,7 @@ async def _poll(ux, syms: list[str]) -> None:
         await asyncio.sleep(0.3)
 
 
-def _row(sym: str, fo: set[str]) -> dict | None:
+def _row(sym: str, fo: set[str], pos: bool = False) -> dict | None:
     q = _live.get(sym)
     if not q:
         return None
@@ -317,7 +411,9 @@ def _row(sym: str, fo: set[str]) -> dict | None:
         elif ltp < vwap * 0.999 and pos <= 0.4:
             direction = "SELL"
     gap = round((op - pdc) / pdc * 100, 2) if op and pdc else None
+    extra = _pos_fields({**q, "sym": sym}, b) if pos else {}
     return {
+        **extra,
         "symbol": sym,
         "fo": sym in fo,
         # 52 weeks (the sessions before today) -- "new" = today's range went past it
@@ -421,11 +517,11 @@ async def run_quotes(stop: asyncio.Event) -> None:
             pass
 
 
-def snapshot(universe: str) -> dict:
+def snapshot(universe: str, pos: bool = False) -> dict:
     fo_list = fo_stocks()
     fo = set(fo_list)
     syms = fo_list if universe != "all" else [*fo_list, *(s for s in _all_stocks() if s not in fo)]
-    rows = [r for s in syms if (r := _row(s, fo))]
+    rows = [r for s in syms if (r := _row(s, fo, pos))]
     names = {}
     if universe == "all":
         from .brokers.upstox import get_upstox

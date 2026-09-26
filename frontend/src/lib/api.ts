@@ -68,7 +68,37 @@ export type VolRow = {
   rangePos: number;
   /** which side has been in control today (vs VWAP + where price sits in the day's range) */
   dir: "BUY" | "SELL" | "MIXED";
+  // ---- positional columns (only when asked for with pos=1) ----
+  /** % from the 20 / 50 / 200-day average of the close (keys "20" / "50" / "200") */
+  dma?: Record<string, number>;
+  /** last 5 sessions' average volume / the 20-day average; volUp = of those 5, days above the average */
+  volBuild?: number;
+  volUp?: number;
+  /** % move over the last 5 sessions */
+  ret5?: number;
+  /** past the last completed week's / month's high (UP) or low (DOWN), and by how much */
+  wk?: "UP" | "DOWN";
+  wkPct?: number;
+  mo?: "UP" | "DOWN";
+  moPct?: number;
+  /** the last finished session: narrowest range of 7 / inside the day before; its range as % of price */
+  nr7?: boolean;
+  inside?: boolean;
+  rangePct?: number | null;
+  /** NSE delivery % (latest file) and x its average over the sessions before */
+  deliv?: number;
+  delivX?: number | null;
+  delivDate?: string;
+  /** stock-futures OI (all expiries) change and the price move, over 1 and 5 sessions */
+  oiChg1?: number;
+  pxChg1?: number;
+  oiType1?: OiType | null;
+  oiChg5?: number;
+  pxChg5?: number;
+  oiType5?: OiType | null;
+  oiDate?: string;
 };
+export type OiType = "LONG_BUILDUP" | "SHORT_BUILDUP" | "SHORT_COVERING" | "LONG_UNWINDING";
 export type VolSnapshot = {
   universe: "fo" | "all";
   asOf: number | null;
@@ -77,6 +107,8 @@ export type VolSnapshot = {
   baseline: { ready: number; total: number; date: string | null };
   cfg: { alertLevel: number; minValueCr: number };
   rows: VolRow[];
+  /** positional only: how many NSE day-files are in (delivery, futures OI) and the latest dates */
+  nse?: { delivDays: number; delivLast: string | null; foDays: number; foLast: string | null };
 };
 
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
@@ -177,7 +209,8 @@ export const api = {
       }[];
     }>(`/api/history/${symbol}`),
 
-  volumeScreener: (universe: "fo" | "all") => j<VolSnapshot>(`/api/volume-screener?universe=${universe}`),
+  volumeScreener: (universe: "fo" | "all", pos = false) =>
+    j<VolSnapshot>(`/api/volume-screener?universe=${universe}${pos ? "&pos=1" : ""}`),
   volumeScreenerConfigGet: () => j<VolSnapshot["cfg"]>("/api/volume-screener/config"),
   volumeScreenerConfig: (body: { alertLevel?: number; minValueCr?: number }) =>
     j<VolSnapshot["cfg"]>("/api/volume-screener/config", { method: "POST", body: JSON.stringify(body) }),

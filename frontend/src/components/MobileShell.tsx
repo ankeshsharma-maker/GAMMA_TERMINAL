@@ -215,6 +215,7 @@ import { TrendingOI } from "./TrendingOI";
 import { ScannerView } from "./ScannerView";
 import { VolumeScreener } from "./VolumeScreener";
 import { StockScan } from "./StockScan";
+import { PositionalScan } from "./PositionalScan";
 import { Chart } from "./Chart";
 import { OIProfile } from "./OIProfile";
 import { StrategyBuilder } from "./StrategyBuilder";
@@ -247,6 +248,7 @@ const TOP_NAV: TopTab[] = [
   { v: "scanner", label: "Screener", group: "analysis" },
   { v: "volume", label: "Volume", group: "analysis" },
   { v: "stockscan", label: "Movers", group: "analysis" },
+  { v: "positional", label: "Positional", group: "analysis" },
   { v: "builder", label: "Build", group: "trade" },
   { v: "auto", label: "Auto", group: "trade" },
   { v: "scalper", label: "Scalp", group: "trade" },
@@ -535,6 +537,8 @@ function MobileBody({ view: want }: { view: View }) {
       return <VolumeScreener />;
     case "stockscan":
       return <StockScan />;
+    case "positional":
+      return <PositionalScan />;
     case "chart":
       return <Chart />;
     case "scalper":

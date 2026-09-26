@@ -21,14 +21,14 @@ const px = (v: number) => (v >= 10000 ? nf(v, 0) : v >= 1000 ? nf(v, 1) : nf(v))
 export type Universe = "fo" | "cash" | "all";
 
 /** the Volume and Movers tabs' data, refreshed every 20 s ("cash" = the all-NSE list minus F&O) */
-export function useStockScan(universe: Universe) {
+export function useStockScan(universe: Universe, pos = false) {
   const [data, setData] = useState<VolSnapshot | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
     setData(null);
     const load = () =>
-      api.volumeScreener(universe === "fo" ? "fo" : "all").then(
+      api.volumeScreener(universe === "fo" ? "fo" : "all", pos).then(
         (d) => alive && (setData(universe === "cash" ? { ...d, rows: d.rows.filter((r) => !r.fo) } : d), setErr(null)),
         (e) => alive && setErr(String(e?.message || e))
       );
@@ -38,7 +38,7 @@ export function useStockScan(universe: Universe) {
       alive = false;
       window.clearInterval(t);
     };
-  }, [universe]);
+  }, [universe, pos]);
   return { data, setData, err };
 }
 
