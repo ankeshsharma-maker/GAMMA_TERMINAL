@@ -140,7 +140,7 @@ const WIDE_COLS: Col[] = [...BASE_COLS, "deliv", "oi5"];
 const WIDE_AT = 720;
 /** the narrowest each column can go with 12-px numbers (measured on a 360-px phone; Dir shows
  *  only its arrow below DIR_WORD). SYMBOL may go down to 76 (long names end in "…"). */
-const MIN_W: Record<Col, number> = { symbol: 76, ltp: 45, chg: 47, dir: 26, metric: 44, vol: 41, value: 41, deliv: 44, oi5: 70 };
+const MIN_W: Record<Col, number> = { symbol: 76, ltp: 45, chg: 47, dir: 26, metric: 44, vol: 41, value: 41, deliv: 44, oi5: 44 };
 /** SYMBOL is filled first up to this (a 10-letter symbol in full), then spare room is shared by GROW */
 const SYMBOL_WANT = 92;
 const GROW: Record<Col, number> = { symbol: 2, ltp: 1, chg: 1, dir: 1, metric: 1, vol: 1, value: 1, deliv: 1, oi5: 1 };
@@ -176,10 +176,10 @@ const fitWidths = (avail: number, fixed: Partial<Record<Col, number>>, COLS: Col
   return out;
 };
 const OI_SHORT: Record<string, { label: string; long: string; up: boolean }> = {
-  LONG_BUILDUP: { label: "Long bu", long: "Long build-up", up: true },
-  SHORT_BUILDUP: { label: "Short bu", long: "Short build-up", up: false },
-  SHORT_COVERING: { label: "Sh cover", long: "Short covering", up: true },
-  LONG_UNWINDING: { label: "Long unw", long: "Long unwinding", up: false },
+  LONG_BUILDUP: { label: "LB", long: "Long build-up", up: true },
+  SHORT_BUILDUP: { label: "SB", long: "Short build-up", up: false },
+  SHORT_COVERING: { label: "SC", long: "Short covering", up: true },
+  LONG_UNWINDING: { label: "LU", long: "Long unwinding", up: false },
 };
 const sp = (v: number, d = 1) => `${v >= 0 ? "+" : ""}${nf(v, d)}%`;
 
@@ -507,7 +507,7 @@ export function ScanTable({
                   `flex items-center justify-end text-[11px] font-semibold ${
                     r.oiType5 ? (OI_SHORT[r.oiType5].up ? "text-up" : "text-down") : "text-term-dim"
                   }`,
-                  r.oiType5 ? OI_SHORT[r.oiType5].label : "–"
+                  r.oiType5 ? <span title={OI_SHORT[r.oiType5].long}>{OI_SHORT[r.oiType5].label}</span> : "–"
                 )}
               <span style={{ width: STAR_W }} className="flex shrink-0 items-center justify-center">
                 {watchBtn("text-center text-[15px] text-term-dim disabled:text-amber-400")}

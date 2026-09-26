@@ -160,7 +160,7 @@ export function StockScan() {
         yesterday's close; F = filled (price has traded back to yesterday's close). Dir = who has been in control TODAY: ▲ Buy = above the day's average traded price (VWAP) and high in
         the day's range, ▼ Sell = the opposite, ◆ = mixed — an estimate, and about today's session (a stock down on
         the day can still be ▲ Buy if it recovered). SYMBOL stays put when the table is swiped sideways. Tap a header to sort, a stock for its
-        details (Chart button inside); ☆ adds it to the watchlist.
+        details (Chart button inside); ☆ adds it to the watchlist. OI 5d (laptop): LB = long build-up, SB = short build-up, SC = short covering, LU = long unwinding — futures OI over the last 5 sessions.
       </div>
     </div>
   );

@@ -266,7 +266,7 @@ export function PositionalScan() {
           covering = price ↑ OI ↓, long unwinding = price ↓ OI ↓; a price change under 0.25% isn't classed. Bonus / split days
           are adjusted using NSE's own adjusted previous close.
         </p>
-        <p>NSE publishes both files around 6–7 PM for the day. Tap a header to sort, a stock for its details (Chart button inside); ☆ adds it to the watchlist.</p>
+        <p>NSE publishes both files around 6–7 PM for the day. Tap a header to sort, a stock for its details (Chart button inside); ☆ adds it to the watchlist. OI 5d (laptop): LB = long build-up, SB = short build-up, SC = short covering, LU = long unwinding — futures OI over the last 5 sessions.</p>
       </div>
     </div>
   );
