@@ -518,14 +518,12 @@ function HoldingsTab() {
  *  Flattrade order-book poll (every 5s in OrdersTab) picks up the result
  *  on its own -- no separate reload plumbing needed here. */
 function OrderRowActions({ order }: { order: any }) {
-  const [open, setOpen] = useState(false);
-  const [price, setPrice] = useState(String(order.prc ?? ""));
-  const [qty, setQty] = useState(String(order.qty ?? ""));
+  const [sheet, setSheet] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<"cancelled" | "modified" | null>(null);
 
   const cancel = async () => {
-    if (!window.confirm(`Cancel order ${order.norenordno} — ${order.tsym}?`)) return;
+    if (!window.confirm(`Cancel this order — ${order.dname || order.tsym}?`)) return;
     setBusy(true);
     try {
       await api.brokerOrderCancel(order.norenordno);
@@ -537,70 +535,165 @@ function OrderRowActions({ order }: { order: any }) {
     }
   };
 
-  const modify = async () => {
-    const p = price ? Number(price) : undefined;
-    const q = qty ? Number(qty) : undefined;
-    if (p == null && q == null) return alert("Change price or qty first");
-    setBusy(true);
-    try {
-      await api.brokerOrderModify(order.norenordno, { price: p, qty: q });
-      setDone("modified");
-      setOpen(false);
-    } catch (e: any) {
-      alert(String(e?.message || e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (done) return <span className="text-[10px] text-term-dim">{done}…</span>;
-
-  if (!open) {
-    return (
-      <span className="flex items-center gap-1">
+  if (done) return <span className="text-[12px] text-term-dim">{done === "cancelled" ? "Cancel sent…" : "Change sent…"}</span>;
+  return (
+    <>
+      <div className="flex w-full gap-2">
         <button
           disabled={busy}
-          onClick={() => setOpen(true)}
-          className="rounded border border-term-dim/70 px-1.5 py-0.5 text-[10px] text-term-dim hover:text-term-text disabled:opacity-40"
+          onClick={() => setSheet(true)}
+          className="flex-1 rounded-md border border-term-accent/60 bg-term-accent/15 py-1.5 text-[13px] font-semibold text-term-accent active:bg-term-accent/30 disabled:opacity-40"
         >
-          Modify
+          ✎ Modify
         </button>
         <button
           disabled={busy}
           onClick={cancel}
-          className="rounded border border-down/50 px-1.5 py-0.5 text-[10px] text-down hover:bg-down/10 disabled:opacity-40"
+          className="flex-1 rounded-md border border-down/60 bg-down/10 py-1.5 text-[13px] font-semibold text-down active:bg-down/25 disabled:opacity-40"
         >
-          {busy ? "…" : "Cancel"}
+          {busy ? "…" : "✕ Cancel"}
         </button>
-      </span>
-    );
-  }
+      </div>
+      {sheet && <ModifyOrderSheet order={order} onClose={() => setSheet(false)} onDone={() => setDone("modified")} />}
+    </>
+  );
+}
+
+/** Change a resting order: limit price (or go Market), lots, and the trigger on a stop order.
+ *  The server fills in the rest of Flattrade's ModifyOrder request from the order book. */
+function ModifyOrderSheet({ order, onClose, onDone }: { order: any; onClose: () => void; onDone: () => void }) {
+  const ls = Math.max(1, Number(order.ls) || 1);
+  const qty0 = Number(order.qty) || ls;
+  const filled = Number(order.fillshares) || 0;
+  const buy = String(order.trantype || "B").toUpperCase().startsWith("B");
+  const isStop = Number(order.trgprc) > 0;
+  const [lots, setLots] = useState(Math.max(1, Math.round(qty0 / ls)));
+  const [type, setType] = useState<"LMT" | "MKT">(String(order.prctyp).toUpperCase() === "MKT" ? "MKT" : "LMT");
+  const [price, setPrice] = useState(String(order.prc ?? ""));
+  const [trg, setTrg] = useState(isStop ? String(order.trgprc) : "");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const minLots = Math.max(1, Math.ceil((filled + 1) / ls)); // can't go below what already filled
+
+  const submit = async () => {
+    setErr(null);
+    const q = lots * ls;
+    const body: { qty?: number; price?: number; priceType?: "LMT" | "MKT"; triggerPrice?: number } = {};
+    if (q !== qty0) body.qty = q;
+    if (type === "MKT") body.priceType = "MKT";
+    else {
+      const p = parseFloat(price);
+      if (!(p > 0)) return setErr("Enter a limit price.");
+      body.priceType = "LMT";
+      body.price = p;
+    }
+    if (isStop) {
+      const t = parseFloat(trg);
+      if (!(t > 0)) return setErr("Enter a trigger price.");
+      body.triggerPrice = t;
+    }
+    if (q !== qty0 || type === "MKT" || body.price !== Number(order.prc) || (isStop && body.triggerPrice !== Number(order.trgprc))) {
+      setBusy(true);
+      try {
+        await api.brokerOrderModify(order.norenordno, body);
+        onDone();
+        onClose();
+      } catch (e: any) {
+        setErr(String(e?.message || e));
+      } finally {
+        setBusy(false);
+      }
+    } else setErr("Nothing changed.");
+  };
+
+  const seg = (on: boolean) =>
+    `flex-1 rounded border py-1.5 text-[12px] font-semibold ${
+      on ? "border-term-accent bg-term-accent/20 text-term-accent" : "border-term-border text-term-dim"
+    }`;
+  const inp =
+    "num w-full rounded border border-term-border bg-term-bg px-2 py-1.5 text-[13px] text-term-text outline-none focus:border-term-accent";
 
   return (
-    <span className="flex items-center gap-1">
-      <input
-        value={price}
-        onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ""))}
-        placeholder="price"
-        className="num w-14 rounded border border-term-border bg-term-bg px-1 py-0.5 text-[10px] text-term-text outline-none focus:border-term-accent"
-      />
-      <input
-        value={qty}
-        onChange={(e) => setQty(e.target.value.replace(/[^\d]/g, ""))}
-        placeholder="qty"
-        className="num w-12 rounded border border-term-border bg-term-bg px-1 py-0.5 text-[10px] text-term-text outline-none focus:border-term-accent"
-      />
-      <button
-        disabled={busy}
-        onClick={modify}
-        className="rounded bg-term-accent px-1.5 py-0.5 text-[10px] font-semibold text-white disabled:opacity-40"
+    <div className="fixed inset-0 z-[55] flex items-end justify-center bg-black/60 sm:items-center" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-t-xl border border-term-border bg-term-panel p-3 shadow-2xl sm:rounded-xl"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
+        onClick={(e) => e.stopPropagation()}
       >
-        {busy ? "…" : "Update"}
-      </button>
-      <button onClick={() => setOpen(false)} className="px-1 text-[10px] text-term-dim hover:text-term-text">
-        ✕
-      </button>
-    </span>
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[14px] font-semibold text-term-text">{order.dname || order.tsym}</div>
+            <div className="text-[11px] text-term-dim">
+              <span className={buy ? "text-up" : "text-down"}>{buy ? "BUY" : "SELL"}</span> · Modify open order · lot {ls}
+              {filled > 0 && ` · ${filled} filled`}
+            </div>
+          </div>
+          <button onClick={onClose} className="px-1 text-[16px] text-term-dim">
+            ✕
+          </button>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <div>
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-term-dim">Lots · qty {lots * ls}</div>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setLots((n) => Math.max(minLots, n - 1))} className="rounded border border-term-border px-3 py-1.5 text-term-text">
+                −
+              </button>
+              <span className="num flex-1 text-center text-[14px] font-semibold text-term-text">{lots}</span>
+              <button onClick={() => setLots((n) => Math.min(500, n + 1))} className="rounded border border-term-border px-3 py-1.5 text-term-text">
+                +
+              </button>
+            </div>
+          </div>
+          <div>
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-term-dim">Order</div>
+            <div className="flex gap-1">
+              <button onClick={() => setType("LMT")} className={seg(type === "LMT")}>
+                Limit
+              </button>
+              <button onClick={() => setType("MKT")} className={seg(type === "MKT")}>
+                Market
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <div>
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-term-dim">Limit price</div>
+            <input
+              id="modify-price"
+              disabled={type !== "LMT"}
+              value={type === "LMT" ? price : ""}
+              onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ""))}
+              placeholder={type === "LMT" ? "price" : "at market"}
+              className={`${inp} disabled:opacity-40`}
+            />
+          </div>
+          {isStop ? (
+            <div>
+              <div className="mb-1 text-[10px] uppercase tracking-wide text-amber-400">Trigger price</div>
+              <input id="modify-trigger" value={trg} onChange={(e) => setTrg(e.target.value.replace(/[^\d.]/g, ""))} className={inp} />
+            </div>
+          ) : (
+            <div className="self-end pb-1 text-[10px] leading-snug text-term-dim">
+              Now: {Math.round(qty0 / ls)} lot{Math.round(qty0 / ls) === 1 ? "" : "s"} @ {order.prctyp === "MKT" ? "market" : order.prc}
+            </div>
+          )}
+        </div>
+
+        {err && <div className="mt-2 text-[12px] text-down">{err}</div>}
+
+        <button
+          disabled={busy}
+          onClick={submit}
+          className="mt-3 w-full rounded-lg bg-term-accent py-3 text-[14px] font-bold text-white disabled:opacity-50"
+        >
+          {busy ? "…" : "Update order"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -819,9 +912,6 @@ export function OrdersTab() {
                 : "Flattrade not connected — orders GammaTerminal sent"
               : "paper orders this session"}
           </span>
-          {tab === "open" && openCards.length > 0 && (
-            <span className="ml-auto whitespace-nowrap">tap to modify / cancel</span>
-          )}
         </div>
 
         {shown.length === 0 && (
@@ -832,13 +922,10 @@ export function OrdersTab() {
 
         <div className="grid gap-2 lg:grid-cols-2 2xl:grid-cols-3">
           {shown.map((c) => {
-            const expanded = openKey === c.key && c.open && !!c.book?.norenordno;
+            // Modify / Cancel on every open order (was hidden until the card was tapped)
+            const expanded = c.open && !!c.book?.norenordno;
             return (
-              <div
-                key={c.key}
-                onClick={() => c.open && setOpenKey(expanded ? null : c.key)}
-                className={`rounded-lg bg-term-panel px-4 py-2.5 ${c.open ? "cursor-pointer" : ""}`}
-              >
+              <div key={c.key} className="rounded-lg bg-term-panel px-4 py-2.5">
                 <div className="flex items-center justify-between gap-2 text-[14px]">
                   <span className="text-term-text">
                     <span className={c.side === "BUY" ? "text-up" : "text-down"}>{c.side}</span> | {c.prd} | {c.exch}
@@ -882,10 +969,7 @@ export function OrdersTab() {
                 </div>
                 {c.reason && <div className="mt-1 text-[12px] leading-snug text-down/90">{c.reason}</div>}
                 {expanded && (
-                  <div
-                    className="mt-2 flex justify-end border-t border-term-border/60 pt-2"
-                    onClick={(e) => e.stopPropagation()}
-                  >
+                  <div className="mt-2 flex border-t border-term-border/60 pt-2">
                     <OrderRowActions order={c.book} />
                   </div>
                 )}

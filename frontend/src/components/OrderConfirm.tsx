@@ -212,12 +212,14 @@ export function OrderConfirm() {
           </div>
         )}
 
-        {pending.kind === "single" && (pending.sl != null || pending.target != null) && (
+        {pending.kind === "single" && (pending.sl != null || pending.target != null || pending.trail != null) && (
           <div className="mb-3 rounded border border-amber-500/50 bg-amber-500/10 px-2.5 py-1.5 text-2xs text-amber-300">
             After it fills:{" "}
             {pending.sl != null && <span className="text-down">SL {nf(pending.sl)}</span>}
             {pending.sl != null && pending.target != null && " · "}
-            {pending.target != null && <span className="text-up">Target {nf(pending.target)}</span>} — watched by the
+            {pending.target != null && <span className="text-up">Target {nf(pending.target)}</span>}
+            {pending.trail != null && (pending.sl != null || pending.target != null) && " · "}
+            {pending.trail != null && <span className="text-amber-200">Trailing SL {nf(pending.trail)} pts</span>} — watched by the
             server, exits at market when hit.
           </div>
         )}

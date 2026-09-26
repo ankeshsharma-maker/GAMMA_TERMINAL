@@ -55,6 +55,8 @@ export type PendingOrder =
       /** SL / target PRICES attached to the leg once it fills */
       sl?: number | null;
       target?: number | null;
+      /** trailing stop distance in points, attached with the SL / target */
+      trail?: number | null;
       lotSize?: number;
     }
   | {
@@ -135,6 +137,7 @@ interface State {
     product: "NRML" | "MIS";
     sl: number | null;
     target: number | null;
+    trail: number | null;
     lotSize: number;
     ltp: number | null;
   }) => Promise<void>;
@@ -242,7 +245,7 @@ async function paperFill(o: {
 /** After a live order from the sheet: wait (up to ~60 s, e.g. a limit order
  *  filling) for the leg to appear in the PositionBook, then bracket it with the
  *  SL / target PRICES. Tells the user if it never filled in that time. */
-async function attachWhenFilled(tsym: string, sl: number | null, target: number | null): Promise<void> {
+async function attachWhenFilled(tsym: string, sl: number | null, target: number | null, trail: number | null = null): Promise<void> {
   for (let i = 0; i < 30; i++) {
     await new Promise((res) => setTimeout(res, 2000));
     try {
@@ -251,7 +254,7 @@ async function attachWhenFilled(tsym: string, sl: number | null, target: number 
       if (!row) continue;
       await api.legRuleAttach({
         tsym, exch: row.exch || "NFO", netqty: row.netqty, entryPx: Number(row.netavgprc), prd: row.prd,
-        unit: "px", sl, target, trail: null,
+        unit: "px", sl, target, trail, // px: SL / target are prices, trail stays points
       });
       return;
     } catch (e: any) {
@@ -368,7 +371,7 @@ export const useStore = create<State>((set, get) => ({
           kind: "single", symbol: o.symbol, expiry: o.expiry, strike: o.strike, optionType: o.optionType,
           side: o.side, lots: o.lots, price: o.orderType === "LMT" ? o.limitPrice : o.ltp,
           orderType: o.orderType, limitPrice: o.limitPrice, product: o.product, sl: o.sl, target: o.target,
-          lotSize: o.lotSize,
+          trail: o.trail, lotSize: o.lotSize,
         },
       });
       return;
@@ -406,7 +409,8 @@ export const useStore = create<State>((set, get) => ({
         set({ paper: r.paper });
         // SL / target from the order sheet: attach to the leg once it shows as filled
         const tsym = r.result?.tsym;
-        if (tsym && (p.sl != null || p.target != null)) void attachWhenFilled(tsym, p.sl ?? null, p.target ?? null);
+        if (tsym && (p.sl != null || p.target != null || p.trail != null))
+          void attachWhenFilled(tsym, p.sl ?? null, p.target ?? null, p.trail ?? null);
       }
     } else {
       const r = await api.executeStrategy({

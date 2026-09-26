@@ -1,6 +1,8 @@
 """Broker (Flattrade) auth + read-only account/data endpoints."""
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
@@ -454,20 +456,50 @@ async def modify_order(order_id: str, body: dict):
     priceType? (LMT/MKT), triggerPrice?} -- anything omitted keeps its
     current value on the broker's side."""
     b = _require_auth()
-    kw: dict = {}
+    changes: dict = {}
     if body.get("price") not in (None, ""):
-        kw["prc"] = str(body["price"])
+        changes["prc"] = str(body["price"])
     if body.get("qty") not in (None, ""):
         try:
-            kw["qty"] = str(int(body["qty"]))
+            changes["qty"] = str(int(body["qty"]))
         except (TypeError, ValueError):
             raise HTTPException(status_code=422, detail="qty must be a whole number")
     if body.get("priceType"):
-        kw["prctyp"] = "MKT" if body["priceType"] == "MKT" else "LMT"
+        changes["prctyp"] = "MKT" if body["priceType"] == "MKT" else "LMT"
     if body.get("triggerPrice") not in (None, ""):
-        kw["trgprc"] = str(body["triggerPrice"])
-    if not kw:
+        changes["trgprc"] = str(body["triggerPrice"])
+    if not changes:
         raise HTTPException(status_code=422, detail="nothing to modify -- set price, qty, priceType or triggerPrice")
+    # Noren's ModifyOrder wants the whole order every time (exch, tsym, qty, prctyp, prc,
+    # ret) -- sending only the changed field is refused -- so start from the book's row
+    try:
+        book = await b.order_book()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"order book: {exc}")
+    row = next((o for o in book if str(o.get("norenordno")) == str(order_id)), None)
+    if not row:
+        raise HTTPException(status_code=404, detail="order not found in today's order book")
+    if not re.search(r"open|pending|trigger|modif", str(row.get("status", "")), re.I):
+        raise HTTPException(status_code=409, detail=f"order is {row.get('status')} -- only an open order can be modified")
+    kw: dict = {
+        "exch": row.get("exch"),
+        "tsym": row.get("tsym"),
+        "qty": str(row.get("qty")),
+        "prctyp": row.get("prctyp") or "LMT",
+        "prc": str(row.get("prc") or "0"),
+        "ret": row.get("ret") or "DAY",
+    }
+    if row.get("trgprc") not in (None, "", "0", "0.00"):
+        kw["trgprc"] = str(row.get("trgprc"))
+    kw.update(changes)
+    if kw["prctyp"] == "MKT":
+        # Flattrade refuses plain MKT from the API: price it as a marketable limit, like placing
+        side = "BUY" if str(row.get("trantype", "B")).upper().startswith("B") else "SELL"
+        try:
+            px, _tick = await b._marketable_limit(exch=kw["exch"], tsym=kw["tsym"], side=side, token=row.get("token"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=str(exc))
+        kw["prctyp"], kw["prc"] = "LMT", str(px)
     try:
         res = await b.modify_order(order_id, **kw)
     except Exception as exc:  # noqa: BLE001
@@ -476,7 +508,7 @@ async def modify_order(order_id: str, body: dict):
         raise HTTPException(status_code=502, detail=res.get("emsg") or "modify rejected")
     store.log_live_order({
         "mode": "live", "status": "MODIFIED", "orderId": order_id,
-        "note": f"order modify {kw}",
+        "note": f"order modify {changes}",
     })
     return {"ok": True, "raw": res}
 

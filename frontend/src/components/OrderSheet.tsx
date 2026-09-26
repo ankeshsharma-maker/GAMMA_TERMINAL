@@ -23,6 +23,7 @@ export function OrderSheet({ w, name, onClose, onChart }: { w: WatchQuote; name:
   const [limit, setLimit] = useState(ltp != null ? String(ltp) : "");
   const [sl, setSl] = useState("");
   const [target, setTarget] = useState("");
+  const [trail, setTrail] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -35,6 +36,9 @@ export function OrderSheet({ w, name, onClose, onChart }: { w: WatchQuote; name:
     setErr(null);
     const s = sl ? parseFloat(sl) : null;
     const t = target ? parseFloat(target) : null;
+    const tr = trail ? parseFloat(trail) : null;
+    if (tr != null && !(tr > 0)) return setErr("Trailing SL must be more than 0 points.");
+    if (tr != null && px && tr >= px) return setErr(`Trailing SL ${tr} pts is more than the price itself.`);
     // a stop / target on the wrong side of the entry would exit at once
     if (s != null && px && (buy ? s >= px : s <= px)) return setErr(`SL must be ${buy ? "below" : "above"} the price (${nf(px)}).`);
     if (t != null && px && (buy ? t <= px : t >= px)) return setErr(`Target must be ${buy ? "above" : "below"} the price (${nf(px)}).`);
@@ -53,6 +57,7 @@ export function OrderSheet({ w, name, onClose, onChart }: { w: WatchQuote; name:
         product,
         sl: s,
         target: t,
+        trail: tr,
         lotSize,
         ltp,
       });
@@ -99,8 +104,11 @@ export function OrderSheet({ w, name, onClose, onChart }: { w: WatchQuote; name:
           </div>
           <div className="text-right">
             <div className="num text-[16px] font-semibold text-term-text">{ltp != null ? nf(ltp) : "–"}</div>
-            <button onClick={onChart} className="text-[11px] text-term-accent">
-              Chart ›
+            <button
+              onClick={onChart}
+              className="mt-1 inline-flex items-center gap-1 rounded-md border border-term-accent/60 bg-term-accent/15 px-3 py-1.5 text-[13px] font-semibold text-term-accent active:bg-term-accent/30"
+            >
+              📈 Chart
             </button>
           </div>
         </div>
@@ -160,8 +168,28 @@ export function OrderSheet({ w, name, onClose, onChart }: { w: WatchQuote; name:
             <input id="sheet-tgt" value={target} onChange={(e) => setTarget(e.target.value.replace(/[^\d.]/g, ""))} placeholder={buy ? "above price" : "below price"} className={inp} />
           </div>
         </div>
+        <div className="mt-2 grid grid-cols-2 gap-3">
+          <div>
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-amber-400">Trailing SL · points</div>
+            <input
+              id="sheet-trail"
+              value={trail}
+              onChange={(e) => setTrail(e.target.value.replace(/[^\d.]/g, ""))}
+              placeholder="e.g. 10"
+              className={inp}
+            />
+          </div>
+          <div className="self-end pb-1 text-[10px] leading-snug text-term-dim">
+            {trail && parseFloat(trail) > 0
+              ? buy
+                ? `Exits if price falls ${trail} pts from its highest since entry.`
+                : `Exits if price rises ${trail} pts from its lowest since entry.`
+              : "Follows the price: the stop moves up (buy) / down (sell) as it goes your way."}
+          </div>
+        </div>
         <div className="mt-1 text-[10px] leading-snug text-term-dim">
           Optional. Attached to this leg once it fills; the server exits at market when one is hit (works with the app closed).
+          With both an SL and a trailing SL, the tighter one applies.
         </div>
 
         {err && <div className="mt-2 text-[12px] text-down">{err}</div>}
