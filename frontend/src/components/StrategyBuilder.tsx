@@ -182,7 +182,10 @@ export function StrategyBuilder() {
     return () => window.clearInterval(id);
   }, [loadSchedules]);
 
-  const [hedgeMax, setHedgeMax] = useState<number>(5000);
+  // the loss cap as typed: blank until the user enters one (a number input bound to a
+  // Number showed an undeletable "0" when cleared)
+  const [hedgeMaxStr, setHedgeMaxStr] = useState("");
+  const hedgeMax = parseFloat(hedgeMaxStr) || 0;
   const [hedgeAdvOpen, setHedgeAdvOpen] = useState(false);
   const [hedgeAdv, setHedgeAdv] = useState<{
     maxProfitCap: string;
@@ -405,7 +408,8 @@ export function StrategyBuilder() {
   }, [mult]);
 
   const findHedge = async () => {
-    if (!legs.length || !expiry || !(hedgeMax > 0)) return;
+    if (!legs.length || !expiry) return;
+    if (!(hedgeMax > 0)) return alert("Enter the max loss (₹) to cap the position at.");
     setHedgeBusy(true);
     const n = (v: string) => (v.trim() === "" ? undefined : Number(v));
     try {
@@ -1262,9 +1266,11 @@ export function StrategyBuilder() {
             <div className="flex items-center gap-1">
               <span className="text-2xs text-term-dim">₹</span>
               <input
-                type="number"
-                value={hedgeMax}
-                onChange={(e) => setHedgeMax(Number(e.target.value))}
+                id="hedge-max-loss"
+                inputMode="decimal"
+                value={hedgeMaxStr}
+                onChange={(e) => setHedgeMaxStr(e.target.value.replace(/[^\d.]/g, ""))}
+                placeholder="max loss"
                 className="w-24 rounded border border-term-border bg-term-bg px-2 py-1 text-xs num outline-none focus:border-term-accent"
               />
               <button
@@ -1503,7 +1509,7 @@ export function StrategyBuilder() {
               <input
                 value={slVal}
                 onChange={(e) => setSlVal(e.target.value.replace(/[^\d.]/g, ""))}
-                placeholder="0"
+                placeholder="–"
                 className="num w-16 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-down"
               />
             </label>
@@ -1512,7 +1518,7 @@ export function StrategyBuilder() {
               <input
                 value={tgtVal}
                 onChange={(e) => setTgtVal(e.target.value.replace(/[^\d.]/g, ""))}
-                placeholder="0"
+                placeholder="–"
                 className="num w-16 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-up"
               />
             </label>
