@@ -18,7 +18,7 @@ import {
 } from "../lib/condGroups";
 import { nf, signColor } from "../lib/format";
 import { playOrderSound } from "../lib/soundNotif";
-import type { AutoCondition, AutoRule, AutoStats, AutoStructureDef, StructurePreview } from "../types";
+import type { AutoCondition, AutoRule, AutoStats, AutoStructureDef, Chain, StructurePreview } from "../types";
 import { FigureBoard, TONE_TEXT, money, tone, tradeTicks } from "./Figures";
 import { LineChart } from "./LineChart";
 import { RuleBacktest } from "./RuleBacktest";
@@ -1251,10 +1251,15 @@ function SafetyNum({
 }
 
 /** what a rule is trading, in words: a structure's name, or the single option + side */
+/** "K23150_CE" -> "23150 CE", "OTM1_PE" -> "OTM1 PE", "ATM_CE" -> "ATM CE" */
+const instLabel = (inst?: string) => {
+  const i = (inst ?? "ATM_CE").toUpperCase();
+  return i.startsWith("K") ? `${i.slice(1).split("_")[0]} ${i.endsWith("PE") ? "PE" : "CE"}` : i.replace("_", " ");
+};
 const ruleWhat = (r: Partial<AutoRule>, defs?: AutoStructureDef[]) =>
   r.structure && r.structure !== "single"
     ? defs?.find((d) => d.key === r.structure)?.title ?? r.structure.replace(/_/g, " ")
-    : `${r.instrument} ${r.side}`;
+    : `${r.side} ${instLabel(r.instrument)}`;
 
 const rsP = (v: number) => `₹${Math.abs(Math.round(v)).toLocaleString("en-IN")}`;
 
@@ -1403,20 +1408,57 @@ function RuleEditor({
   // user happens to have open elsewhere (chain/OI Profile), since a rule can
   // target any F&O symbol and keeps running long after that screen changes
   const [expiries, setExpiries] = useState<string[]>([]);
+  const [rch, setRch] = useState<Chain | null>(null); // the rule's own chain: strikes and prices to pick from
   useEffect(() => {
     if (!r.symbol) {
       setExpiries([]);
+      setRch(null);
       return;
     }
     let alive = true;
-    api.chain(r.symbol).then(
-      (c) => alive && setExpiries(c.expiries ?? []),
-      () => alive && setExpiries([])
+    api.chain(r.symbol, r.expiry || undefined).then(
+      (c) => {
+        if (!alive) return;
+        setExpiries(c.expiries ?? []);
+        setRch(c);
+      },
+      () => alive && (setExpiries([]), setRch(null))
     );
     return () => {
       alive = false;
     };
-  }, [r.symbol]);
+  }, [r.symbol, r.expiry]);
+
+  // ---- the option this rule trades: strike choice (relative / a real strike), Call / Put ----
+  const inst = (r.instrument ?? "ATM_CE").toUpperCase();
+  const ot: "CE" | "PE" = inst.endsWith("PE") ? "PE" : "CE";
+  const pick = inst.split("_")[0]; // ATM | OTM1 | OTM2 | ITM1 | ITM2 | K23150
+  const setInst = (p: string, o: "CE" | "PE" = ot) => set({ instrument: `${p}_${o}` });
+  const atm = rch?.atmStrike ?? 0;
+  const kStep = rch?.strikeStep || 50;
+  const resolved = (() => {
+    if (pick.startsWith("K")) return Number(pick.slice(1)) || 0;
+    const d = pick.endsWith("2") ? 2 : pick.endsWith("1") ? 1 : 0;
+    if (!atm) return 0;
+    if (pick.startsWith("ITM")) return ot === "CE" ? atm - d * kStep : atm + d * kStep;
+    if (pick.startsWith("OTM")) return ot === "CE" ? atm + d * kStep : atm - d * kStep;
+    return atm;
+  })();
+  const resolvedRow = rch?.rows.find((x) => x.strike === resolved);
+  const resolvedLtp = resolvedRow ? (ot === "CE" ? resolvedRow.call.ltp : resolvedRow.put.ltp) : null;
+  const strikeOpts: [string, string][] = [
+    ["ATM (moves with the market)", "ATM"],
+    ["1 strike OTM", "OTM1"],
+    ["2 strikes OTM", "OTM2"],
+    ["1 strike ITM", "ITM1"],
+    ["2 strikes ITM", "ITM2"],
+    ...(rch
+      ? rch.rows
+          .map((x) => x.strike)
+          .filter((k) => !atm || Math.abs(k - atm) <= 20 * kStep)
+          .map((k) => [`${k}${k === atm ? "  · ATM now" : ""}`, `K${k}`] as [string, string])
+      : []),
+  ];
 
   return (
     <div className="space-y-3 rounded-lg border border-term-accent/50 bg-term-panel p-3">
@@ -1634,25 +1676,37 @@ function RuleEditor({
         {!isStruct && (
           <>
             <label className="flex flex-col text-[10px] text-term-dim">
-              instrument
+              strike
               <SelectMenu
-                value={r.instrument}
-                options={INSTRUMENTS.map((s) => [s, s] as [string, string])}
-                onChange={(v) => set({ instrument: v })}
-                title="Instrument"
-                width={120}
+                value={strikeOpts.some(([, v]) => v === pick) ? pick : "ATM"}
+                options={strikeOpts}
+                onChange={(v) => setInst(v)}
+                title="Strike: one that moves with the market (ATM / OTM / ITM), or a fixed strike from the chain"
+                width={190}
               />
             </label>
-            <label className="flex flex-col text-[10px] text-term-dim">
-              side
-              <SelectMenu
-                value={r.side}
-                options={[["BUY", "BUY"], ["SELL", "SELL"]] as const}
-                onChange={(v) => set({ side: v as "BUY" | "SELL" })}
-                title="Side"
-                width={90}
-              />
-            </label>
+            <div className="flex flex-col text-[10px] text-term-dim">
+              call / put
+              <div className="seg">
+                <button type="button" className={ot === "CE" ? "on" : ""} onClick={() => setInst(pick, "CE")}>
+                  Call (CE)
+                </button>
+                <button type="button" className={ot === "PE" ? "on" : ""} onClick={() => setInst(pick, "PE")}>
+                  Put (PE)
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-col text-[10px] text-term-dim">
+              buy / sell
+              <div className="seg">
+                <button type="button" className={(r.side ?? "BUY") === "BUY" ? "on" : ""} onClick={() => set({ side: "BUY" })}>
+                  Buy
+                </button>
+                <button type="button" className={r.side === "SELL" ? "on" : ""} onClick={() => set({ side: "SELL" })}>
+                  Sell
+                </button>
+              </div>
+            </div>
           </>
         )}
         <label className="flex flex-col text-[10px] text-term-dim">
@@ -1700,6 +1754,20 @@ function RuleEditor({
         </label>
       </div>
 
+      )}
+      {step === 1 && !isStruct && (
+        <div className="rounded border border-term-border bg-term-bg/40 px-2.5 py-1.5 text-[12px] text-term-dim">
+          →{" "}
+          <span className={`font-semibold ${(r.side ?? "BUY") === "BUY" ? "text-up" : "text-down"}`}>
+            {(r.side ?? "BUY") === "BUY" ? "buys" : "sells"}
+          </span>{" "}
+          <span className="font-semibold text-term-text">
+            {r.symbol} {rch?.expiry ?? (r.expiry || "front week")} {resolved ? `${resolved} ${ot}` : instLabel(inst)}
+          </span>
+          {resolvedLtp != null && <span> · now ≈ ₹{nf(resolvedLtp, 2)}</span>}
+          {!pick.startsWith("K") && <span> · the strike moves with the market when the rule fires</span>}
+          {pick.startsWith("K") && rch && !resolvedRow && <span className="text-amber-400"> · not in this expiry's chain</span>}
+        </div>
       )}
       {step === 1 && <StructureBlock r={r} set={set} defs={defs} />}
 
@@ -2532,9 +2600,10 @@ export function AutoBotView() {
     api
       .symbols()
       .then((d) => {
+        const idx = [...(d.indices || [])];
         const merged = Array.from(
-          new Set([...(d.indices || []), ...(d.defaults || []), ...(d.fo || [])])
-        ).sort();
+          new Set([...idx, ...[...(d.defaults || []), ...(d.fo || [])].filter((x) => !idx.includes(x)).sort()])
+        );
         setAllSymbols(merged.length ? merged : [storeSymbol]);
       })
       .catch(() => setAllSymbols([storeSymbol]));

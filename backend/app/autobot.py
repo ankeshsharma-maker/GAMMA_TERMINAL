@@ -1236,9 +1236,15 @@ def _entry_filter_ok(
 
 
 def _resolve_instrument(inst: str, atm: float, step: float) -> tuple[float, str]:
-    """'OTM2_CE' -> (strike, 'CE').  Offsets are in strike steps from ATM."""
+    """'OTM2_CE' -> (strike, 'CE').  Offsets are in strike steps from ATM.
+    'K23150_CE' = a fixed strike (picked from the chain in the rule editor), whatever the ATM is."""
     inst = (inst or "ATM_CE").upper()
     ot = "PE" if inst.endswith("PE") else "CE"
+    if inst.startswith("K"):
+        try:
+            return round(float(inst[1:].split("_")[0]), 2), ot
+        except ValueError:
+            pass  # not a strike after all -- treat as ATM below
     depth = 0
     for tag, d in (("ITM2", 2), ("ITM1", 1), ("OTM2", 2), ("OTM1", 1)):
         if inst.startswith(tag):
