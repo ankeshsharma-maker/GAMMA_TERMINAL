@@ -186,7 +186,7 @@ function MarketRow({
   const [sheet, setSheet] = useState(false);
   // an option / future row opens the order sheet, a stock a quick sheet (Chart + its OI views);
   // an index goes straight to its chart
-  const isIndex = w.kind === "index" || INDEX_RE.test(w.symbol);
+  const isIndex = w.kind === "index" || w.kind === "equity" || INDEX_RE.test(w.symbol);
   const tap = () => (isIndex ? open() : setSheet(true));
   const tradable = w.kind === "option" || w.kind === "future";
   const sheetEl =
@@ -745,7 +745,12 @@ export function Watchlist({ band }: { band?: ReactNode } = {}) {
                   onClick={(e) => e.preventDefault()}
                   className="flex w-full items-center justify-between border-b border-term-border/40 px-2.5 py-1.5 text-2xs transition last:border-0 hover:bg-term-border"
                 >
-                  <span className="font-medium text-term-text">{r.label}</span>
+                  <span className="min-w-0 truncate font-medium text-term-text">
+                    {r.label}
+                    {r.kind === "equity" && r.name && (
+                      <span className="ml-1.5 font-normal text-term-dim">{r.name}</span>
+                    )}
+                  </span>
                   <span
                     className={`rounded px-1 text-[9px] font-semibold ${
                       r.kind === "vix"
@@ -757,7 +762,15 @@ export function Watchlist({ band }: { band?: ReactNode } = {}) {
                         : "bg-term-border text-term-dim"
                     }`}
                   >
-                    {r.kind === "vix" ? "VIX" : r.kind === "option" ? "OPT" : r.optionable ? "F&O" : "INDEX"}
+                    {r.kind === "vix"
+                      ? "VIX"
+                      : r.kind === "option"
+                      ? "OPT"
+                      : r.kind === "equity"
+                      ? "CASH"
+                      : r.optionable
+                      ? "F&O"
+                      : "INDEX"}
                   </span>
                 </button>
               ))}

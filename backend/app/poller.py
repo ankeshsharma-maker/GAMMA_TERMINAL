@@ -244,6 +244,22 @@ async def _refresh_indices() -> None:
         log.debug("allIndices refresh failed: %s", exc)
 
 
+def _cash_only(symbol: str) -> bool:
+    """A cash-market stock with no options (charted from the watchlist): there's no
+    chain or expiry list to fetch, so the poller leaves it alone. Unknown until
+    Upstox's instrument master is loaded -- then it's polled as before."""
+    from .config import FO_UNIVERSE, INDEX_SYMBOLS
+
+    s = symbol.upper()
+    if s in FO_UNIVERSE or s in INDEX_SYMBOLS:
+        return False
+    try:
+        ux = get_upstox()
+        return ux.has_options(s) is False and bool(ux.underlying_key(s))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 async def run_poller(stop: asyncio.Event) -> None:
     log.info("poller started")
     await _refresh_indices()
@@ -253,6 +269,7 @@ async def run_poller(stop: asyncio.Event) -> None:
 
         short_pairs = short_guard.watch_pairs()
         symbols = sorted({s for s, _ in hub.subscriptions()} | set(store.all_symbols()) | {s for s, _ in short_pairs})
+        symbols = [s for s in symbols if not _cash_only(s)]
         for sym in symbols:
             await _ensure_expiries(sym)
 

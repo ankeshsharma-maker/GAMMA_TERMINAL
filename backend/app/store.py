@@ -136,8 +136,8 @@ class Store:
             for wl in [self._owner_wl, *self._user_wls.values()]:
                 for l in wl["lists"]:
                     for e in l["symbols"]:
-                        if e.startswith("IDX:"):
-                            continue
+                        if e.startswith("IDX:") or e.startswith("EQ:"):
+                            continue  # spot-only entries: no option chain to poll
                         every.add(e.split("|")[0].upper() if "|" in e else e)
             return sorted(every | (extra or set()))
 
@@ -774,6 +774,21 @@ class Store:
             if len(out) >= limit * 2:
                 break
 
+        # cash-market (non-F&O) stocks, from the Upstox instrument master: price + chart only
+        if len(ql) >= 2 and len(out) < limit:
+            try:
+                from .brokers.upstox import get_upstox
+
+                fo = set(FO_UNIVERSE)
+                for sym, name in get_upstox().equity_search(ql, limit):
+                    key = f"EQ:{sym}"
+                    if sym in fo or sym in seen or key in seen:
+                        continue
+                    seen.add(key)
+                    out.append({"label": sym, "add": key, "kind": "equity", "optionable": False, "name": name})
+            except Exception:  # noqa: BLE001 -- search must never fail on this
+                pass
+
         # option contracts first (in the order found -- the on-screen symbol
         # leads), then optionable symbols, then shortest label
         out.sort(key=lambda r: (r.get("kind") != "option", 0 if r.get("kind") == "option" else (not r["optionable"], len(r["label"]))))
@@ -1252,6 +1267,22 @@ class Store:
             entries = list(dict.fromkeys(defaults + self.watchlist))
         out = []
         for entry in entries:
+            if entry.startswith("EQ:"):
+                # a cash-market stock: its price comes from the Upstox quote poll (upstox_feed)
+                sym = entry[3:]
+                live = self.live_spot.get(sym)
+                out.append(
+                    {
+                        "key": entry,
+                        "kind": "equity",
+                        "symbol": sym,
+                        "spot": live.get("ltp") if live else None,
+                        "liveChgPct": live.get("chgPct") if live else None,
+                        "optionable": False,
+                        "error": None if live else "loading",
+                    }
+                )
+                continue
             if entry.startswith("IDX:"):
                 name = entry[4:]
                 q = self.index_quotes.get(name)

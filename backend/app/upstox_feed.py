@@ -39,8 +39,14 @@ def _num(v):
 
 def _want() -> set[str]:
     subs = {s for s, _ in hub.subscriptions()}
-    wl = {e.split("|")[0].upper() for e in store.watchlist}
-    return {s.upper() for s in (set(DEFAULT_SYMBOLS) | wl | subs)}
+    wl = {e.split("|")[0].upper() for e in store.watchlist if not e.startswith("EQ:")}
+    return {s.upper() for s in (set(DEFAULT_SYMBOLS) | wl | subs)} | _want_equities()
+
+
+def _want_equities() -> set[str]:
+    """Cash-market stocks on the active watchlist ("EQ:SYM"): Flattrade's socket
+    doesn't carry them, so they're polled here in both modes."""
+    return {e[3:].upper() for e in store.watchlist if e.startswith("EQ:")}
 
 
 def _key_for(sym: str) -> str | None:
@@ -61,7 +67,7 @@ async def _poll_once(fast: bool) -> None:
     # modes — fast mode used to skip them unless they were on the watchlist.
     want = _want() | _BSE
     if not fast:
-        want = set(_BSE)  # slow mode: only what Flattrade can't feed
+        want = set(_BSE) | _want_equities()  # slow mode: only what Flattrade can't feed
     # match on every shape Upstox might echo back: the raw "EXCH|Name" key, the
     # "EXCH:Name" response-dict key, and the bare instrument name.
     keymap: dict[str, str] = {}  # any-form key -> our symbol

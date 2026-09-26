@@ -201,6 +201,28 @@ class Upstox:
         the historical / backtest / screener-history paths."""
         return INDEX_KEYS.get(symbol.upper()) or self._eq_keys.get(symbol.upper())
 
+    def has_options(self, symbol: str) -> bool | None:
+        """True / False once the instrument master is loaded, None before (unknown)."""
+        names = getattr(self, "_opt_names", None)
+        return (symbol.upper() in names) if names else None
+
+    def equity_search(self, q: str, limit: int = 20) -> list[tuple[str, str]]:
+        """NSE cash stocks whose symbol or company name matches `q`: (symbol, name),
+        symbol-prefix matches first."""
+        ql = (q or "").strip().upper()
+        names: dict[str, str] = getattr(self, "_eq_names", None) or {}
+        if len(ql) < 2 or not names:
+            return []
+        pre, rest = [], []
+        for sym, name in names.items():
+            if sym.startswith(ql):
+                pre.append((sym, name))
+            elif ql in sym or ql in name.upper():
+                rest.append((sym, name))
+        pre.sort(key=lambda x: len(x[0]))
+        rest.sort(key=lambda x: len(x[0]))
+        return (pre + rest)[:limit]
+
     # ---- instrument master (equities + F&O) ---------------------------
     _INSTRUMENTS_URL = "https://assets.upstox.com/market-quote/instruments/exchange/complete.json.gz"
 
@@ -218,6 +240,8 @@ class Upstox:
             log.warning("upstox instrument master failed: %s", exc)
             return
         eq: dict[str, str] = {}
+        eq_names: dict[str, str] = {}  # NSE cash symbol -> company name (search)
+        opt_names: set[str] = set()  # underlyings that have options (F&O)
         opt: dict[tuple, str] = {}
         fut: dict[tuple, str] = {}
         lots: dict[str, int] = {}
@@ -227,7 +251,12 @@ class Upstox:
             if not ik:
                 continue
             if seg in ("NSE_EQ", "BSE_EQ") and it.get("instrument_type") == "EQ":
-                eq.setdefault(str(it.get("trading_symbol", "")).upper(), ik)
+                ts = str(it.get("trading_symbol", "")).upper()
+                if seg == "NSE_EQ":
+                    eq[ts] = ik  # NSE wins over BSE for a stock listed on both
+                    eq_names[ts] = str(it.get("name") or "")
+                else:
+                    eq.setdefault(ts, ik)
             elif it.get("instrument_type") in ("CE", "PE", "FUT") and seg in ("NSE_FO", "BSE_FO"):
                 name = str(it.get("asset_symbol") or it.get("underlying_symbol") or "").upper()
                 ls = it.get("lot_size")
@@ -238,6 +267,8 @@ class Upstox:
                         pass
             if it.get("instrument_type") in ("CE", "PE") and seg in ("NSE_FO", "BSE_FO"):
                 name = str(it.get("asset_symbol") or it.get("underlying_symbol") or "").upper()
+                if name:
+                    opt_names.add(name)
                 exp = it.get("expiry")  # epoch ms or ISO
                 strike = it.get("strike_price")
                 ot = it.get("instrument_type")
@@ -265,6 +296,7 @@ class Upstox:
                         continue
                     fut[(name, d)] = ik
         self._eq_keys, self._opt_keys, self._fut_keys, self._instr_date = eq, opt, fut, _today()
+        self._eq_names, self._opt_names = eq_names, opt_names
         if lots:
             try:
                 from ..processing import set_lot_sizes

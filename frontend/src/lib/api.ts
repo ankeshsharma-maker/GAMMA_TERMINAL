@@ -186,9 +186,10 @@ export const api = {
       results: {
         label: string;
         add: string;
-        kind: "index" | "stock" | "vix" | "option";
+        kind: "index" | "stock" | "vix" | "option" | "equity";
         optionable: boolean;
         category?: string;
+        name?: string;
       }[];
     }>(`/api/symbols/search?q=${encodeURIComponent(q)}${sym ? `&sym=${encodeURIComponent(sym)}` : ""}`),
 
