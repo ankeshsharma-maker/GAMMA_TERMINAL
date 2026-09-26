@@ -1104,7 +1104,8 @@ export function Chart() {
         ? cd.map((k) => ({
             time: k.time as any,
             value: k.volume ?? 0,
-            color: k.close >= k.open ? "#16a34a66" : "#dc262666",
+            // faint: it sits behind the lower part of the candles (TradingView-style)
+            color: k.close >= k.open ? "#16a34a44" : "#dc262644",
           }))
         : []
     );
@@ -1155,8 +1156,10 @@ export function Chart() {
     //      the same bottom slot as RSI/MACD) ----
     {
       type SubKey = "vol" | "oi" | "oichg" | "straddle" | "score" | "greeks" | "rsi" | "macd";
+      // volume is NOT a pane of its own any more: it's drawn faintly behind the lower
+      // part of the candles, so the candles fill the height (a reserved volume band left
+      // ~a quarter of the chart looking empty under them)
       const sub: SubKey[] = [];
-      if (showVol) sub.push("vol");
       if (eff.oi) sub.push("oi");
       if (eff.oichg) sub.push("oichg");
       if (eff.straddle) sub.push("straddle");
@@ -1167,9 +1170,13 @@ export function Chart() {
       const n = sub.length;
       const band = n === 0 ? 0 : n === 1 ? 0.2 : n === 2 ? 0.16 : n === 3 ? 0.13 : n === 4 ? 0.1 : n === 5 ? 0.085 : 0.07;
       const gap = n >= 4 ? 0.02 : 0.03;
-      const reserve = n === 0 ? 0.06 : Math.min(0.74, n * band + (n - 1) * gap + 0.05);
+      const reserve = n === 0 ? 0.03 : Math.min(0.74, n * band + (n - 1) * gap + 0.05);
       chartRef.current.priceScale("right").applyOptions({
         scaleMargins: { top: 0.06, bottom: reserve },
+      });
+      // volume: the lowest ~16% of the candles' own area, behind them
+      chartRef.current.priceScale("vol").applyOptions({
+        scaleMargins: { top: 1 - reserve - 0.16, bottom: reserve },
       });
       let oscTopFrac: number | null = null;
       sub.forEach((p, i) => {
