@@ -74,6 +74,57 @@ function StatCol({
   );
 }
 
+/** ‹ strike › : step one strike down / up; the strike itself still opens the full list.
+ *  Shows the distance from ATM ("ATM", "ATM+2", "ATM-1"). */
+function StrikeStepper({
+  value,
+  strikes,
+  atm,
+  onChange,
+}: {
+  value: number;
+  strikes: number[];
+  atm: number;
+  onChange: (k: number) => void;
+}) {
+  const sorted = strikes.length ? strikes : [value];
+  const i = sorted.indexOf(value);
+  const ai = sorted.indexOf(atm);
+  const off = i >= 0 && ai >= 0 ? i - ai : null;
+  const tag = off == null ? "" : off === 0 ? "ATM" : `ATM${off > 0 ? "+" : ""}${off}`;
+  const step = (d: number) => {
+    const j = (i >= 0 ? i : sorted.findIndex((k) => k > value)) + d;
+    if (j >= 0 && j < sorted.length) onChange(sorted[j]);
+  };
+  const btn =
+    "flex h-7 w-7 items-center justify-center rounded border border-term-border text-[15px] font-bold text-term-text active:bg-term-accent/25 disabled:opacity-30";
+  return (
+    <span className="inline-flex items-center gap-1">
+      <button onClick={() => step(-1)} disabled={i === 0} className={btn} title="Previous strike" aria-label="Previous strike">
+        ‹
+      </button>
+      <SelectMenu
+        value={value}
+        options={sorted.map((k) => [`${sk(k)}${k === atm ? "  (ATM)" : ""}`, k] as [string, number])}
+        onChange={(k) => onChange(Number(k))}
+        title="Strike"
+        width={96}
+        highlightValue={atm}
+      />
+      <button
+        onClick={() => step(1)}
+        disabled={i === sorted.length - 1}
+        className={btn}
+        title="Next strike"
+        aria-label="Next strike"
+      >
+        ›
+      </button>
+      {tag && off !== 0 && <span className="whitespace-nowrap text-[10px] font-semibold text-term-dim">{tag}</span>}
+    </span>
+  );
+}
+
 export function StrategyBuilder() {
   const symbol = useStore((s) => s.symbol);
   const chain = useStore((s) => s.chain);
@@ -1038,15 +1089,11 @@ export function StrategyBuilder() {
                   {leg.optionType}
                 </button>
                 {leg.optionType !== "FUT" && (
-                  <SelectMenu
+                  <StrikeStepper
                     value={leg.strike}
-                    options={(strikes.includes(leg.strike) ? strikes : [leg.strike, ...strikes]).map(
-                      (k) => [`${sk(k)}${k === atm ? "  (ATM)" : ""}`, k] as [string, number]
-                    )}
-                    onChange={(k) => setLeg(i, { strike: Number(k) })}
-                    title="Strike"
-                    width={110}
-                    highlightValue={atm}
+                    strikes={strikes.includes(leg.strike) ? strikes : [...strikes, leg.strike].sort((a, b) => a - b)}
+                    atm={atm}
+                    onChange={(k) => setLeg(i, { strike: k })}
                   />
                 )}
                 <button
@@ -1157,15 +1204,11 @@ export function StrategyBuilder() {
                 {newLegOT !== "FUT" && strikes.length > 0 && (
                   <label className="flex flex-col gap-0.5">
                     <span className="text-[9px] uppercase text-term-dim">Strike</span>
-                    <SelectMenu
+                    <StrikeStepper
                       value={newLegStrike || atm}
-                      options={strikes.map(
-                        (k) => [`${sk(k)}${k === atm ? "  (ATM)" : ""}`, k] as [string, number]
-                      )}
-                      onChange={(k) => setNewLegStrike(Number(k))}
-                      title="Strike"
-                      width={110}
-                      highlightValue={atm}
+                      strikes={strikes}
+                      atm={atm}
+                      onChange={(k) => setNewLegStrike(k)}
                     />
                   </label>
                 )}
