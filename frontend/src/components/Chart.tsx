@@ -204,6 +204,11 @@ const IST_LOCALIZATION = {
 };
 /** axis labels: a year's first tick shows the year (1W / 1M charts span years), a month's first the month,
  *  a day its date, else the time (tickType 0 year, 1 month, 2 day of month, 3+ time) */
+/** panning: drag with the mouse / a finger (the newest candle can be pulled to the middle), but NOT a
+ *  touchpad's sideways swipe -- on a laptop those slid the chart off into empty space by themselves.
+ *  The scroll wheel still zooms (handleScale). */
+const SCROLL = { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true };
+
 const istTickFormatter = (t: number, tickType: number) =>
   tickType === 0
     ? new Date(t * 1000).toLocaleDateString("en-GB", { timeZone: IST, year: "numeric" })
@@ -626,14 +631,11 @@ export function Chart() {
         timeVisible: true,
         secondsVisible: false,
         tickMarkFormatter: istTickFormatter,
-        // the newest candle stays at the right edge: a laptop touchpad's sideways swipe kept sliding
-        // the chart into empty space past it (still scrolls back through history)
-        fixRightEdge: true,
       },
+      handleScroll: SCROLL,
       autoSize: true,
     });
-    chartRef.current = chart;
-    const c = s.current;
+    chartRef.current = chart;    const c = s.current;
 
     c.vol = chart.addHistogramSeries({ priceScaleId: "vol", priceLineVisible: false, base: 0 });
     chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false });
@@ -1258,7 +1260,11 @@ export function Chart() {
     // first candles for a new symbol / instrument / interval: always re-frame (the
     // "don't snap back" guard compares the old view position with the NEW candle
     // count and could otherwise leave the chart parked on a stale stretch)
-    const reframe = reframeRef.current && priceCandles.length > 0;
+    // ...and only once the candles ARE the new timeframe's: this effect also runs on a timeframe switch
+    // while the old candles are still on screen, and spending the re-frame on those left e.g. 1W -> 5m
+    // zoomed onto one giant candle (the new set then looked "scrolled away" and was left alone)
+    const fresh = data.interval == null || data.interval === intervalS;
+    const reframe = reframeRef.current && priceCandles.length > 0 && fresh;
     if (reframe) reframeRef.current = false;
     applyRange(reframe);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1281,7 +1287,10 @@ export function Chart() {
         // width alone (not position) so the built-in realtime auto-scroll (which translates
         // from/to together, same width) doesn't get mistaken for a manual zoom
         const zoomed = !!applied && Math.abs(vr.to - vr.from - (applied.to - applied.from)) > 0.5;
-        if (scrolledAway || zoomed) return;
+        // dragged sideways (e.g. the newest candle pulled to the middle): more than the 1-3 bars the
+        // realtime auto-scroll adds between refreshes -- keep the user's view, don't snap it back
+        const moved = !!applied && Math.abs(vr.to - applied.to) > 3.5;
+        if (scrolledAway || zoomed || moved) return;
       }
     }
     if (rangeD <= 0) {
@@ -1518,7 +1527,7 @@ export function Chart() {
   // gesture draws instead of panning the chart out from under it
   useEffect(() => {
     const active = drawTool === "trend" || drawTool === "fib";
-    chartRef.current?.applyOptions({ handleScroll: !active, handleScale: !active });
+    chartRef.current?.applyOptions({ handleScroll: active ? false : SCROLL, handleScale: !active });
   }, [drawTool]);
 
   // load this chart's saved drawings whenever "what is this a chart of"
