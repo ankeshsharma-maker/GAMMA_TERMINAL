@@ -68,8 +68,6 @@ function isDegraded(cur: ChartData | null, nd: ChartData): boolean {
 }
 
 const TIMEFRAMES: [string, number][] = [
-  ["15s", 15],
-  ["30s", 30],
   ["1m", 60],
   ["3m", 180],
   ["5m", 300],
@@ -536,7 +534,7 @@ export function Chart() {
       selectSymbol(L.symbol, true);
       if (instrumentLive(L.instrument ?? "")) setInstrument(L.instrument ?? "");
     }
-    const iv = L.intervalS || getIntervalS();
+    const iv = Math.max(60, L.intervalS || getIntervalS()); // a layout saved on 15s / 30s (removed) -> 1m
     if (iv === intervalRef.current) setRangeD(L.rangeD ?? defaultRangeDays(iv));
     else {
       pendingRangeRef.current = L.rangeD ?? defaultRangeDays(iv);

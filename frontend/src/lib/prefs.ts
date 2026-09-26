@@ -38,7 +38,8 @@ export const setDataSrc = (v: DataSrc) => write("gt.dataSrc", v);
 
 export const getIntervalS = () => {
   const n = parseInt(read("gt.intervalS") || "300", 10);
-  return Number.isFinite(n) && n > 0 ? n : 300;
+  // 15s / 30s are no longer offered: an old saved choice of either opens on 1m
+  return Number.isFinite(n) && n > 0 ? Math.max(60, n) : 300;
 };
 export const setIntervalS = (n: number) => write("gt.intervalS", String(n));
 

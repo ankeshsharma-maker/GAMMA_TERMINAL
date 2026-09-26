@@ -990,7 +990,6 @@ export function Settings({ onClose }: { onClose: () => void }) {
               value={ivl}
               options={
                 [
-                  ["15s", 15],
                   ["1m", 60],
                   ["3m", 180],
                   ["5m", 300],
