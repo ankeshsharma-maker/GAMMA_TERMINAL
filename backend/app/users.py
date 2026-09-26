@@ -140,6 +140,7 @@ _ALLOW: list[tuple[str, re.Pattern]] = [
         ("GET", rf"/api/(scan|screener)(/{_SYM})?"),
         ("GET", r"/api/(alerts|unusual)"),
         ("GET", r"/api/health"),
+        ("GET", r"/api/volume-screener"),
         ("GET", r"/api/upstox/(expiries|history-chain|history-greeks|weekly-gex|movers-history|chain-preview|data-source)"),
         ("POST", r"/api/upstox/(scan-history|indicator-scan|backtest)"),
         # their own chart layouts (GET is matched by the chart line above)

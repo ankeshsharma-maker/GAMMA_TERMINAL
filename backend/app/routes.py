@@ -213,6 +213,26 @@ def history(symbol: str):
     return {"symbol": symbol.upper(), "points": store.get_history(symbol)}
 
 
+@router.get("/volume-screener")
+def volume_screener_view(universe: str = Query("fo")):
+    """Stocks by traded volume: relative volume vs usual, value traded, volume-backed
+    breakouts. universe = fo (F&O stocks) | all (every NSE cash stock, on demand)."""
+    from . import volume_screener
+
+    volume_screener.viewed()
+    if universe == "all":
+        volume_screener.want_all()
+    return volume_screener.snapshot(universe)
+
+
+@router.post("/volume-screener/config")
+def volume_screener_config(body: dict):
+    """{alertLevel: 0 (off) | 2 | 3 | 5, minValueCr}: when a volume spike alerts."""
+    from . import volume_screener
+
+    return volume_screener.set_cfg(body)
+
+
 @router.get("/gex-intraday/{symbol}")
 def gex_intraday_view(symbol: str, day: str | None = Query(None)):
     """Net GEX / gamma flip / spot through one trading session, for the OI tab's intraday GEX view."""

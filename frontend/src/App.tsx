@@ -9,6 +9,7 @@ import { OIProfile } from "./components/OIProfile";
 import { ScripView } from "./components/ScripView";
 import { Positions } from "./components/Positions";
 import { ScannerView } from "./components/ScannerView";
+import { VolumeScreener } from "./components/VolumeScreener";
 import { FlowView } from "./components/Flow";
 import { OrderFlowView } from "./components/OrderFlow";
 import { TrendingOI } from "./components/TrendingOI";
@@ -79,6 +80,7 @@ function DesktopShell() {
     view === "vol" ||
     view === "home" ||
     view === "scanner" ||
+    view === "volume" ||
     view === "auto" ||
     view === "funds" ||
     view === "journal" ||
@@ -200,6 +202,7 @@ function DesktopShell() {
           {view === "home" && <HomeDashboard />}
           {view === "vol" && <VolatilityView />}
           {view === "scanner" && <ScannerView />}
+          {view === "volume" && <VolumeScreener />}
           {view === "chart" && <Chart />}
           {view === "scalper" && <ScalpCharts />}
           {view === "builder" && <StrategyBuilder />}

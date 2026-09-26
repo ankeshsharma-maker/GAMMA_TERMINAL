@@ -329,6 +329,7 @@ export type View =
   | "scrip"
   | "oiprofile"
   | "scanner"
+  | "volume"
   | "chart"
   | "builder"
   | "positions"

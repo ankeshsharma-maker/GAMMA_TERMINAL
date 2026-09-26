@@ -55,7 +55,7 @@ _AUTOBOT_IMPORTANT = ("autobot-exit", "autobot-error", "autobot-stop")
 _GREEKS_MODES = ("big", "all", "off")
 # alerts about the MARKET (not about the user's own positions or rules) -- the
 # ones the symbol filter applies to
-_MARKET_KINDS = ("blast-crit", "blast-warn", "blast-build", "iv-spike", "straddle-exp", "oi-surge", "flow-reversal")
+_MARKET_KINDS = ("blast-crit", "blast-warn", "blast-build", "iv-spike", "straddle-exp", "oi-surge", "flow-reversal", "volume-spike")
 
 
 def _is_market(alert: dict) -> bool:

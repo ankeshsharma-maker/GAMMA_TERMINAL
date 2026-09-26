@@ -49,7 +49,10 @@ export const NAV_GROUPS: NavGroup[] = [
     key: "scan",
     label: "Scan",
     icon: "📡",
-    members: [["scanner", "Scan"]],
+    members: [
+      ["scanner", "Scan"],
+      ["volume", "Volume"],
+    ],
   },
   {
     key: "account",

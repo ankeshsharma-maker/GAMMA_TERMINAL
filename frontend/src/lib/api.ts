@@ -39,6 +39,33 @@ export type OiWallPt = {
 
 export const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/+$/, "");
 
+export type VolRow = {
+  symbol: string;
+  name?: string | null;
+  fo: boolean;
+  ltp: number;
+  chgPct: number | null;
+  vol: number;
+  value: number;
+  avgVol: number | null;
+  rvol: number | null;
+  volXAvg: number | null;
+  pdh: number | null;
+  pdl: number | null;
+  dayHigh: number | null;
+  dayLow: number | null;
+  signal: "PDH" | "PDL" | "HIGH" | "LOW" | null;
+};
+export type VolSnapshot = {
+  universe: "fo" | "all";
+  asOf: number | null;
+  market: "open" | "closed";
+  sessionFraction: number;
+  baseline: { ready: number; total: number; date: string | null };
+  cfg: { alertLevel: number; minValueCr: number };
+  rows: VolRow[];
+};
+
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const tok = getToken();
   const res = await fetch(/^https?:\/\//.test(url) ? url : API_BASE + url, {
@@ -137,6 +164,9 @@ export const api = {
       }[];
     }>(`/api/history/${symbol}`),
 
+  volumeScreener: (universe: "fo" | "all") => j<VolSnapshot>(`/api/volume-screener?universe=${universe}`),
+  volumeScreenerConfig: (body: { alertLevel?: number; minValueCr?: number }) =>
+    j<VolSnapshot["cfg"]>("/api/volume-screener/config", { method: "POST", body: JSON.stringify(body) }),
   gexIntraday: (symbol: string, day: string | null) =>
     j<{ symbol: string; day: string | null; days: string[]; live: boolean; points: [number, number | null, number | null, number | null][] }>(
       `/api/gex-intraday/${symbol}` + (day ? `?day=${encodeURIComponent(day)}` : "")
