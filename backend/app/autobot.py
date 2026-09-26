@@ -189,22 +189,29 @@ def _crossed(a_prev: float, a_cur: float, b_prev: float, b_cur: float, direction
 # --------------------------------------------------------------------------- #
 # evaluation context                                                           #
 # --------------------------------------------------------------------------- #
+# option candles for rules whose conditions read an option's own chart: (fetched_at, rows) per contract
+_SIG_CACHE: dict[tuple, tuple[float, list]] = {}
+
+
 class _Ctx:
     """Series snapshot for one symbol, derived from ``store.history``."""
 
     def __init__(self, symbol: str, hist: list | None = None, tf: int = 0, bars: int = 0,
-                 row_s: int = 0, backtest: bool = False):
+                 row_s: int = 0, backtest: bool = False, candle_rows: list | None = None):
         hist = list(store.history.get(symbol, [])) if hist is None else list(hist)
-        self.n = len(hist)
         self.hist = hist
+        # candle_rows: the price series the candle / indicator / structure conditions read (an
+        # option's own 1-min candles, with their real volume); PCR / OI / GEX / IV still read `hist`
+        src = list(candle_rows) if candle_rows is not None else hist
+        self.n = len(src)
         self.tf = int(tf or 0)
         # a replay (backtest) row is a whole bar `row_s` seconds long, so the candle it ends is
         # finished; live rows are snapshots, and the last candle is still forming
         self.row_s = int(row_s or 0)
         self.backtest = bool(backtest)
         self._trade: dict | None = None  # the open trade, while an Exit list is being judged
-        self.ts = [float(h.get("t") or 0) for h in hist]
-        raw_spot = [float(h["spot"]) for h in hist if h.get("spot") is not None]
+        self.ts = [float(h.get("t") or 0) for h in src]
+        raw_spot = [float(h["spot"]) for h in src if h.get("spot") is not None]
 
         # OHLC candle series. tf>0 -> resample the spot snapshots into
         # tf-second candles; otherwise use the row's own OHLC when present
@@ -215,7 +222,7 @@ class _Ctx:
                 float(h.get("o", h["spot"])), float(h.get("h", h["spot"])),
                 float(h.get("l", h["spot"])), float(h.get("c", h["spot"])),
             )
-            for h in hist
+            for h in src
             if h.get("spot") is not None and h.get("t")
         ]
         if self.tf > 0 and rows:
@@ -245,7 +252,12 @@ class _Ctx:
         # -- NIFTY the index has no volume of its own; this is what the "with volume" checks read
         vol_by: dict[int, float] = {}
         prev_cum, prev_day = None, None
-        for h in hist:
+        if candle_rows is not None:  # an option's own candles carry their traded volume
+            for h in src:
+                if h.get("t") is not None and h.get("v") is not None:
+                    k = bucket_start(float(h["t"]), self.tf) if self.tf > 0 else int(h["t"])
+                    vol_by[k] = vol_by.get(k, 0.0) + float(h["v"] or 0)
+        for h in ([] if candle_rows is not None else hist):
             if h.get("t") is None or (h.get("ceVol") is None and h.get("peVol") is None):
                 continue
             t = float(h["t"])
@@ -1322,6 +1334,8 @@ class AutoBot:
         self._pnl_day: str = ""
         # in-memory only: why each rule did / didn't act on the last look (see _set_why)
         self._why: dict[str, dict] = {}
+        # rules whose conditions read an option's chart: rule id -> (the contract, its 1-min candles), per tick
+        self._sig: dict[str, tuple[dict, list]] = {}
         self._alert_seen: dict[tuple, float] = {}
         self._trips_cache: tuple[int, list[dict]] = (-1, [])
 
@@ -1704,6 +1718,7 @@ class AutoBot:
                 st["weekKey"], st["weekTrades"] = wk, 0
 
             pos = st.get("open")
+            await self._load_sig(rule, st)  # an option-chart rule: that option's candles for this tick
             if pos:
                 if await self._manage(rule, st, pos, now, day, open_mkt, ctx_cache):
                     changed = True
@@ -1720,7 +1735,63 @@ class AutoBot:
     # ---- an open position ---------------------------------------------- #
     def _cx(self, cache: dict, sym: str, rule: dict) -> _Ctx:
         tf, bars = int(rule.get("entryTf") or 0), int(rule.get("entryBars") or 0)
+        sig = self._sig.get(rule.get("id", ""))
+        if sig:  # conditions read an option's own chart
+            c, rows = sig
+            key = (sym, tf, bars, c["expiry"], c["strike"], c["ot"])
+            return cache.get(key) or cache.setdefault(key, _Ctx(sym, tf=tf, bars=bars, candle_rows=rows))
         return cache.get((sym, tf, bars)) or cache.setdefault((sym, tf, bars), _Ctx(sym, tf=tf, bars=bars))
+
+    def _sig_contract(self, rule: dict, st: dict) -> dict | None:
+        """The option whose chart this rule reads: while in a trade, the one fixed at entry; otherwise
+        resolved now from the chain (the option it would trade, an ATM/OTM/ITM pick, or a fixed strike)."""
+        if str(rule.get("sigOn") or "index") != "option":
+            return None
+        pos = st.get("open") or {}
+        if pos.get("sig"):
+            return pos["sig"]
+        sym = (rule.get("symbol") or "").upper()
+        chain = store.get_chain(sym, rule.get("expiry"))
+        if not chain or not chain.get("atmStrike"):
+            return None
+        pick = str(rule.get("sigInstrument") or "TRADED")
+        if pick == "FIXED":
+            k, ot = _num_or_none(rule.get("sigStrike")), str(rule.get("sigOt") or "CE").upper()
+            if not k:
+                return None
+            strike = float(k)
+        else:
+            inst = rule.get("instrument", "ATM_CE") if pick == "TRADED" else pick
+            if pick == "TRADED" and ST.is_structure(rule):
+                return None  # a multi-leg trade has no single option to read
+            strike, ot = _resolve_instrument(inst, chain["atmStrike"], chain.get("strikeStep") or 50)
+        return {"symbol": sym, "expiry": chain["expiry"], "strike": float(strike), "ot": ot,
+                "label": f"{float(strike):g} {ot}"}
+
+    async def _load_sig(self, rule: dict, st: dict) -> None:
+        """Fetch (30-s cache) the 1-min candles of the option this rule reads, for this tick's checks."""
+        rid = rule.get("id", "")
+        c = self._sig_contract(rule, st)
+        if not c:
+            self._sig.pop(rid, None)
+            return
+        key = (c["symbol"], c["expiry"], c["strike"], c["ot"])
+        hit = _SIG_CACHE.get(key)
+        if not hit or time.time() - hit[0] > 30:
+            from . import candle_sources
+            try:
+                # ~7 days back: a 15-min structure needs a few sessions of candles, not just today's
+                cs, _src = await candle_sources.option_candles(c["symbol"], c["expiry"], c["strike"], c["ot"], 60,
+                                                              lookback=7 * 24 * 60)
+            except Exception as exc:  # noqa: BLE001
+                log.debug("signal candles %s: %s", key, exc)
+                cs = None
+            cutoff = time.time() - 6 * 86400  # a few sessions is plenty for any condition's warm-up
+            rows = [{"t": x["time"], "spot": x["close"], "o": x["open"], "h": x["high"], "l": x["low"],
+                     "c": x["close"], "v": x.get("volume") or 0} for x in (cs or []) if x.get("time", 0) >= cutoff]
+            hit = (time.time(), rows)
+            _SIG_CACHE[key] = hit
+        self._sig[rid] = (c, hit[1])
 
     async def _manage(self, rule: dict, st: dict, pos: dict, now: datetime, day: str,
                       open_mkt: bool, ctx_cache: dict) -> bool:
@@ -1980,6 +2051,8 @@ class AutoBot:
             "mode": res.get("mode", "paper"),
             "peak": float(entry_px), "stopPx": None,
             "hlStop": hl_stop_level(rule, cx),
+            # conditions read an option's chart: exits keep reading the contract used at entry
+            "sig": (self._sig.get(rid) or (None,))[0],
         }
         st["tradesToday"] = st.get("tradesToday", 0) + 1
         st["weekTrades"] = st.get("weekTrades", 0) + 1

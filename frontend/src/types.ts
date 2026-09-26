@@ -390,6 +390,12 @@ export interface AutoRule {
    *  "pct" = % of entry premium, "pts" = premium points, "rs" = rupee P&L */
   /** timeframe (seconds) the entry/exit indicators evaluate on. 0 = raw ticks */
   entryTf?: number;
+  /** where the price / volume conditions read from: the index (default) or an option's own chart */
+  sigOn?: "index" | "option";
+  /** which option: "TRADED" = the one this rule trades, an instrument code (ATM_CE, OTM1_PE ...), or "FIXED" */
+  sigInstrument?: string;
+  sigStrike?: number | null;
+  sigOt?: "CE" | "PE";
   /** how many candles of history to keep for indicator warm-up */
   entryBars?: number;
   slBasis?: "pct" | "pts" | "rs";
@@ -439,8 +445,10 @@ export interface AutoRule {
       mode: string;
       peak?: number;
       stopPx?: number | null;
-      /** a "closes below the entry HL" exit: the swing low frozen when the trade opened (underlying price) */
+      /** a "closes below the entry HL" exit: the swing low frozen when the trade opened (on the chart the rule reads) */
       hlStop?: number | null;
+      /** the option whose chart this trade's conditions read (when the rule reads an option, not the index) */
+      sig?: { symbol: string; expiry: string; strike: number; ot: "CE" | "PE"; label: string } | null;
       /** e.g. "23350CE", or a structure's summary */
       label?: string;
       structure?: string;

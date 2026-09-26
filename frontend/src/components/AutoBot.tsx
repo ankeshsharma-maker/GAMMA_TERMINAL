@@ -1435,6 +1435,59 @@ function RuleEditor({
       <div className="space-y-3 rounded border border-term-border/60 bg-term-bg/40 p-2">
         {/* candle timeframe the indicator / pattern / ATR conditions run on */}
         {step === 2 && (
+          <div className="space-y-1.5 rounded border border-term-border/70 p-2 text-[11px]">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-term-dim">Read conditions from</span>
+              <div className="seg">
+                <button type="button" className={(r.sigOn ?? "index") === "index" ? "on" : ""} onClick={() => set({ sigOn: "index" })}>
+                  {r.symbol || "Index"} (index)
+                </button>
+                <button type="button" className={r.sigOn === "option" ? "on" : ""} onClick={() => set({ sigOn: "option", sigInstrument: r.sigInstrument ?? "TRADED" })}>
+                  An option's own chart
+                </button>
+              </div>
+            </div>
+            {r.sigOn === "option" && (
+              <div className="flex flex-wrap items-center gap-2">
+                <SelectMenu
+                  value={r.sigInstrument ?? "TRADED"}
+                  options={[
+                    ["The option it trades", "TRADED"],
+                    ...INSTRUMENTS.map((x) => [x, x] as [string, string]),
+                    ["A fixed strike…", "FIXED"],
+                  ]}
+                  onChange={(v) => set({ sigInstrument: v })}
+                  title="Which option's chart the conditions read"
+                  width={170}
+                />
+                {r.sigInstrument === "FIXED" && (
+                  <>
+                    <input
+                      type="number"
+                      placeholder="strike"
+                      value={r.sigStrike ?? ""}
+                      onChange={(e) => set({ sigStrike: e.target.value === "" ? null : Number(e.target.value) })}
+                      className="num w-24 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
+                    />
+                    <div className="seg">
+                      {(["CE", "PE"] as const).map((o) => (
+                        <button key={o} type="button" className={(r.sigOt ?? "CE") === o ? "on" : ""} onClick={() => set({ sigOt: o })}>
+                          {o}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            <div className="text-[10px] leading-snug text-term-dim">
+              {r.sigOn === "option"
+                ? "Candle, indicator, structure and volume conditions read that option's own 1-min chart (with its real traded volume). PCR / OI / GEX / IV conditions still read the index's option chain. Once in a trade, exits keep reading the contract it entered on. ATM / OTM picks move with the market — use a fixed strike for one steady chart. Backtests still read the index chart."
+                : "Conditions read the index chart. Pick an option's own chart to trade off a CE / PE's structure, EMAs, RSI and volume instead."}
+            </div>
+          </div>
+        )}
+        {step === 2 && (
         <div className="flex flex-wrap items-center gap-2 text-[10px] text-term-dim">
           <span className="font-semibold uppercase tracking-wide">Entry candles</span>
           <div className="seg">
@@ -1855,6 +1908,7 @@ function RuleEditor({
               [
                 ["Trades", `${r.symbol ?? "–"} · ${r.structure && r.structure !== "single" ? r.structure.replace(/_/g, " ") : `${r.side ?? ""} ${r.instrument ?? ""}`} ×${r.lots ?? 1}`],
                 ["Candles", tfLabel(r.entryTf)],
+                ["Reads", sigLabel(r)],
                 ["Mode", r.mode === "live" ? "LIVE — real orders" : "paper"],
                 ["Holds", r.holdType === "positional" ? "overnight (positional)" : `intraday, out by ${r.squareOff || "15:20"}`],
                 ["Per day", `up to ${r.maxTradesPerDay ?? 3} trades`],
@@ -1879,7 +1933,7 @@ function RuleEditor({
       {/* in plain words -- kept up to date on every step */}
       <div className="rounded border border-term-border bg-term-bg/40 px-2.5 py-2 text-[11px] leading-snug text-term-dim">
         <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide">In plain words</span>
-        On <span className="text-term-text">{r.symbol}</span>, on {tfLabel(r.entryTf)} candles, enter when{" "}
+        On <span className="text-term-text">{sigLabel(r)}</span>, on {tfLabel(r.entryTf)} candles, enter when{" "}
         <span className="text-term-text">{words.enter}</span>
         {words.exit && (
           <>
@@ -2126,6 +2180,15 @@ function AutoPerformance() {
 /* ------------------------------------------------------------------ */
 /* rule card: status, plain words, scorecard, "Now"                     */
 /* ------------------------------------------------------------------ */
+/** which chart a rule's price / volume conditions read, in words */
+const sigLabel = (r: Partial<AutoRule>) => {
+  if ((r.sigOn ?? "index") !== "option") return `${r.symbol ?? ""} (index)`;
+  const pick = r.sigInstrument ?? "TRADED";
+  if (pick === "FIXED") return r.sigStrike ? `${r.sigStrike} ${r.sigOt ?? "CE"} option` : "a fixed strike (not set)";
+  if (pick === "TRADED") return `the option it trades (${r.instrument ?? "ATM_CE"})`;
+  return `the ${pick} option`;
+};
+
 const tfLabel = (tf?: number) => (!tf ? "tick" : tf < 3600 ? `${tf / 60}m` : tf < 86400 ? `${tf / 3600}h` : "1D");
 
 /** "Enter when A and B · exit on C or D, SL 25%, target 50%" */
@@ -2222,7 +2285,9 @@ function RuleCard({
   const today = r._stats?.today ?? 0;
   const entryLiveIdx = !open ? (r.entry ?? []).findIndex((c) => c.kind === "prev_candle") : -1;
   const exitLiveIdx = open ? (r.exit ?? []).findIndex((c) => c.kind === "prev_candle") : -1;
-  const meta = `${r.symbol}${r.expiry ? ` ${r.expiry}` : ""} · ${tfLabel(r.entryTf)} · ${ruleWhat(r)} ×${r.lots}`;
+  const meta = `${r.symbol}${r.expiry ? ` ${r.expiry}` : ""} · ${tfLabel(r.entryTf)} · ${ruleWhat(r)} ×${r.lots}${
+    r.sigOn === "option" ? ` · reads ${open?.sig?.label ? `${open.sig.label} chart` : sigLabel(r)}` : ""
+  }`;
 
   const toggle = (
     <button
@@ -2336,7 +2401,12 @@ function RuleCard({
               {open.label ?? `${open.strike}${open.ot}`} · entry {open.entryPx.toFixed(1)}
               {open.peak != null && ` · peak ${open.peak.toFixed(1)}`}
               {open.stopPx != null && <span className="text-amber-400"> · stop {open.stopPx.toFixed(1)}</span>}
-              {open.hlStop != null && <span className="text-amber-400"> · out if {r.symbol} closes below HL {open.hlStop.toFixed(1)}</span>}
+              {open.hlStop != null && (
+                <span className="text-amber-400">
+                  {" "}
+                  · out if {open.sig?.label ?? r.symbol} closes below HL {open.hlStop.toFixed(1)}
+                </span>
+              )}
             </span>
           </div>
         )}

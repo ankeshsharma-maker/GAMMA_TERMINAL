@@ -259,6 +259,9 @@ def _not_simulated(rule: dict, interval: int | None = None) -> list[str]:
         out.append("days-to-expiry gate (a backtest has no real expiry calendar)")
     if _f(rule.get("maxSpreadPct"), 0.0) > 0:
         out.append("spread guard (no historical quotes)")
+    if str(rule.get("sigOn") or "index") == "option":
+        out.append("conditions reading an option's own chart -- the backtest reads the index chart instead "
+                   "(expired contracts have no candle history)")
     if any((c or {}).get("kind") == "market_structure" and (c or {}).get("op") in ("breaks_high", "breaks_low")
            and _f((c or {}).get("volMult"), 1.5) > 0 for c in (rule.get("entry") or []) + (rule.get("exit") or [])):
         out.append("the volume check on a structure break (no historical option volume -- every break counts)")
