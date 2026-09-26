@@ -55,7 +55,10 @@ def _candles(hist: list[dict], interval_s: int) -> list[dict]:
     return [buckets[b] for b in sorted(order)]
 
 
-def _line(hist: list[dict], key: str) -> list[dict]:
+def _line(hist: list[dict], key: str, interval_s: int = 0) -> list[dict]:
+    """One point per chart bar (the last reading inside it, stamped at the bar's start) --
+    the history is a reading every ~70 s, and sending all 720 of them for 17 lines made
+    every chart answer ~450 KB whatever the timeframe. interval_s=0: every reading."""
     out: list[dict] = []
     last_t = None
     for h in hist:
@@ -63,7 +66,7 @@ def _line(hist: list[dict], key: str) -> list[dict]:
         t = h.get("t")
         if v is None or t is None:
             continue
-        ti = int(t)
+        ti = bucket_start(t, interval_s) if interval_s else int(t)
         if ti == last_t:
             out[-1] = {"time": ti, "value": round(v, 4)}
         else:
@@ -84,7 +87,7 @@ def build_chart(
     score_line: list[dict] = []
     last_t = None
     for x in scan_hist:
-        ti = int(x["t"])
+        ti = bucket_start(x["t"], interval_s)
         if ti == last_t:
             score_line[-1] = {"time": ti, "value": x["score"]}
         else:
@@ -121,24 +124,24 @@ def build_chart(
         "hasVolume": any(c.get("volume") for c in candles),
         "candles": candles,
         "series": {
-            "straddle": _line(hist, "atmStraddle"),
-            "atmIV": _line(hist, "atmIV"),
-            "netGex": _line(hist, "netGex"),
-            "pcr": _line(hist, "pcr"),
-            "maxPain": _line(hist, "maxPain"),
-            "ceOI": _line(hist, "ceOI"),
-            "peOI": _line(hist, "peOI"),
-            "ceOIChg": _line(hist, "ceOIChg"),
-            "peOIChg": _line(hist, "peOIChg"),
+            "straddle": _line(hist, "atmStraddle", interval_s),
+            "atmIV": _line(hist, "atmIV", interval_s),
+            "netGex": _line(hist, "netGex", interval_s),
+            "pcr": _line(hist, "pcr", interval_s),
+            "maxPain": _line(hist, "maxPain", interval_s),
+            "ceOI": _line(hist, "ceOI", interval_s),
+            "peOI": _line(hist, "peOI", interval_s),
+            "ceOIChg": _line(hist, "ceOIChg", interval_s),
+            "peOIChg": _line(hist, "peOIChg", interval_s),
             "score": score_line,
-            "ceDelta": _line(hist, "atmCEDelta"),
-            "peDelta": _line(hist, "atmPEDelta"),
-            "ceGamma": _line(hist, "atmCEGamma"),
-            "peGamma": _line(hist, "atmPEGamma"),
-            "ceTheta": _line(hist, "atmCETheta"),
-            "peTheta": _line(hist, "atmPETheta"),
-            "ceVega": _line(hist, "atmCEVega"),
-            "peVega": _line(hist, "atmPEVega"),
+            "ceDelta": _line(hist, "atmCEDelta", interval_s),
+            "peDelta": _line(hist, "atmPEDelta", interval_s),
+            "ceGamma": _line(hist, "atmCEGamma", interval_s),
+            "peGamma": _line(hist, "atmPEGamma", interval_s),
+            "ceTheta": _line(hist, "atmCETheta", interval_s),
+            "peTheta": _line(hist, "atmPETheta", interval_s),
+            "ceVega": _line(hist, "atmCEVega", interval_s),
+            "peVega": _line(hist, "atmPEVega", interval_s),
         },
         "lastSpot": candles[-1]["close"] if candles else None,
         "points": len(hist),

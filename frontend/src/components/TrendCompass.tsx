@@ -141,7 +141,7 @@ const cache = new Map<string, { at: number; p: Promise<TrendRead | null>; v: Tre
 
 async function build(symbol: string): Promise<TrendRead | null> {
   const [candleSets, flow] = await Promise.all([
-    Promise.all(TFS.map(([, s]) => api.chart(symbol, s).then((d) => d.candles as Candle[], () => null))),
+    Promise.all(TFS.map(([, s]) => api.chart(symbol, s, undefined, undefined, true).then((d) => d.candles as Candle[], () => null))),
     api.flow(symbol, undefined, "15").then((d) => flowDir(d.state?.dir), () => null),
   ]);
   const tfs = TFS.map(([label], i) => {

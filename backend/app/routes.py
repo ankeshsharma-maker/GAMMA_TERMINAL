@@ -398,6 +398,7 @@ async def chart(
     interval: int = Query(60, ge=15, le=86400),
     instrument: str | None = Query(None),
     src: str = Query("auto"),  # auto | broker | upstox
+    lite: bool = Query(False),  # candles only (the trend strip): no option-data lines
 ):
     symbol = symbol.upper()
     src = (src or "auto").lower()
@@ -455,11 +456,11 @@ async def chart(
     base_candles, src_label = await candle_sources.underlying_candles(symbol, interval)
 
     return _guard_chart(
-        (symbol, interval, src),
+        (symbol, interval, src, lite),
         build_chart(
             symbol,
-            store.get_history(symbol),
-            store.get_scan_history(symbol),
+            [] if lite else store.get_history(symbol),
+            [] if lite else store.get_scan_history(symbol),
             interval_s=interval,
             base_candles=base_candles,
             source_label=src_label,
