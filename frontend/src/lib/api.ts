@@ -64,6 +64,10 @@ export type VolRow = {
   open: number | null;
   gapPct: number | null;
   gapFilled: boolean;
+  vwap: number | null;
+  rangePos: number;
+  /** which side has been in control today (vs VWAP + where price sits in the day's range) */
+  dir: "BUY" | "SELL" | "MIXED";
 };
 export type VolSnapshot = {
   universe: "fo" | "all";

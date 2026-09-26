@@ -132,11 +132,17 @@ export type Metric = {
   sort: (r: VolRow) => number | null;
 };
 
-type SortKey = "symbol" | "ltp" | "chg" | "metric" | "vol" | "value";
+type SortKey = "symbol" | "ltp" | "chg" | "dir" | "metric" | "vol" | "value";
 type Col = SortKey;
-/** default column widths (px): all seven fit a 360-px phone with the grid lines */
-const DEF_W: Record<Col, number> = { symbol: 70, ltp: 60, chg: 48, metric: 46, vol: 50, value: 50 };
-const W_KEY = "scan.colWidths.v2"; // v2: + the volume column (older saved widths no longer add up)
+/** default column widths (px) for 12-px numbers: wider than a phone -- the table swipes
+ *  sideways with the SYMBOL column frozen on the left */
+const DEF_W: Record<Col, number> = { symbol: 84, ltp: 72, chg: 60, dir: 44, metric: 54, vol: 62, value: 58 };
+const W_KEY = "scan.colWidths.v3"; // v3: + the direction column, bigger text
+const DIR: Record<string, { label: string; cls: string; n: number }> = {
+  BUY: { label: "▲ Buy", cls: "text-up", n: 1 },
+  SELL: { label: "▼ Sell", cls: "text-down", n: -1 },
+  MIXED: { label: "◆", cls: "text-term-dim", n: 0 },
+};
 const readWidths = (): Record<Col, number> => {
   try {
     return { ...DEF_W, ...JSON.parse(localStorage.getItem(W_KEY) || "{}") };
@@ -152,7 +158,8 @@ const saveWidths = (w: Record<Col, number>) => {
   }
 };
 
-/** A grid, one line per stock: SYMBOL | LTP | %CHG | the scan's own number | VOLUME | VALUE | ☆.
+/** A grid, one line per stock: SYMBOL | LTP | %CHG | DIR | the scan's own number | VOLUME | VALUE | ☆
+ *  (SYMBOL frozen while the table swipes sideways).
  *  Tap a header to sort (again to flip), drag a header's column line to resize it, tap a
  *  row for its chart. */
 export function ScanTable({
@@ -188,6 +195,8 @@ export function ScanTable({
         ? r.chgPct
         : sort.key === "vol"
         ? r.vol
+        : sort.key === "dir"
+        ? (DIR[r.dir]?.n ?? 0) * 1000 + (r.rvol ?? 0) // buys first, heaviest volume within
         : sort.key === "value"
         ? r.value
         : metric.sort(r);
@@ -232,10 +241,13 @@ export function ScanTable({
     });
 
   const head = (k: SortKey & Col, label: string, right: boolean) => (
-    <div style={{ width: w[k] }} className="relative shrink-0 border-r border-term-border">
+    <div
+      style={{ width: w[k] }}
+      className={`relative shrink-0 border-r border-term-border ${k === "symbol" ? "sticky left-0 z-[3] bg-term-panel" : ""}`}
+    >
       <button
         onClick={() => setSort((s) => (s.key === k ? { key: k, dir: (s.dir * -1) as 1 | -1 } : { key: k, dir: k === "symbol" ? 1 : -1 }))}
-        className={`w-full whitespace-nowrap px-[3px] py-1.5 text-[8.5px] font-semibold uppercase ${right ? "text-right" : "text-left"} ${
+        className={`w-full whitespace-nowrap px-1 py-1.5 text-[10px] font-semibold uppercase ${right ? "text-right" : "text-left"} ${
           sort.key === k ? "text-term-accent" : "text-term-dim"
         }`}
       >
@@ -254,7 +266,12 @@ export function ScanTable({
     </div>
   );
   const cell = (c: Col, cls: string, body: ReactNode) => (
-    <div style={{ width: w[c] }} className={`shrink-0 overflow-hidden whitespace-nowrap border-r border-term-border px-[3px] py-1.5 ${cls}`}>
+    <div
+      style={{ width: w[c] }}
+      className={`shrink-0 overflow-hidden whitespace-nowrap border-r border-term-border px-1 py-1.5 ${
+        c === "symbol" ? "sticky left-0 z-[2] bg-inherit" : ""
+      } ${cls}`}
+    >
       {body}
     </div>
   );
@@ -267,10 +284,11 @@ export function ScanTable({
           {head("symbol", "Symbol", false)}
           {head("ltp", "LTP", true)}
           {head("chg", "%Chg", true)}
+          {head("dir", "Dir", true)}
           {head("metric", metric.label, true)}
           {head("vol", "Volume", true)}
           {head("value", "Value", true)}
-          <div className="w-[18px] shrink-0" />
+          <div className="w-7 shrink-0" />
         </div>
         {sorted.length === 0 && <div className="p-6 text-center text-[12px] text-term-dim">{empty}</div>}
         {sorted.map((r, i) => {
@@ -285,21 +303,21 @@ export function ScanTable({
               key={r.symbol}
               role="button"
               onClick={open}
-              className={`flex cursor-pointer items-stretch text-[10px] active:bg-term-border/40 ${
+              className={`flex cursor-pointer items-stretch text-[12px] active:bg-term-border ${
                 i < sorted.length - 1 ? "border-b border-term-border" : ""
-              } ${i % 2 ? "bg-term-panel/40" : ""}`}
+              } ${i % 2 ? "bg-term-panel" : "bg-term-bg"}`}
             >
               {cell(
                 "symbol",
                 "min-w-0",
                 <>
                   <span className="flex items-center gap-1">
-                    <span className="truncate text-[11px] font-semibold text-term-text">{r.symbol}</span>
+                    <span className="truncate text-[12.5px] font-semibold text-term-text">{r.symbol}</span>
                     {!r.fo && <span className="shrink-0 rounded bg-term-border px-0.5 text-[8px] font-semibold text-term-dim">CASH</span>}
                   </span>
                   {/* the breakout tag / company name sit on a small second line so the symbol keeps its room */}
                   {(tag?.(r) || r.name) && (
-                    <span className="flex items-center gap-1 overflow-hidden text-[9px]">
+                    <span className="flex items-center gap-1 overflow-hidden text-[10px]">
                       {tag?.(r)}
                       {r.name && <span className="truncate text-term-dim/80">{r.name}</span>}
                     </span>
@@ -312,6 +330,13 @@ export function ScanTable({
                 `num flex items-center justify-end ${r.chgPct == null ? "text-term-dim" : r.chgPct >= 0 ? "text-up" : "text-down"}`,
                 r.chgPct == null ? "–" : `${r.chgPct >= 0 ? "+" : ""}${nf(r.chgPct)}%`
               )}
+              {cell(
+                "dir",
+                `flex items-center justify-center font-semibold ${DIR[r.dir]?.cls ?? "text-term-dim"}`,
+                <span title="Buying = above the day's VWAP and high in the day's range; selling = the opposite. An estimate.">
+                  {DIR[r.dir]?.label ?? "–"}
+                </span>
+              )}
               {cell("metric", "num flex items-center justify-end", metric.cell(r))}
               {cell("vol", "num flex items-center justify-end text-term-text", qty(r.vol))}
               {cell("value", "num flex items-center justify-end text-term-dim", cr(r.value))}
@@ -322,7 +347,7 @@ export function ScanTable({
                   addWatch(key);
                   setAdded((a) => new Set(a).add(key));
                 }}
-                className="w-[18px] shrink-0 text-center text-[12px] text-term-dim disabled:text-amber-400"
+                className="w-7 shrink-0 text-center text-[15px] text-term-dim disabled:text-amber-400"
                 title={has ? "In your watchlist" : "Add to watchlist"}
               >
                 {has ? "★" : "☆"}

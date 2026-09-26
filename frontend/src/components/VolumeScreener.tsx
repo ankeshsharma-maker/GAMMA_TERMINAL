@@ -121,7 +121,9 @@ export function VolumeScreener() {
       <div className="px-3 py-3 text-[10px] leading-snug text-term-dim">
         "x usual" = today's volume vs the stock's average day (20 sessions), scaled to how much of a normal day trades by
         this time — approximate. Breakouts need 1.5x+ volume: ▲PDH / ▼PDL = past yesterday's high / low, ▲HI / ▼LO = at
-        today's high / low. Tap a header to sort, a stock for its chart; ☆ adds it to the watchlist.
+        today's high / low. Dir = who has been in control TODAY: ▲ Buy = above the day's average traded price (VWAP) and high in
+        the day's range, ▼ Sell = the opposite, ◆ = mixed — an estimate, and about today's session (a stock down on
+        the day can still be ▲ Buy if it recovered). SYMBOL stays put when the table is swiped sideways. Tap a header to sort, a stock for its chart; ☆ adds it to the watchlist.
       </div>
     </div>
   );

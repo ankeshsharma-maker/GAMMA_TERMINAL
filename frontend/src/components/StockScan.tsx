@@ -157,7 +157,9 @@ export function StockScan() {
       )}
       <div className="px-3 py-3 text-[10px] leading-snug text-term-dim">
         Gainers / losers = % change vs yesterday's close, with the move's volume vs usual beside it. 52W = the last 52 weeks of sessions before today; NEW = today's range went past it. Gap = today's open vs
-        yesterday's close; F = filled (price has traded back to yesterday's close). Tap a header to sort, a stock for its
+        yesterday's close; F = filled (price has traded back to yesterday's close). Dir = who has been in control TODAY: ▲ Buy = above the day's average traded price (VWAP) and high in
+        the day's range, ▼ Sell = the opposite, ◆ = mixed — an estimate, and about today's session (a stock down on
+        the day can still be ▲ Buy if it recovered). SYMBOL stays put when the table is swiped sideways. Tap a header to sort, a stock for its
         chart; ☆ adds it to the watchlist.
       </div>
     </div>

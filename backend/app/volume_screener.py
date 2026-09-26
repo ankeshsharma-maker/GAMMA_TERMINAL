@@ -276,6 +276,7 @@ async def _poll(ux, syms: list[str]) -> None:
                 "chgPct": round(net / base * 100, 2) if base else None,
                 "vol": vol,
                 "value": vol * avgpx,
+                "vwap": avgpx,  # the day's average traded price
                 "dayHigh": _num(ohlc.get("high")),
                 "dayLow": _num(ohlc.get("low")),
                 "open": _num(ohlc.get("open")),
@@ -304,6 +305,17 @@ def _row(sym: str, fo: set[str]) -> dict | None:
         elif q["dayLow"] and ltp <= q["dayLow"] * 1.002:
             sig = "LOW"  # at today's low
     w52h, w52l, pdc, op = b.get("w52h"), b.get("w52l"), b.get("pdc"), q.get("open")
+    # which side has been in control today: above the day's average traded price (VWAP)
+    # and in the upper part of today's range = buying; below it and low in the range =
+    # selling. An estimate from the day's numbers, not a trade-by-trade buy / sell count.
+    vwap, hi, lo = q.get("vwap"), q["dayHigh"], q["dayLow"]
+    pos = (ltp - lo) / (hi - lo) if hi and lo and hi > lo else 0.5
+    direction = "MIXED"
+    if vwap:
+        if ltp > vwap * 1.001 and pos >= 0.6:
+            direction = "BUY"
+        elif ltp < vwap * 0.999 and pos <= 0.4:
+            direction = "SELL"
     gap = round((op - pdc) / pdc * 100, 2) if op and pdc else None
     return {
         "symbol": sym,
@@ -333,6 +345,9 @@ def _row(sym: str, fo: set[str]) -> dict | None:
         "dayHigh": q["dayHigh"],
         "dayLow": q["dayLow"],
         "signal": sig,
+        "vwap": vwap,
+        "rangePos": round(pos, 2),  # 0 = at the day's low, 1 = at the high
+        "dir": direction,
     }
 
 
