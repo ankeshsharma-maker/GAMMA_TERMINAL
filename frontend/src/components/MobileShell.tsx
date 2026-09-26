@@ -245,7 +245,7 @@ const TOP_NAV: TopTab[] = [
   { v: "flow", label: "Flow", group: "analysis" },
   { v: "orderflow", label: "OrderFlow", group: "analysis" },
   { v: "vol", label: "Vol", group: "analysis" },
-  { v: "scanner", label: "Screener", group: "analysis" },
+  { v: "scanner", label: "Signals", group: "analysis" },
   { v: "volume", label: "Volume", group: "analysis" },
   { v: "stockscan", label: "Movers", group: "analysis" },
   { v: "positional", label: "Positional", group: "analysis" },

@@ -50,7 +50,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Scan",
     icon: "📡",
     members: [
-      ["scanner", "Scan"],
+      ["scanner", "Signals"],
       ["volume", "Volume"],
       ["stockscan", "Movers"],
       ["positional", "Positional"],
