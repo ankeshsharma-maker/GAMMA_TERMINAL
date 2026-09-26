@@ -1176,17 +1176,38 @@ const FIELD_GRID = "grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] items-s
 
 /** Visible help text under a field. Tooltips don't exist on a phone or in the app, so anything a
  *  person needs to understand a field has to be on the screen. */
+/** the help box a hint opens: hidden until the field is hovered (desktop) or being typed in (phone) */
+const TIP_BOX =
+  "pointer-events-none invisible absolute bottom-full left-0 z-50 mb-1 w-64 max-w-[80vw] rounded border border-term-border bg-term-panel px-2 py-1.5 text-[11px] font-normal leading-snug text-term-text opacity-0 shadow-lg transition-opacity";
+
+/** a stand-alone hint: a small ⓘ whose text shows on hover / tap */
 function Hint({ children }: { children: ReactNode }) {
-  return <span className="mt-1 block text-[11px] font-normal leading-snug text-term-dim">{children}</span>;
+  return (
+    <span className="group/tip relative inline-flex align-middle">
+      <span tabIndex={0} className="cursor-help text-[11px] text-term-dim outline-none hover:text-term-accent">
+        ⓘ
+      </span>
+      <span role="tooltip" className={`${TIP_BOX} group-hover/tip:visible group-hover/tip:opacity-100 group-focus-within/tip:visible group-focus-within/tip:opacity-100`}>
+        {children}
+      </span>
+    </span>
+  );
 }
 
-/** a field: label above, the control, then its hint */
+/** a field: its label (with an ⓘ when it has help), the control; the help shows on hover or while typing in it */
 function HintLabel({ label, hint, title, children }: { label: string; hint?: ReactNode; title?: string; children: ReactNode }) {
   return (
-    <label className="flex min-w-0 flex-col text-[11px]" title={title}>
-      <span className="mb-0.5 font-medium text-term-text/90">{label}</span>
+    <label className="group/field relative flex min-w-0 flex-col text-[11px]" title={hint == null ? title : undefined}>
+      <span className="mb-0.5 flex items-center gap-1 font-medium text-term-text/90">
+        {label}
+        {hint != null && <span className="cursor-help text-[10px] text-term-dim group-hover/field:text-term-accent">ⓘ</span>}
+      </span>
       {children}
-      {hint != null && <Hint>{hint}</Hint>}
+      {hint != null && (
+        <span role="tooltip" className={`${TIP_BOX} group-hover/field:visible group-hover/field:opacity-100 group-focus-within/field:visible group-focus-within/field:opacity-100`}>
+          {hint}
+        </span>
+      )}
     </label>
   );
 }
