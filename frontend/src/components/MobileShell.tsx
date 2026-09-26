@@ -233,18 +233,18 @@ import { LogoMark } from "./Logo";
  *  landing-page nav (which still exists -- Chart.tsx's own Chain/OI/Trend
  *  OI/OI Profile switcher and each view's own internal navigation still
  *  reach everything else; these are just the fast one-tap paths). */
-type TabGroup = "market" | "scan" | "trade";
+type TabGroup = "home" | "chart" | "oi" | "scan" | "trade";
 type TopTab = { v: View; label: string; group: TabGroup };
 /** in the user's order of use (2026-09-24): analysis, then trading, then
  *  funds / review — a thin divider marks each group on the tab row */
 const TOP_NAV: TopTab[] = [
-  { v: "home", label: "Home", group: "market" },
-  { v: "chart", label: "Chart", group: "market" },
-  { v: "scrip", label: "OI", group: "market" },
-  { v: "trendingoi", label: "Trend OI", group: "market" },
-  { v: "flow", label: "Flow", group: "market" },
-  { v: "orderflow", label: "OrderFlow", group: "market" },
-  { v: "vol", label: "Vol", group: "market" },
+  { v: "home", label: "Home", group: "home" },
+  { v: "chart", label: "Chart", group: "chart" },
+  { v: "scrip", label: "OI", group: "oi" },
+  { v: "trendingoi", label: "Trend OI", group: "oi" },
+  { v: "flow", label: "Flow", group: "oi" },
+  { v: "orderflow", label: "OrderFlow", group: "oi" },
+  { v: "vol", label: "Vol", group: "oi" },
   { v: "scanner", label: "Signals", group: "scan" },
   { v: "volume", label: "Volume", group: "scan" },
   { v: "stockscan", label: "Movers", group: "scan" },
@@ -255,136 +255,72 @@ const TOP_NAV: TopTab[] = [
   { v: "journal", label: "Journal", group: "trade" },
 ];
 const GROUP_NAME: Record<TabGroup, string> = {
-  market: "Market",
+  home: "Home",
+  chart: "Chart",
+  oi: "OI",
   scan: "Scan",
   trade: "Trade",
 };
+
+/** The phone's top nav: FIVE buttons that always fit (Home / Chart / OI / Scan / Trade) -- one tap
+ *  opens that section at the tab last used there -- and, for a section with several tabs, its tabs
+ *  as chips in a slim row underneath. Home and Chart have no chip row, so the chart keeps its height. */
+function FiveTabs({
+  groups,
+  group,
+  onGroup,
+  tabs,
+  view,
+  setView,
+}: {
+  groups: { g: TabGroup; n: number }[];
+  group: TabGroup;
+  onGroup: (g: TabGroup) => void;
+  tabs: TopTab[];
+  view: View;
+  setView: (v: View) => void;
+}) {
+  return (
+    <nav className="shrink-0 border-b border-term-border bg-term-panel2">
+      <div className="grid gap-1 px-1.5 py-1.5" style={{ gridTemplateColumns: `repeat(${groups.length}, minmax(0, 1fr))` }}>
+        {groups.map(({ g }) => (
+          <button
+            key={g}
+            onClick={() => onGroup(g)}
+            className={`min-h-[40px] truncate rounded-md border px-1 py-2 text-[14px] font-semibold ${
+              g === group
+                ? "border-term-accent bg-term-accent text-white"
+                : "border-term-dim/70 bg-term-border/40 text-term-dim active:bg-term-border"
+            }`}
+          >
+            {GROUP_NAME[g]}
+          </button>
+        ))}
+      </div>
+      {tabs.length > 1 && (
+        <div className="no-scrollbar flex gap-1 overflow-x-auto px-1.5 pb-1.5">
+          {tabs.map((t) => (
+            <button
+              key={t.v}
+              onClick={() => setView(t.v)}
+              className={`min-h-[32px] shrink-0 grow whitespace-nowrap rounded-full border px-3 py-1 text-[12.5px] font-semibold ${
+                view === t.v ? "border-term-accent bg-term-accent/15 text-term-accent" : "border-term-border text-term-dim"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </nav>
+  );
+}
 const tabCls = (active: boolean) =>
   `rounded border text-[11px] font-semibold ${
     active
       ? "border-term-accent/50 bg-term-accent/15 text-term-accent"
       : "border-term-dim/70 bg-term-border/40 text-term-dim active:bg-term-border"
   }`;
-
-/** all tabs on ONE row that swipes sideways (was 3 wrapped rows, ~68px of
- *  chart/data lost on a 375px phone). Fades mark the edges that have more
- *  tabs behind them; on a screen wide enough for all of them (an unfolded
- *  Fold) they grow to fill the row instead. */
-function ScrollTabs({
-  tabs,
-  view,
-  setView,
-  group,
-  groups,
-  onGroup,
-}: {
-  tabs: (TopTab & { section: string })[];
-  view: View;
-  setView: (v: View) => void;
-  /** the group whose tabs the row shows, and the ones to pick from */
-  group: TabGroup;
-  groups: { g: TabGroup; n: number }[];
-  onGroup: (g: TabGroup) => void;
-}) {
-  const rowRef = useRef<HTMLDivElement>(null);
-  const [menu, setMenu] = useState(false);
-  const [edge, setEdge] = useState({ left: false, right: false });
-  const measure = () => {
-    const el = rowRef.current;
-    if (!el) return;
-    setEdge({
-      left: el.scrollLeft > 2,
-      right: el.scrollLeft + el.clientWidth < el.scrollWidth - 2,
-    });
-  };
-  // centre the selected tab — a switch from elsewhere (bottom bar, Chart's
-  // own view switcher) can land on one that's scrolled off, and an edge
-  // position would sit under the fade. (scrollTo, not scrollIntoView, which
-  // would also scroll the page's ancestors; instant while the app is in the
-  // background, where a smooth scroll never animates and stays put.)
-  useEffect(() => {
-    const row = rowRef.current;
-    const el = row?.querySelector<HTMLElement>(`[data-v="${view}"]`);
-    if (row && el)
-      row.scrollTo({
-        left: el.offsetLeft - (row.clientWidth - el.offsetWidth) / 2,
-        behavior: document.hidden ? "auto" : "smooth",
-      });
-    measure();
-  }, [view, group]);
-  // the row's own size, not window resize — covers fold/unfold and rotation
-  useEffect(() => {
-    const el = rowRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return (
-    <nav className="relative flex shrink-0 items-center border-b border-term-border bg-term-panel2">
-      {/* the group chip: Market / Scan / Trade -- the row shows only that group's tabs */}
-      <div className="relative shrink-0 py-1.5 pl-1.5">
-        <button
-          onClick={() => setMenu((m) => !m)}
-          className="whitespace-nowrap rounded border border-term-accent bg-term-accent px-2.5 py-1.5 text-[11px] font-bold text-white"
-          aria-expanded={menu}
-        >
-          {GROUP_NAME[group]} ▾
-        </button>
-        {menu && (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setMenu(false)} />
-            <div className="absolute left-1.5 top-full z-50 mt-1 flex w-40 flex-col gap-1 rounded-lg border border-term-border bg-term-panel p-1.5 shadow-2xl">
-              {groups.map(({ g, n }) => (
-                <button
-                  key={g}
-                  onClick={() => {
-                    setMenu(false);
-                    onGroup(g);
-                  }}
-                  className={`flex items-center justify-between rounded px-2.5 py-2 text-[13px] font-semibold ${
-                    g === group ? "bg-term-accent/15 text-term-accent" : "text-term-text active:bg-term-border"
-                  }`}
-                >
-                  {GROUP_NAME[g]}
-                  <span className="text-[11px] font-normal text-term-dim">{n} tabs</span>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-      <div
-        ref={rowRef}
-        onScroll={measure}
-        className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-1.5 py-1.5"
-      >
-        {tabs.map((n, i) => (
-          <Fragment key={n.v}>
-            {i > 0 && tabs[i - 1].section !== n.section && (
-              <span className="mx-0.5 h-5 w-px shrink-0 bg-term-dim/50" aria-hidden="true" />
-            )}
-            <button
-              data-v={n.v}
-              onClick={() => setView(n.v)}
-              className={`shrink-0 grow whitespace-nowrap px-2.5 py-1.5 ${tabCls(view === n.v)}`}
-            >
-              {n.label}
-            </button>
-          </Fragment>
-        ))}
-      </div>
-      {edge.left && (
-        <span className="pointer-events-none absolute inset-y-0 left-[76px] w-6 bg-gradient-to-r from-term-panel2 to-transparent" />
-      )}
-      {edge.right && (
-        <span className="pointer-events-none absolute inset-y-0 right-0 flex w-8 items-center justify-end bg-gradient-to-l from-term-panel2 via-term-panel2/80 to-transparent pr-1 text-xs font-bold text-term-dim">
-          ›
-        </span>
-      )}
-    </nav>
-  );
-}
 
 const TOP_SLOTS = 5;
 const TAB_TOP_LS = "mobile.tabTop";
@@ -651,7 +587,7 @@ export function MobileShell() {
   };
   const allTabs = orderedTabs(tabTop);
   const groupOf = (v: View) => allTabs.find((t) => t.v === v)?.group;
-  const [tabGroup, setTabGroup] = useState<TabGroup>(() => groupOf(view) ?? "market");
+  const [tabGroup, setTabGroup] = useState<TabGroup>(() => groupOf(view) ?? "home");
   // the last tab used in each group, so switching group lands where you left it (this device)
   const lastInGroup = useRef<Partial<Record<TabGroup, View>>>(
     (() => {
@@ -758,7 +694,7 @@ export function MobileShell() {
           </div>
 
           {/* ── top tab row — ONE row, however many tabs there are ──── */}
-          <ScrollTabs tabs={tabs} view={view} setView={setView} group={tabGroup} groups={tabGroups} onGroup={pickGroup} />
+          <FiveTabs groups={tabGroups} group={tabGroup} onGroup={pickGroup} tabs={tabs} view={view} setView={setView} />
 
           {brokerOpen && (
             <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-2 py-1.5">
