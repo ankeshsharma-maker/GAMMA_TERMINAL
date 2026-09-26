@@ -233,31 +233,31 @@ import { LogoMark } from "./Logo";
  *  landing-page nav (which still exists -- Chart.tsx's own Chain/OI/Trend
  *  OI/OI Profile switcher and each view's own internal navigation still
  *  reach everything else; these are just the fast one-tap paths). */
-type TabGroup = "analysis" | "trade" | "funds";
+type TabGroup = "market" | "scan" | "trade";
 type TopTab = { v: View; label: string; group: TabGroup };
 /** in the user's order of use (2026-09-24): analysis, then trading, then
  *  funds / review — a thin divider marks each group on the tab row */
 const TOP_NAV: TopTab[] = [
-  { v: "home", label: "Home", group: "analysis" },
-  { v: "chart", label: "Chart", group: "analysis" },
-  { v: "scrip", label: "OI", group: "analysis" },
-  { v: "trendingoi", label: "Trend OI", group: "analysis" },
-  { v: "flow", label: "Flow", group: "analysis" },
-  { v: "orderflow", label: "OrderFlow", group: "analysis" },
-  { v: "vol", label: "Vol", group: "analysis" },
-  { v: "scanner", label: "Signals", group: "analysis" },
-  { v: "volume", label: "Volume", group: "analysis" },
-  { v: "stockscan", label: "Movers", group: "analysis" },
-  { v: "positional", label: "Positional", group: "analysis" },
+  { v: "home", label: "Home", group: "market" },
+  { v: "chart", label: "Chart", group: "market" },
+  { v: "scrip", label: "OI", group: "market" },
+  { v: "trendingoi", label: "Trend OI", group: "market" },
+  { v: "flow", label: "Flow", group: "market" },
+  { v: "orderflow", label: "OrderFlow", group: "market" },
+  { v: "vol", label: "Vol", group: "market" },
+  { v: "scanner", label: "Signals", group: "scan" },
+  { v: "volume", label: "Volume", group: "scan" },
+  { v: "stockscan", label: "Movers", group: "scan" },
+  { v: "positional", label: "Positional", group: "scan" },
   { v: "builder", label: "Build", group: "trade" },
   { v: "auto", label: "Auto", group: "trade" },
   { v: "scalper", label: "Scalp", group: "trade" },
-  { v: "journal", label: "Journal", group: "funds" },
+  { v: "journal", label: "Journal", group: "trade" },
 ];
 const GROUP_NAME: Record<TabGroup, string> = {
-  analysis: "Analysis",
-  trade: "Trading",
-  funds: "Funds & review",
+  market: "Market",
+  scan: "Scan",
+  trade: "Trade",
 };
 const tabCls = (active: boolean) =>
   `rounded border text-[11px] font-semibold ${
@@ -274,12 +274,20 @@ function ScrollTabs({
   tabs,
   view,
   setView,
+  group,
+  groups,
+  onGroup,
 }: {
   tabs: (TopTab & { section: string })[];
   view: View;
   setView: (v: View) => void;
+  /** the group whose tabs the row shows, and the ones to pick from */
+  group: TabGroup;
+  groups: { g: TabGroup; n: number }[];
+  onGroup: (g: TabGroup) => void;
 }) {
   const rowRef = useRef<HTMLDivElement>(null);
+  const [menu, setMenu] = useState(false);
   const [edge, setEdge] = useState({ left: false, right: false });
   const measure = () => {
     const el = rowRef.current;
@@ -303,7 +311,7 @@ function ScrollTabs({
         behavior: document.hidden ? "auto" : "smooth",
       });
     measure();
-  }, [view]);
+  }, [view, group]);
   // the row's own size, not window resize — covers fold/unfold and rotation
   useEffect(() => {
     const el = rowRef.current;
@@ -313,11 +321,43 @@ function ScrollTabs({
     return () => ro.disconnect();
   }, []);
   return (
-    <nav className="relative shrink-0 border-b border-term-border bg-term-panel2">
+    <nav className="relative flex shrink-0 items-center border-b border-term-border bg-term-panel2">
+      {/* the group chip: Market / Scan / Trade -- the row shows only that group's tabs */}
+      <div className="relative shrink-0 py-1.5 pl-1.5">
+        <button
+          onClick={() => setMenu((m) => !m)}
+          className="whitespace-nowrap rounded border border-term-accent bg-term-accent px-2.5 py-1.5 text-[11px] font-bold text-white"
+          aria-expanded={menu}
+        >
+          {GROUP_NAME[group]} ▾
+        </button>
+        {menu && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setMenu(false)} />
+            <div className="absolute left-1.5 top-full z-50 mt-1 flex w-40 flex-col gap-1 rounded-lg border border-term-border bg-term-panel p-1.5 shadow-2xl">
+              {groups.map(({ g, n }) => (
+                <button
+                  key={g}
+                  onClick={() => {
+                    setMenu(false);
+                    onGroup(g);
+                  }}
+                  className={`flex items-center justify-between rounded px-2.5 py-2 text-[13px] font-semibold ${
+                    g === group ? "bg-term-accent/15 text-term-accent" : "text-term-text active:bg-term-border"
+                  }`}
+                >
+                  {GROUP_NAME[g]}
+                  <span className="text-[11px] font-normal text-term-dim">{n} tabs</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
       <div
         ref={rowRef}
         onScroll={measure}
-        className="no-scrollbar flex items-center gap-1 overflow-x-auto px-1.5 py-1.5"
+        className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-1.5 py-1.5"
       >
         {tabs.map((n, i) => (
           <Fragment key={n.v}>
@@ -335,7 +375,7 @@ function ScrollTabs({
         ))}
       </div>
       {edge.left && (
-        <span className="pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-term-panel2 to-transparent" />
+        <span className="pointer-events-none absolute inset-y-0 left-[76px] w-6 bg-gradient-to-r from-term-panel2 to-transparent" />
       )}
       {edge.right && (
         <span className="pointer-events-none absolute inset-y-0 right-0 flex w-8 items-center justify-end bg-gradient-to-l from-term-panel2 via-term-panel2/80 to-transparent pr-1 text-xs font-bold text-term-dim">
@@ -609,7 +649,42 @@ export function MobileShell() {
       /* ignore */
     }
   };
-  const tabs = orderedTabs(tabTop);
+  const allTabs = orderedTabs(tabTop);
+  const groupOf = (v: View) => allTabs.find((t) => t.v === v)?.group;
+  const [tabGroup, setTabGroup] = useState<TabGroup>(() => groupOf(view) ?? "market");
+  // the last tab used in each group, so switching group lands where you left it (this device)
+  const lastInGroup = useRef<Partial<Record<TabGroup, View>>>(
+    (() => {
+      try {
+        return JSON.parse(localStorage.getItem("mobile.groupLast") || "{}");
+      } catch {
+        return {};
+      }
+    })()
+  );
+  useEffect(() => {
+    const g = groupOf(view);
+    if (!g) return;
+    setTabGroup(g);
+    lastInGroup.current[g] = view;
+    try {
+      localStorage.setItem("mobile.groupLast", JSON.stringify(lastInGroup.current));
+    } catch {
+      /* private mode */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
+  const tabs = allTabs.filter((t) => t.group === tabGroup);
+  const tabGroups = (Object.keys(GROUP_NAME) as TabGroup[])
+    .map((g) => ({ g, n: allTabs.filter((t) => t.group === g).length }))
+    .filter((x) => x.n > 0);
+  const pickGroup = (g: TabGroup) => {
+    setTabGroup(g);
+    const want = lastInGroup.current[g];
+    const first = allTabs.find((t) => t.group === g)?.v;
+    const go = want && allTabs.some((t) => t.v === want && t.group === g) ? want : first;
+    if (go) setView(go);
+  };
 
   const [full, setFull] = useState(false);
   const fullOk = view === "chart" || view === "scalper";
@@ -683,7 +758,7 @@ export function MobileShell() {
           </div>
 
           {/* ── top tab row — ONE row, however many tabs there are ──── */}
-          <ScrollTabs tabs={tabs} view={view} setView={setView} />
+          <ScrollTabs tabs={tabs} view={view} setView={setView} group={tabGroup} groups={tabGroups} onGroup={pickGroup} />
 
           {brokerOpen && (
             <div className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-2 py-1.5">
