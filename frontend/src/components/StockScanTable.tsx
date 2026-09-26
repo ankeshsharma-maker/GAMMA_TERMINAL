@@ -382,7 +382,7 @@ export function ScanTable({
     >
       <button
         onClick={() => setSort((s) => (s.key === k ? { key: k, dir: (s.dir * -1) as 1 | -1 } : { key: k, dir: k === "symbol" ? 1 : -1 }))}
-        className={`w-full px-[3px] py-1.5 text-[10px] leading-tight font-semibold uppercase ${right ? "text-right" : "text-left"} ${
+        className={`w-full px-[3px] py-1.5 text-[10px] leading-tight font-semibold uppercase ${right ? "text-center" : "text-left"} ${
           sort.key === k ? "text-term-accent" : "text-term-dim"
         }`}
       >
@@ -479,10 +479,10 @@ export function ScanTable({
                   )}
                 </>
               )}
-              {cell("ltp", "tabular-nums flex items-center justify-end text-term-text", px(r.ltp))}
+              {cell("ltp", "tabular-nums flex items-center justify-center text-term-text", px(r.ltp))}
               {cell(
                 "chg",
-                `tabular-nums flex items-center justify-end ${r.chgPct == null ? "text-term-dim" : r.chgPct >= 0 ? "text-up" : "text-down"}`,
+                `tabular-nums flex items-center justify-center ${r.chgPct == null ? "text-term-dim" : r.chgPct >= 0 ? "text-up" : "text-down"}`,
                 r.chgPct == null ? "–" : `${r.chgPct >= 0 ? "+" : ""}${nf(r.chgPct, Math.abs(r.chgPct) >= 10 ? 1 : 2)}%`
               )}
               {cell(
@@ -492,19 +492,19 @@ export function ScanTable({
                   {w.dir >= DIR_WORD ? DIR[r.dir]?.label ?? "–" : DIR[r.dir]?.label.split(" ")[0] ?? "–"}
                 </span>
               )}
-              {cell("metric", "tabular-nums flex items-center justify-end", metric.cell(r))}
-              {cell("vol", "tabular-nums flex items-center justify-end text-term-text", qty(r.vol))}
-              {cell("value", "tabular-nums flex items-center justify-end text-term-dim", cr(r.value))}
+              {cell("metric", "tabular-nums flex items-center justify-center", metric.cell(r))}
+              {cell("vol", "tabular-nums flex items-center justify-center text-term-text", qty(r.vol))}
+              {cell("value", "tabular-nums flex items-center justify-center text-term-dim", cr(r.value))}
               {cols === WIDE_COLS &&
                 cell(
                   "deliv",
-                  `tabular-nums flex items-center justify-end ${(r.deliv ?? 0) >= 60 ? "text-amber-400" : "text-term-text"}`,
+                  `tabular-nums flex items-center justify-center ${(r.deliv ?? 0) >= 60 ? "text-amber-400" : "text-term-text"}`,
                   r.deliv != null ? `${nf(r.deliv, 0)}%` : "–"
                 )}
               {cols === WIDE_COLS &&
                 cell(
                   "oi5",
-                  `flex items-center justify-end text-[11px] font-semibold ${
+                  `flex items-center justify-center text-[11px] font-semibold ${
                     r.oiType5 ? (OI_SHORT[r.oiType5].up ? "text-up" : "text-down") : "text-term-dim"
                   }`,
                   r.oiType5 ? <span title={OI_SHORT[r.oiType5].long}>{OI_SHORT[r.oiType5].label}</span> : "–"
