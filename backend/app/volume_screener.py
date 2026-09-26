@@ -133,11 +133,15 @@ def viewed(seconds: float = 120) -> None:
 
 
 # ---------------------------------------------------------------- baseline
+_BASE_VERSION = 2  # 2: + 52-week high / low (a year of candles)
+
+
 def _load_base() -> None:
     global _base, _base_date
     try:
         d = json.loads(_BASE_FILE.read_text("utf-8"))
-        _base, _base_date = d.get("rows") or {}, d.get("date")
+        if d.get("v") == _BASE_VERSION:
+            _base, _base_date = d.get("rows") or {}, d.get("date")
     except (FileNotFoundError, ValueError):
         pass
 
@@ -145,22 +149,22 @@ def _load_base() -> None:
 def _save_base() -> None:
     try:
         tmp = _BASE_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"date": _base_date, "rows": _base}, separators=(",", ":")), "utf-8")
+        tmp.write_text(json.dumps({"v": _BASE_VERSION, "date": _base_date, "rows": _base}, separators=(",", ":")), "utf-8")
         tmp.replace(_BASE_FILE)
     except Exception as exc:  # noqa: BLE001
         log.warning("baseline save failed: %s", exc)
 
 
 async def _baseline_one(ux, sym: str, today: date) -> bool:
-    """Fetch ~6 weeks of daily candles for one stock, keep the ones before the session
-    day `today`; True when Upstox said 429 (back off)."""
+    """Fetch a year of daily candles for one stock (one request), keep the ones before
+    the session day `today`; True when Upstox said 429 (back off)."""
     from .upstox_data import _hc
 
     key = ux.underlying_key(sym)
     if not key:
         return False
     try:
-        h = await ux.get(_hc(key, "days", 1, today.isoformat(), (today - timedelta(days=45)).isoformat()), v3=True)
+        h = await ux.get(_hc(key, "days", 1, today.isoformat(), (today - timedelta(days=380)).isoformat()), v3=True)
     except Exception as exc:  # noqa: BLE001
         if getattr(getattr(exc, "response", None), "status_code", None) == 429:
             return True
@@ -171,12 +175,18 @@ async def _baseline_one(ux, sym: str, today: date) -> bool:
     if not past or not vols:
         return False
     last = past[0]
+    year = past[:252]  # ~52 weeks of sessions
+    highs = [x for c in year if (x := _num(c[2]))]
+    lows = [x for c in year if (x := _num(c[3]))]
     _base[sym] = {
         "avgVol": sum(vols) / len(vols),
         "days": len(vols),
         "pdh": _num(last[2]),
         "pdl": _num(last[3]),
         "pdc": _num(last[4]),
+        "w52h": max(highs) if highs else None,
+        "w52l": min(lows) if lows else None,
+        "w52days": len(year),
         "asOf": str(last[0])[:10],
     }
     return False
@@ -293,9 +303,24 @@ def _row(sym: str, fo: set[str]) -> dict | None:
             sig = "HIGH"  # at today's high
         elif q["dayLow"] and ltp <= q["dayLow"] * 1.002:
             sig = "LOW"  # at today's low
+    w52h, w52l, pdc, op = b.get("w52h"), b.get("w52l"), b.get("pdc"), q.get("open")
+    gap = round((op - pdc) / pdc * 100, 2) if op and pdc else None
     return {
         "symbol": sym,
         "fo": sym in fo,
+        # 52 weeks (the sessions before today) -- "new" = today's range went past it
+        "w52h": w52h,
+        "w52l": w52l,
+        "fromHighPct": round((ltp - w52h) / w52h * 100, 2) if w52h else None,
+        "fromLowPct": round((ltp - w52l) / w52l * 100, 2) if w52l else None,
+        "new52h": bool(w52h and q["dayHigh"] and q["dayHigh"] > w52h),
+        "new52l": bool(w52l and q["dayLow"] and q["dayLow"] < w52l),
+        # gap: today's open vs yesterday's close; filled = price has since traded back to that close
+        "open": op,
+        "gapPct": gap,
+        "gapFilled": bool(
+            gap and pdc and ((gap > 0 and q["dayLow"] and q["dayLow"] <= pdc) or (gap < 0 and q["dayHigh"] and q["dayHigh"] >= pdc))
+        ),
         "ltp": ltp,
         "chgPct": q["chgPct"],
         "vol": q["vol"],

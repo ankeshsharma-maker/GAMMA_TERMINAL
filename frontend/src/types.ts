@@ -330,6 +330,7 @@ export type View =
   | "oiprofile"
   | "scanner"
   | "volume"
+  | "stockscan"
   | "chart"
   | "builder"
   | "positions"

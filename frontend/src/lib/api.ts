@@ -55,6 +55,15 @@ export type VolRow = {
   dayHigh: number | null;
   dayLow: number | null;
   signal: "PDH" | "PDL" | "HIGH" | "LOW" | null;
+  w52h: number | null;
+  w52l: number | null;
+  fromHighPct: number | null;
+  fromLowPct: number | null;
+  new52h: boolean;
+  new52l: boolean;
+  open: number | null;
+  gapPct: number | null;
+  gapFilled: boolean;
 };
 export type VolSnapshot = {
   universe: "fo" | "all";

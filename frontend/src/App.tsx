@@ -10,6 +10,7 @@ import { ScripView } from "./components/ScripView";
 import { Positions } from "./components/Positions";
 import { ScannerView } from "./components/ScannerView";
 import { VolumeScreener } from "./components/VolumeScreener";
+import { StockScan } from "./components/StockScan";
 import { FlowView } from "./components/Flow";
 import { OrderFlowView } from "./components/OrderFlow";
 import { TrendingOI } from "./components/TrendingOI";
@@ -81,6 +82,7 @@ function DesktopShell() {
     view === "home" ||
     view === "scanner" ||
     view === "volume" ||
+    view === "stockscan" ||
     view === "auto" ||
     view === "funds" ||
     view === "journal" ||
@@ -203,6 +205,7 @@ function DesktopShell() {
           {view === "vol" && <VolatilityView />}
           {view === "scanner" && <ScannerView />}
           {view === "volume" && <VolumeScreener />}
+          {view === "stockscan" && <StockScan />}
           {view === "chart" && <Chart />}
           {view === "scalper" && <ScalpCharts />}
           {view === "builder" && <StrategyBuilder />}
