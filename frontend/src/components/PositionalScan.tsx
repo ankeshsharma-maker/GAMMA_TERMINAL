@@ -266,7 +266,7 @@ export function PositionalScan() {
           covering = price ↑ OI ↓, long unwinding = price ↓ OI ↓; a price change under 0.25% isn't classed. Bonus / split days
           are adjusted using NSE's own adjusted previous close.
         </p>
-        <p>NSE publishes both files around 6–7 PM for the day. Tap a header to sort, a stock for its chart; ☆ adds it to the watchlist.</p>
+        <p>NSE publishes both files around 6–7 PM for the day. Tap a header to sort, a stock for its details (Chart button inside); ☆ adds it to the watchlist.</p>
       </div>
     </div>
   );

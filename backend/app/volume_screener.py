@@ -133,7 +133,7 @@ def viewed(seconds: float = 120) -> None:
 
 
 # ---------------------------------------------------------------- baseline
-_BASE_VERSION = 3  # 2: + 52-week high / low (a year of candles); 3: + positional stats ("pos")
+_BASE_VERSION = 4  # 2: + 52-week high / low (a year of candles); 3: + positional stats ("pos"); 4: + last closes
 
 
 def _load_base() -> None:
@@ -187,6 +187,7 @@ def _pos_stats(past: list, today: date, avg_vol: float) -> dict:
         "dma": dma,
         "v5": v5,
         "c5": cl[5] if len(cl) > 5 else None,  # the close 5 sessions before the last one
+        "cl": cl[:6],  # the last closes, newest first -- the scan grid's 5-day mini chart
         "rng": rng,
         "h1": _num(past[0][2]) if past else None,
         "l1": _num(past[0][3]) if past else None,
@@ -223,6 +224,9 @@ def _pos_fields(q: dict, b: dict) -> dict:
     if avg and len(v5) >= 4:  # no daily history yet -> no build-up figure (today alone isn't 5 days)
         out["volBuild"] = round(sum(v5) / len(v5) / avg, 2)
         out["volUp"] = sum(1 for v in v5 if v > avg)  # of those 5 days, how many beat the average
+    cl = p.get("cl") or []
+    if cl:  # oldest -> newest, ending on today's price
+        out["spark"] = [*reversed(cl[:5]), ltp]
     c5 = p.get("c5")
     if c5:
         out["ret5"] = round((ltp / c5 - 1) * 100, 2)

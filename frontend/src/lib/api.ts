@@ -97,6 +97,8 @@ export type VolRow = {
   pxChg5?: number;
   oiType5?: OiType | null;
   oiDate?: string;
+  /** the last 5 closes then today's price (oldest -> newest), for the row's mini chart */
+  spark?: number[];
 };
 export type OiType = "LONG_BUILDUP" | "SHORT_BUILDUP" | "SHORT_COVERING" | "LONG_UNWINDING";
 export type VolSnapshot = {

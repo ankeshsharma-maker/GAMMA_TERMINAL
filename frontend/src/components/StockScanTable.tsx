@@ -132,22 +132,25 @@ export type Metric = {
   sort: (r: VolRow) => number | null;
 };
 
-type SortKey = "symbol" | "ltp" | "chg" | "dir" | "metric" | "vol" | "value";
+type SortKey = "symbol" | "ltp" | "chg" | "dir" | "metric" | "vol" | "value" | "deliv" | "oi5";
 type Col = SortKey;
-const COLS: Col[] = ["symbol", "ltp", "chg", "dir", "metric", "vol", "value"];
+const BASE_COLS: Col[] = ["symbol", "ltp", "chg", "dir", "metric", "vol", "value"];
+/** on a laptop-wide grid (and when the data has them): delivery % and the 5-day futures OI read */
+const WIDE_COLS: Col[] = [...BASE_COLS, "deliv", "oi5"];
+const WIDE_AT = 720;
 /** the narrowest each column can go with 12-px numbers (measured on a 360-px phone; Dir shows
  *  only its arrow below DIR_WORD). SYMBOL may go down to 76 (long names end in "…"). */
-const MIN_W: Record<Col, number> = { symbol: 76, ltp: 45, chg: 47, dir: 26, metric: 44, vol: 41, value: 41 };
+const MIN_W: Record<Col, number> = { symbol: 76, ltp: 45, chg: 47, dir: 26, metric: 44, vol: 41, value: 41, deliv: 44, oi5: 70 };
 /** SYMBOL is filled first up to this (a 10-letter symbol in full), then spare room is shared by GROW */
 const SYMBOL_WANT = 92;
-const GROW: Record<Col, number> = { symbol: 2, ltp: 1, chg: 1, dir: 1, metric: 1, vol: 1, value: 1 };
+const GROW: Record<Col, number> = { symbol: 2, ltp: 1, chg: 1, dir: 1, metric: 1, vol: 1, value: 1, deliv: 1, oi5: 1 };
 const DIR_WORD = 40; // Dir wide enough for "▲ Buy" rather than just "▲"
 const STAR_W = 22;
 /** only the columns someone has dragged are stored; the rest fit the screen every time */
 const W_KEY = "scan.colWidths.v4";
 /** widths that fill `avail` px: the dragged ones as set, the others from their minimum up,
  *  spare room shared by GROW. Narrower than the minimums -> the table swipes (SYMBOL frozen). */
-const fitWidths = (avail: number, fixed: Partial<Record<Col, number>>): Record<Col, number> => {
+const fitWidths = (avail: number, fixed: Partial<Record<Col, number>>, COLS: Col[]): Record<Col, number> => {
   const out = {} as Record<Col, number>;
   for (const c of COLS) out[c] = fixed[c] ?? MIN_W[c];
   let room = avail - COLS.reduce((s, c) => s + out[c], 0);
@@ -162,6 +165,78 @@ const fitWidths = (avail: number, fixed: Partial<Record<Col, number>>): Record<C
   if (grow) for (const c of free) out[c] += Math.floor((room * GROW[c]) / grow);
   return out;
 };
+const OI_SHORT: Record<string, { label: string; long: string; up: boolean }> = {
+  LONG_BUILDUP: { label: "Long bu", long: "Long build-up", up: true },
+  SHORT_BUILDUP: { label: "Short bu", long: "Short build-up", up: false },
+  SHORT_COVERING: { label: "Sh cover", long: "Short covering", up: true },
+  LONG_UNWINDING: { label: "Long unw", long: "Long unwinding", up: false },
+};
+const sp = (v: number, d = 1) => `${v >= 0 ? "+" : ""}${nf(v, d)}%`;
+
+/** tiny line of the last 5 closes + today's price */
+function Spark({ pts }: { pts: number[] }) {
+  if (pts.length < 2) return null;
+  const lo = Math.min(...pts);
+  const hi = Math.max(...pts);
+  const W = 120;
+  const H = 34;
+  const y = (v: number) => (hi > lo ? H - 3 - ((v - lo) / (hi - lo)) * (H - 6) : H / 2);
+  const x = (i: number) => (i / (pts.length - 1)) * (W - 6) + 3;
+  const up = pts[pts.length - 1] >= pts[0];
+  return (
+    <svg width={W} height={H} className="shrink-0" aria-hidden="true">
+      <polyline points={pts.map((v, i) => `${x(i)},${y(v)}`).join(" ")} fill="none" stroke={up ? "#22c55e" : "#ef4444"} strokeWidth={2} />
+      <circle cx={x(pts.length - 1)} cy={y(pts[pts.length - 1])} r={2.5} fill={up ? "#22c55e" : "#ef4444"} />
+    </svg>
+  );
+}
+
+type Badge = { text: string; tone: "up" | "down" | "warn" | "dim" };
+/** every signal we have for one stock, in plain words */
+const badges = (r: VolRow): Badge[] => {
+  const b: Badge[] = [];
+  const oi = r.oiType5 && OI_SHORT[r.oiType5];
+  if (oi && r.oiChg5 != null && r.pxChg5 != null)
+    b.push({ text: `${oi.long} (5d) · OI ${sp(r.oiChg5)} · price ${sp(r.pxChg5)}`, tone: oi.up ? "up" : "down" });
+  const oi1 = r.oiType1 && OI_SHORT[r.oiType1];
+  if (oi1 && r.oiChg1 != null) b.push({ text: `1 day: ${oi1.long} · OI ${sp(r.oiChg1)}`, tone: oi1.up ? "up" : "down" });
+  const d = r.dma;
+  if (d && d["20"] != null && d["50"] != null && d["200"] != null) {
+    const a = [d["20"], d["50"], d["200"]];
+    if (a.every((v) => v > 0)) b.push({ text: "Above 20 / 50 / 200-day average", tone: "up" });
+    else if (a.every((v) => v < 0)) b.push({ text: "Below 20 / 50 / 200-day average", tone: "down" });
+    else
+      b.push({
+        text: (["20", "50", "200"] as const).map((k) => `${d[k] > 0 ? "above" : "below"} ${k}D`).join(" · ").replace(/^a/, "A").replace(/^b/, "B"),
+        tone: "dim",
+      });
+  }
+  if (r.wk) b.push({ text: `${r.wk === "UP" ? "Above last week's high" : "Below last week's low"} ${sp(r.wkPct ?? 0)}`, tone: r.wk === "UP" ? "up" : "down" });
+  if (r.mo) b.push({ text: `${r.mo === "UP" ? "Above last month's high" : "Below last month's low"} ${sp(r.moPct ?? 0)}`, tone: r.mo === "UP" ? "up" : "down" });
+  if (r.new52h) b.push({ text: "New 52-week high", tone: "up" });
+  else if (r.new52l) b.push({ text: "New 52-week low", tone: "down" });
+  else if (r.fromHighPct != null && r.fromHighPct >= -3) b.push({ text: `${sp(r.fromHighPct)} from 52-week high`, tone: "dim" });
+  if (r.rvol != null) b.push({ text: `Volume today ${nf(r.rvol, 1)}x usual`, tone: r.rvol >= 2 ? "warn" : "dim" });
+  if (r.volBuild != null) b.push({ text: `5-day volume ${nf(r.volBuild, 1)}x the 20-day`, tone: r.volBuild >= 1.5 ? "warn" : "dim" });
+  if (r.deliv != null)
+    b.push({ text: `Delivery ${nf(r.deliv, 0)}%${r.delivX != null ? ` · ${nf(r.delivX, 1)}x its average` : ""}`, tone: r.deliv >= 60 ? "warn" : "dim" });
+  if (r.gapPct != null && Math.abs(r.gapPct) >= 1)
+    b.push({ text: `Gap ${r.gapPct > 0 ? "up" : "down"} ${sp(r.gapPct)}${r.gapFilled ? " (filled)" : ""}`, tone: r.gapPct > 0 ? "up" : "down" });
+  if (r.signal) {
+    const s = { PDH: "Above yesterday's high", PDL: "Below yesterday's low", HIGH: "At today's high", LOW: "At today's low" }[r.signal];
+    b.push({ text: `${s} on heavy volume`, tone: r.signal === "PDH" || r.signal === "HIGH" ? "up" : "down" });
+  }
+  if (r.nr7) b.push({ text: "NR7 — narrowest range in 7 days", tone: "warn" });
+  if (r.inside) b.push({ text: "Inside day", tone: "warn" });
+  return b;
+};
+const TONE: Record<Badge["tone"], string> = {
+  up: "border-up/40 bg-up/10 text-up",
+  down: "border-down/40 bg-down/10 text-down",
+  warn: "border-amber-400/40 bg-amber-400/10 text-amber-400",
+  dim: "border-term-border bg-term-panel text-term-dim",
+};
+
 const DIR: Record<string, { label: string; cls: string; n: number }> = {
   BUY: { label: "▲ Buy", cls: "text-up", n: 1 },
   SELL: { label: "▼ Sell", cls: "text-down", n: -1 },
@@ -182,10 +257,10 @@ const saveWidths = (w: Partial<Record<Col, number>>) => {
   }
 };
 
-/** A grid, one line per stock: SYMBOL | LTP | %CHG | DIR | the scan's own number | VOLUME | VALUE | ☆
- *  (SYMBOL frozen while the table swipes sideways).
- *  Tap a header to sort (again to flip), drag a header's column line to resize it, tap a
- *  row for its chart. */
+/** A grid, one line per stock: SYMBOL | LTP | %CHG | DIR | the scan's own number | VOLUME | VALUE
+ *  (+ DELIV | OI 5D on a laptop-wide grid) | ☆ (SYMBOL frozen while the table swipes sideways).
+ *  Tap a header to sort (again to flip), drag a header's column line to resize it, tap a row to
+ *  open its detail strip (5-day mini chart, every signal, Chart / watchlist buttons). */
 export function ScanTable({
   rows,
   metric,
@@ -223,6 +298,10 @@ export function ScanTable({
         ? (DIR[r.dir]?.n ?? 0) * 1000 + (r.rvol ?? 0) // buys first, heaviest volume within
         : sort.key === "value"
         ? r.value
+        : sort.key === "deliv"
+        ? r.deliv ?? null
+        : sort.key === "oi5"
+        ? r.oiChg5 ?? null
         : metric.sort(r);
     return [...rows]
       .sort((a, b) => {
@@ -254,7 +333,10 @@ export function ScanTable({
     };
   }, []);
   const [fixed, setFixed] = useState<Partial<Record<Col, number>>>(readWidths);
-  const w = useMemo(() => fitWidths(Math.max(0, boxW - STAR_W), fixed), [boxW, fixed]);
+  const hasPos = rows.some((r) => r.deliv != null || r.oiType5 != null);
+  const cols = boxW >= WIDE_AT && hasPos ? WIDE_COLS : BASE_COLS;
+  const w = useMemo(() => fitWidths(Math.max(0, boxW - STAR_W), fixed, cols), [boxW, fixed, cols]);
+  const [openSym, setOpenSym] = useState<string | null>(null);
   const drag = (c: Col) => (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -331,30 +413,50 @@ export function ScanTable({
           {head("metric", metric.label, true)}
           {head("vol", "Vol", true)}
           {head("value", "Value", true)}
+          {cols === WIDE_COLS && head("deliv", "Deliv", true)}
+          {cols === WIDE_COLS && head("oi5", "OI 5d", true)}
           <div style={{ width: STAR_W }} className="shrink-0" />
         </div>
         {sorted.length === 0 && <div className="p-6 text-center text-[12px] text-term-dim">{empty}</div>}
         {sorted.map((r, i) => {
           const key = r.fo ? r.symbol : `EQ:${r.symbol}`;
           const has = inWatch.has(key) || added.has(key);
-          const open = () => {
+          const chart = () => {
             selectSymbol(r.symbol, true);
             setView("chart");
           };
+          const isOpen = openSym === r.symbol;
+          const watchBtn = (cls: string) => (
+            <button
+              disabled={has}
+              onClick={(e) => {
+                e.stopPropagation();
+                addWatch(key);
+                setAdded((a) => new Set(a).add(key));
+              }}
+              className={cls}
+              title={has ? "In your watchlist" : "Add to watchlist"}
+            >
+              {has ? "★" : "☆"}
+            </button>
+          );
+          const bs = isOpen ? badges(r) : [];
           return (
+            <div key={r.symbol} className={i < sorted.length - 1 ? "border-b border-term-border" : ""}>
             <div
-              key={r.symbol}
               role="button"
-              onClick={open}
+              aria-expanded={isOpen}
+              onClick={() => setOpenSym(isOpen ? null : r.symbol)}
               className={`flex cursor-pointer items-stretch text-[12px] active:bg-term-border ${
-                i < sorted.length - 1 ? "border-b border-term-border" : ""
-              } ${i % 2 ? "bg-term-panel" : "bg-term-bg"}`}
+                isOpen ? "bg-term-accent/10" : i % 2 ? "bg-term-panel" : "bg-term-bg"
+              }`}
             >
               {cell(
                 "symbol",
                 "min-w-0",
                 <>
                   <span className="flex items-center gap-1">
+                    <span className="shrink-0 text-[9px] text-term-dim">{isOpen ? "▾" : "▸"}</span>
                     <span className="truncate text-[12px] font-semibold text-term-text">{r.symbol}</span>
                     {!r.fo && <span className="shrink-0 rounded bg-term-border px-0.5 text-[8px] font-semibold text-term-dim">CASH</span>}
                   </span>
@@ -383,19 +485,64 @@ export function ScanTable({
               {cell("metric", "tabular-nums flex items-center justify-end", metric.cell(r))}
               {cell("vol", "tabular-nums flex items-center justify-end text-term-text", qty(r.vol))}
               {cell("value", "tabular-nums flex items-center justify-end text-term-dim", cr(r.value))}
-              <button
-                disabled={has}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  addWatch(key);
-                  setAdded((a) => new Set(a).add(key));
-                }}
-                style={{ width: STAR_W }}
-                className="shrink-0 text-center text-[15px] text-term-dim disabled:text-amber-400"
-                title={has ? "In your watchlist" : "Add to watchlist"}
+              {cols === WIDE_COLS &&
+                cell(
+                  "deliv",
+                  `tabular-nums flex items-center justify-end ${(r.deliv ?? 0) >= 60 ? "text-amber-400" : "text-term-text"}`,
+                  r.deliv != null ? `${nf(r.deliv, 0)}%` : "–"
+                )}
+              {cols === WIDE_COLS &&
+                cell(
+                  "oi5",
+                  `flex items-center justify-end text-[11px] font-semibold ${
+                    r.oiType5 ? (OI_SHORT[r.oiType5].up ? "text-up" : "text-down") : "text-term-dim"
+                  }`,
+                  r.oiType5 ? OI_SHORT[r.oiType5].label : "–"
+                )}
+              <span style={{ width: STAR_W }} className="flex shrink-0 items-center justify-center">
+                {watchBtn("text-center text-[15px] text-term-dim disabled:text-amber-400")}
+              </span>
+            </div>
+            {/* the detail strip: pinned to the visible width so it stays in view when the grid is swiped */}
+            {isOpen && (
+              <div
+                style={{ width: Math.max(0, boxW - 2) }}
+                className="sticky left-0 flex flex-wrap items-center gap-2 border-t border-term-border bg-term-panel2 px-2 py-2"
               >
-                {has ? "★" : "☆"}
-              </button>
+                {r.spark && r.spark.length > 1 && (
+                  <span className="flex items-center gap-1">
+                    <Spark pts={r.spark} />
+                    <span className={`text-[11px] font-semibold ${r.ret5 == null ? "text-term-dim" : r.ret5 >= 0 ? "text-up" : "text-down"}`}>
+                      {r.ret5 != null ? `5d ${sp(r.ret5)}` : ""}
+                    </span>
+                  </span>
+                )}
+                {/* phone: the signals get their own full-width line under the mini chart */}
+                <span className="order-last flex w-full flex-wrap gap-1 sm:order-none sm:w-auto sm:min-w-0 sm:flex-1">
+                  {bs.length ? (
+                    bs.map((b) => (
+                      <span key={b.text} className={`rounded border px-1.5 py-0.5 text-[11px] font-semibold ${TONE[b.tone]}`}>
+                        {b.text}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[11px] text-term-dim">No signals for this stock yet.</span>
+                  )}
+                </span>
+                <span className="ml-auto flex shrink-0 gap-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      chart();
+                    }}
+                    className="btn px-3 py-1 text-[12px] font-semibold"
+                  >
+                    Chart
+                  </button>
+                  {watchBtn("btn px-3 py-1 text-[14px] disabled:text-amber-400")}
+                </span>
+              </div>
+            )}
             </div>
           );
         })}

@@ -27,7 +27,7 @@ export function VolumeScreener() {
   const [universe, setUniverse] = useState<Universe>("fo");
   const [mode, setMode] = useState<Mode>("spikes");
   const [minCr, setMinCr] = useState(0);
-  const { data, setData, err } = useStockScan(universe);
+  const { data, setData, err } = useStockScan(universe, true);
   useEffect(() => setMinCr(universe !== "fo" ? 5 : 0), [universe]); // illiquid small caps swamp "all" otherwise
 
   const rows = useMemo(() => {
@@ -123,7 +123,7 @@ export function VolumeScreener() {
         this time — approximate. Breakouts need 1.5x+ volume: ▲PDH / ▼PDL = past yesterday's high / low, ▲HI / ▼LO = at
         today's high / low. Dir = who has been in control TODAY: ▲ Buy = above the day's average traded price (VWAP) and high in
         the day's range, ▼ Sell = the opposite, ◆ = mixed — an estimate, and about today's session (a stock down on
-        the day can still be ▲ Buy if it recovered). SYMBOL stays put when the table is swiped sideways. Tap a header to sort, a stock for its chart; ☆ adds it to the watchlist.
+        the day can still be ▲ Buy if it recovered). SYMBOL stays put when the table is swiped sideways. Tap a header to sort, a stock for its details (Chart button inside); ☆ adds it to the watchlist.
       </div>
     </div>
   );
