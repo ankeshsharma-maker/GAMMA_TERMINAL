@@ -626,6 +626,9 @@ export function Chart() {
         timeVisible: true,
         secondsVisible: false,
         tickMarkFormatter: istTickFormatter,
+        // the newest candle stays at the right edge: a laptop touchpad's sideways swipe kept sliding
+        // the chart into empty space past it (still scrolls back through history)
+        fixRightEdge: true,
       },
       autoSize: true,
     });
@@ -1362,7 +1365,12 @@ export function Chart() {
     // only the bar that is still forming moves with the live price: nudging a
     // closed one (yesterday's daily bar when today's hasn't arrived, the 15:29
     // bar after the close) repaints it with today's price
-    if (bucketStart(Math.floor(Date.now() / 1000), intervalS) !== (last.time as number)) return;
+    const nowS = Math.floor(Date.now() / 1000);
+    if (bucketStart(nowS, intervalS) !== (last.time as number)) return;
+    // no live price on a Saturday / Sunday: NSE's weekend mock-trading ticks look real and were
+    // painting fake prices onto this week's / month's candle (1W / 1M include the weekend)
+    const istDow = new Date((nowS + 19800) * 1000).getUTCDay();
+    if (istDow === 0 || istDow === 6) return;
     if (ctype === "line") {
       (s.current.lineS as ISeriesApi<"Line">).update({ time: last.time as any, value: livePx });
       return;
