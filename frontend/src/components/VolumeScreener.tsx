@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, type VolRow } from "../lib/api";
 import { nf } from "../lib/format";
 import { isViewer } from "../lib/auth";
-import { Chips, MinTraded, ScanHeader, ScanTable, qty, useStockScan, type Metric, type Universe } from "./StockScanTable";
+import { Chips, MinTraded, ScanHeader, ScanTable, useStockScan, type Metric, type Universe } from "./StockScanTable";
 
 type Mode = "spikes" | "volume" | "value" | "breakouts";
 const SIGNAL: Record<string, { label: string; up: boolean; title: string }> = {
@@ -19,7 +19,6 @@ const rvolCell = (r: VolRow) => {
   return <span className={cls}>{nf(v, 1)}x</span>;
 };
 const RVOL: Metric = { label: "x usual", cell: rvolCell, sort: (r) => r.rvol };
-const VOL: Metric = { label: "Volume", cell: (r) => <span className="text-term-text">{qty(r.vol)}</span>, sort: (r) => r.vol };
 
 /** Stocks by traded volume: spikes vs their usual volume for this time of day, the most
  *  traded, the biggest value, and volume-backed breakouts -- F&O stocks or all of NSE. */
@@ -93,10 +92,10 @@ export function VolumeScreener() {
       ) : (
         <ScanTable
           rows={rows}
-          metric={mode === "volume" ? VOL : RVOL}
+          metric={RVOL}
           sort={
             mode === "volume"
-              ? { key: "metric", dir: -1 }
+              ? { key: "vol", dir: -1 }
               : mode === "value"
               ? { key: "value", dir: -1 }
               : { key: "metric", dir: -1 }

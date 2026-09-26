@@ -46,14 +46,14 @@ export function StockScan() {
         }
       : mode === "hi"
       ? {
-          label: "vs 52W H",
+          label: "vs high",
           cell: (r: VolRow) =>
             r.new52h ? <span className="font-bold text-up">NEW</span> : <span className="text-term-text">{pct(r.fromHighPct ?? 0)}</span>,
           sort: (r) => (r.new52h ? 100 : r.fromHighPct),
         }
       : mode === "lo"
       ? {
-          label: "vs 52W L",
+          label: "vs low",
           cell: (r: VolRow) =>
             r.new52l ? <span className="font-bold text-down">NEW</span> : <span className="text-term-text">{pct(r.fromLowPct ?? 0)}</span>,
           sort: (r) => (r.new52l ? -100 : r.fromLowPct),
