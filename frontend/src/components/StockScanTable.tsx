@@ -154,7 +154,17 @@ const fitWidths = (avail: number, fixed: Partial<Record<Col, number>>, COLS: Col
   const out = {} as Record<Col, number>;
   for (const c of COLS) out[c] = fixed[c] ?? MIN_W[c];
   let room = avail - COLS.reduce((s, c) => s + out[c], 0);
-  if (room <= 0) return out;
+  if (room < 0) {
+    // too wide (widths dragged before a column was added, e.g. Deliv / OI 5d): fitting wins --
+    // take the excess back from the widened columns, in proportion, never below their minimum
+    const extra = COLS.reduce((s, c) => s + Math.max(0, out[c] - MIN_W[c]), 0);
+    if (extra > 0) {
+      const f = Math.min(1, -room / extra);
+      for (const c of COLS) out[c] = Math.round(out[c] - Math.max(0, out[c] - MIN_W[c]) * f);
+    }
+    return out;
+  }
+  if (room === 0) return out;
   if (fixed.symbol == null) {
     const add = Math.min(room, SYMBOL_WANT - out.symbol);
     out.symbol += add;
@@ -335,7 +345,7 @@ export function ScanTable({
   const [fixed, setFixed] = useState<Partial<Record<Col, number>>>(readWidths);
   const hasPos = rows.some((r) => r.deliv != null || r.oiType5 != null);
   const cols = boxW >= WIDE_AT && hasPos ? WIDE_COLS : BASE_COLS;
-  const w = useMemo(() => fitWidths(Math.max(0, boxW - STAR_W), fixed, cols), [boxW, fixed, cols]);
+  const w = useMemo(() => fitWidths(Math.max(0, boxW - STAR_W - 2), fixed, cols) /* 2 px spare: rounding never tips it into a sideways scroll */, [boxW, fixed, cols]);
   const [openSym, setOpenSym] = useState<string | null>(null);
   const drag = (c: Col) => (e: React.PointerEvent) => {
     e.preventDefault();
