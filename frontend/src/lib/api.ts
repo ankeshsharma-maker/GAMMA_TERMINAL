@@ -137,6 +137,10 @@ export const api = {
       }[];
     }>(`/api/history/${symbol}`),
 
+  gexIntraday: (symbol: string, day: string | null) =>
+    j<{ symbol: string; day: string | null; days: string[]; live: boolean; points: [number, number | null, number | null, number | null][] }>(
+      `/api/gex-intraday/${symbol}` + (day ? `?day=${encodeURIComponent(day)}` : "")
+    ),
   pcr: (symbol: string, day: string | null, bucket: number) =>
     j<PcrSeries>(`/api/pcr/${symbol}?bucket=${bucket}` + (day ? `&day=${encodeURIComponent(day)}` : "")),
 

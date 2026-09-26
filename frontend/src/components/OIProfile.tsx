@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import { RefreshChainBtn } from "./RefreshChainBtn";
 import { useStore } from "../store";
 import { api, type OiWallPt } from "../lib/api";
-import { istTime } from "../lib/istTime";
+import { bucketStart, istTime } from "../lib/istTime";
 import { compact, nf, oiCr, sk } from "../lib/format";
 import { PcrChart } from "./PcrChart";
 import { SelectMenu } from "./SelectMenu";
@@ -227,6 +227,10 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     { t: number; spot: number; netGex: number; gammaFlip: number | null }[]
   >([]);
   const [intraTf, setIntraTf] = useState(5); // minutes: bucket size for the intraday gex chart/table
+  // which session the intraday GEX shows (null = the latest), the sessions on file, and whether it's today's
+  const [intraDay, setIntraDay] = useState<string | null>(null);
+  const [intraDays, setIntraDays] = useState<string[]>([]);
+  const [intraShown, setIntraShown] = useState<{ day: string | null; live: boolean }>({ day: null, live: false });
   const [count, setCount] = useState(0); // strikes each side of ATM; 0 = All
   const [symChoices, setSymChoices] = useState<string[]>([]);
   const [zoom, setZoom] = useState(1);
@@ -328,25 +332,32 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   useEffect(() => {
     if (layout !== "gex" || gexFrame !== "intraday" || !symbol) return;
     let alive = true;
+    // the whole session from the server's market-hours archive (+ the live readings), not the
+    // 720-reading ring -- in the morning that was ~95% last night's frozen after-hours readings
+    let live = true;
     const load = () =>
-      api.history(symbol).then(
+      api.gexIntraday(symbol, intraDay).then(
         (d) => {
           if (!alive) return;
+          live = d.live;
+          setIntraDays(d.days);
+          setIntraShown({ day: d.day, live: d.live });
           setIntraGexPts(
             d.points
-              .filter((p) => p.netGex != null)
-              .map((p) => ({ t: p.t, spot: p.spot, netGex: p.netGex, gammaFlip: p.gammaFlip ?? null }))
+              .filter((p) => p[2] != null && p[1] != null)
+              .map(([t, spot, netGex, flip]) => ({ t, spot: spot as number, netGex: netGex as number, gammaFlip: flip }))
           );
         },
         () => {}
       );
     load();
-    const id = window.setInterval(load, 15000);
+    const id = window.setInterval(() => live && load(), 15000); // a past session doesn't change
     return () => {
       alive = false;
       window.clearInterval(id);
     };
-  }, [layout, gexFrame, symbol]);
+  }, [layout, gexFrame, symbol, intraDay]);
+  useEffect(() => setIntraDay(null), [symbol]);
 
   // daily netGex/gammaFlip history for the "gex" layout — daily-resolution,
   // so a slow refresh is plenty (unlike the live 20s polls above)
@@ -496,7 +507,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     const bucketS = intraTf * 60;
     const byBucket = new Map<number, { t: number; spot: number; netGex: number; gammaFlip: number | null }>();
     for (const p of intraGexPts) {
-      const b = Math.floor(p.t / bucketS) * bucketS;
+      const b = bucketStart(p.t, bucketS); // 1h / 4h on the 09:15 grid, like the chart
       byBucket.set(b, p); // later (more recent) sample in the same bucket overwrites
     }
     return [...byBucket.entries()].sort((a, b) => a[0] - b[0]).map(([bucketT, p]) => ({ ...p, bucketT }));
@@ -1324,7 +1335,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       return (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-8 text-xs text-term-dim">
           {frameToggle}
-          <span>collecting intraday GEX for {symbol}… (last ~720 polled samples, persisted to disk)</span>
+          <span>no session readings for {symbol} yet — they build from 09:15 (market hours only)</span>
         </div>
       );
     const intraGexPtsAll = intraGexBuckets;
@@ -1332,7 +1343,16 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       return (
         <div className={`p-3 ${isMobile ? "h-[68vh]" : "min-h-0 flex-1 overflow-auto"}`}>
           <div className="mb-2 flex flex-wrap items-center gap-3">
-            <span className="text-xs font-semibold text-term-text">{symbol} · Intraday GEX (today)</span>
+            <span className="text-xs font-semibold text-term-text">{symbol} · Intraday GEX ({intraShown.live ? "today" : intraShown.day ? new Date(intraShown.day + "T00:00:00+05:30").toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" }) : "today"})</span>
+            {intraDays.length > 1 && (
+              <SelectMenu
+                value={intraShown.day ?? ""}
+                options={intraDays.map((d) => [new Date(d + "T00:00:00+05:30").toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" }), d] as [string, string])}
+                onChange={(d) => setIntraDay(d === intraDays[0] ? null : String(d))}
+                title="Session"
+                width={120}
+              />
+            )}
             {frameToggle}
             <div className="seg">
               <button onClick={() => setGexView("chart")} className="">
@@ -1453,7 +1473,16 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     return (
       <div className={`overflow-hidden p-3 ${isMobile ? "h-[68vh]" : "min-h-0 flex-1"}`}>
         <div className="mb-1 flex flex-wrap items-center gap-3">
-          <span className="text-xs font-semibold text-term-text">{symbol} · Intraday GEX (today)</span>
+          <span className="text-xs font-semibold text-term-text">{symbol} · Intraday GEX ({intraShown.live ? "today" : intraShown.day ? new Date(intraShown.day + "T00:00:00+05:30").toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" }) : "today"})</span>
+            {intraDays.length > 1 && (
+              <SelectMenu
+                value={intraShown.day ?? ""}
+                options={intraDays.map((d) => [new Date(d + "T00:00:00+05:30").toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" }), d] as [string, string])}
+                onChange={(d) => setIntraDay(d === intraDays[0] ? null : String(d))}
+                title="Session"
+                width={120}
+              />
+            )}
           <span className={`num text-lg font-bold ${longGamma == null ? "text-term-text" : longGamma ? "text-up" : "text-down"}`}>
             {compact(last.netGex)}
           </span>
@@ -1473,7 +1502,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           {frameToggle}
           {intraTfToggle}
           <span className="ml-auto text-[9px] uppercase tracking-wide text-term-dim">
-            session history · last ~720 polled samples (~3h continuous)
+            whole session · 09:15–15:30 · market hours only
           </span>
         </div>
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-[calc(100%-2rem)] w-full">

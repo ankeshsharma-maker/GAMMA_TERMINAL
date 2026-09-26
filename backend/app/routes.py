@@ -204,6 +204,12 @@ def history(symbol: str):
     return {"symbol": symbol.upper(), "points": store.get_history(symbol)}
 
 
+@router.get("/gex-intraday/{symbol}")
+def gex_intraday_view(symbol: str, day: str | None = Query(None)):
+    """Net GEX / gamma flip / spot through one trading session, for the OI tab's intraday GEX view."""
+    return pcr_series.gex_intraday(symbol, day, store.get_history(symbol))
+
+
 @router.get("/pcr/{symbol}")
 def pcr_view(symbol: str, day: str | None = Query(None), bucket: int = Query(5, ge=1, le=30)):
     """PCR + spot for one trading day, for the OI tab's PCR chart. Indices carry whole days (and earlier days) from the

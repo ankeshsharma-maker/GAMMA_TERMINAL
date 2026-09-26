@@ -94,3 +94,27 @@ def build(symbol: str, day: str | None, bucket: int, live_rows: list[dict], now:
     out["expiries"], out["points"] = expiries, pts
     out["asOf"] = pts[-1][0] if pts else None
     return out
+
+
+def gex_intraday(symbol: str, day: str | None, live_rows: list[dict], now: float | None = None) -> dict:
+    """Net GEX / gamma flip / spot for one trading session (None = the latest day with data): the history
+    archive (whole session, indices) merged with the live ring, market hours only -- the ring alone is 720
+    readings round the clock, so in the morning it was ~95% last night's frozen after-hours readings.
+    Point layout: [t, spot, netGex, gammaFlip]."""
+    symbol = symbol.upper()
+    now = datetime.now(_IST).timestamp() if now is None else now
+    live_rows = [r for r in live_rows if r.get("t") and history_archive.in_session(r["t"]) and r.get("netGex") is not None]
+    live_days = {_day_of(r["t"]) for r in live_rows}
+    days = sorted(set(history_archive.days(symbol)) | live_days, reverse=True)[:MAX_DAYS]
+    chosen = day if day in days else (days[0] if days else None)
+    out = {"symbol": symbol, "day": chosen, "days": days, "live": False, "points": []}
+    if chosen is None:
+        return out
+    rows = _merge(history_archive.read(symbol, chosen), [r for r in live_rows if _day_of(r["t"]) == chosen])
+    out["live"] = chosen == _day_of(now)
+    out["points"] = [
+        [int(r["t"]), _num(r.get("spot"), 2), _num(r.get("netGex"), 2), _num(r.get("gammaFlip"), 2)]
+        for r in rows
+        if history_archive.in_session(r["t"]) and r.get("netGex") is not None
+    ]
+    return out
