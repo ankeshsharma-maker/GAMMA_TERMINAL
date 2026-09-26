@@ -973,7 +973,7 @@ async def strategy_from_paper():
     if not built:
         raise HTTPException(status_code=404, detail="no paper positions")
     chain = await _ensure_chain(built["symbol"], built["expiry"])
-    analysis = strat.analyze(chain, built["legs"])
+    analysis = strat.analyze(chain, built["legs"], points=401)  # fine grid: the payoff chart zooms in
     return {**built, "analysis": analysis}
 
 
@@ -994,7 +994,7 @@ async def strategy_from_broker(body: FromBrokerIn):
     if not built:
         raise HTTPException(status_code=404, detail="no open broker option positions")
     chain = await _ensure_chain(built["symbol"], built["expiry"])
-    analysis = strat.analyze(chain, built["legs"])
+    analysis = strat.analyze(chain, built["legs"], points=401)  # fine grid: the payoff chart zooms in
     return {**built, "analysis": analysis}
 
 

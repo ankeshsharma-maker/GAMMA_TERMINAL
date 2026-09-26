@@ -148,6 +148,9 @@ def analyze(chain: dict, legs: list[dict], price_range: float = 0.10, points: in
 
     lo, hi = spot * (1 - price_range), spot * (1 + price_range)
     xs = [lo + (hi - lo) * i / (points - 1) for i in range(points)]
+    # the legs' own strikes too, so the payoff's corners sit exactly where they are (the builder's
+    # chart zooms in; on the plain grid a corner fell between two points and got rounded off)
+    xs = sorted(set(xs) | {float(l["strike"]) for l in resolved if l.get("strike") and lo < float(l["strike"]) < hi})
     q = chain.get("carryQ", DIVIDEND_YIELD)
     exp_curve = [round(_payoff_at(resolved, S, t, "expiry"), 2) for S in xs]
     now_curve = [round(_payoff_at(resolved, S, t, "now", q), 2) for S in xs]

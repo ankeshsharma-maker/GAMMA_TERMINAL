@@ -393,6 +393,8 @@ export const api = {
     expiry?: string;
     legs: StrategyLeg[];
     priceRange?: number;
+    /** payoff grid points (41-401); the builder's chart asks for 401 so it can zoom in */
+    points?: number;
   }) =>
     j<Analysis>("/api/strategy/analyze", { method: "POST", body: JSON.stringify(body) }),
 

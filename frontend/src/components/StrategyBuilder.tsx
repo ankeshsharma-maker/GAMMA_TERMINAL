@@ -357,7 +357,7 @@ export function StrategyBuilder() {
       timer.current = window.setTimeout(() => {
         setBusy(true);
         api
-          .analyzeStrategy({ symbol, expiry: expiry ?? undefined, legs: nextLegs })
+          .analyzeStrategy({ symbol, expiry: expiry ?? undefined, legs: nextLegs, points: 401 })
           .then(
             (a) => {
               setAnalysis(a);
@@ -795,6 +795,18 @@ export function StrategyBuilder() {
   // P&L right now, at the actual current spot -- same "now" curve the payoff
   // chart already plots, just read off at the one point that matters instead
   // of having to eyeball where it crosses the live-price line.
+  // payoff chart extras: one SD of the move to expiry (sizes its default window, like Sensibull's
+  // "SD dynamic") and the chain's open interest per strike -- only when the chain on screen is the
+  // analysed symbol / expiry
+  const payoffSd = useMemo(() => {
+    if (!analysis || !chain?.atmIV) return undefined;
+    return analysis.spot * (chain.atmIV / 100) * Math.sqrt(Math.max(analysis.dte, 0.25) / 365);
+  }, [analysis, chain?.atmIV]);
+  const payoffOi = useMemo(() => {
+    if (!analysis || !chain || chain.symbol !== analysis.symbol || chain.expiry !== analysis.expiry) return undefined;
+    return chain.rows.map((r) => ({ strike: r.strike, call: r.call.oi ?? 0, put: r.put.oi ?? 0 }));
+  }, [analysis, chain]);
+
   const currentPnl = useMemo(() => {
     if (!analysis || analysis.x.length === 0) return null;
     let bestI = 0;
@@ -1890,7 +1902,7 @@ export function StrategyBuilder() {
             )}
           </div>
         ) : payoffTab === "chart" ? (
-          <div className="relative m-2 min-h-[320px] rounded border border-term-border bg-term-bg/20 p-3 lg:min-h-[280px] lg:flex-1">
+          <div className="relative m-2 flex h-[420px] flex-col rounded border border-term-border bg-term-bg/20 p-3 lg:h-auto lg:min-h-[360px] lg:flex-1">
             {analysis && (
               <PayoffChart
                 x={analysis.x}
@@ -1902,16 +1914,10 @@ export function StrategyBuilder() {
                 symbol={analysis.symbol}
                 tLabel={tLineLabel}
                 offset={manualPnl}
+                sd={payoffSd}
+                margin={analysis.margin?.estimate}
+                oi={payoffOi}
               />
-            )}
-            {analysis && (
-              <div className="pointer-events-none absolute bottom-4 right-5 flex gap-3 text-[10px] text-term-dim">
-                <span className="text-term-text">─ at expiry</span>
-                {tPnl && <span className="text-[#f59e0b]">─ {tLineLabel}</span>}
-                <span className="text-[#a855f7]">╌ now (T+0)</span>
-                <span className="text-[#3b82f6]">┆ spot</span>
-                <span className="text-[#eab308]">● breakeven</span>
-              </div>
             )}
           </div>
         ) : payoffTab === "table" ? (
