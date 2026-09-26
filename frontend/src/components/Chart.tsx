@@ -19,6 +19,8 @@ import { computeGammaFlip } from "../lib/gammaFlip";
 import { DrawingPrimitive, describeDrawing, type Drawing, type Point } from "../lib/chartDrawings";
 import { bucketStart } from "../lib/istTime";
 import { detectPatterns, PATTERN_LEGEND, type PatternHit } from "../lib/candlePatterns";
+import { detectChartPatterns, type ChartEvent } from "../lib/chartPatterns";
+import { AutoPatternsPrimitive } from "../lib/autoPatternsPrimitive";
 import { TrendCompass } from "./TrendCompass";
 import {
   bollinger,
@@ -100,6 +102,8 @@ const TOGGLES = [
   ["score", "Blast Score"],
   ["greeks", "Greeks"],
   ["patterns", "Candle patterns"],
+  ["ranges", "Range breakouts"],
+  ["chartpat", "Chart patterns"],
 ] as const;
 type ToggleKey = (typeof TOGGLES)[number][0];
 
@@ -271,6 +275,10 @@ export function Chart() {
   const [legend, setLegend] = useState<string>("");
   // candlestick patterns on screen, by bar time -- the crosshair legend names the one under the cursor
   const patternsRef = useRef<Map<number, PatternHit>>(new Map());
+  // breakouts / confirmed chart patterns on screen, by bar time (crosshair legend)
+  const eventsRef = useRef<Map<number, ChartEvent[]>>(new Map());
+  // draws the range boxes + pattern lines: one on the candle series, one on the bar series
+  const autoPrimRef = useRef<{ candle: AutoPatternsPrimitive; bar: AutoPatternsPrimitive } | null>(null);
   // px per bar (zoom), so pattern labels are spaced to what fits on screen
   const [barSpacing, setBarSpacing] = useState(6);
   const [rsiVal, setRsiVal] = useState<number | null>(null);
@@ -317,6 +325,8 @@ export function Chart() {
     score: false,
     greeks: false,
     patterns: true,
+    ranges: true,
+    chartpat: true,
   });
   // hide the time (x) axis labels for a cleaner chart
   const [showTime, setShowTime] = useState(() => {
@@ -446,6 +456,9 @@ export function Chart() {
       wickDownColor: "#dc2626",
     });
     c.barS = chart.addBarSeries({ upColor: "#16a34a", downColor: "#dc2626", visible: false });
+    autoPrimRef.current = { candle: new AutoPatternsPrimitive(), bar: new AutoPatternsPrimitive() };
+    c.candle.attachPrimitive(autoPrimRef.current.candle);
+    c.barS.attachPrimitive(autoPrimRef.current.bar);
     c.lineS = chart.addLineSeries({ color: "#38bdf8", lineWidth: 2, visible: false, lastValueVisible: true });
     c.areaS = chart.addAreaSeries({
       lineColor: "#38bdf8",
@@ -473,10 +486,12 @@ export function Chart() {
       const ch = bar.close - bar.open;
       const chp = bar.open ? (ch / bar.open) * 100 : 0;
       const pat = patternsRef.current.get(bar.time as number);
+      const evs = eventsRef.current.get(bar.time as number) ?? [];
+      const evTxt = evs.map((e) => `  ·  ${e.name} ${e.dir === "up" ? "▲" : "▼"}`).join("");
       setLegend(
         `O ${bar.open.toFixed(1)}  H ${bar.high.toFixed(1)}  L ${bar.low.toFixed(1)}  C ${bar.close.toFixed(1)}  ${
           ch >= 0 ? "+" : ""
-        }${ch.toFixed(1)} (${chp.toFixed(2)}%)${pat ? `  ·  ${pat.name} ${pat.bias === "bull" ? "▲" : pat.bias === "bear" ? "▼" : "◆"}` : ""}`
+        }${ch.toFixed(1)} (${chp.toFixed(2)}%)${pat ? `  ·  ${pat.name} ${pat.bias === "bull" ? "▲" : pat.bias === "bear" ? "▼" : "◆"}` : ""}${evTxt}`
       );
       if (onRef.current.rsi) {
         const rp: any = p.seriesData?.get(s.current.rsi as any);
@@ -1172,13 +1187,33 @@ export function Chart() {
   useEffect(() => {
     const c = s.current;
     if (!chartRef.current || !c.candle) return;
-    const show = eff.patterns && (ctype === "candle" || ctype === "heikin" || ctype === "bar") && candles.length > 0;
-    let hits: PatternHit[] = [];
-    if (show) {
-      const last = candles[candles.length - 1];
-      const forming = bucketStart(Math.floor(Date.now() / 1000), intervalS) === (last.time as number);
-      hits = detectPatterns(forming ? candles.slice(0, -1) : candles);
-    }
+    const priceType = (ctype === "candle" || ctype === "heikin" || ctype === "bar") && candles.length > 0;
+    const closed =
+      candles.length && bucketStart(Math.floor(Date.now() / 1000), intervalS) === (candles[candles.length - 1].time as number)
+        ? candles.slice(0, -1)
+        : candles;
+    // 30m..4h bars sit on the 09:15 grid, so the day's last one can be a stub (1h: 15:15-15:30
+    // is 15 min). A stub compared with full bars reads as a harami / doji / crow that isn't
+    // there -- candle patterns skip any bar shorter than half the timeframe.
+    const CLOSE_S = 15 * 3600 + 30 * 60;
+    const full =
+      intervalS >= 1800 && intervalS < 86400
+        ? closed.filter((k) => {
+            const sod = ((k.time as number) + 19800) % 86400;
+            return Math.min(sod + intervalS, CLOSE_S) - sod >= intervalS / 2;
+          })
+        : closed;
+    const hits: PatternHit[] = priceType && eff.patterns ? detectPatterns(full) : [];
+    // range boxes / opening range / double tops, H&S, triangles -- lines + breakout markers
+    const auto =
+      priceType && (eff.ranges || eff.chartpat)
+        ? detectChartPatterns(closed, intervalS, { ranges: eff.ranges, patterns: eff.chartpat })
+        : { shapes: [], events: [] };
+    autoPrimRef.current?.candle.setShapes(ctype === "bar" ? [] : auto.shapes);
+    autoPrimRef.current?.bar.setShapes(ctype === "bar" ? auto.shapes : []);
+    const evMap = new Map<number, ChartEvent[]>();
+    auto.events.forEach((e) => evMap.set(e.time, [...(evMap.get(e.time) ?? []), e]));
+    eventsRef.current = evMap;
     patternsRef.current = new Map(hits.map((h) => [h.time, h]));
     // labels on bars close together run into each other on a phone ("HRIH"): a
     // pattern closer than ~26 px (at this zoom) to the previous labelled one on
@@ -1201,9 +1236,20 @@ export function Chart() {
       text,
       size: 1,
     }));
+    // breakouts always keep their label (they're the point); markers must be time-sorted
+    const evMarkers = auto.events.map((e) => ({
+      time: e.time as any,
+      position: e.dir === "up" ? ("belowBar" as const) : ("aboveBar" as const),
+      shape: e.dir === "up" ? ("arrowUp" as const) : ("arrowDown" as const),
+      color: e.dir === "up" ? "#16a34a" : "#dc2626",
+      text: e.short,
+      size: 2,
+    }));
+    markers.push(...evMarkers);
+    markers.sort((x, y) => (x.time as number) - (y.time as number));
     (c.candle as ISeriesApi<"Candlestick">).setMarkers(ctype === "bar" ? [] : markers);
     (c.barS as ISeriesApi<"Bar">).setMarkers(ctype === "bar" ? markers : []);
-  }, [candles, priceCandles, data, eff.patterns, ctype, intervalS, barSpacing]);
+  }, [candles, priceCandles, data, eff.patterns, eff.ranges, eff.chartpat, ctype, intervalS, barSpacing]);
 
   // log / linear price scale
   useEffect(() => {
@@ -1935,6 +1981,32 @@ export function Chart() {
                           <div className="mt-0.5 text-[9px] leading-snug text-term-dim">
                             Marked when the bar closes. Reversal patterns only count after a move into them.
                           </div>
+                        </div>
+                      )}
+                      {k === "ranges" && on.ranges && (
+                        <div className="mb-1 ml-2 mt-0.5 rounded border border-term-dim/40 px-1.5 py-1 text-[10px] leading-snug text-term-dim">
+                          <div>▭ box = sideways range (grey while price is still in it)</div>
+                          <div>
+                            <span className="text-up">▲ BO</span> / <span className="text-down">▼ BD</span> = first close out of it
+                          </div>
+                          <div>
+                            <span className="text-violet-400">ORH / ORL</span> = 09:15–09:30 high / low,{" "}
+                            <span className="text-term-text">ORB</span> = first close beyond (15m and below)
+                          </div>
+                        </div>
+                      )}
+                      {k === "chartpat" && on.chartpat && (
+                        <div className="mb-1 ml-2 mt-0.5 rounded border border-term-dim/40 px-1.5 py-1 text-[10px] leading-snug text-term-dim">
+                          <div>
+                            <span className="text-down">DT</span> / <span className="text-up">DB</span> = double top / bottom
+                          </div>
+                          <div>
+                            <span className="text-down">H&amp;S</span> / <span className="text-up">iH&amp;S</span> = head &amp; shoulders / inverse
+                          </div>
+                          <div>
+                            <span className="text-cyan-400">△</span> = triangle breakout (ascending / descending / symmetrical)
+                          </div>
+                          <div>Marker = neckline / line broken on a close. Dashed with “?” = not confirmed yet.</div>
                         </div>
                       )}
                       {k === "greeks" && on.greeks && !dis && (

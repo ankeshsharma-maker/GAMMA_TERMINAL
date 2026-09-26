@@ -24,7 +24,7 @@ export const IST_LOCALIZATION = {
 export const istTickFormatter = (t: number, tickType: number) =>
   tickType <= 2 ? istDate(t) : istTime(t);
 
-const IST_OFFSET_S = 19800; // UTC+5:30
+export const IST_OFFSET_S = 19800; // UTC+5:30
 const SESSION_OPEN_S = 9 * 3600 + 15 * 60; // 09:15 after IST midnight
 
 /** Start time of the candle containing `t` for a chart interval of `sec` seconds. Bars of 30 minutes up to (not
