@@ -60,84 +60,6 @@ const shortExp = (e?: string) => {
   return m ? `${m[1]} ${m[2].toUpperCase()}` : e ?? "";
 };
 /** broker-style full contract name: "SENSEX 24 SEP 74500 CE", "NIFTY 30 SEP FUT" */
-/** Tap an index / stock: its price, a big Chart button, and the symbol's OI views. */
-function SymbolSheet({
-  w,
-  name,
-  px,
-  chg,
-  pct,
-  onClose,
-  onChart,
-  onView,
-}: {
-  w: WatchQuote;
-  name: string;
-  px: number | null | undefined;
-  chg: number | null | undefined;
-  pct: number | null | undefined;
-  onClose: () => void;
-  onChart: () => void;
-  onView: (v: "chain" | "oiprofile" | "trendingoi" | "flow") => void;
-}) {
-  const up = (pct ?? chg ?? 0) >= 0;
-  const views = [
-    ["chain", "Option Chain"],
-    ["oiprofile", "OI"],
-    ["trendingoi", "Trend OI"],
-    ["flow", "Flow"],
-  ] as const;
-  return (
-    <div className="fixed inset-0 z-[55] flex items-end justify-center bg-black/60 sm:items-center" onClick={onClose}>
-      <div
-        className="w-full max-w-md rounded-t-xl border border-term-border bg-term-panel p-3 shadow-2xl sm:rounded-xl"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[15px] font-semibold text-term-text">{name}</div>
-            <div className="text-[11px] text-term-dim">
-              {w.kind === "index" || /^(NIFTY|BANKNIFTY|FINNIFTY|MIDCPNIFTY|NIFTYNXT50|SENSEX|BANKEX|SENSEX50)$/.test(w.symbol)
-                ? "Index"
-                : "Stock"}
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="num text-[16px] font-semibold text-term-text">{px != null ? nf(px) : "–"}</div>
-            {(chg != null || pct != null) && (
-              <div className={`num text-[11px] ${up ? "text-up" : "text-down"}`}>
-                {chg != null ? `${chg >= 0 ? "+" : ""}${nf(chg)}` : ""}
-                {pct != null ? ` (${pct >= 0 ? "+" : ""}${nf(pct)}%)` : ""}
-              </div>
-            )}
-          </div>
-        </div>
-        <button
-          onClick={onChart}
-          className="mt-3 w-full rounded-lg border border-term-accent/60 bg-term-accent/15 py-3 text-[15px] font-bold text-term-accent active:bg-term-accent/30"
-        >
-          📈 Chart
-        </button>
-        {/* an F&O underlying has an option chain; a plain index (INDIA VIX...) doesn't */}
-        {w.kind !== "index" && (
-        <div className="mt-2 grid grid-cols-4 gap-2">
-          {views.map(([v, label]) => (
-            <button
-              key={v}
-              onClick={() => onView(v)}
-              className="rounded-md border border-term-border py-2 text-[12px] font-semibold text-term-text active:bg-term-border"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 const wFull = (w: WatchQuote) =>
   w.kind === "option"
     ? `${w.symbol} ${shortExp(w.expiry)} ${w.strike} ${w.optionType}`
@@ -185,40 +107,19 @@ function MarketRow({
   const up = (pct ?? chg ?? 0) >= 0;
   const col = !has ? "text-term-text" : up ? "text-up" : "text-down";
   const [sheet, setSheet] = useState(false);
-  // an option / future row opens the order sheet; an index / stock a quick sheet (Chart + its OI views)
-  const tap = () => setSheet(true);
-  const tradable = w.kind === "option" || w.kind === "future";
-  const sheetEl =
-    sheet &&
-    (tradable ? (
-      <OrderSheet
-        w={w}
-        name={wFull(w)}
-        onClose={() => setSheet(false)}
-        onChart={() => {
-          setSheet(false);
-          open();
-        }}
-      />
-    ) : (
-      <SymbolSheet
-        w={w}
-        name={wFull(w)}
-        px={px}
-        chg={chg}
-        pct={pct}
-        onClose={() => setSheet(false)}
-        onChart={() => {
-          setSheet(false);
-          open();
-        }}
-        onView={(v) => {
-          setSheet(false);
-          selectSymbol(w.symbol, true);
-          setView(v);
-        }}
-      />
-    ));
+  // an option / future row opens the order sheet; an index / stock opens its chart
+  const tap = () => (w.kind === "option" || w.kind === "future" ? setSheet(true) : open());
+  const sheetEl = sheet && (
+    <OrderSheet
+      w={w}
+      name={wFull(w)}
+      onClose={() => setSheet(false)}
+      onChart={() => {
+        setSheet(false);
+        open();
+      }}
+    />
+  );
   const open = () => {
     setChartQueue("Watchlist", queue);
     selectSymbol(w.symbol, true);
