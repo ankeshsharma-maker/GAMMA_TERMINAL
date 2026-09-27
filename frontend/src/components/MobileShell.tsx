@@ -16,7 +16,9 @@ import {
   useBookPnl,
 } from "./Header";
 
-/** NIFTY + SENSEX, ultra-compact — sits next to the GT mark, fits a folded Fold 6 */
+/** NIFTY + SENSEX, ultra-compact — sits next to the GT mark. Two lines per chip (price, then
+ *  the move under it): on one line the pair needed ~280px and a folded Fold 6 leaves ~176px,
+ *  so SENSEX was pushed out of sight. */
 function TopIndices() {
   const [rows, setRows] = useState<
     { symbol: string; spot: number | null; chgPct: number | null; chgPts?: number | null }[]
@@ -52,16 +54,18 @@ function TopIndices() {
         return (
           <span
             key={r.symbol}
-            className="flex shrink-0 items-baseline gap-1 rounded border border-term-border bg-term-bg/60 px-1.5 py-0.5"
+            className="flex shrink-0 flex-col gap-0.5 rounded border border-term-border bg-term-bg/60 px-1.5 py-0.5"
           >
-            <span className="text-[8px] font-semibold uppercase tracking-tight text-term-dim">
-              {r.symbol}
-            </span>
-            <span className="num text-[11px] font-semibold leading-none">
-              {spot != null ? nf(spot, 0) : "–"}
+            <span className="flex items-baseline gap-1">
+              <span className="text-[8px] font-semibold uppercase tracking-tight text-term-dim">
+                {r.symbol}
+              </span>
+              <span className="num text-[11px] font-semibold leading-none">
+                {spot != null ? nf(spot, 0) : "–"}
+              </span>
             </span>
             <span
-              className={`num text-[8px] leading-none ${
+              className={`num whitespace-nowrap text-right text-[8px] leading-none ${
                 chgPct == null && chgPts == null ? "invisible" : up ? "text-up" : "text-down"
               }`}
             >
@@ -91,14 +95,16 @@ function PcrChip() {
   const chg = chain.pcr - base;
   return (
     <span
-      className="flex shrink-0 items-baseline gap-1 rounded border border-term-border bg-term-bg/60 px-1.5 py-0.5"
+      className="flex shrink-0 flex-col gap-0.5 rounded border border-term-border bg-term-bg/60 px-1.5 py-0.5"
       title={`${chain.symbol} put/call OI ratio — ${chg === 0 ? "unchanged" : chg > 0 ? "rising" : "falling"} since this screen opened`}
     >
-      <span className="text-[8px] font-semibold uppercase tracking-tight text-term-dim">PCR</span>
-      <span className={`num text-[11px] font-semibold leading-none ${chain.pcr >= 1 ? "text-up" : "text-down"}`}>
-        {nf(chain.pcr, 2)}
+      <span className="flex items-baseline gap-1">
+        <span className="text-[8px] font-semibold uppercase tracking-tight text-term-dim">PCR</span>
+        <span className={`num text-[11px] font-semibold leading-none ${chain.pcr >= 1 ? "text-up" : "text-down"}`}>
+          {nf(chain.pcr, 2)}
+        </span>
       </span>
-      <span className={`num text-[8px] leading-none ${chg === 0 ? "invisible" : chg > 0 ? "text-up" : "text-down"}`}>
+      <span className={`num whitespace-nowrap text-right text-[8px] leading-none ${chg === 0 ? "invisible" : chg > 0 ? "text-up" : "text-down"}`}>
         {chg >= 0 ? "▲" : "▼"}
         {nf(Math.abs(chg), 2)}
       </span>

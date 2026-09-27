@@ -527,34 +527,46 @@ function TrendingOILive() {
         </div>
       )}
 
-      {/* data table — a phone shows the 7 core columns; sm+ adds the 5 detail
-          PCR / direction columns. Scrolls inside its own box so it never widens
-          the page. */}
-      <div className="max-w-full overflow-x-auto p-2 lg:min-h-0 lg:flex-1 lg:overflow-auto">
-        <table className="w-full min-w-[560px] border-separate border-spacing-0 border border-term-border text-2xs sm:min-w-[820px] [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
-          <thead className="sticky top-0 z-10 isolate will-change-transform bg-term-panel text-[10px] uppercase text-term-dim">
+      {/* data table — a phone shows the 7 core columns, fitted to the screen width (no
+          sideways scroll: tight padding, short headers) and at full length: the page
+          scrolls and the header row sticks under the top (a scroll box of its own was
+          squeezed to ~200px under the summary, rows showing above its header). sm+ adds
+          the 5 detail PCR / direction columns and scrolls sideways if it must. */}
+      <div className="max-w-full shrink-0 px-1 pb-1 sm:overflow-x-auto sm:p-2 lg:min-h-0 lg:flex-1 lg:shrink lg:overflow-auto">
+        <table className="w-full border-separate border-spacing-0 border border-term-border text-2xs sm:min-w-[820px] [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
+          <thead className="sticky -top-px z-10 isolate will-change-transform bg-term-panel text-[10px] uppercase text-term-dim sm:top-0">
             <tr>
-              {[
-                "Time",
-                "Spot",
-                "Calls chng OI",
-                "Puts chng OI",
-                "Diff. in OI",
-                "Diff %",
-                "Dir.",
-                "Chng in dir",
-                "PCR",
-                "COI PCR",
-                "Vol PCR",
-                "Sentiment",
-              ].map((h, i) => (
+              {(
+                [
+                  ["Time"],
+                  ["Spot"],
+                  ["Calls chng OI", "Calls ΔOI"],
+                  ["Puts chng OI", "Puts ΔOI"],
+                  ["Diff. in OI"],
+                  ["Diff %"],
+                  ["Dir."],
+                  ["Chng in dir"],
+                  ["PCR"],
+                  ["COI PCR"],
+                  ["Vol PCR"],
+                  ["Sentiment", "Bias"],
+                ] as [string, string?][]
+              ).map(([h, short], i) => (
                 <th
                   key={h}
-                  className={`bg-term-panel px-2 py-1.5 font-medium last:border-r-0 ${
-                    i === 0 || i === 11 ? "text-left" : "text-right"
+                  className={`bg-term-panel px-1 py-1.5 font-medium last:border-r-0 sm:px-2 ${
+                    i === 0 || i === 11 ? "text-left" : i === 6 ? "text-center" : "text-right"
                   } ${LIVE_HIDE_SM.has(i) ? "hidden sm:table-cell" : ""}`}
+                  title={short ? h : undefined}
                 >
-                  {h}
+                  {short ? (
+                    <>
+                      <span className="sm:hidden">{short}</span>
+                      <span className="hidden sm:inline">{h}</span>
+                    </>
+                  ) : (
+                    h
+                  )}
                 </th>
               ))}
             </tr>
@@ -562,42 +574,42 @@ function TrendingOILive() {
           <tbody>
             {rows.map((r, i) => (
               <tr key={r.t} className={i === 0 ? "bg-term-accent/[0.06]" : ""}>
-                <td className="num px-2 py-1 text-term-dim">
+                <td className="num px-1 py-1 sm:px-2 text-term-dim">
                   {fmtTime(r.t)}
                 </td>
-                <td className="num px-2 py-1 text-right">
+                <td className="num px-1 py-1 sm:px-2 text-right">
                   {nf(r.spot, 1)}
                 </td>
                 <td
-                  className="num px-2 py-1 text-right"
+                  className="num px-1 py-1 sm:px-2 text-right"
                   style={{ color: CE }}
                 >
                   {inr(r.cCum)}
-                  <span className="block text-[9px] opacity-70">({sInr(r.cInt)})</span>
+                  <span className="block whitespace-nowrap text-[9px] opacity-70">({sInr(r.cInt)})</span>
                 </td>
                 <td
-                  className="num px-2 py-1 text-right"
+                  className="num px-1 py-1 sm:px-2 text-right"
                   style={{ color: PE }}
                 >
                   {inr(r.pCum)}
-                  <span className="block text-[9px] opacity-70">({sInr(r.pInt)})</span>
+                  <span className="block whitespace-nowrap text-[9px] opacity-70">({sInr(r.pInt)})</span>
                 </td>
                 <td
-                  className={`num hidden px-2 py-1 text-right sm:table-cell ${
+                  className={`num hidden px-1 py-1 sm:px-2 text-right sm:table-cell ${
                     r.diff >= 0 ? "text-up" : "text-down"
                   }`}
                 >
                   {inr(r.diff)}
                 </td>
                 <td
-                  className={`num px-2 py-1 text-right ${
+                  className={`num px-1 py-1 sm:px-2 text-right ${
                     r.diffPct >= 0 ? "text-up" : "text-down"
                   }`}
                 >
                   {r.diffPct >= 0 ? "+" : ""}
                   {nf(r.diffPct, 1)}%
                 </td>
-                <td className="px-2 py-1 text-center">
+                <td className="px-1 py-1 sm:px-2 text-center">
                   <span
                     className={`inline-block rounded px-1.5 font-bold ${
                       r.dirUp ? "bg-up/20 text-up" : "bg-down/20 text-down"
@@ -607,26 +619,26 @@ function TrendingOILive() {
                   </span>
                 </td>
                 <td
-                  className={`num hidden px-2 py-1 text-right sm:table-cell ${
+                  className={`num hidden px-1 py-1 sm:px-2 text-right sm:table-cell ${
                     r.chngInDir >= 0 ? "text-up" : "text-down"
                   }`}
                 >
                   {inr(r.chngInDir)}
                 </td>
-                <td className="num hidden px-2 py-1 text-right sm:table-cell">
+                <td className="num hidden px-1 py-1 sm:px-2 text-right sm:table-cell">
                   {r.pcr != null ? nf(r.pcr, 3) : "–"}
                 </td>
                 <td
-                  className={`num hidden px-2 py-1 text-right sm:table-cell ${
+                  className={`num hidden px-1 py-1 sm:px-2 text-right sm:table-cell ${
                     r.coiPcr != null ? (r.coiPcr >= 0 ? "text-up" : "text-down") : "text-term-dim"
                   }`}
                 >
                   {r.coiPcr != null ? nf(r.coiPcr, 3) : "–"}
                 </td>
-                <td className="num hidden px-2 py-1 text-right sm:table-cell">
+                <td className="num hidden px-1 py-1 sm:px-2 text-right sm:table-cell">
                   {r.volPcr != null ? nf(r.volPcr, 2) : "–"}
                 </td>
-                <td className={`px-2 py-1 font-semibold ${sentCls(r.sentiment)}`}>
+                <td className={`px-1 py-1 sm:px-2 font-semibold ${sentCls(r.sentiment)}`}>
                   {r.sentiment}
                 </td>
               </tr>
@@ -1059,8 +1071,9 @@ function TrendingOIClassic() {
         )}
       </div>
 
-      {/* chart */}
-      <div ref={boxRef} className="relative min-h-0 flex-1 overflow-hidden p-3">
+      {/* chart -- a phone gives it a fixed height and scrolls the page (squeezed between the
+          strips and the table it fell under the size it can draw at) */}
+      <div ref={boxRef} className="relative h-[260px] shrink-0 overflow-hidden p-3 sm:h-auto sm:min-h-0 sm:flex-1 sm:shrink">
         {chart ?? (
           <div className="flex h-full items-center justify-center text-xs text-term-dim">
             {daily
@@ -1074,18 +1087,20 @@ function TrendingOIClassic() {
 
       {/* recent intervals */}
       {intervals.length > 0 && (
-        <div className="max-h-[34%] max-w-full shrink-0 overflow-auto border-t border-term-border p-2">
-          <table className="w-full min-w-[480px] border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
-            <thead className="sticky top-0 z-10 isolate will-change-transform bg-term-panel text-[10px] uppercase text-term-dim">
+        <div className="max-w-full shrink-0 border-t border-term-border px-1 pb-1 sm:max-h-[34%] sm:overflow-auto sm:p-2">
+          {/* a phone: fitted to the screen width (tight padding), no sideways scroll, full
+              length with the page scrolling and the header row sticking at the top */}
+          <table className="w-full border-separate sm:min-w-[480px] border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
+            <thead className="sticky -top-px z-10 isolate will-change-transform bg-term-panel text-[10px] uppercase text-term-dim sm:top-0">
               <tr>
-                <th className="bg-term-panel px-3 py-1 text-left font-medium">
+                <th className="bg-term-panel px-1 py-1 sm:px-3 text-left font-medium">
                   {daily ? "Date" : "Time"}
                 </th>
-                <th className="bg-term-panel px-3 py-1 text-right font-medium">Call OI Δ</th>
-                <th className="bg-term-panel px-3 py-1 text-right font-medium">Put OI Δ</th>
-                <th className="bg-term-panel px-3 py-1 text-right font-medium">Spot Δ</th>
-                <th className="bg-term-panel px-3 py-1 text-left font-medium">Leader</th>
-                <th className="bg-term-panel px-3 py-1 text-left font-medium">Sentiment</th>
+                <th className="bg-term-panel px-1 py-1 sm:px-3 text-right font-medium">Call OI Δ</th>
+                <th className="bg-term-panel px-1 py-1 sm:px-3 text-right font-medium">Put OI Δ</th>
+                <th className="bg-term-panel px-1 py-1 sm:px-3 text-right font-medium">Spot Δ</th>
+                <th className="bg-term-panel px-1 py-1 sm:px-3 text-left font-medium">Leader</th>
+                <th className="bg-term-panel px-1 py-1 sm:px-3 text-left font-medium">Sentiment</th>
               </tr>
             </thead>
             <tbody>
@@ -1093,7 +1108,7 @@ function TrendingOIClassic() {
                 const putLed = r.dpe > r.dce;
                 return (
                   <tr key={r.t}>
-                    <td className="num px-3 py-1 text-term-dim">
+                    <td className="num px-1 py-1 sm:px-3 text-term-dim">
                       {daily
                         ? new Date(r.t * 1000).toLocaleDateString("en-IN", {
                             day: "2-digit",
@@ -1105,21 +1120,21 @@ function TrendingOIClassic() {
                           })}
                     </td>
                     <td
-                      className="num px-3 py-1 text-right"
+                      className="num px-1 py-1 sm:px-3 text-right"
                       style={{ color: CE }}
                     >
                       {r.dce >= 0 ? "+" : ""}
                       {oiCr(r.dce)}
                     </td>
                     <td
-                      className="num px-3 py-1 text-right"
+                      className="num px-1 py-1 sm:px-3 text-right"
                       style={{ color: PE }}
                     >
                       {r.dpe >= 0 ? "+" : ""}
                       {oiCr(r.dpe)}
                     </td>
                     <td
-                      className={`num px-3 py-1 text-right ${
+                      className={`num px-1 py-1 sm:px-3 text-right ${
                         r.dspot >= 0 ? "text-up" : "text-down"
                       }`}
                     >
@@ -1127,14 +1142,14 @@ function TrendingOIClassic() {
                       {nf(r.dspot, 1)}
                     </td>
                     <td
-                      className={`px-3 py-1 font-semibold ${
+                      className={`px-1 py-1 sm:px-3 font-semibold ${
                         putLed ? "text-up" : "text-down"
                       }`}
                     >
                       {putLed ? "PUT" : "CALL"}
                     </td>
-                    <td className="px-3 py-1">
-                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${r.sent.cls}`}>
+                    <td className="px-1 py-1 sm:px-3">
+                      <span className={`whitespace-nowrap rounded px-1 py-0.5 text-[10px] font-bold sm:px-1.5 ${r.sent.cls}`}>
                         {r.sent.txt}
                       </span>
                     </td>
