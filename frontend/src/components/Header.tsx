@@ -362,13 +362,14 @@ export function ClassFilter() {
   return (
     <div
       className="segx text-2xs"
-      title="Filter watchlist / scanner / screener to indices or stocks"
+      title="Filter watchlist / scanner / screener to indices, stocks, or only F&O stocks"
     >
       {(
         [
           ["all", "All"],
           ["index", "Indices"],
           ["stock", "Stocks"],
+          ["fo", "F&O"],
         ] as const
       ).map(([v, label]) => (
         <button

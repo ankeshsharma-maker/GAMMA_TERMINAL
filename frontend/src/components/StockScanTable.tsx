@@ -51,11 +51,14 @@ export function ScanHeader({
   universe,
   setUniverse,
   data,
+  children,
 }: {
   title: string;
   universe: Universe;
   setUniverse: (u: Universe) => void;
   data: VolSnapshot | null;
+  /** more controls on the same row, right after the F&O / Cash / All NSE switch (they wrap on a phone) */
+  children?: ReactNode;
 }) {
   const asOf = data?.asOf ? new Date(data.asOf * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : null;
   return (
@@ -72,6 +75,7 @@ export function ScanHeader({
           All NSE
         </button>
       </div>
+      {children}
       <span className="ml-auto text-[11px] text-term-dim">
         {data?.market === "open" ? (asOf ? `live · ${asOf}` : "loading…") : asOf ? "market closed · last session" : ""}
       </span>

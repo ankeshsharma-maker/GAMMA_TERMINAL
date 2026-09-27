@@ -47,7 +47,7 @@ export function VolumeScreener() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-term-bg">
       <div className="space-y-2 border-b border-term-border bg-term-panel2 px-3 py-2">
-        <ScanHeader title="Volume" universe={universe} setUniverse={setUniverse} data={data} />
+        <ScanHeader title="Volume" universe={universe} setUniverse={setUniverse} data={data}>
         <Chips<Mode>
           items={[
             ["spikes", "Volume spikes"],
@@ -77,6 +77,7 @@ export function VolumeScreener() {
             </span>
           )}
         </MinTraded>
+        </ScanHeader>
         {base && base.ready < base.total && (
           <div className="text-[11px] text-amber-400">
             Working out each stock's usual volume: {base.ready} / {base.total} ready

@@ -108,7 +108,8 @@ interface State {
   orderMode: "paper" | "live";
   pending: PendingOrder | null;
   autobot: import("./types").AutoBotState | null;
-  symClass: "all" | "index" | "stock";
+  /** the app-wide symbol filter: stock = every stock, fo = only stocks with options (not EQ: cash stocks) */
+  symClass: "all" | "index" | "stock" | "fo";
   indexSet: string[];
 
   init: () => void;
@@ -204,7 +205,7 @@ interface State {
   builderQueue: import("./types").StrategyLeg[];
   queueBuilderLeg: (leg: import("./types").StrategyLeg, goToBuilder?: boolean) => void;
   clearBuilderQueue: () => void;
-  setSymClass: (c: "all" | "index" | "stock") => void;
+  setSymClass: (c: "all" | "index" | "stock" | "fo") => void;
   symClassOk: (sym: string) => boolean;
   loadAutobot: () => Promise<void>;
   autobotMaster: (on: boolean) => Promise<void>;
@@ -325,7 +326,7 @@ export const useStore = create<State>((set, get) => ({
   autobot: null,
   symClass: (() => {
     try {
-      return (localStorage.getItem("symClass") as "all" | "index" | "stock") || "all";
+      return (localStorage.getItem("symClass") as "all" | "index" | "stock" | "fo") || "all";
     } catch {
       return "all";
     }
@@ -589,7 +590,9 @@ export const useStore = create<State>((set, get) => ({
     const { symClass, indexSet } = get();
     if (symClass === "all") return true;
     const isIdx = indexSet.includes((sym || "").toUpperCase());
-    return symClass === "index" ? isIdx : !isIdx;
+    if (symClass === "index") return isIdx;
+    if (symClass === "fo") return !isIdx && !(sym || "").toUpperCase().startsWith("EQ:"); // EQ:SYM = a cash-only stock
+    return !isIdx;
   },
 
   loadAutobot: async () => {
