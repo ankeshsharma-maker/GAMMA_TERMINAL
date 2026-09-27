@@ -117,7 +117,7 @@ const COMPS: [string, string][] = [
 function ScoreCell({ r }: { r: ScanRow }) {
   return (
     <div className="flex items-center gap-2">
-      <span className={`num w-8 text-right text-base font-bold ${scoreText(r.score)}`}>
+      <span className={`num w-8 text-center text-base font-bold ${scoreText(r.score)}`}>
         {nf(r.score, 0)}
       </span>
       <div className="h-2 w-20 overflow-hidden rounded bg-term-border">
@@ -151,7 +151,7 @@ function CompBars({ c }: { c: Record<string, number> }) {
 const TH = ({ children, r = false }: { children: React.ReactNode; r?: boolean }) => (
   <th
     className={`border-b border-r border-term-border px-2 py-1.5 font-medium ${
-      r ? "text-right" : "text-left"
+      r ? "text-center" : "text-left"
     }`}
   >
     {children}
@@ -303,7 +303,7 @@ export function Scanner() {
               <TD>
                 <ScoreCell r={r} />
               </TD>
-              <TD cls="num text-right">
+              <TD cls="num text-center">
                 {r.scoreChg5m == null ? (
                   <span className="text-term-dim">—</span>
                 ) : (
@@ -329,15 +329,15 @@ export function Scanner() {
                   {r.bias}
                 </span>
               </TD>
-              <TD cls="num text-right">{nf(r.dte, 1)}</TD>
-              <TD cls="num text-right">{nf(r.spot, 0)}</TD>
-              <TD cls={`num text-right ${signColor(r.move5mPct)}`}>{nf(r.move5mPct, 2)}</TD>
-              <TD cls="num text-right">{nf(r.atmIV, 1)}</TD>
-              <TD cls={`num text-right ${signColor(r.ivChg5m)}`}>{nf(r.ivChg5m, 1)}</TD>
-              <TD cls={`num text-right ${signColor(r.straddlePct5m)}`}>{nf(r.straddlePct5m, 0)}</TD>
-              <TD cls={`num text-right ${signColor(r.netGex)}`}>{compact(r.netGex)}</TD>
-              <TD cls="num text-right">{nf(r.pcr, 2)}</TD>
-              <TD cls="num text-right">{nf(r.mpDistPct, 2)}%</TD>
+              <TD cls="num text-center">{nf(r.dte, 1)}</TD>
+              <TD cls="num text-center">{nf(r.spot, 0)}</TD>
+              <TD cls={`num text-center ${signColor(r.move5mPct)}`}>{nf(r.move5mPct, 2)}</TD>
+              <TD cls="num text-center">{nf(r.atmIV, 1)}</TD>
+              <TD cls={`num text-center ${signColor(r.ivChg5m)}`}>{nf(r.ivChg5m, 1)}</TD>
+              <TD cls={`num text-center ${signColor(r.straddlePct5m)}`}>{nf(r.straddlePct5m, 0)}</TD>
+              <TD cls={`num text-center ${signColor(r.netGex)}`}>{compact(r.netGex)}</TD>
+              <TD cls="num text-center">{nf(r.pcr, 2)}</TD>
+              <TD cls="num text-center">{nf(r.mpDistPct, 2)}%</TD>
               <TD cls="text-[10px] text-term-dim">{r.reasons[0] ?? "—"}</TD>
             </tr>
           ))}
