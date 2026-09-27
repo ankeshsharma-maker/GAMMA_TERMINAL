@@ -10,7 +10,9 @@ const monthKey = (e: string) => {
 };
 
 /** `extra`: controls that ride the end of this row (the Option Chain's ΔOI window) */
-export function ExpiryTabs({ extra }: { extra?: ReactNode } = {}) {
+/** `lead`: shown right after the expiries (the OI tab's OI Profile / Option Chain / History switch);
+ *  `extra`: pushed to the right end */
+export function ExpiryTabs({ extra, lead }: { extra?: ReactNode; lead?: ReactNode } = {}) {
   const { chain, expiry, selectExpiry, symbol, selectSymbol, symClass, symClassOk } = useStore();
 
   const [symChoices, setSymChoices] = useState<string[]>([]);
@@ -46,6 +48,7 @@ export function ExpiryTabs({ extra }: { extra?: ReactNode } = {}) {
       <div className="flex items-center gap-1 border-b border-term-border bg-term-panel2 px-3 py-1.5">
         {symSelect}
         <span className="text-2xs text-term-dim">loading chain…</span>
+        {lead && <span className="flex shrink-0 items-center text-2xs">{lead}</span>}
         {extra && <span className="ml-auto flex shrink-0 items-center text-2xs text-term-dim">{extra}</span>}
       </div>
     );
@@ -69,7 +72,8 @@ export function ExpiryTabs({ extra }: { extra?: ReactNode } = {}) {
     <div className="flex items-center gap-1 border-b border-term-border bg-term-panel2 px-3 py-1.5">
       {symSelect}
       <span className="mx-0.5 h-4 w-px shrink-0 bg-term-border" />
-      <div className="flex flex-1 items-center gap-1 overflow-x-auto">
+      {/* with a `lead` the expiries take only their room, so it sits right beside them */}
+      <div className={`flex ${lead ? "min-w-0" : "flex-1"} items-center gap-1 overflow-x-auto`}>
         {tabs.map((e) => (
           <button
             key={e}
@@ -96,7 +100,8 @@ export function ExpiryTabs({ extra }: { extra?: ReactNode } = {}) {
           </span>
         )}
       </div>
-      {extra && <span className="flex shrink-0 items-center text-2xs text-term-dim">{extra}</span>}
+      {lead && <span className="ml-2 flex shrink-0 items-center text-2xs">{lead}</span>}
+      {extra && <span className="ml-auto flex shrink-0 items-center text-2xs text-term-dim">{extra}</span>}
     </div>
   );
 }

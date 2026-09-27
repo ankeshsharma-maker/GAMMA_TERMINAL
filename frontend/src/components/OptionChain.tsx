@@ -697,9 +697,10 @@ export function OptionChain({ paneNav, expiryRow = false }: { paneNav?: ReactNod
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {expiryRow && <ExpiryTabs extra={tfControl} />}
+      {/* the OI Profile / Option Chain / History switch rides the top row, next to the symbol and expiry */}
+      {expiryRow && <ExpiryTabs extra={tfControl} lead={paneNav} />}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
-        {paneNav ?? <span className="hidden font-semibold uppercase tracking-wide sm:inline">Option Chain</span>}
+        {!expiryRow && (paneNav ?? <span className="hidden font-semibold uppercase tracking-wide sm:inline">Option Chain</span>)}
         <div className="seg">
           {TABS.map((t) => (
             <button

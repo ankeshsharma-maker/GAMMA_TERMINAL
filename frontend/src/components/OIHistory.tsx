@@ -185,9 +185,11 @@ export function OIHistory({ paneNav }: { paneNav?: ReactNode } = {}) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
-        {paneNav ?? <span className="hidden font-semibold uppercase tracking-wide sm:inline">OI History</span>}
+        {!paneNav && <span className="hidden font-semibold uppercase tracking-wide sm:inline">OI History</span>}
         <span className="num font-semibold text-term-text">{symbol}</span>
         <span className="num">{expiry || "—"}</span>
+        {/* the OI Profile / Option Chain / History switch: after the symbol and expiry, as on the other two views */}
+        {paneNav}
         <label className="flex items-center gap-1">
           from
           <input
