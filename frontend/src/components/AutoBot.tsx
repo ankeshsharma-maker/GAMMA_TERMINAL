@@ -895,7 +895,12 @@ type SimpleSignal = {
   key: string;
   title: (d: Dir) => string;
   tf: number;
+  /** as the trigger: the event that opens the trade, its exit, and any pace limits */
   build: (d: Dir) => Partial<AutoRule>;
+  /** as a confirmation: the lasting STATE of the same idea, which must already hold when the
+   *  trigger fires (two one-candle events almost never land on the same candle) */
+  confirm: (d: Dir) => AutoCondition[];
+  confirmTitle: (d: Dir) => string;
 };
 const SIMPLE_SIGNALS: SimpleSignal[] = [
   {
@@ -906,6 +911,8 @@ const SIMPLE_SIGNALS: SimpleSignal[] = [
       entry: [{ kind: "market_structure", op: d === "up" ? "turns_bullish" : "turns_bearish" }],
       exit: [{ kind: "market_structure", op: d === "up" ? "turns_bearish" : "turns_bullish" }],
     }),
+    confirm: (d) => [{ kind: "market_structure", op: d === "up" ? "bullish" : "bearish" }],
+    confirmTitle: (d) => `the trend is ${d} (market structure)`,
   },
   {
     key: "breakout",
@@ -924,6 +931,8 @@ const SIMPLE_SIGNALS: SimpleSignal[] = [
             entry: [{ kind: "market_structure", op: "breaks_low", volMult: 1.5 }],
             exit: [{ kind: "market_structure", op: "breaks_high" }],
           },
+    confirm: (d) => [d === "up" ? { kind: "market_structure", op: "above_hl" } : { kind: "market_structure", op: "bearish" }],
+    confirmTitle: (d) => (d === "up" ? "price holds above a higher low" : "the last structure break was down"),
   },
   {
     key: "supertrend",
@@ -936,6 +945,8 @@ const SIMPLE_SIGNALS: SimpleSignal[] = [
       ],
       exit: [{ kind: "supertrend", period: 10, mult: 3, dir: d === "up" ? "down" : "up", op: "flip" }],
     }),
+    confirm: (d) => [{ kind: "supertrend", period: 10, mult: 3, dir: d, op: "is" }],
+    confirmTitle: (d) => `Supertrend is ${d}`,
   },
   {
     key: "ema",
@@ -945,6 +956,8 @@ const SIMPLE_SIGNALS: SimpleSignal[] = [
       entry: [{ kind: "ema_cross", fast: 9, slow: 21, dir: d }],
       exit: [{ kind: "ema_cross", fast: 9, slow: 21, dir: d === "up" ? "down" : "up" }],
     }),
+    confirm: (d) => [{ kind: "price_vs_ema", period: 21, op: d === "up" ? "above" : "below" }],
+    confirmTitle: (d) => `price is ${d === "up" ? "above" : "below"} the 21 EMA`,
   },
   {
     key: "orb",
@@ -956,6 +969,8 @@ const SIMPLE_SIGNALS: SimpleSignal[] = [
       maxTradesPerDay: 1,
       noEntryAfter: "11:30",
     }),
+    confirm: (d) => [{ kind: "opening_range", rangeMin: 15, dir: d }],
+    confirmTitle: (d) => `price is ${d === "up" ? "above the first 15 minutes' high" : "below the first 15 minutes' low"}`,
   },
   {
     key: "rsi",
@@ -965,6 +980,8 @@ const SIMPLE_SIGNALS: SimpleSignal[] = [
       entry: [{ kind: "rsi", period: 14, op: d === "up" ? "cross_up" : "cross_down", value: d === "up" ? 30 : 70 }],
       exit: [{ kind: "rsi", period: 14, op: d === "up" ? ">" : "<", value: d === "up" ? 65 : 35 }],
     }),
+    confirm: (d) => [{ kind: "rsi", period: 14, op: d === "up" ? ">" : "<", value: 50 }],
+    confirmTitle: (d) => `RSI is ${d === "up" ? "above" : "below"} 50`,
   },
 ];
 
@@ -995,21 +1012,39 @@ function SimpleRuleEditor({
 }) {
   const [symbol, setSymbol] = useState(symbols.includes("NIFTY") ? "NIFTY" : symbols[0] ?? fallbackSymbol);
   const [dir, setDir] = useState<Dir>("up");
-  const [sig, setSig] = useState("trend");
+  // picks in order: [0] = the trigger, the rest = confirmations
+  const [sigs, setSigs] = useState<string[]>(["trend"]);
+  const togglePick = (k: string) =>
+    setSigs((cur) => (cur.includes(k) ? (cur.length > 1 ? cur.filter((x) => x !== k) : cur) : [...cur, k]));
   const [risk, setRisk] = useState<Risk>("normal");
   const [lots, setLots] = useState(1);
-  const S = SIMPLE_SIGNALS.find((x) => x.key === sig) ?? SIMPLE_SIGNALS[0];
+  const picks = sigs.map((k) => SIMPLE_SIGNALS.find((x) => x.key === k)).filter((x): x is SimpleSignal => !!x);
+  const S = picks[0] ?? SIMPLE_SIGNALS[0];
+  const trig = S.build(dir);
+  // confirmations: their lasting state, skipping any condition the trigger already has
+  const seen = new Set((trig.entry ?? []).map((c) => JSON.stringify(c)));
+  const confirms = picks
+    .slice(1)
+    .flatMap((x) => x.confirm(dir))
+    .filter((c) => {
+      const k = JSON.stringify(c);
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
   const rule: Partial<AutoRule> = {
     ...blankRule(symbol),
     ...RISK_PRESETS[risk].patch,
-    name: `${symbol} · ${S.title(dir).split(" (")[0]} → buy ${dir === "up" ? "CE" : "PE"}`,
+    name: `${symbol} · ${S.title(dir).split(" (")[0]}${picks.length > 1 ? ` + ${picks.length - 1} confirm` : ""} → buy ${dir === "up" ? "CE" : "PE"}`,
     instrument: dir === "up" ? "ATM_CE" : "ATM_PE",
     side: "BUY",
     lots,
     entryTf: S.tf,
     noEntryBefore: "09:30",
     noEntryAfter: "14:45",
-    ...S.build(dir),
+    ...trig,
+    entry: [...(trig.entry ?? []), ...confirms],
+    entryLogic: "all",
     mode: "paper",
     enabled: false,
   };
@@ -1032,7 +1067,7 @@ function SimpleRuleEditor({
           </label>
         </div>
       </SimpleQ>
-      <SimpleQ n={2} q="When to buy?">
+      <SimpleQ n={2} q="When to buy? (pick one or more)">
         <div className="seg w-fit">
           <button type="button" className={dir === "up" ? "on" : ""} onClick={() => setDir("up")}>
             ▲ Market going up → buy Call
@@ -1042,19 +1077,40 @@ function SimpleRuleEditor({
           </button>
         </div>
         <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-          {SIMPLE_SIGNALS.map((x) => (
-            <button
-              key={x.key}
-              type="button"
-              onClick={() => setSig(x.key)}
-              className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left text-[12px] ${
-                sig === x.key ? "border-term-accent bg-term-accent/15 text-term-text" : "border-term-border text-term-dim hover:border-term-accent/60"
-              }`}
-            >
-              <span>{x.title(dir)}</span>
-              <span className="shrink-0 rounded bg-term-border/60 px-1.5 text-[10px] text-term-dim">{tfLabel(x.tf)}</span>
-            </button>
-          ))}
+          {SIMPLE_SIGNALS.map((x) => {
+            const at = sigs.indexOf(x.key);
+            const on = at >= 0;
+            return (
+              <button
+                key={x.key}
+                type="button"
+                onClick={() => togglePick(x.key)}
+                className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left text-[12px] ${
+                  on ? "border-term-accent bg-term-accent/15 text-term-text" : "border-term-border text-term-dim hover:border-term-accent/60"
+                }`}
+              >
+                <span className="flex flex-col">
+                  <span>
+                    {on ? "☑ " : "☐ "}
+                    {x.title(dir)}
+                  </span>
+                  {at > 0 && <span className="text-[10px] text-term-accent">must agree: {x.confirmTitle(dir)}</span>}
+                </span>
+                <span
+                  className={`shrink-0 rounded px-1.5 text-[10px] ${
+                    at === 0 ? "bg-term-accent text-white" : at > 0 ? "bg-term-accent/25 text-term-accent" : "bg-term-border/60 text-term-dim"
+                  }`}
+                >
+                  {at === 0 ? `trigger · ${tfLabel(x.tf)}` : at > 0 ? "confirm" : tfLabel(x.tf)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="text-[10px] leading-snug text-term-dim">
+          The first pick is the <span className="text-term-text">trigger</span>: the moment it happens, the trade opens (on its{" "}
+          {tfLabel(S.tf)} candles). Every extra pick is a <span className="text-term-text">confirmation</span> that must already agree at
+          that moment, so fewer but better trades. Exits follow the trigger. Tap a pick again to remove it.
         </div>
       </SimpleQ>
       <SimpleQ n={3} q="How much risk?">

@@ -77,6 +77,11 @@ def _f(v, d=0.0):
         return d
 
 
+# bars of history each replayed bar's rule context sees: plenty for every indicator's warm-up (the
+# live engine itself looks at `entryBars`, default 60) -- rebuilding the context from the WHOLE
+# history on every bar made a 3-week 5-min replay quadratic (30 s here, minutes on the server)
+_CTX_BARS = 500
+
 _YEAR_S = 365.0 * 86400
 _MIN_T_Y = 15 * 60 / _YEAR_S  # 15 minutes: never price an option at zero time
 
@@ -563,79 +568,85 @@ async def backtest_rule(
         gates.closed(d, t["grossRs"])
         open_pos = None
 
-    for i, d in enumerate(dates):
-        if d < first_tradable and not open_pos:
-            continue
-        ctx = _Ctx(symbol, hist[: i + 1], row_s=86400, backtest=True)  # daily bars -- entryTf resample n/a
-        last = i == len(dates) - 1
+    # the replay is pure CPU: run it in a worker thread so the event loop (live feed, poller,
+    # AutoBot tick, websockets) keeps going while a long backtest works
+    def _walk() -> None:
+        nonlocal open_pos, cooldown_until
+        for i, d in enumerate(dates):
+            if d < first_tradable and not open_pos:
+                continue
+            ctx = _Ctx(symbol, hist[max(0, i + 1 - _CTX_BARS): i + 1], row_s=86400, backtest=True)  # daily bars -- entryTf resample n/a
+            last = i == len(dates) - 1
 
-        if open_pos:
-            ei = open_pos["i"]
-            px, leg_px = _pos_px(open_pos, lambda k, ot: _premium(k, ot, d, by_date[d], i - ei, open_pos.get("exp")))
-            sig = bool(exit_conds) and ctx.eval_conds(exit_conds, exit_logic, trade={**_trade_of(open_pos["sim"], px), "hlStop": open_pos.get("hlStop")}, groups=exit_groups)
-            evs = open_pos["sim"].step(px, exit_signal=sig)
-            if not open_pos["sim"].closed and open_pos.get("exp") and d >= open_pos["exp"]:
-                evs += open_pos["sim"].force_close(px, "expiry")   # the contract it holds expires today
-            if not open_pos["sim"].closed and last:
-                evs += open_pos["sim"].force_close(px, "range end")
-            fin = next((e for e in evs if e["kind"] == "exit"), None)
-            if fin:
-                _close(open_pos, fin, d, leg_px)
+            if open_pos:
+                ei = open_pos["i"]
+                px, leg_px = _pos_px(open_pos, lambda k, ot: _premium(k, ot, d, by_date[d], i - ei, open_pos.get("exp")))
+                sig = bool(exit_conds) and ctx.eval_conds(exit_conds, exit_logic, trade={**_trade_of(open_pos["sim"], px), "hlStop": open_pos.get("hlStop")}, groups=exit_groups)
+                evs = open_pos["sim"].step(px, exit_signal=sig)
+                if not open_pos["sim"].closed and open_pos.get("exp") and d >= open_pos["exp"]:
+                    evs += open_pos["sim"].force_close(px, "expiry")   # the contract it holds expires today
+                if not open_pos["sim"].closed and last:
+                    evs += open_pos["sim"].force_close(px, "range end")
+                fin = next((e for e in evs if e["kind"] == "exit"), None)
+                if fin:
+                    _close(open_pos, fin, d, leg_px)
+                    cooldown_until = i + cooldown_d
+                continue
+
+            if i <= cooldown_until:
+                continue
+            if sum(1 for t in trades if t["entryDate"] == d) >= max_pd:
+                continue
+            if not gates.allows(d):
+                continue
+            if not ctx.eval_conds(entry_conds, entry_logic, groups=entry_groups):
+                continue
+            base = round(by_date[d] / step) * step
+            # the contract bought is the front-week one that day (on expiry day: today's, like the live bot)
+            day_exp = pricer.front_expiry(d) if pricer.facts else None
+            legs, entry_px_legs = None, None
+            if ST.is_structure(rule):
+                legs = ST.legs_for(rule["structure"], base, step, rule.get("offset"), rule.get("width"))
+                entry_px_legs = [_premium(lg["strike"], lg["ot"], d, by_date[d], 0, day_exp) for lg in legs]
+                if any(p <= 0 for p in entry_px_legs):
+                    continue
+                net = ST.net_premium(legs, entry_px_legs)
+                if net == 0:
+                    continue
+                strike, ot, px, pos_side = base, "STR", abs(net), ("BUY" if net > 0 else "SELL")
+                ef_use = {k: v for k, v in (rule.get("entryFilter") or {}).items() if k in ("premOp", "premVal", "premTol")}
+            else:
+                strike, ot = _resolve_instrument(rule.get("instrument", "ATM_CE"), base, step)
+                px = _premium(strike, ot, d, by_date[d], 0, day_exp)
+                pos_side, ef_use = side, (rule.get("entryFilter") or {})
+            if px <= 0:
+                continue
+            ef_ok, _ = _entry_filter_ok(ef_use, px, 0.5, 0.0, 0.0)
+            if not ef_ok:
+                continue
+            gates.opened(d)
+            if positional:
+                open_pos = {
+                    "hlStop": hl_stop_level(rule, ctx), "exp": day_exp,
+                    "k": strike, "ot": ot, "entry": px, "date": d, "i": i, "side": pos_side,
+                    "sim": SimPosition(rule, buy=(pos_side == "BUY"), base=px, lots=lots0, lot_size=lot),
+                    **({"legs": legs, "structure": rule["structure"], "entry_px": entry_px_legs} if legs else {}),
+                }
+            else:
+                # Intraday: a daily bar is a single end-of-day price, so there's no way to simulate an
+                # intraday square-off -- the position can never be allowed to carry into the next day's
+                # bar. Close it same-day at the same price (this validates WHEN the entry signal fires,
+                # not intraday P&L -- use an intraday timeframe above for that). It is not charged: it
+                # isn't a real trade, and a fee on a made-up round trip would only add noise.
+                trades.append({
+                    "entryDate": d, "exitDate": d, "strike": strike, "ot": ot, "side": side, "lots": lots0,
+                    "entryPx": round(px, 2), "exitPx": round(px, 2), "pnlPct": 0.0, "pnlRs": 0, "grossRs": 0,
+                    "chargesRs": 0, "slippageRs": 0, "holdMin": None, "scaled": False,
+                    "reason": "square-off (daily-bar)",
+                })
                 cooldown_until = i + cooldown_d
-            continue
 
-        if i <= cooldown_until:
-            continue
-        if sum(1 for t in trades if t["entryDate"] == d) >= max_pd:
-            continue
-        if not gates.allows(d):
-            continue
-        if not ctx.eval_conds(entry_conds, entry_logic, groups=entry_groups):
-            continue
-        base = round(by_date[d] / step) * step
-        # the contract bought is the front-week one that day (on expiry day: today's, like the live bot)
-        day_exp = pricer.front_expiry(d) if pricer.facts else None
-        legs, entry_px_legs = None, None
-        if ST.is_structure(rule):
-            legs = ST.legs_for(rule["structure"], base, step, rule.get("offset"), rule.get("width"))
-            entry_px_legs = [_premium(lg["strike"], lg["ot"], d, by_date[d], 0, day_exp) for lg in legs]
-            if any(p <= 0 for p in entry_px_legs):
-                continue
-            net = ST.net_premium(legs, entry_px_legs)
-            if net == 0:
-                continue
-            strike, ot, px, pos_side = base, "STR", abs(net), ("BUY" if net > 0 else "SELL")
-            ef_use = {k: v for k, v in (rule.get("entryFilter") or {}).items() if k in ("premOp", "premVal", "premTol")}
-        else:
-            strike, ot = _resolve_instrument(rule.get("instrument", "ATM_CE"), base, step)
-            px = _premium(strike, ot, d, by_date[d], 0, day_exp)
-            pos_side, ef_use = side, (rule.get("entryFilter") or {})
-        if px <= 0:
-            continue
-        ef_ok, _ = _entry_filter_ok(ef_use, px, 0.5, 0.0, 0.0)
-        if not ef_ok:
-            continue
-        gates.opened(d)
-        if positional:
-            open_pos = {
-                "hlStop": hl_stop_level(rule, ctx), "exp": day_exp,
-                "k": strike, "ot": ot, "entry": px, "date": d, "i": i, "side": pos_side,
-                "sim": SimPosition(rule, buy=(pos_side == "BUY"), base=px, lots=lots0, lot_size=lot),
-                **({"legs": legs, "structure": rule["structure"], "entry_px": entry_px_legs} if legs else {}),
-            }
-        else:
-            # Intraday: a daily bar is a single end-of-day price, so there's no way to simulate an
-            # intraday square-off -- the position can never be allowed to carry into the next day's
-            # bar. Close it same-day at the same price (this validates WHEN the entry signal fires,
-            # not intraday P&L -- use an intraday timeframe above for that). It is not charged: it
-            # isn't a real trade, and a fee on a made-up round trip would only add noise.
-            trades.append({
-                "entryDate": d, "exitDate": d, "strike": strike, "ot": ot, "side": side, "lots": lots0,
-                "entryPx": round(px, 2), "exitPx": round(px, 2), "pnlPct": 0.0, "pnlRs": 0, "grossRs": 0,
-                "chargesRs": 0, "slippageRs": 0, "holdMin": None, "scaled": False,
-                "reason": "square-off (daily-bar)",
-            })
-            cooldown_until = i + cooldown_d
+    await asyncio.to_thread(_walk)
 
     summary, equity = _summarize_trades(trades)
     if pricer.facts:
@@ -744,97 +755,103 @@ async def _backtest_intraday(
         gates.closed(_dstr(c["time"]), t["grossRs"])
         open_pos = None
 
-    for i, c in enumerate(series):
-        ts = c["time"]
-        spot = c["close"]
-        dkey = _dstr(ts)
-        clk = datetime.fromtimestamp(ts, IST).time()
-        tradable = ts >= first_ts
-        # each row is a whole finished bar: structure conditions may use it (no one-bar lag)
-        ctx = _Ctx(symbol, hist[: i + 1], tf=int(rule.get("entryTf") or 0), row_s=interval, backtest=True)
-        last = i == len(series) - 1
-        # The trading day's last bar: the next bar is on another date. (The range's own final bar is left to
-        # "range end" -- a cut-off range says nothing about the session.)
-        eod = i + 1 < len(series) and _dstr(series[i + 1]["time"]) != dkey
-        # A bar that CONTAINS the square-off time: it starts before it and ends after it. At 15m / 30m / 1h no
-        # bar starts exactly at 15:20, so this used to never fire and an intraday trade rode into the next day
-        # (and, being still open, blocked every later entry).
-        spans_sq = bool(sq and clk < sq < datetime.fromtimestamp(ts + interval, IST).time())
+    # the replay is pure CPU: run it in a worker thread so the event loop (live feed, poller,
+    # AutoBot tick, websockets) keeps going while a long backtest works
+    def _walk() -> None:
+        nonlocal open_pos, cd_until
+        for i, c in enumerate(series):
+            ts = c["time"]
+            spot = c["close"]
+            dkey = _dstr(ts)
+            clk = datetime.fromtimestamp(ts, IST).time()
+            tradable = ts >= first_ts
+            # each row is a whole finished bar: structure conditions may use it (no one-bar lag)
+            ctx = _Ctx(symbol, hist[max(0, i + 1 - _CTX_BARS): i + 1], tf=int(rule.get("entryTf") or 0), row_s=interval, backtest=True)
+            last = i == len(series) - 1
+            # The trading day's last bar: the next bar is on another date. (The range's own final bar is left to
+            # "range end" -- a cut-off range says nothing about the session.)
+            eod = i + 1 < len(series) and _dstr(series[i + 1]["time"]) != dkey
+            # A bar that CONTAINS the square-off time: it starts before it and ends after it. At 15m / 30m / 1h no
+            # bar starts exactly at 15:20, so this used to never fire and an intraday trade rode into the next day
+            # (and, being still open, blocked every later entry).
+            spans_sq = bool(sq and clk < sq < datetime.fromtimestamp(ts + interval, IST).time())
 
-        if open_pos:
-            ei = open_pos["i"]
-            held = (i - ei) * interval / 86400.0
+            if open_pos:
+                ei = open_pos["i"]
+                held = (i - ei) * interval / 86400.0
 
-            def value_at(s_):
-                return _pos_px(open_pos, lambda k, ot: pricer.price(ot, s_, k, ts, dkey, open_pos.get("exp"), held_days=held))
+                def value_at(s_):
+                    return _pos_px(open_pos, lambda k, ot: pricer.price(ot, s_, k, ts, dkey, open_pos.get("exp"), held_days=held))
 
-            # premium at the bar's own open / low / high / close -- the extremes are what let a stop
-            # or target be hit INSIDE the bar instead of only being noticed at its close
-            ps = [value_at(c["open"])[0], value_at(c["low"])[0], value_at(c["high"])[0], value_at(spot)[0]]
-            px = ps[3]
-            leg_px = value_at(spot)[1]
-            sig = bool(exit_conds) and ctx.eval_conds(exit_conds, exit_logic, trade={**_trade_of(open_pos["sim"], px), "hlStop": open_pos.get("hlStop")}, groups=exit_groups)
-            evs = open_pos["sim"].step(
-                px, lo=min(ps), hi=max(ps), opn=ps[0], exit_signal=sig,
-                square_off=bool((not positional and ((sq and clk >= sq) or spans_sq or eod))
-                                # the contract it holds expires at today's close
-                                or (open_pos.get("exp") == dkey and (eod or last))),
-            )
-            if not open_pos["sim"].closed and last:
-                evs += open_pos["sim"].force_close(px, "range end")
-            fin = next((e for e in evs if e["kind"] == "exit"), None)
-            if fin:
-                _close(open_pos, fin, c, leg_px)
-                cd_until = i + cd_bars
-            continue
-
-        if not tradable or i <= cd_until:
-            continue
-        if not positional and (eod or spans_sq):
-            continue  # entered at this bar's close it would already be past the square-off / the day's end
-        if day_count.get(dkey, 0) >= max_pd:
-            continue
-        if neb and clk < neb:
-            continue
-        if nea and clk >= nea:
-            continue
-        if sq and clk >= sq:
-            continue
-        if not gates.allows(dkey):
-            continue
-        if not ctx.eval_conds(entry_conds, entry_logic, groups=entry_groups):
-            continue
-        base = round(spot / step) * step
-        # the front-week contract of that day (on expiry day: today's, like the live bot)
-        day_exp = pricer.front_expiry(dkey)
-        legs, entry_px_legs = None, None
-        if ST.is_structure(rule):
-            legs = ST.legs_for(rule["structure"], base, step, rule.get("offset"), rule.get("width"))
-            entry_px_legs = [pricer.price(lg["ot"], spot, lg["strike"], ts, dkey, day_exp) for lg in legs]
-            if any(p <= 0 for p in entry_px_legs):
+                # premium at the bar's own open / low / high / close -- the extremes are what let a stop
+                # or target be hit INSIDE the bar instead of only being noticed at its close
+                ps = [value_at(c["open"])[0], value_at(c["low"])[0], value_at(c["high"])[0], value_at(spot)[0]]
+                px = ps[3]
+                leg_px = value_at(spot)[1]
+                sig = bool(exit_conds) and ctx.eval_conds(exit_conds, exit_logic, trade={**_trade_of(open_pos["sim"], px), "hlStop": open_pos.get("hlStop")}, groups=exit_groups)
+                evs = open_pos["sim"].step(
+                    px, lo=min(ps), hi=max(ps), opn=ps[0], exit_signal=sig,
+                    square_off=bool((not positional and ((sq and clk >= sq) or spans_sq or eod))
+                                    # the contract it holds expires at today's close
+                                    or (open_pos.get("exp") == dkey and (eod or last))),
+                )
+                if not open_pos["sim"].closed and last:
+                    evs += open_pos["sim"].force_close(px, "range end")
+                fin = next((e for e in evs if e["kind"] == "exit"), None)
+                if fin:
+                    _close(open_pos, fin, c, leg_px)
+                    cd_until = i + cd_bars
                 continue
-            net = ST.net_premium(legs, entry_px_legs)
-            if net == 0:
+
+            if not tradable or i <= cd_until:
                 continue
-            strike, ot, px, pos_side = base, "STR", abs(net), ("BUY" if net > 0 else "SELL")
-            ef_use = {k: v for k, v in (rule.get("entryFilter") or {}).items() if k in ("premOp", "premVal", "premTol")}
-        else:
-            strike, ot = _resolve_instrument(rule.get("instrument", "ATM_CE"), base, step)
-            px = pricer.price(ot, spot, strike, ts, dkey, day_exp)
-            pos_side, ef_use = side, (rule.get("entryFilter") or {})
-        if px <= 0:
-            continue
-        ok, _ = _entry_filter_ok(ef_use, px, 0.5, 0.0, 0.0)
-        if not ok:
-            continue
-        open_pos = {
-            "hlStop": hl_stop_level(rule, ctx), "exp": day_exp,
-            "k": strike, "ot": ot, "entry": px, "d": dkey, "t": _clock(ts), "ts": ts, "i": i, "side": pos_side,
-            "sim": SimPosition(rule, buy=(pos_side == "BUY"), base=px, lots=lots0, lot_size=lot),
-            **({"legs": legs, "structure": rule["structure"], "entry_px": entry_px_legs} if legs else {}),
-        }
-        day_count[dkey] = day_count.get(dkey, 0) + 1
-        gates.opened(dkey)
+            if not positional and (eod or spans_sq):
+                continue  # entered at this bar's close it would already be past the square-off / the day's end
+            if day_count.get(dkey, 0) >= max_pd:
+                continue
+            if neb and clk < neb:
+                continue
+            if nea and clk >= nea:
+                continue
+            if sq and clk >= sq:
+                continue
+            if not gates.allows(dkey):
+                continue
+            if not ctx.eval_conds(entry_conds, entry_logic, groups=entry_groups):
+                continue
+            base = round(spot / step) * step
+            # the front-week contract of that day (on expiry day: today's, like the live bot)
+            day_exp = pricer.front_expiry(dkey)
+            legs, entry_px_legs = None, None
+            if ST.is_structure(rule):
+                legs = ST.legs_for(rule["structure"], base, step, rule.get("offset"), rule.get("width"))
+                entry_px_legs = [pricer.price(lg["ot"], spot, lg["strike"], ts, dkey, day_exp) for lg in legs]
+                if any(p <= 0 for p in entry_px_legs):
+                    continue
+                net = ST.net_premium(legs, entry_px_legs)
+                if net == 0:
+                    continue
+                strike, ot, px, pos_side = base, "STR", abs(net), ("BUY" if net > 0 else "SELL")
+                ef_use = {k: v for k, v in (rule.get("entryFilter") or {}).items() if k in ("premOp", "premVal", "premTol")}
+            else:
+                strike, ot = _resolve_instrument(rule.get("instrument", "ATM_CE"), base, step)
+                px = pricer.price(ot, spot, strike, ts, dkey, day_exp)
+                pos_side, ef_use = side, (rule.get("entryFilter") or {})
+            if px <= 0:
+                continue
+            ok, _ = _entry_filter_ok(ef_use, px, 0.5, 0.0, 0.0)
+            if not ok:
+                continue
+            open_pos = {
+                "hlStop": hl_stop_level(rule, ctx), "exp": day_exp,
+                "k": strike, "ot": ot, "entry": px, "d": dkey, "t": _clock(ts), "ts": ts, "i": i, "side": pos_side,
+                "sim": SimPosition(rule, buy=(pos_side == "BUY"), base=px, lots=lots0, lot_size=lot),
+                **({"legs": legs, "structure": rule["structure"], "entry_px": entry_px_legs} if legs else {}),
+            }
+            day_count[dkey] = day_count.get(dkey, 0) + 1
+            gates.opened(dkey)
+
+    await asyncio.to_thread(_walk)
 
     summary, equity = _summarize_trades(trades)
     return {
