@@ -176,7 +176,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const [tools, setTools] = useState(false); // mobile: show the extra control rows
   const [gear, setGear] = useState(false); // web: the ⚙ settings menu (Strikes ±, View, Zoom)
   const [metric, setMetric] = useState<Metric>("combined");
-  const [layout, setLayout] = useState<"chart" | "table" | "ladder" | "walls" | "pcr" | "gex" | "dex">("chart");
+  const [layout, setLayout] = useState<"chart" | "ladder" | "walls" | "pcr" | "gex" | "dex">("chart");
   // Table / Ladder open centred on the spot line (with All strikes they'd
   // start at the lowest strike) -- re-centred a few times over ~1.5 s while
   // the page settles (a single scroll on the first render could land at the
@@ -187,9 +187,9 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const tableSpotRef = useRef<HTMLTableRowElement>(null);
   const chainReady = !!chain && chain.rows.length > 0;
   useEffect(() => {
-    if ((layout !== "ladder" && layout !== "table") || !chainReady) return;
+    if (layout !== "ladder" || !chainReady) return;
     let stop = false;
-    const target = () => (layout === "table" ? tableSpotRef.current : spotRef.current);
+    const target = () => spotRef.current;
     const go = () => {
       if (!stop) target()?.scrollIntoView({ block: "center" });
     };
@@ -830,9 +830,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       layout === "chart"
         ? box?.querySelector<HTMLElement>(`[data-strike="${k === "spot" ? chain.atmStrike : k}"]`)
         : k === "spot"
-        ? layout === "table"
-          ? tableSpotRef.current
-          : spotRef.current
+        ? spotRef.current
         : box?.querySelector<HTMLElement>(`[data-strike="${k}"]`);
     el?.scrollIntoView(layout === "chart" ? { block: "nearest", inline: "center" } : { block: "center" });
     if (k !== "spot") {
@@ -2041,7 +2039,6 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
               {(
                 [
                   ["chart", "Chart"],
-                  ["table", "Table"],
                   ["ladder", "Ladder"],
                   ["walls", "Walls"],
                   ["gex", "Weekly Gex"],
@@ -2084,10 +2081,9 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         {/* row 1 — always visible: symbol / expiry / view switch / readout
             (phone: this whole row lives behind ⚙) */}
         <div className={`flex-wrap items-center gap-x-3 gap-y-1 ${isMobile ? (tools ? "mt-1.5 flex" : "hidden") : "flex"}`}>
-          {paneNav ?? (
+          {!paneNav && (
             <span className="font-semibold uppercase tracking-wide">OI Profile</span>
           )}
-
 
           {/* All / Indices / Stocks lives in the main header (phone: ⚿ → Show) -- not repeated here */}
           {!isMobile && (
@@ -2109,6 +2105,10 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
               width={130}
             />
           )}
+
+          {/* paneNav (OI Profile / Option Chain / History) sits right after expiry */}
+          {!isMobile && paneNav}
+
           {!isMobile && tfControl}
 
           {!isMobile && (
@@ -2118,7 +2118,6 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
             {(
               [
                 ["chart", "Chart"],
-                ["table", "Table"],
                 ["ladder", "Ladder"],
                 ["walls", "Walls"],
                 ["gex", "Weekly Gex"],
@@ -2174,7 +2173,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       {/* OI totals (phone: behind ⚙; web Chart: on the right, above the chart) */}
       <div
         className={`border-b border-term-border bg-term-panel px-3 py-1.5 ${
-          (isMobile && !tools) || layout === "table" || layout === "ladder" || (layout === "chart" && !isMobile) ? "hidden" : ""
+          (isMobile && !tools) || layout === "ladder" || (layout === "chart" && !isMobile) ? "hidden" : ""
         }`}
       >
         {totalsTable}
@@ -2182,7 +2181,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
 
       {/* overall OI verdict (phone: the summary row shows the bias; reasons behind ⚙) */}
       {/* not in the Ladder / Table: they need the height (the bias is in the phone summary row and on Home) */}
-      {verdict && (!isMobile || tools) && layout !== "ladder" && layout !== "table" && (
+      {verdict && (!isMobile || tools) && layout !== "ladder" && (
         <div
           className={`flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b px-3 py-1 text-[10px] ${
             verdict.bias === "BULLISH"
@@ -2241,7 +2240,6 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         </div>
       )}
       {layout === "ladder" && ladderEl}
-      {layout === "table" && tableEl}
       {layout === "walls" && wallsEl}
       {layout === "pcr" && <PcrChart symbol={symbol} isMobile={isMobile} />}
       {layout === "gex" && gexEl}
