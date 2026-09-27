@@ -695,12 +695,9 @@ export function OptionChain({ paneNav, expiryRow = false }: { paneNav?: ReactNod
     </span>
   );
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* the OI Profile / Option Chain / History switch rides the top row, next to the symbol and expiry */}
-      {expiryRow && <ExpiryTabs extra={tfControl} lead={paneNav} />}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
-        {!expiryRow && (paneNav ?? <span className="hidden font-semibold uppercase tracking-wide sm:inline">Option Chain</span>)}
+  // the chain's own controls: which figures (LTP / OI / Greeks), ⚙ (strikes shown + legend), the forward
+  const chainControls = (
+    <>
         <div className="seg">
           {TABS.map((t) => (
             <button
@@ -800,7 +797,25 @@ export function OptionChain({ paneNav, expiryRow = false }: { paneNav?: ReactNod
           </span>
         )}
 
-      </div>
+    </>
+  );
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* web: the view switch AND the chain's own controls (LTP / OI / Greeks, ⚙, Fwd) ride the top row,
+          next to the symbol and expiry -- one row instead of two. Phone: they keep their own row. */}
+      {expiryRow && (
+        <ExpiryTabs
+          extra={tfControl}
+          lead={paneNav ? <span className="flex items-center gap-x-3 text-term-dim">{paneNav}{chainControls}</span> : undefined}
+        />
+      )}
+      {!(expiryRow && paneNav) && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
+          {!expiryRow && (paneNav ?? <span className="hidden font-semibold uppercase tracking-wide sm:inline">Option Chain</span>)}
+          {chainControls}
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="oc-grid">
