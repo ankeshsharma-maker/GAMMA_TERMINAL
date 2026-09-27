@@ -25,8 +25,11 @@ import io
 import zipfile
 from datetime import date, datetime, timedelta
 
+import json
+import logging
+
 from . import nse_client
-from .config import DIVIDEND_YIELD, RISK_FREE_RATE, STRIKE_WINDOW
+from .config import DATA_DIR, DIVIDEND_YIELD, RISK_FREE_RATE, STRIKE_WINDOW
 from .greeks import greeks as bs_greeks
 from .greeks import implied_vol
 from .processing import IST, _MIN_T, year_fraction
@@ -35,6 +38,7 @@ _STEP = {"NIFTY": 50, "BANKNIFTY": 100, "FINNIFTY": 50, "MIDCPNIFTY": 25, "NIFTY
 
 _ROWS_CACHE: dict[str, list[dict] | None] = {}  # "YYYYMMDD" -> that day's IDO rows (all symbols), or None
 _GREEKS_CACHE: dict[tuple, list[dict]] = {}
+log = logging.getLogger("nse_bhavcopy")
 
 
 def _num(v, d: float = 0.0) -> float:
@@ -185,3 +189,107 @@ async def fetch_bhavcopy_greeks(symbol: str, from_date: str, to_date: str) -> di
     _GREEKS_CACHE[ck] = series
     return {"symbol": symbol, "from": from_date, "to": to_date,
             "series": series, "cached": False, "source": "nse_bhavcopy"}
+
+
+# ----------------------------------------------------------------------------------------------
+# Per-day option facts for backtests: for every index / stock with options, that day's expiries,
+# its spot, the real closing prices near the money for the two nearest expiries, and the real
+# at-the-money implied volatility. A backtest prices its options from these instead of a fixed
+# "30 days to expiry, 15% IV" (which made a weekly NIFTY ATM option look ~Rs 400 instead of the
+# real ~Rs 100-200, and every % stop / target move at the wrong speed).
+# Kept small on disk (data/bhav_opts/YYYYMMDD.json) so a re-run doesn't re-download ~MBs a day.
+# ----------------------------------------------------------------------------------------------
+_FACTS_DIR = DATA_DIR / "bhav_opts"
+_FACTS: dict[str, dict | None] = {}
+
+
+def _atm_iv(closes: dict, expiry: str, spot: float, d: date) -> float | None:
+    ks = sorted({float(key.split("|")[0]) for key in closes})
+    if not ks:
+        return None
+    k = min(ks, key=lambda x: abs(x - spot))
+    t = max(year_fraction(datetime.strptime(expiry, "%Y-%m-%d").strftime("%d-%b-%Y"),
+                          datetime(d.year, d.month, d.day, 15, 30, tzinfo=IST)), _MIN_T)
+    vs = []
+    for ot in ("CE", "PE"):
+        px = closes.get(f"{k:g}|{ot}")
+        if px:
+            v = implied_vol(ot, px, spot, k, t, RISK_FREE_RATE, DIVIDEND_YIELD)
+            if v and 0.02 < v < 3:
+                vs.append(v)
+    return round(sum(vs) / len(vs), 4) if vs else None
+
+
+def _build_facts(content: bytes, d: date) -> dict:
+    """Pure / sync (zip + csv + IV solving) -- run in a thread."""
+    by_sym: dict[str, list] = {}
+    z = zipfile.ZipFile(io.BytesIO(content))
+    with z.open(z.namelist()[0]) as f:
+        for r in csv.DictReader(io.TextIOWrapper(f, encoding="utf-8")):
+            if r.get("FinInstrmTp") not in ("IDO", "STO"):
+                continue
+            by_sym.setdefault(r.get("TckrSymb") or "", []).append((
+                r.get("XpryDt") or "", _num(r.get("StrkPric")), r.get("OptnTp") or "",
+                _num(r.get("ClsPric")) or _num(r.get("SttlmPric")), _num(r.get("UndrlygPric")),
+            ))
+    ds = d.isoformat()
+    out: dict = {}
+    for sym, rows in by_sym.items():
+        exps = sorted({x[0] for x in rows if x[0] >= ds})
+        spot = next((x[4] for x in rows if x[4]), 0.0)
+        if not sym or not exps or not spot:
+            continue
+        keep = exps[:2]
+        closes: dict[str, dict] = {e: {} for e in keep}
+        for e, k, ot, c, _u in rows:
+            if e in closes and c > 0 and abs(k - spot) <= 0.1 * spot:
+                closes[e][f"{k:g}|{ot}"] = c
+        # the IV from the nearest expiry that is not today: an expiry-day close has minutes left,
+        # which makes the implied vol meaningless
+        iv_exp = next((e for e in keep if e > ds), None)
+        iv = _atm_iv(closes[iv_exp], iv_exp, spot, d) if iv_exp else None
+        out[sym] = {"spot": spot, "expiries": exps[:6], "closes": closes, "atmIv": iv}
+    return out
+
+
+async def day_facts(yyyymmdd: str) -> dict | None:
+    """{symbol: {spot, expiries, closes{expiry: {"K|CE": close}}, atmIv}} for one trading day, or
+    None (holiday / not published / fetch failed)."""
+    if yyyymmdd in _FACTS:
+        return _FACTS[yyyymmdd]
+    p = _FACTS_DIR / f"{yyyymmdd}.json"
+    try:
+        _FACTS[yyyymmdd] = json.loads(p.read_text("utf-8"))
+        return _FACTS[yyyymmdd]
+    except (OSError, ValueError):
+        pass
+    content = await nse_client.client.bhavcopy_fo(yyyymmdd)
+    if not content:
+        return None  # not cached: a day that isn't out yet may be later
+    try:
+        facts = await asyncio.to_thread(_build_facts, content, datetime.strptime(yyyymmdd, "%Y%m%d").date())
+    except Exception as exc:  # noqa: BLE001
+        log.warning("bhavcopy facts %s: %s", yyyymmdd, exc)
+        return None
+    _FACTS[yyyymmdd] = facts
+    try:
+        _FACTS_DIR.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(facts, separators=(",", ":")), "utf-8")
+    except OSError as exc:
+        log.warning("bhavcopy facts save %s: %s", yyyymmdd, exc)
+    return facts
+
+
+async def symbol_facts(symbol: str, days: list[str]) -> dict[str, dict]:
+    """{"YYYY-MM-DD": that symbol's facts} for the given trading days (missing days left out:
+    holidays, BSE names like SENSEX that NSE's file doesn't carry, fetch failures)."""
+    symbol = symbol.upper()
+    sem = asyncio.Semaphore(6)
+
+    async def _one(ds: str):
+        async with sem:
+            f = await day_facts(ds.replace("-", ""))
+            return ds, (f or {}).get(symbol)
+
+    got = await asyncio.gather(*[_one(ds) for ds in sorted(set(days))])
+    return {ds: f for ds, f in got if f}

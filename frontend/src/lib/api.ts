@@ -854,7 +854,12 @@ export const api = {
       days: number;
       interval?: number;
       candles?: number;
-      pricing: "historical" | "synthetic" | "mixed";
+      pricing: "historical" | "modelled" | "synthetic" | "mixed";
+      /** in plain words, which option prices the run used (NSE's real closes / modelled from the real
+       *  expiry and IV / the rough fixed model) */
+      pricingNote?: string;
+      ivRange?: [number, number] | null;
+      expiriesUsed?: string[];
       hasChain: boolean;
       hasGreeksHistory: boolean;
       synIV: number;

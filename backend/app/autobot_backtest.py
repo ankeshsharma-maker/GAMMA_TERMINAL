@@ -26,11 +26,14 @@ every timeframe: the bar that contains the square-off time (or the day's last ba
 (`charges.py`; switch off or tune with the `costs` argument), and the trade-count safety gates
 (weekly cap, losing-streak pause, per-rule loss cap) are replayed.
 
-Option P&L: on an entry signal, take the rule's instrument (ATM/OTM.. CE/PE)
-at that day's premium and mark it daily until an exit.  Premiums come from
-real historical option candles when the expiry's contracts still resolve
-(recent ranges); otherwise from a Black-Scholes model (fixed IV, a synthetic
-DTE that decays as the trade is held) so long indicator backtests still work.
+Option prices (see `_Pricer`): NSE's own daily F&O file says, for every past day, which expiry
+was the front week, the real closing price of every option near the money and so the real
+at-the-money implied volatility. Daily backtests use those real closing prices; intraday ones
+price each bar with Black-Scholes at the REAL time left to that expiry and that day's REAL IV
+(an intraday option price isn't in any free archive). Only a symbol NSE's file doesn't carry
+(SENSEX / BANKEX) falls back to the old fixed model (15% IV, 30 days) -- which priced a weekly
+NIFTY ATM option at ~Rs 400 instead of the real ~Rs 100-200 and so moved every % stop / target at
+the wrong speed. Each result says in plain words which prices it used.
 """
 from __future__ import annotations
 
@@ -72,6 +75,92 @@ def _f(v, d=0.0):
         return float(v)
     except (TypeError, ValueError):
         return d
+
+
+_YEAR_S = 365.0 * 86400
+_MIN_T_Y = 15 * 60 / _YEAR_S  # 15 minutes: never price an option at zero time
+
+
+def _exp_close_ts(expiry_iso: str) -> float:
+    """Epoch seconds of an expiry's 15:30 IST close."""
+    return datetime.strptime(expiry_iso, "%Y-%m-%d").replace(hour=15, minute=30, tzinfo=IST).timestamp()
+
+
+class _Pricer:
+    """Option prices for a backtest, from NSE's daily F&O file (nse_bhavcopy.symbol_facts):
+    the expiry that was really the front week each day, that day's real ATM implied vol, and
+    (daily bars) the real closing prices. `facts` is empty for a symbol NSE doesn't carry, and
+    then every price falls back to the fixed synthetic model."""
+
+    def __init__(self, facts: dict[str, dict], syn_iv: float, syn_dte: int):
+        self.facts, self.days = facts, sorted(facts)
+        self.syn_iv, self.syn_dte = syn_iv, syn_dte
+        self.real = self.model = self.syn = 0
+        self.ivs: list[float] = []
+        self.exps: set[str] = set()
+
+    def _fact(self, day: str) -> dict | None:
+        """That day's facts, else the latest earlier day's (a missing file mid-range)."""
+        if day in self.facts:
+            return self.facts[day]
+        prev = [d for d in self.days if d < day]
+        return self.facts[prev[-1]] if prev else None
+
+    def front_expiry(self, day: str) -> str | None:
+        f = self._fact(day)
+        return next((e for e in (f or {}).get("expiries", []) if e >= day), None)
+
+    def iv(self, day: str) -> float | None:
+        f = self._fact(day)
+        v = (f or {}).get("atmIv")
+        if v:
+            self.ivs.append(v)
+        return v
+
+    def price(self, ot: str, spot: float, k: float, ts: float, day: str, expiry: str | None,
+              held_days: float = 0.0, close: bool = False) -> float:
+        """The option's price at `ts`: the real close (daily bars, `close=True`) when NSE has it,
+        else Black-Scholes at the real time to `expiry` and that day's real IV, else the old fixed
+        model."""
+        if close and expiry:
+            f = self.facts.get(day) or {}
+            px = (f.get("closes", {}).get(expiry) or {}).get(f"{k:g}|{ot}")
+            if px:
+                self.real += 1
+                self.exps.add(expiry)
+                return px
+        iv = self.iv(day)
+        if expiry and iv:
+            self.model += 1
+            self.exps.add(expiry)
+            t = max((_exp_close_ts(expiry) - ts) / _YEAR_S, _MIN_T_Y)
+            return round(bs_price(ot, spot, k, t, 0.06, 0.0, iv), 2)
+        self.syn += 1
+        return _syn_premium(ot, spot, k, held_days, self.syn_iv, self.syn_dte)
+
+    def summary(self) -> dict:
+        n = self.real + self.model + self.syn
+        pricing = ("historical" if self.real == n else "mixed" if self.real else "modelled") if not self.syn \
+            else ("synthetic" if self.syn == n else "mixed")
+        lo, hi = (min(self.ivs), max(self.ivs)) if self.ivs else (None, None)
+        if not n:
+            note = ""
+        elif self.syn == n:
+            note = (f"Option prices are a rough model (IV fixed at {self.syn_iv * 100:.0f}%, {self.syn_dte} days to "
+                    "expiry) -- NSE's daily file has no data for this symbol, so treat the rupee figures as a guess.")
+        else:
+            parts = []
+            if self.real:
+                parts.append(f"{self.real * 100 // n}% NSE's real closing prices")
+            if self.model:
+                parts.append(f"{self.model * 100 // n}% modelled from each day's real expiry"
+                             + (f" and real IV ({lo * 100:.0f}-{hi * 100:.0f}%)" if lo else ""))
+            if self.syn:
+                parts.append(f"{self.syn * 100 // n}% a rough fixed model")
+            note = "Option prices: " + ", ".join(parts) + "."
+        return {"pricing": pricing, "pricingNote": note,
+                "ivRange": [round(lo, 4), round(hi, 4)] if lo else None,
+                "expiriesUsed": sorted(self.exps)}
 
 
 def _syn_premium(ot: str, spot: float, strike: float, held_days: float,
@@ -387,9 +476,11 @@ async def backtest_rule(
         row.update(chain_by.get(d, {}))
         hist.append(row)
 
-    # 3. real historical option closes for strikes we might touch (best effort)
+    # 3. option prices: NSE's own daily file (the real front-week expiry each day, its real closes
+    # and IV); the old Upstox closes (one expiry that is still listed today) only when NSE has nothing
+    pricer = _Pricer(await nse_bhavcopy.symbol_facts(symbol, win), syn_iv, syn_dte)
     closes: dict[tuple, dict] = {}
-    if expiry:
+    if expiry and not pricer.facts:
         atm_range = set()
         for d in win:
             base = round(by_date[d] / step) * step
@@ -428,8 +519,12 @@ async def backtest_rule(
 
     real_hits = syn_hits = 0
 
-    def _premium(k: float, ot: str, d: str, spot: float, held: int) -> float:
+    def _premium(k: float, ot: str, d: str, spot: float, held: int, exp: str | None = None) -> float:
         nonlocal real_hits, syn_hits
+        if pricer.facts:
+            exp = exp or pricer.front_expiry(d)
+            return pricer.price(ot, spot, k, datetime.strptime(d, "%Y-%m-%d").replace(hour=15, minute=30, tzinfo=IST).timestamp(),
+                                d, exp, held_days=held, close=True)
         px = closes.get((k, ot), {}).get(d)
         if px is not None and px > 0:
             real_hits += 1
@@ -476,9 +571,11 @@ async def backtest_rule(
 
         if open_pos:
             ei = open_pos["i"]
-            px, leg_px = _pos_px(open_pos, lambda k, ot: _premium(k, ot, d, by_date[d], i - ei))
+            px, leg_px = _pos_px(open_pos, lambda k, ot: _premium(k, ot, d, by_date[d], i - ei, open_pos.get("exp")))
             sig = bool(exit_conds) and ctx.eval_conds(exit_conds, exit_logic, trade={**_trade_of(open_pos["sim"], px), "hlStop": open_pos.get("hlStop")}, groups=exit_groups)
             evs = open_pos["sim"].step(px, exit_signal=sig)
+            if not open_pos["sim"].closed and open_pos.get("exp") and d >= open_pos["exp"]:
+                evs += open_pos["sim"].force_close(px, "expiry")   # the contract it holds expires today
             if not open_pos["sim"].closed and last:
                 evs += open_pos["sim"].force_close(px, "range end")
             fin = next((e for e in evs if e["kind"] == "exit"), None)
@@ -496,10 +593,12 @@ async def backtest_rule(
         if not ctx.eval_conds(entry_conds, entry_logic, groups=entry_groups):
             continue
         base = round(by_date[d] / step) * step
+        # the contract bought is the front-week one that day (on expiry day: today's, like the live bot)
+        day_exp = pricer.front_expiry(d) if pricer.facts else None
         legs, entry_px_legs = None, None
         if ST.is_structure(rule):
             legs = ST.legs_for(rule["structure"], base, step, rule.get("offset"), rule.get("width"))
-            entry_px_legs = [_premium(lg["strike"], lg["ot"], d, by_date[d], 0) for lg in legs]
+            entry_px_legs = [_premium(lg["strike"], lg["ot"], d, by_date[d], 0, day_exp) for lg in legs]
             if any(p <= 0 for p in entry_px_legs):
                 continue
             net = ST.net_premium(legs, entry_px_legs)
@@ -509,7 +608,7 @@ async def backtest_rule(
             ef_use = {k: v for k, v in (rule.get("entryFilter") or {}).items() if k in ("premOp", "premVal", "premTol")}
         else:
             strike, ot = _resolve_instrument(rule.get("instrument", "ATM_CE"), base, step)
-            px = _premium(strike, ot, d, by_date[d], 0)
+            px = _premium(strike, ot, d, by_date[d], 0, day_exp)
             pos_side, ef_use = side, (rule.get("entryFilter") or {})
         if px <= 0:
             continue
@@ -519,7 +618,7 @@ async def backtest_rule(
         gates.opened(d)
         if positional:
             open_pos = {
-                "hlStop": hl_stop_level(rule, ctx),
+                "hlStop": hl_stop_level(rule, ctx), "exp": day_exp,
                 "k": strike, "ot": ot, "entry": px, "date": d, "i": i, "side": pos_side,
                 "sim": SimPosition(rule, buy=(pos_side == "BUY"), base=px, lots=lots0, lot_size=lot),
                 **({"legs": legs, "structure": rule["structure"], "entry_px": entry_px_legs} if legs else {}),
@@ -539,12 +638,16 @@ async def backtest_rule(
             cooldown_until = i + cooldown_d
 
     summary, equity = _summarize_trades(trades)
-    pricing = "historical" if syn_hits == 0 else "synthetic" if real_hits == 0 else "mixed"
+    if pricer.facts:
+        pinfo = pricer.summary()
+    else:
+        pricing = "historical" if syn_hits == 0 else "synthetic" if real_hits == 0 else "mixed"
+        pinfo = {"pricing": pricing, "pricingNote": "", "ivRange": None, "expiriesUsed": []}
     return {
         "symbol": symbol, "expiry": expiry or None, "from": from_date, "to": to_date,
         "instrument": rule.get("structure") if ST.is_structure(rule) else rule.get("instrument"), "side": side, "lots": rule.get("lots", 1),
         "lot": lot, "days": len(win),
-        "pricing": pricing, "hasChain": have_chain, "hasGreeksHistory": have_greeks,
+        **pinfo, "hasChain": have_chain, "hasGreeksHistory": have_greeks,
         "synIV": round(syn_iv, 3), "synDTE": syn_dte,
         "costs": cfg, "notSimulated": _not_simulated(rule),
         "trades": trades,
@@ -601,6 +704,7 @@ async def _backtest_intraday(
     step = _STEP.get(symbol, 50)
     lot = lot_size(symbol)
     hist = [{"t": c["time"], "spot": c["close"], "o": c["open"], "h": c["high"], "l": c["low"], "c": c["close"]} for c in series]
+    pricer = _Pricer(await nse_bhavcopy.symbol_facts(symbol, [_dstr(c["time"]) for c in in_win]), syn_iv, syn_dte)
 
     side = (rule.get("side") or "BUY").upper()
     buy = side == "BUY"
@@ -662,7 +766,7 @@ async def _backtest_intraday(
             held = (i - ei) * interval / 86400.0
 
             def value_at(s_):
-                return _pos_px(open_pos, lambda k, ot: _syn_premium(ot, s_, k, held, syn_iv, syn_dte))
+                return _pos_px(open_pos, lambda k, ot: pricer.price(ot, s_, k, ts, dkey, open_pos.get("exp"), held_days=held))
 
             # premium at the bar's own open / low / high / close -- the extremes are what let a stop
             # or target be hit INSIDE the bar instead of only being noticed at its close
@@ -672,7 +776,9 @@ async def _backtest_intraday(
             sig = bool(exit_conds) and ctx.eval_conds(exit_conds, exit_logic, trade={**_trade_of(open_pos["sim"], px), "hlStop": open_pos.get("hlStop")}, groups=exit_groups)
             evs = open_pos["sim"].step(
                 px, lo=min(ps), hi=max(ps), opn=ps[0], exit_signal=sig,
-                square_off=bool(not positional and ((sq and clk >= sq) or spans_sq or eod)),
+                square_off=bool((not positional and ((sq and clk >= sq) or spans_sq or eod))
+                                # the contract it holds expires at today's close
+                                or (open_pos.get("exp") == dkey and (eod or last))),
             )
             if not open_pos["sim"].closed and last:
                 evs += open_pos["sim"].force_close(px, "range end")
@@ -699,10 +805,12 @@ async def _backtest_intraday(
         if not ctx.eval_conds(entry_conds, entry_logic, groups=entry_groups):
             continue
         base = round(spot / step) * step
+        # the front-week contract of that day (on expiry day: today's, like the live bot)
+        day_exp = pricer.front_expiry(dkey)
         legs, entry_px_legs = None, None
         if ST.is_structure(rule):
             legs = ST.legs_for(rule["structure"], base, step, rule.get("offset"), rule.get("width"))
-            entry_px_legs = [_syn_premium(lg["ot"], spot, lg["strike"], 0.0, syn_iv, syn_dte) for lg in legs]
+            entry_px_legs = [pricer.price(lg["ot"], spot, lg["strike"], ts, dkey, day_exp) for lg in legs]
             if any(p <= 0 for p in entry_px_legs):
                 continue
             net = ST.net_premium(legs, entry_px_legs)
@@ -712,7 +820,7 @@ async def _backtest_intraday(
             ef_use = {k: v for k, v in (rule.get("entryFilter") or {}).items() if k in ("premOp", "premVal", "premTol")}
         else:
             strike, ot = _resolve_instrument(rule.get("instrument", "ATM_CE"), base, step)
-            px = _syn_premium(ot, spot, strike, 0.0, syn_iv, syn_dte)
+            px = pricer.price(ot, spot, strike, ts, dkey, day_exp)
             pos_side, ef_use = side, (rule.get("entryFilter") or {})
         if px <= 0:
             continue
@@ -720,7 +828,7 @@ async def _backtest_intraday(
         if not ok:
             continue
         open_pos = {
-            "hlStop": hl_stop_level(rule, ctx),
+            "hlStop": hl_stop_level(rule, ctx), "exp": day_exp,
             "k": strike, "ot": ot, "entry": px, "d": dkey, "t": _clock(ts), "ts": ts, "i": i, "side": pos_side,
             "sim": SimPosition(rule, buy=(pos_side == "BUY"), base=px, lots=lots0, lot_size=lot),
             **({"legs": legs, "structure": rule["structure"], "entry_px": entry_px_legs} if legs else {}),
@@ -734,7 +842,7 @@ async def _backtest_intraday(
         "instrument": rule.get("structure") if ST.is_structure(rule) else rule.get("instrument"), "side": side, "lots": rule.get("lots", 1),
         "lot": lot, "days": len({_dstr(c["time"]) for c in in_win}),
         "interval": interval, "candles": len(in_win),
-        "pricing": "synthetic", "hasChain": False,
+        **pricer.summary(), "hasChain": False,
         "synIV": round(syn_iv, 3), "synDTE": syn_dte,
         "costs": cfg, "notSimulated": _not_simulated(rule, interval),
         "trades": trades, "equity": equity,

@@ -1871,8 +1871,12 @@ class AutoBot:
             why_grp = G.why_fields(conds, exit_groups)
             if G.evaluate(conds, exit_groups, exit_logic, exit_res.__getitem__):
                 reason = "exit signal"
+        # the price now and the open P&L (plus anything already booked by a scale-out), for the
+        # card's plain-words status line: "bought at 120, now 138 (+15%)"
         self._set_why(rid, {"phase": "open", "list": "exit", "logic": G.spec(rule, "exit")[0],
-                            "conds": exit_res, "reason": None, "stop": new_stop, **why_grp})
+                            "conds": exit_res, "reason": None, "stop": new_stop,
+                            "ltp": round(ltp, 2) if ltp else None,
+                            "pnlRs": round(X.pnl_rs(ev, pos["lots"], ls) + pos.get("realized", 0.0), 2), **why_grp})
         if not reason:
             return changed
 

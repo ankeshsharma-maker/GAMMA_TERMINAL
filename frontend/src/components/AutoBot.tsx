@@ -814,6 +814,276 @@ function TemplatePicker({ onPick, onBlank, onCancel }: { onPick: (t: Template) =
   );
 }
 
+
+/* ------------------------------------------------------------------ */
+/* risk presets -- stop / target / trail / breakeven / pace in one tap  */
+/* ------------------------------------------------------------------ */
+type Risk = "safe" | "normal" | "aggressive";
+const RISK_PRESETS: Record<Risk, { title: string; blurb: string; patch: Partial<AutoRule> }> = {
+  safe: {
+    title: "Safe",
+    blurb: "small stop, locks profit early, few trades",
+    patch: { slBasis: "pct", slPct: 20, targetPct: 40, trailPct: 10, trailArmPct: 15, beArmPct: 15, maxTradesPerDay: 2, maxConsecLosses: 2 },
+  },
+  normal: {
+    title: "Normal",
+    blurb: "balanced stop and target",
+    patch: { slBasis: "pct", slPct: 30, targetPct: 60, trailPct: 15, trailArmPct: 25, beArmPct: 20, maxTradesPerDay: 3, maxConsecLosses: 3 },
+  },
+  aggressive: {
+    title: "Aggressive",
+    blurb: "wide stop, lets winners run, more trades",
+    patch: { slBasis: "pct", slPct: 40, targetPct: 100, trailPct: 20, trailArmPct: 40, beArmPct: 0, maxTradesPerDay: 5, maxConsecLosses: undefined },
+  },
+};
+const RISK_KEYS = Object.keys(RISK_PRESETS) as Risk[];
+/** the preset a rule's numbers match exactly, or null when they have been hand-tuned */
+function riskOf(r: Partial<AutoRule>): Risk | null {
+  const same = (a: unknown, b: unknown) => (a ?? 0) === (b ?? 0);
+  return RISK_KEYS.find((k) => Object.entries(RISK_PRESETS[k].patch).every(([f, v]) => same(r[f as keyof AutoRule], v))) ?? null;
+}
+function riskLine(p: Partial<AutoRule>): string {
+  return [
+    `stop −${p.slPct}%`,
+    `target +${p.targetPct}%`,
+    p.trailPct ? `trail ${p.trailPct}% after +${p.trailArmPct}%` : "",
+    p.beArmPct ? `no-loss after +${p.beArmPct}%` : "",
+    `${p.maxTradesPerDay} trades/day`,
+    p.maxConsecLosses ? `pause after ${p.maxConsecLosses} losses` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function RiskPicker({ r, set }: { r: Partial<AutoRule>; set: (p: Partial<AutoRule>) => void }) {
+  const cur = riskOf(r);
+  return (
+    <div className="space-y-1.5">
+      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+        {RISK_KEYS.map((k) => {
+          const p = RISK_PRESETS[k];
+          const on = cur === k;
+          return (
+            <button
+              key={k}
+              type="button"
+              onClick={() => set(p.patch)}
+              className={`flex flex-col items-start gap-0.5 rounded-lg border px-2.5 py-2 text-left ${
+                on ? "border-term-accent bg-term-accent/15" : "border-term-border bg-term-bg/40 hover:border-term-accent/60"
+              }`}
+            >
+              <span className={`text-[13px] font-semibold ${on ? "text-term-accent" : "text-term-text"}`}>
+                {on ? "● " : ""}
+                {p.title}
+              </span>
+              <span className="text-[11px] text-term-dim">{p.blurb}</span>
+              <span className="num text-[10px] leading-snug text-term-dim">{riskLine(p.patch)}</span>
+            </button>
+          );
+        })}
+      </div>
+      {!cur && <div className="text-[10px] text-term-dim">Custom numbers — tap a preset to reset them.</div>}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Simple mode: three questions -> a whole rule (paper, switched off)   */
+/* ------------------------------------------------------------------ */
+type Dir = "up" | "down";
+type SimpleSignal = {
+  key: string;
+  title: (d: Dir) => string;
+  tf: number;
+  build: (d: Dir) => Partial<AutoRule>;
+};
+const SIMPLE_SIGNALS: SimpleSignal[] = [
+  {
+    key: "trend",
+    title: (d) => `The trend turns ${d} (market structure)`,
+    tf: 900,
+    build: (d) => ({
+      entry: [{ kind: "market_structure", op: d === "up" ? "turns_bullish" : "turns_bearish" }],
+      exit: [{ kind: "market_structure", op: d === "up" ? "turns_bearish" : "turns_bullish" }],
+    }),
+  },
+  {
+    key: "breakout",
+    title: (d) => `Price breaks the last swing ${d === "up" ? "high" : "low"} on strong volume`,
+    tf: 900,
+    build: (d) =>
+      d === "up"
+        ? {
+            entry: [
+              { kind: "market_structure", op: "breaks_high", volMult: 1.5 },
+              { kind: "market_structure", op: "above_hl" },
+            ],
+            exit: [{ kind: "market_structure", op: "below_hl" }],
+          }
+        : {
+            entry: [{ kind: "market_structure", op: "breaks_low", volMult: 1.5 }],
+            exit: [{ kind: "market_structure", op: "breaks_high" }],
+          },
+  },
+  {
+    key: "supertrend",
+    title: (d) => `Supertrend flips ${d}`,
+    tf: 300,
+    build: (d) => ({
+      entry: [
+        { kind: "supertrend", period: 10, mult: 3, dir: d, op: "flip" },
+        { kind: "rsi", period: 14, op: d === "up" ? ">" : "<", value: 50 },
+      ],
+      exit: [{ kind: "supertrend", period: 10, mult: 3, dir: d === "up" ? "down" : "up", op: "flip" }],
+    }),
+  },
+  {
+    key: "ema",
+    title: (d) => `Fast average (EMA 9) crosses ${d === "up" ? "above" : "below"} the slow one (EMA 21)`,
+    tf: 300,
+    build: (d) => ({
+      entry: [{ kind: "ema_cross", fast: 9, slow: 21, dir: d }],
+      exit: [{ kind: "ema_cross", fast: 9, slow: 21, dir: d === "up" ? "down" : "up" }],
+    }),
+  },
+  {
+    key: "orb",
+    title: (d) => `The first 15 minutes' ${d === "up" ? "high" : "low"} breaks (one trade a day, till 11:30)`,
+    tf: 300,
+    build: (d) => ({
+      entry: [{ kind: "opening_range", rangeMin: 15, dir: d }],
+      exit: [],
+      maxTradesPerDay: 1,
+      noEntryAfter: "11:30",
+    }),
+  },
+  {
+    key: "rsi",
+    title: (d) => (d === "up" ? "RSI bounces back above 30 (oversold)" : "RSI drops back below 70 (overbought)"),
+    tf: 300,
+    build: (d) => ({
+      entry: [{ kind: "rsi", period: 14, op: d === "up" ? "cross_up" : "cross_down", value: d === "up" ? 30 : 70 }],
+      exit: [{ kind: "rsi", period: 14, op: d === "up" ? ">" : "<", value: d === "up" ? 65 : 35 }],
+    }),
+  },
+];
+
+function SimpleQ({ n, q, children }: { n: number; q: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1.5 rounded-lg border border-term-border bg-term-bg/40 p-2.5">
+      <div className="flex items-center gap-2 text-[13px] font-semibold text-term-text">
+        <span className="flex h-5 w-5 items-center justify-center rounded-full border border-term-accent text-[11px] text-term-accent">{n}</span>
+        {q}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function SimpleRuleEditor({
+  symbols,
+  fallbackSymbol,
+  onSave,
+  onAdvanced,
+  onCancel,
+}: {
+  symbols: string[];
+  fallbackSymbol: string;
+  onSave: (r: Partial<AutoRule>) => void;
+  onAdvanced: (r: Partial<AutoRule>) => void;
+  onCancel: () => void;
+}) {
+  const [symbol, setSymbol] = useState(symbols.includes("NIFTY") ? "NIFTY" : symbols[0] ?? fallbackSymbol);
+  const [dir, setDir] = useState<Dir>("up");
+  const [sig, setSig] = useState("trend");
+  const [risk, setRisk] = useState<Risk>("normal");
+  const [lots, setLots] = useState(1);
+  const S = SIMPLE_SIGNALS.find((x) => x.key === sig) ?? SIMPLE_SIGNALS[0];
+  const rule: Partial<AutoRule> = {
+    ...blankRule(symbol),
+    ...RISK_PRESETS[risk].patch,
+    name: `${symbol} · ${S.title(dir).split(" (")[0]} → buy ${dir === "up" ? "CE" : "PE"}`,
+    instrument: dir === "up" ? "ATM_CE" : "ATM_PE",
+    side: "BUY",
+    lots,
+    entryTf: S.tf,
+    noEntryBefore: "09:30",
+    noEntryAfter: "14:45",
+    ...S.build(dir),
+    mode: "paper",
+    enabled: false,
+  };
+  const words = ruleSentence(rule as AutoRule);
+  return (
+    <div className="space-y-2.5 rounded-lg border border-term-accent/50 bg-term-panel p-3">
+      <SimpleQ n={1} q="What to trade?">
+        <div className="flex flex-wrap items-center gap-2 text-[12px]">
+          <SelectMenu value={symbol} options={symbols.map((x) => [x, x] as [string, string])} onChange={setSymbol} title="Index or stock" width={130} />
+          <span className="text-term-dim">its ATM option ·</span>
+          <label className="flex items-center gap-1 text-term-dim">
+            lots
+            <input
+              type="number"
+              min={1}
+              value={lots}
+              onChange={(e) => setLots(Math.max(1, parseInt(e.target.value) || 1))}
+              className="num w-14 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-xs text-term-text"
+            />
+          </label>
+        </div>
+      </SimpleQ>
+      <SimpleQ n={2} q="When to buy?">
+        <div className="seg w-fit">
+          <button type="button" className={dir === "up" ? "on" : ""} onClick={() => setDir("up")}>
+            ▲ Market going up → buy Call
+          </button>
+          <button type="button" className={dir === "down" ? "on" : ""} onClick={() => setDir("down")}>
+            ▼ Market going down → buy Put
+          </button>
+        </div>
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          {SIMPLE_SIGNALS.map((x) => (
+            <button
+              key={x.key}
+              type="button"
+              onClick={() => setSig(x.key)}
+              className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left text-[12px] ${
+                sig === x.key ? "border-term-accent bg-term-accent/15 text-term-text" : "border-term-border text-term-dim hover:border-term-accent/60"
+              }`}
+            >
+              <span>{x.title(dir)}</span>
+              <span className="shrink-0 rounded bg-term-border/60 px-1.5 text-[10px] text-term-dim">{tfLabel(x.tf)}</span>
+            </button>
+          ))}
+        </div>
+      </SimpleQ>
+      <SimpleQ n={3} q="How much risk?">
+        <RiskPicker r={RISK_PRESETS[risk].patch} set={(p) => setRisk(RISK_KEYS.find((k) => RISK_PRESETS[k].patch === p) ?? "normal")} />
+        <div className="text-[10px] text-term-dim">Intraday: new trades 09:30 – 14:45, everything closed by 15:20.</div>
+      </SimpleQ>
+      <div className="rounded border border-term-border bg-term-bg/40 px-2.5 py-2 text-[11px] leading-snug text-term-dim">
+        <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide">In plain words</span>
+        On <span className="text-term-text">{symbol}</span> {tfLabel(S.tf)} candles, buy the ATM{" "}
+        <span className={dir === "up" ? "text-up" : "text-down"}>{dir === "up" ? "Call" : "Put"}</span> when{" "}
+        <span className="text-term-text">{words.enter}</span> · exit on <span className="text-term-text">{words.exit}</span> ·{" "}
+        <span className="text-term-text">paper</span> (no real orders)
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <button className="btn btn-buy" onClick={() => onSave(rule)}>
+          Save rule
+        </button>
+        <button className="btn" onClick={() => onAdvanced(rule)} title="Open this rule in the full editor to fine-tune every setting">
+          Fine-tune in Advanced ›
+        </button>
+        <button className="btn" onClick={onCancel}>
+          Cancel
+        </button>
+        <span className="text-2xs text-term-dim">Saved in paper mode and switched off — turn it on from its card.</span>
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* condition editor                                                    */
 /* ------------------------------------------------------------------ */
@@ -1796,6 +2066,12 @@ function RuleEditor({
         ];
         return (
           <div className="rounded border border-term-border/70 p-2">
+            {!isStruct && (r.side ?? "BUY") === "BUY" && (
+              <div className="mb-3">
+                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-term-dim">Quick set</div>
+                <RiskPicker r={r} set={set} />
+              </div>
+            )}
             <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <span className="text-[10px] font-semibold uppercase tracking-wide text-term-dim">Exit levels</span>
               <span className="text-[11px] text-term-dim">numbers are in</span>
@@ -2060,6 +2336,82 @@ function RuleEditor({
   );
 }
 
+
+/* ------------------------------------------------------------------ */
+/* the card's status in one plain sentence                             */
+/* ------------------------------------------------------------------ */
+function plainStatus(r: AutoRule, masterOn: boolean): { text: ReactNode; cls: string } {
+  const w = r._why;
+  const open = r._state?.open;
+  if (!r.enabled) return { text: "Off — not being checked.", cls: "text-term-dim" };
+  if (!masterOn) return { text: "Engine is off — turn it on at the top to start trading.", cls: "text-term-dim" };
+  if (r._state?.paused) return { text: `⏸ ${r._state.paused}.`, cls: "text-amber-400" };
+  if (open) {
+    const buy = open.side === "BUY";
+    const px = w?.phase === "open" ? w.ltp : null;
+    const chg = px != null && open.entryPx ? ((px - open.entryPx) / open.entryPx) * 100 * (buy ? 1 : -1) : null;
+    const base = open.entryPx;
+    const tgt =
+      r.targetPct && (r.slBasis ?? "pct") !== "rs"
+        ? r.slBasis === "pts"
+          ? base + (buy ? 1 : -1) * r.targetPct
+          : base * (1 + ((buy ? 1 : -1) * r.targetPct) / 100)
+        : null;
+    const pnl = w?.phase === "open" ? w.pnlRs : null;
+    return {
+      cls: "text-term-text",
+      text: (
+        <>
+          In trade — {buy ? "bought" : "sold"} {open.label ?? `${open.strike} ${open.ot}`} at ₹{nf(base, 1)}
+          {px != null && (
+            <>
+              , now ₹{nf(px, 1)}{" "}
+              <span className={chg != null && chg >= 0 ? "text-up" : "text-down"}>
+                ({chg != null && chg >= 0 ? "+" : ""}
+                {nf(chg ?? 0, 1)}%{pnl != null ? ` · ${rs(pnl)}` : ""})
+              </span>
+            </>
+          )}
+          {open.stopPx != null && <span className="text-amber-400"> · stop ₹{nf(open.stopPx, 1)}</span>}
+          {tgt != null && <span className="text-up"> · target ₹{nf(tgt, 1)}</span>}
+        </>
+      ),
+    };
+  }
+  if (!w) return { text: "Starting up — the first check comes within a few seconds.", cls: "text-term-dim" };
+  if (w.phase === "blocked") {
+    const why = w.reason ?? "held back";
+    if (why === "market closed") return { text: "Market is closed — it starts checking again at 09:15.", cls: "text-term-dim" };
+    if (why.startsWith("signal fired but"))
+      return { text: `The signal came, but ${why.slice("signal fired but ".length)} — so no trade.`, cls: "text-amber-400" };
+    return { text: `Not trading right now: ${why}.`, cls: "text-amber-400" };
+  }
+  const list = r.entry ?? [];
+  const conds = w.conds ?? [];
+  if (!conds.length) return { text: "Waiting for the entry signal.", cls: "text-term-text" };
+  const met = conds.filter(Boolean).length;
+  const missing = conds
+    .map((ok, i) => (!ok && list[i] ? describe(list[i]) : null))
+    .filter((x): x is string => !!x);
+  const anyOne = w.logic === "any" && !w.groups;
+  return {
+    cls: "text-term-text",
+    text: (
+      <>
+        Waiting — {met} of {conds.length} condition{conds.length === 1 ? "" : "s"} met
+        {missing.length > 0 && (
+          <>
+            . {anyOne ? "Any one of these starts a trade" : "Still needs"}:{" "}
+            <span className="text-amber-400">{missing.slice(0, 2).join("; ")}</span>
+            {missing.length > 2 ? ` (+${missing.length - 2} more)` : ""}
+          </>
+        )}
+        .
+      </>
+    ),
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* why did / didn't it fire                                            */
 /* ------------------------------------------------------------------ */
@@ -2105,17 +2457,12 @@ function WhyLine({ r, masterOn }: { r: AutoRule; masterOn: boolean }) {
     : w.logic === "any"
       ? "any one is enough"
       : "all must be true";
+  // the card's plain sentence above already says what is going on; this row is the detail:
+  // each condition, ticked or not
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
-      {w.phase === "blocked" ? (
-        <span className="text-amber-400">⛔ {w.reason}</span>
-      ) : w.phase === "open" ? (
-        <span className="text-term-text">
-          In trade{w.stop != null ? ` · stop ${w.stop.toFixed(1)}` : ""}
-          {conds.length ? " · exit signals" : ""}
-        </span>
-      ) : (
-        <span className="text-term-text">Watching for an entry ({logic})</span>
+      {conds.length > 0 && (
+        <span className="text-term-dim">{w.phase === "open" ? "Exit signals" : "Entry conditions"} ({logic}):</span>
       )}
       {chips}
       <span className="text-term-dim" title="How long ago the engine last evaluated this rule">
@@ -2480,8 +2827,12 @@ function RuleCard({
         <div className="mt-2 text-[11px] text-term-dim">No closed trades yet — its scorecard fills in after the first one.</div>
       )}
 
-      {/* now: what it holds, or what it is waiting for */}
+      {/* now: what it holds, or what it is waiting for -- first in one plain sentence */}
       <div className="mt-2 border-t border-term-border pt-1.5">
+        {(() => {
+          const ps = plainStatus(r, masterOn);
+          return <div className={`mb-1 text-[12px] leading-snug ${ps.cls}`}>{ps.text}</div>;
+        })()}
         {open && (
           <div className="flex flex-wrap items-center gap-2 text-[11px]">
             <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-2xs font-semibold text-amber-400">Now</span>
@@ -2569,6 +2920,22 @@ export function AutoBotView() {
   );
   const [editing, setEditing] = useState<Partial<AutoRule> | null>(null);
   const [picking, setPicking] = useState(false);
+  // new rules: Simple = three questions; Advanced = the templates and the full five-step editor
+  const [newMode, setNewModeRaw] = useState<"simple" | "advanced">(() => {
+    try {
+      return localStorage.getItem("auto.newMode") === "advanced" ? "advanced" : "simple";
+    } catch {
+      return "simple";
+    }
+  });
+  const setNewMode = (m: "simple" | "advanced") => {
+    setNewModeRaw(m);
+    try {
+      localStorage.setItem("auto.newMode", m);
+    } catch {
+      /* private mode */
+    }
+  };
   const [btId, setBtId] = useState<string | null>(null);
   // collapsed by default -- a card's full entry/exit condition grid only
   // shows once expanded, so scanning several active rules doesn't mean
@@ -2762,17 +3129,49 @@ export function AutoBotView() {
         {/* rules + editor */}
         <div className="space-y-3 md:min-h-0 md:flex-1 md:overflow-auto md:pr-1">
           {picking && !editing && (
-            <TemplatePicker
-              onPick={(t) => {
-                setPicking(false);
-                setEditing({ ...blankRule(storeSymbol), ...t.rule, name: t.title, enabled: false });
-              }}
-              onBlank={() => {
-                setPicking(false);
-                setEditing(blankRule(storeSymbol));
-              }}
-              onCancel={() => setPicking(false)}
-            />
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-semibold text-term-text">New rule</span>
+                <div className="seg">
+                  <button type="button" className={newMode === "simple" ? "on" : ""} onClick={() => setNewMode("simple")}>
+                    Simple
+                  </button>
+                  <button type="button" className={newMode === "advanced" ? "on" : ""} onClick={() => setNewMode("advanced")}>
+                    Advanced
+                  </button>
+                </div>
+                <span className="text-2xs text-term-dim">
+                  {newMode === "simple" ? "three questions — safe defaults for the rest" : "templates and every setting"}
+                </span>
+              </div>
+              {newMode === "simple" ? (
+                <SimpleRuleEditor
+                  symbols={symbols}
+                  fallbackSymbol={storeSymbol}
+                  onSave={async (r) => {
+                    await saveRule(r);
+                    setPicking(false);
+                  }}
+                  onAdvanced={(r) => {
+                    setPicking(false);
+                    setEditing(r);
+                  }}
+                  onCancel={() => setPicking(false)}
+                />
+              ) : (
+                <TemplatePicker
+                  onPick={(t) => {
+                    setPicking(false);
+                    setEditing({ ...blankRule(storeSymbol), ...t.rule, name: t.title, enabled: false });
+                  }}
+                  onBlank={() => {
+                    setPicking(false);
+                    setEditing(blankRule(storeSymbol));
+                  }}
+                  onCancel={() => setPicking(false)}
+                />
+              )}
+            </div>
           )}
           {editing && (
             <RuleEditor

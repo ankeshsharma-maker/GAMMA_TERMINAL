@@ -235,6 +235,11 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
                 ))}
             </div>
           )}
+          {res.pricingNote && (
+            <div className={`rounded px-2 py-1 ${res.pricing === "synthetic" ? "bg-down/10 text-down" : "bg-term-bg/60 text-term-dim"}`}>
+              {res.pricingNote}
+            </div>
+          )}
           {(res.notSimulated?.length ?? 0) > 0 && (
             <div className="rounded bg-amber-500/10 px-2 py-1 text-amber-400">
               Not simulated in a backtest: {res.notSimulated!.join("; ")}. The live rule is stricter than this result.
@@ -250,21 +255,28 @@ export function RuleBacktest({ rule, onClose }: { rule: AutoRule; onClose: () =>
             </span>
             <span
               className={`rounded px-1.5 py-0.5 font-semibold ${
-                res.pricing === "historical"
+                res.pricing === "historical" || res.pricing === "modelled"
                   ? "bg-up/20 text-up"
                   : res.pricing === "mixed"
                   ? "bg-amber-500/20 text-amber-400"
-                  : "bg-term-border text-term-dim"
+                  : "bg-down/15 text-down"
               }`}
               title={
-                res.pricing === "historical"
+                res.pricingNote ||
+                (res.pricing === "historical"
                   ? "every leg priced from real historical option candles"
                   : res.pricing === "mixed"
                   ? "some legs from real option history, some Black-Scholes"
-                  : `all legs Black-Scholes (IV ${(res.synIV * 100).toFixed(0)}%, ${res.synDTE} DTE)`
+                  : `all legs Black-Scholes (IV ${(res.synIV * 100).toFixed(0)}%, ${res.synDTE} DTE)`)
               }
             >
-              {res.pricing} pricing
+              {res.pricing === "historical"
+                ? "real prices"
+                : res.pricing === "modelled"
+                ? "real expiry + IV"
+                : res.pricing === "synthetic"
+                ? "rough prices"
+                : "mixed prices"}
             </span>
             {!res.hasChain && (
               <span className="rounded bg-term-border px-1.5 py-0.5 text-term-dim" title="no daily OI/PCR/max-pain history for this range — OI-based conditions were inert">

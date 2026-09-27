@@ -475,6 +475,9 @@ export interface AutoRule {
     groups?: ("all" | "any")[];
     grp?: number[];
     stop?: number | null;
+    /** in a trade: the option's price now, and the open P&L in ₹ (with any scale-out already booked) */
+    ltp?: number | null;
+    pnlRs?: number | null;
     ts: number;
   } | null;
   _stats?: { trades: number; winRate: number; net: number; gross: number; today: number };
