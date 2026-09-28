@@ -291,6 +291,9 @@ export function StrategyBuilder() {
   const [payoffTab, setPayoffTab] = useState<"stats" | "chart" | "table" | "legs" | "greeks">(
     "chart"
   );
+  // folded phone (layout "B", 28-Sep): chart first, then Legs | P&L table | Greeks under it
+  const [phoneTab, setPhoneTab] = useState<"legs" | "table" | "greeks">("table");
+  const [phoneRows, setPhoneRows] = useState(3); // P&L table: rows each side of spot
   // width of the leg-editor column vs. the payoff/chart column, drag-resizable like the watchlist panel
   const [builderW, setBuilderW] = useState(() => readNum(BUILDER_W_LS, 330));
   useEffect(() => {
@@ -1814,7 +1817,7 @@ export function StrategyBuilder() {
               : "Replay these legs against Upstox daily history"}
           </span>
           {panel === "payoff" && (
-            <div className="ml-auto flex flex-wrap gap-1">
+            <div className="ml-auto hidden flex-wrap gap-1 sm:flex">
               {(
                 [
                   ["stats", "Stats"],
@@ -1873,6 +1876,175 @@ export function StrategyBuilder() {
           </div>
         )}
 
+        {/* ---- folded phone (Galaxy Z Fold6 cover, ~370 px): layout B -- the chart first and big, the
+             P&L now on top, 3 key numbers, then Legs | P&L table | Greeks sized to the width ---- */}
+        {analysis && (
+          <div className="sm:hidden">
+            <div className="flex items-baseline justify-between px-3 pt-2">
+              <span className="text-[13px] font-semibold text-term-text">
+                {analysis.symbol} <span className="font-normal text-term-dim">{analysis.expiry}</span>
+              </span>
+              <span className="text-[11px] text-term-dim">
+                P&amp;L now{" "}
+                <span className={`num text-[14px] font-bold ${currentPnl != null ? signColor(currentPnl) : ""}`}>
+                  {currentPnl != null ? `${currentPnl >= 0 ? "+" : ""}${nf(currentPnl, 0)}` : "–"}
+                </span>
+              </span>
+            </div>
+            <div className="relative mx-1.5 mt-1 flex h-[320px] flex-col rounded border border-term-border bg-term-bg/20 p-1.5">
+              <PayoffChart
+                x={analysis.x}
+                expiryPnl={analysis.expiryPnl}
+                nowPnl={analysis.nowPnl}
+                spot={analysis.spot}
+                breakevens={analysis.breakevens}
+                tPnl={tPnl}
+                symbol={analysis.symbol}
+                tLabel={tLineLabel}
+                offset={manualPnl}
+                sd={payoffSd}
+                margin={analysis.margin?.estimate}
+                oi={payoffOi}
+              />
+            </div>
+            <div className="mx-1.5 mt-1.5 grid grid-cols-3 gap-1">
+              <div className="rounded border border-term-border bg-term-panel2 px-1.5 py-1">
+                <div className="text-[9px] uppercase text-term-dim">Max P / L</div>
+                <div className="num text-[12px] font-bold leading-tight">
+                  <div className="text-up">
+                    {analysis.maxProfitUnbounded ? "Unlimited" : `+${nf(analysis.maxProfit + manualPnl, 0)}`}
+                  </div>
+                  <div className="text-down">{analysis.maxLossUnbounded ? "Unlimited" : nf(analysis.maxLoss + manualPnl, 0)}</div>
+                </div>
+              </div>
+              <div className="rounded border border-term-border bg-term-panel2 px-1.5 py-1">
+                <div className="text-[9px] uppercase text-term-dim">POP</div>
+                <div className="num text-[12px] font-bold text-term-text">{analysis.pop != null ? `${nf(analysis.pop, 0)}%` : "–"}</div>
+              </div>
+              <div className="rounded border border-term-border bg-term-panel2 px-1.5 py-1">
+                <div className="text-[9px] uppercase text-term-dim">Margin</div>
+                <div className="num text-[12px] font-bold text-term-text">
+                  ~{analysis.margin.estimate >= 1e5 ? `${nf(analysis.margin.estimate / 1e5, 2)} L` : nf(analysis.margin.estimate, 0)}
+                </div>
+              </div>
+            </div>
+            <div className="mx-1.5 mt-1 flex flex-wrap justify-between gap-x-2 text-[10.5px] text-term-dim">
+              <span>BE {analysis.breakevens.map((x) => nf(x, 0)).join(" · ") || "–"}</span>
+              <span>
+                {analysis.netPremiumType === "CREDIT" ? "credit" : "debit"}{" "}
+                <span className={analysis.netPremiumType === "CREDIT" ? "text-up" : "text-down"}>
+                  ₹{nf(Math.abs(analysis.netPremium), 0)}
+                </span>
+              </span>
+            </div>
+            <div className="seg mx-1.5 mt-2 flex text-[11px]">
+              {(
+                [
+                  ["legs", "Legs"],
+                  ["table", "P&L table"],
+                  ["greeks", "Greeks"],
+                ] as const
+              ).map(([k, l]) => (
+                <button key={k} onClick={() => setPhoneTab(k)} className={`flex-1 ${phoneTab === k ? "on" : ""}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <div className="mx-1.5 mb-2 mt-1 text-[11.5px]">
+              {phoneTab === "legs" ? (
+                <>
+                  <div className="py-1 text-[10px] text-term-dim">
+                    P&amp;L @ {nf(tgtPrice, 0)} · {tLegLabel}
+                  </div>
+                  {legRows.map((r, i) => (
+                    <div key={i} className="flex items-baseline justify-between gap-2 border-b border-term-border/50 py-1.5">
+                      <span className="num min-w-0 truncate font-semibold">
+                        <span className={r.leg.side === "BUY" ? "text-up" : "text-down"}>{r.label.slice(0, 1)}</span>
+                        {r.label.slice(1)}
+                      </span>
+                      <span className="num shrink-0 text-term-dim">
+                        {nf(r.entry, 1)} → {nf(r.ltp, 1)}
+                      </span>
+                      <span className={`num w-16 shrink-0 text-right font-semibold ${pnlCls(r.tgtPnl)}`}>{pnlTxt(r.tgtPnl)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between py-1.5 font-semibold">
+                    <span>Total</span>
+                    <span className={`num ${pnlCls(legTot + manualPnl)}`}>{pnlTxt(legTot + manualPnl)}</span>
+                  </div>
+                </>
+              ) : phoneTab === "table" ? (
+                (() => {
+                  const all = levelRows;
+                  const ai = Math.max(0, all.findIndex((r) => r.isATM));
+                  const rowsP = all.slice(Math.max(0, ai - phoneRows), ai + phoneRows + 1);
+                  return (
+                    <>
+                      <div className="flex border-b border-term-border py-1 text-[10px] uppercase text-term-dim">
+                        <span className="flex-1">{tableInterval > 0 ? "Target" : "Strike"}</span>
+                        <span className="flex-1 text-right">Today</span>
+                        <span className="flex-1 text-right">Expiry</span>
+                      </div>
+                      {rowsP.map((r, i) => (
+                        <div
+                          key={i}
+                          className={`num flex border-b border-term-border/50 py-1.5 ${r.isATM ? "bg-amber-500/15" : ""}`}
+                        >
+                          <span className="flex-1 font-medium text-term-text">
+                            {sk(r.K)}
+                            {r.isATM && <span className="text-amber-400"> ●</span>}
+                          </span>
+                          <span className={`flex-1 text-right ${pnlCls(r.now + manualPnl)}`}>{pnlTxt(r.now + manualPnl)}</span>
+                          <span className={`flex-1 text-right ${pnlCls(r.exp + manualPnl)}`}>{pnlTxt(r.exp + manualPnl)}</span>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => setPhoneRows((n) => (n > 3 ? 3 : 10))}
+                        className="mt-1 w-full py-1 text-center text-[11px] font-semibold text-term-accent"
+                      >
+                        {phoneRows > 3 ? "Fewer rows" : "More rows"}
+                      </button>
+                    </>
+                  );
+                })()
+              ) : (
+                <>
+                  <div className="grid grid-cols-4 gap-1 py-1.5">
+                    {(
+                      [
+                        ["Δ Delta", greekTot.delta, 1],
+                        ["Γ Gamma", greekTot.gamma, 4],
+                        ["Θ / day", greekTot.theta, 0],
+                        ["V Vega", greekTot.vega, 0],
+                      ] as [string, number, number][]
+                    ).map(([k, v, d]) => (
+                      <div key={k} className="rounded border border-term-border bg-term-panel2 px-1 py-1 text-center">
+                        <div className="text-[9px] uppercase text-term-dim">{k}</div>
+                        <div className={`num text-[12px] font-bold ${signColor(v)}`}>{nf(v, d)}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex border-b border-term-border py-1 text-[10px] uppercase text-term-dim">
+                    <span className="w-[34%]">Leg</span>
+                    <span className="flex-1 text-right">Δ</span>
+                    <span className="flex-1 text-right">Θ</span>
+                    <span className="flex-1 text-right">V</span>
+                  </div>
+                  {greekRows.map((r, i) => (
+                    <div key={i} className="num flex border-b border-term-border/50 py-1.5">
+                      <span className="w-[34%] truncate font-semibold">{r.label}</span>
+                      <span className={`flex-1 text-right ${signColor(r.delta)}`}>{nf(r.delta, 2)}</span>
+                      <span className={`flex-1 text-right ${signColor(r.theta)}`}>{nf(r.theta, 0)}</span>
+                      <span className={`flex-1 text-right ${signColor(r.vega)}`}>{nf(r.vega, 0)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="hidden sm:contents">
         {payoffTab === "stats" ? (
           <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3">
             {analysis && (
@@ -2123,6 +2295,7 @@ export function StrategyBuilder() {
         ) : (
           greeksEl
         )}
+        </div>
 
         {analysis && (
           <div className="m-2 mt-0 rounded border border-term-border bg-term-bg/20 p-3 text-[10px]">
