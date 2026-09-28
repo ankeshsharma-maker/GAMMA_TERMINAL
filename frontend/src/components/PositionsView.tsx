@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useStore } from "../store";
+import { attachWhenFilled, useStore } from "../store";
+import { playOrderSound } from "../lib/soundNotif";
 import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
 import { StopEditor } from "./StopEditor";
@@ -571,32 +572,50 @@ function PositionSheet({
   /** more actions under the order form (the app: Exit all, + SL / TGT, the short-strike warning) */
   extras?: ReactNode;
 }) {
+  // the watchlist order window (OrderSheet.tsx), copied for a position: BUY / SELL, lots, NRML / MIS,
+  // Market / Limit, SL / target / trailing SL -- plus what you hold, ½ / All and the leg's P&L
   const net = Number(r.netqty) || 0;
   const lotSize = Number(r.ls) || 1;
   const heldLots = Math.floor(Math.abs(net) / lotSize);
   const lp = r.lp != null ? Number(r.lp) : null;
   const name = r.dname || r.tsym;
-  const prd = r.s_prdt_ali ?? PRD[String(r.prd ?? "")] ?? r.prd ?? "NRML";
+  const legPrd: "NRML" | "MIS" = r.prd === "I" || r.s_prdt_ali === "MIS" ? "MIS" : "NRML";
   const closeSide: "BUY" | "SELL" = net > 0 ? "SELL" : "BUY";
   const [side, setSide] = useState<"BUY" | "SELL">(init?.side ?? (net ? closeSide : "BUY"));
   const [lots, setLots] = useState(init?.lots ?? Math.max(1, Math.floor(heldLots / 2) || 1));
-  const [type, setType] = useState<"LMT" | "MKT">(init?.type ?? "LMT");
-  const [limit, setLimit] = useState(
-    init?.price ? init.price.toFixed(2) : lp != null ? lp.toFixed(2) : ""
-  );
+  const [product, setProduct] = useState<"NRML" | "MIS">(legPrd);
+  // booking part of a position is usually "at my price"; adding / a new order starts at market
+  const [type, setType] = useState<"LMT" | "MKT">(init?.type ?? (net ? "LMT" : "MKT"));
+  const [limit, setLimit] = useState(init?.price ? init.price.toFixed(2) : lp != null ? lp.toFixed(2) : "");
+  const [sl, setSl] = useState("");
+  const [target, setTarget] = useState("");
+  const [trail, setTrail] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const buy = side === "BUY";
   const qty = lots * lotSize;
   const reduces = !!net && side === closeSide;
+  // an exit must be in the leg's own product -- the broker keeps NRML and MIS apart, so a MIS
+  // sell against an NRML long opens a new short instead of booking it
+  const prdNow = reduces ? legPrd : product;
   const price = type === "LMT" ? parseFloat(limit) || 0 : 0;
   const px = price || lp || 0;
+  // SL / target protect what the order OPENS or ADDS to; an exit has nothing new to protect
+  const protect = !reduces;
 
   const place = async () => {
     setErr(null);
-    if (type === "LMT" && !(price > 0)) return setErr("Enter your price, or pick Market.");
+    if (type === "LMT" && !(price > 0)) return setErr("Enter a limit price.");
+    const s = protect && sl ? parseFloat(sl) : null;
+    const t = protect && target ? parseFloat(target) : null;
+    const tr = protect && trail ? parseFloat(trail) : null;
+    if (tr != null && !(tr > 0)) return setErr("Trailing SL must be more than 0 points.");
+    if (tr != null && px && tr >= px) return setErr(`Trailing SL ${tr} pts is more than the price itself.`);
+    // a stop / target on the wrong side of the entry would exit at once
+    if (s != null && px && (buy ? s >= px : s <= px)) return setErr(`SL must be ${buy ? "below" : "above"} the price (${nf(px)}).`);
+    if (t != null && px && (buy ? t <= px : t >= px)) return setErr(`Target must be ${buy ? "above" : "below"} the price (${nf(px)}).`);
     const lines = [
-      `${side} ${lots} lot${lots === 1 ? "" : "s"} (${qty} qty) of ${name}`,
+      `${side} ${lots} lot${lots === 1 ? "" : "s"} (${qty} qty) of ${name} · ${prdNow}`,
       type === "LMT" ? `LIMIT @ ${price.toFixed(2)} — waits in the order book until the price reaches it` : "at MARKET — fills now",
       "REAL order on Flattrade.",
     ];
@@ -605,11 +624,21 @@ function PositionSheet({
     if (net && !reduces && pnl < 0) lines.push(`⚠ This ADDS to a LOSING position (₹${nf(pnl, 0)}). Is it in your plan?`);
     if (type === "LMT" && lp != null && (buy ? price > lp : price < lp))
       lines.push(`Note: your price is past the current ${lp.toFixed(2)}, so it will fill right away.`);
+    if (s != null || t != null || tr != null)
+      lines.push(
+        `Once filled: ${[s != null && `SL ${s}`, t != null && `target ${t}`, tr != null && `trail ${tr} pts`].filter(Boolean).join(" · ")} on the whole leg` +
+          (net && prdNow === legPrd ? " (replaces any SL / target it has now)." : ".")
+      );
     if (!window.confirm(lines.join("\n"))) return;
     setBusy(true);
     try {
       // units, not lots: the server checks they are whole lots of ITS lot size
-      await api.brokerOrderTsym({ tsym: r.tsym, exch: r.exch, side, lots, qty, prd: r.prd, price: type === "LMT" ? price : 0 });
+      await api.brokerOrderTsym({
+        tsym: r.tsym, exch: r.exch, side, lots, qty, prd: prdNow === "MIS" ? "I" : "M", price: type === "LMT" ? price : 0,
+      });
+      playOrderSound(side);
+      if (s != null || t != null || tr != null)
+        void attachWhenFilled(r.tsym, s, t, tr, { side, prevNet: prdNow === legPrd ? net : 0, qty });
       onClose();
     } catch (e: any) {
       setErr(String(e?.message || e));
@@ -628,8 +657,10 @@ function PositionSheet({
           : "border-term-accent bg-term-accent/20 text-term-accent"
         : "border-term-border text-term-dim"
     }`;
+  const inp =
+    "num w-full rounded border border-term-border bg-term-bg px-2 py-1.5 text-[13px] text-term-text outline-none focus:border-term-accent";
   const row = (k: string, v: ReactNode) => (
-    <div className="flex items-baseline justify-between border-b border-term-border/50 py-1.5 text-[12px]">
+    <div className="flex items-baseline justify-between border-b border-term-border/50 py-1 text-[12px]">
       <span className="text-term-dim">{k}</span>
       <span className="tabular-nums text-term-text">{v}</span>
     </div>
@@ -637,16 +668,20 @@ function PositionSheet({
   return (
     <div className="fixed inset-0 z-[55] flex items-end justify-center bg-black/60 sm:items-center" onClick={onClose}>
       <div
-        className="w-full max-w-md rounded-t-xl border border-term-border bg-term-panel p-3 shadow-2xl sm:rounded-xl"
+        className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-xl border border-term-border bg-term-panel p-3 shadow-2xl sm:rounded-xl"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="truncate text-[15px] font-semibold text-term-text">{name}</div>
-        <div className="mt-0.5 flex items-center gap-2 text-[12px]">
-          <span className="text-term-accent">{r.exch ?? "NFO"}</span>
-          <span className="tabular-nums font-semibold text-term-text">{lp != null ? lp.toFixed(2) : "–"}</span>
-          <span className="rounded border border-term-border px-1.5 text-[10px] text-term-text">{prd}</span>
-          <span className="ml-auto rounded bg-down px-1 text-[9px] font-bold text-white">LIVE</span>
+        {/* contract + price */}
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[14px] font-semibold text-term-text">{name}</div>
+            <div className="text-[11px] text-term-dim">
+              {r.exch ?? "NFO"} · lot {lotSize}
+              <span className="ml-1.5 rounded bg-down px-1 text-[9px] font-bold text-white">LIVE</span>
+            </div>
+          </div>
+          <div className="num text-right text-[16px] font-semibold text-term-text">{lp != null ? nf(lp) : "–"}</div>
         </div>
 
         <div className="mt-3 flex gap-2">
@@ -662,7 +697,7 @@ function PositionSheet({
             </div>
             <div className="flex items-center gap-1">
               <button onClick={() => setLots((n) => Math.max(1, n - 1))} className="rounded border border-term-border px-3 py-1.5 text-term-text">−</button>
-              <span className="tabular-nums flex-1 text-center text-[14px] font-semibold text-term-text">{lots}</span>
+              <span className="num flex-1 text-center text-[14px] font-semibold text-term-text">{lots}</span>
               <button onClick={() => setLots((n) => Math.min(500, n + 1))} className="rounded border border-term-border px-3 py-1.5 text-term-text">+</button>
             </div>
             {reduces && heldLots > 1 && (
@@ -679,41 +714,100 @@ function PositionSheet({
             )}
           </div>
           <div>
-            <div className="mb-1 text-[10px] uppercase tracking-wide text-term-dim">Price</div>
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-term-dim">Product</div>
             <div className="flex gap-1">
-              <button onClick={() => setType("LMT")} className={seg(type === "LMT")}>Limit</button>
-              <button onClick={() => setType("MKT")} className={seg(type === "MKT")}>Market</button>
+              {(["NRML", "MIS"] as const).map((pp) => (
+                <button
+                  key={pp}
+                  disabled={reduces && pp !== legPrd}
+                  onClick={() => setProduct(pp)}
+                  className={`${seg(prdNow === pp)} disabled:opacity-30`}
+                >
+                  {pp}
+                </button>
+              ))}
             </div>
+            {reduces && <div className="mt-1 text-[10px] text-term-dim">an exit stays {legPrd}, like the leg</div>}
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <div>
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-term-dim">Order</div>
+            <div className="flex gap-1">
+              <button onClick={() => setType("MKT")} className={seg(type === "MKT")}>Market</button>
+              <button onClick={() => setType("LMT")} className={seg(type === "LMT")}>Limit</button>
+            </div>
+          </div>
+          <div>
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-term-dim">Limit price</div>
             <input
               id="pos-sheet-price"
               inputMode="decimal"
               disabled={type !== "LMT"}
               value={type === "LMT" ? limit : ""}
               onChange={(e) => setLimit(e.target.value.replace(/[^\d.]/g, ""))}
-              placeholder={type === "LMT" ? "your price" : "at market"}
-              className="mt-1 w-full rounded border border-term-border bg-term-bg px-2 py-1.5 text-right text-[13px] tabular-nums text-term-text outline-none focus:border-term-accent disabled:opacity-40"
+              placeholder={type === "LMT" ? "price" : "at market"}
+              className={`${inp} disabled:opacity-40`}
             />
           </div>
         </div>
 
-        <div className="mt-3">
-          {row("Net qty", net ? `${Math.abs(net)} ${net > 0 ? "long" : "short"}` : "0 (closed)")}
-          {!!net && row("Avg price", avg ? avg.toFixed(2) : "–")}
-          {row("P&L", <span className={signColor(pnl)}>{nf(pnl, 2)}</span>)}
-        </div>
+        {/* protection, attached to the whole leg once the order fills */}
+        {protect ? (
+          <>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div>
+                <div className="mb-1 text-[10px] uppercase tracking-wide text-down">Stop-loss price</div>
+                <input id="pos-sheet-sl" inputMode="decimal" value={sl} onChange={(e) => setSl(e.target.value.replace(/[^\d.]/g, ""))} placeholder={buy ? "below price" : "above price"} className={inp} />
+              </div>
+              <div>
+                <div className="mb-1 text-[10px] uppercase tracking-wide text-up">Target price</div>
+                <input id="pos-sheet-tgt" inputMode="decimal" value={target} onChange={(e) => setTarget(e.target.value.replace(/[^\d.]/g, ""))} placeholder={buy ? "above price" : "below price"} className={inp} />
+              </div>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-3">
+              <div>
+                <div className="mb-1 text-[10px] uppercase tracking-wide text-amber-400">Trailing SL · points</div>
+                <input id="pos-sheet-trail" inputMode="decimal" value={trail} onChange={(e) => setTrail(e.target.value.replace(/[^\d.]/g, ""))} placeholder="e.g. 10" className={inp} />
+              </div>
+              <div className="self-end pb-1 text-[10px] leading-snug text-term-dim">
+                {trail && parseFloat(trail) > 0
+                  ? buy
+                    ? `Exits if price falls ${trail} pts from its highest since entry.`
+                    : `Exits if price rises ${trail} pts from its lowest since entry.`
+                  : "Follows the price: the stop moves up (buy) / down (sell) as it goes your way."}
+              </div>
+            </div>
+            <div className="mt-1 text-[10px] leading-snug text-term-dim">
+              Optional. Attached to the whole leg once it fills{net ? " (replaces its current SL / target)" : ""}; the server exits at market when one is hit (works with the app closed).
+            </div>
+          </>
+        ) : (
+          <div className="mt-2 text-[10px] leading-snug text-term-dim">
+            This books part of the position — the rest keeps its SL / target{extras ? " (change it below)" : ""}.
+          </div>
+        )}
+
+        {!!net && (
+          <div className="mt-2">
+            {row("Net qty", `${Math.abs(net)} ${net > 0 ? "long" : "short"}`)}
+            {row("Avg price", avg ? avg.toFixed(2) : "–")}
+            {row("P&L", <span className={signColor(pnl)}>{nf(pnl, 2)}</span>)}
+          </div>
+        )}
 
         {err && <div className="mt-2 text-[12px] text-down">{err}</div>}
+
         <button
           disabled={busy}
           onClick={place}
           className={`mt-3 w-full rounded-lg py-3 text-[14px] font-bold text-white disabled:opacity-50 ${buy ? "bg-up" : "bg-down"}`}
         >
-          {busy ? "…" : `${side} ${lots} lot${lots === 1 ? "" : "s"} ${type === "LMT" && price ? `@ ${price.toFixed(2)}` : "at market"}`}
+          {busy ? "…" : `${side} ${lots} lot${lots === 1 ? "" : "s"}${type === "LMT" && price ? ` @ ${price.toFixed(2)}` : ""}`}
           {px ? <span className="ml-1.5 text-[12px] font-normal opacity-90">≈ ₹{nf(px * qty, 0)}</span> : null}
+          <span className="ml-1.5 text-[11px] font-normal opacity-90">· review next</span>
         </button>
-        <div className="mt-1.5 text-center text-[10px] text-term-dim">
-          {type === "LMT" ? "A limit order waits in Orders until your price is reached — modify or cancel it there." : "Fills at the market now."}
-        </div>
         {extras}
       </div>
     </div>

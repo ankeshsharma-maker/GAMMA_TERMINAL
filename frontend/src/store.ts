@@ -3,6 +3,7 @@ import { api } from "./lib/api";
 import { TerminalSocket } from "./lib/ws";
 import { getDefaultLots } from "./lib/prefs";
 import { isViewer } from "./lib/auth";
+import { findBracket } from "./components/LegBracketBadge";
 import { viewFor } from "./lib/navGroups";
 import type {
   Alert,
@@ -243,35 +244,54 @@ async function paperFill(o: {
   return r.paper;
 }
 
-/** After a live order from the sheet: wait (up to ~60 s, e.g. a limit order
- *  filling) for the leg to appear in the PositionBook, then bracket it with the
- *  SL / target PRICES. Tells the user if it never filled in that time. */
-async function attachWhenFilled(tsym: string, sl: number | null, target: number | null, trail: number | null = null): Promise<void> {
+/** After a live order with an SL / target: wait (up to ~60 s, e.g. a limit order filling) for the
+ *  leg to reach the size the order makes, then bracket the WHOLE leg with the SL / target PRICES.
+ *  `side` / `prevNet` (the leg's net qty before the order, 0 if none) / `qty` let it wait for THIS
+ *  fill -- on a leg that was already open the old row is there at once, with the old size.
+ *  Any SL / target the leg already had is replaced, so two brackets never both square it off.
+ *  Nothing is attached if the order left the leg on the other side (it reduced or flipped it):
+ *  a BUY's stop below the price on what is now a short would exit at once. */
+export async function attachWhenFilled(
+  tsym: string,
+  sl: number | null,
+  target: number | null,
+  trail: number | null = null,
+  fill?: { side: "BUY" | "SELL"; prevNet: number; qty: number }
+): Promise<void> {
+  const say = (m: string) => {
+    try {
+      window.alert(m);
+    } catch {
+      /* ignore */
+    }
+  };
+  const want = fill ? fill.prevNet + (fill.side === "BUY" ? fill.qty : -fill.qty) : null;
   for (let i = 0; i < 30; i++) {
     await new Promise((res) => setTimeout(res, 2000));
     try {
       const d = await api.brokerPositions();
       const row = (d.positions || []).find((x: any) => x.tsym === tsym && Number(x.netqty));
       if (!row) continue;
+      const net = Number(row.netqty);
+      if (want != null && net !== want) continue; // not (fully) filled yet
+      if (fill && (fill.side === "BUY" ? net <= 0 : net >= 0)) {
+        say("Order filled, but the leg is now on the other side, so the SL / target wasn't attached. Set it on the position card.");
+        return;
+      }
+
+      const old = findBracket(row, ((await api.legRules()).rules || []) as any[]);
+      if (old) await api.legRuleDel(old.id); // replace, never stack
       await api.legRuleAttach({
         tsym, exch: row.exch || "NFO", netqty: row.netqty, entryPx: Number(row.netavgprc), prd: row.prd,
         unit: "px", sl, target, trail, // px: SL / target are prices, trail stays points
       });
       return;
     } catch (e: any) {
-      try {
-        window.alert(`Order placed, but the SL / target couldn't be attached: ${e?.message || e}. Set it on the position card.`);
-      } catch {
-        /* ignore */
-      }
+      say(`Order placed, but the SL / target couldn't be attached: ${e?.message || e}. Set it on the position card.`);
       return;
     }
   }
-  try {
-    window.alert("The order hasn't filled yet, so the SL / target wasn't attached. Set it on the position card once it fills.");
-  } catch {
-    /* ignore */
-  }
+  say("The order hasn't filled yet, so the SL / target wasn't attached. Set it on the position card once it fills.");
 }
 
 /** a view-only user can't trade LIVE: say so instead of sending an order the server refuses */
@@ -396,6 +416,9 @@ export const useStore = create<State>((set, get) => ({
         });
         set({ paper: r.paper });
       } else {
+        // with an SL / target: the leg's size BEFORE the order, so the bracket waits for this fill
+        const protect = p.sl != null || p.target != null || p.trail != null;
+        const before = protect ? await api.brokerPositions().catch(() => null) : null;
         const r = await api.placeUnifiedOrder({
           symbol: p.symbol,
           expiry: p.expiry,
@@ -410,8 +433,14 @@ export const useStore = create<State>((set, get) => ({
         set({ paper: r.paper });
         // SL / target from the order sheet: attach to the leg once it shows as filled
         const tsym = r.result?.tsym;
-        if (tsym && (p.sl != null || p.target != null || p.trail != null))
-          void attachWhenFilled(tsym, p.sl ?? null, p.target ?? null, p.trail ?? null);
+        if (tsym && protect) {
+          const prev = (before?.positions || []).find((x: any) => x.tsym === tsym);
+          void attachWhenFilled(tsym, p.sl ?? null, p.target ?? null, p.trail ?? null, {
+            side: p.side,
+            prevNet: Number(prev?.netqty) || 0,
+            qty: p.lots * (Number(prev?.ls) || p.lotSize || 1),
+          });
+        }
       }
     } else {
       const r = await api.executeStrategy({

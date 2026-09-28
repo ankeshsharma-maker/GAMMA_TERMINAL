@@ -294,7 +294,9 @@ export function HomeDashboard() {
               )}
             </div>
           </div>
-          <div className="col-span-2 flex items-center sm:shrink-0">
+          {/* phone: the index switch is the top row, above the spot + market read (asked 28-Sep);
+              laptop: all three already share one row */}
+          <div className="order-first col-span-2 flex items-center sm:order-none sm:shrink-0">
             <div className="seg text-[11px]">
               {[...new Set([...QUICK, symbol])].map((s) => (
                 <button key={s} onClick={() => selectSymbol(s, true)} className={s === symbol ? "on" : ""}>
