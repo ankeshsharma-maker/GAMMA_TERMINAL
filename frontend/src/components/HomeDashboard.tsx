@@ -248,14 +248,20 @@ export function HomeDashboard() {
         {/* laptop: the symbol card lines up with the Price action card under it, the switch takes
             the width it needs, the market read fills the rest */}
         <div className="grid grid-cols-2 gap-1.5 sm:flex sm:items-stretch">
-          <div className="rounded border border-term-border bg-term-bg/40 px-2 py-1.5 sm:w-[calc(25%-4.5px)] sm:shrink-0">
-            <div className="text-[10px] font-medium uppercase tracking-wide text-term-dim">{symbol}</div>
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-[15px] font-bold tabular-nums text-term-text">{spot != null ? nf(spot, 2) : "–"}</span>
+          {/* same card as the four below: label, one bold line, coloured by the day's move */}
+          <div
+            className={`rounded border px-2 py-1.5 sm:w-[calc(25%-4.5px)] sm:shrink-0 ${
+              TONE[chgPct == null || Math.abs(chgPct) < 0.005 ? "flat" : chgPct > 0 ? "up" : "down"]
+            }`}
+          >
+            <div className="text-[10px] font-medium uppercase tracking-wide opacity-80">{symbol}</div>
+            <div className="text-[12px] font-bold leading-snug tabular-nums">
+              <span className="whitespace-nowrap">{spot != null ? nf(spot, 2) : "–"}</span>
               {chgPct != null && (
-                <span className={`text-[11px] font-semibold tabular-nums ${chgPct >= 0 ? "text-up" : "text-down"}`}>
+                <span className="whitespace-nowrap font-medium opacity-80">
+                  {" "}
                   {chgPct >= 0 ? "▲" : "▼"}
-                  {nf(Math.abs(chgPct), 2)}%
+                  {spot != null ? `${nf(Math.abs(spot - spot / (1 + chgPct / 100)), 2)} ` : ""}({nf(Math.abs(chgPct), 2)}%)
                 </span>
               )}
             </div>
