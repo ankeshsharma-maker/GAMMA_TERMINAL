@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
-import { oiCr, nf, compact } from "../lib/format";
+import { oiCr, nf } from "../lib/format";
 import { SelectMenu } from "./SelectMenu";
 
 type Pt = {
@@ -317,7 +317,7 @@ function TrendingOILive() {
               className="text-term-dim"
             />
             <text x={6} y={y(v) + 3} fontSize={10} className="fill-term-dim">
-              {compact(v)}
+              {oiCr(v)}
             </text>
           </g>
         ))}
@@ -482,7 +482,7 @@ function TrendingOILive() {
               label="Change in OI pressure"
               value={L.pInt >= L.cInt ? "PE OI stronger" : "CE OI stronger"}
               valueCls={L.pInt >= L.cInt ? "text-up" : "text-down"}
-              sub={`CE ${compact(L.cCum)} / PE ${compact(L.pCum)}`}
+              sub={`CE ${oiCr(L.cCum)} / PE ${oiCr(L.pCum)}`}
             />
             <Card
               label="PCR"
@@ -670,22 +670,63 @@ function TrendingOILive() {
 type Cross = { t: number; spot: number; up: boolean; endT: number; endSpot: number; move: number; open: boolean };
 
 function TrendingOICrossover() {
-  const { symbol, selectSymbol, symOptions, daily, pts, tf, setTf } = useTrendingOI();
+  const { symbol, selectSymbol, symOptions, tf, setTf } = useTrendingOI();
+  const daily = false;
+  // the WHOLE day: the per-symbol PCR series keeps every 5-min point from 09:15 (the chain's
+  // snapshot history only holds the last ~1.5 hours in market hours, so a morning crossover was lost)
+  const [pts, setPts] = useState<Pt[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      api.pcr(symbol, null, 5).then(
+        (d) => {
+          if (!alive) return;
+          const at = (k: string) => d.fields.indexOf(k);
+          const [it, isp, ipc, icc, ipcg, icv, ipv] = ["t", "spot", "pcr", "ceOIChg", "peOIChg", "ceVol", "peVol"].map(at);
+          const last = d.points.length ? (d.points[d.points.length - 1][it] as number) : 0;
+          const day = new Date((last + 19800) * 1000).toISOString().slice(0, 10);
+          setPts(
+            d.points
+              .filter((p) => p[icc] != null && p[ipcg] != null && new Date(((p[it] as number) + 19800) * 1000).toISOString().slice(0, 10) === day)
+              .map((p) => ({
+                t: p[it] as number,
+                spot: Number(p[isp] ?? 0),
+                pcr: (p[ipc] as number | null) ?? null,
+                ce: Number(p[icc]),
+                pe: Number(p[ipcg]),
+                cVol: icv >= 0 ? Number(p[icv] ?? 0) : 0,
+                pVol: ipv >= 0 ? Number(p[ipv] ?? 0) : 0,
+              }))
+          );
+        },
+        () => {}
+      );
+    setPts([]);
+    load();
+    const id = window.setInterval(() => !document.hidden && load(), 60_000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [symbol]);
 
-  // one point per tf bucket (its last snapshot)
+  // one point per tf bucket (its last reading), on the market's 09:15 grid (03:45 UTC) -- plain
+  // epoch buckets cut the 1-hour bars at 08:30 / 09:30 / 10:30 IST
   const bars = useMemo(() => {
-    const w = daily ? 86400 : Math.max(1, tf) * 60;
+    const w = Math.max(1, tf) * 60;
+    const O = 13500;
     const out: Pt[] = [];
     let key = -1;
     for (const p of pts) {
-      const k = Math.floor(p.t / w);
+      const k = Math.floor((p.t - O) / w);
+      const bt = Math.max(k * w + O, pts[0].t - ((pts[0].t - O) % w));
       if (k !== key) {
-        out.push({ ...p, t: k * w });
+        out.push({ ...p, t: bt });
         key = k;
-      } else out[out.length - 1] = { ...p, t: k * w };
+      } else out[out.length - 1] = { ...p, t: bt };
     }
     return out;
-  }, [pts, tf, daily]);
+  }, [pts, tf]);
 
   // crossovers, with a small dead-band so a tie wobbling around zero isn't a string of "crosses":
   // a side only counts once Put - Call is more than 3% of their combined size
@@ -716,7 +757,7 @@ function TrendingOICrossover() {
   }, [bars]);
 
   const last = bars[bars.length - 1];
-  const first = bars[0];
+  const first = pts[0]; // the day's first reading, whatever the bar size
   const lastCross = crosses[crosses.length - 1];
   const worked = crosses.filter((c) => !c.open && c.move > 0).length;
   const closed = crosses.filter((c) => !c.open).length;
@@ -793,7 +834,7 @@ function TrendingOICrossover() {
         <line x1={pad.l} x2={W - pad.r} y1={yo(0)} y2={yo(0)} stroke="currentColor" strokeOpacity={0.35} className="text-term-dim" />
         {[oHi, 0, oLo].map((v, i) => (
           <text key={i} x={4} y={yo(v) + 3} fontSize={10} className="fill-term-dim">
-            {compact(v)}
+            {oiCr(v)}
           </text>
         ))}
         {bands}
@@ -1105,10 +1146,10 @@ function TrendingOIClassic() {
           return (
             <g key={i}>
               <rect x={cx - barW / 2} y={zeroY - pH} width={barW} height={pH} rx={1} fill={PE} fillOpacity={b.dpe >= 0 ? 0.95 : 0.4}>
-                <title>Put ΔOI {b.dpe >= 0 ? "+" : ""}{compact(b.dpe)} · {fmtT(b.t)}</title>
+                <title>Put ΔOI {b.dpe >= 0 ? "+" : ""}{oiCr(b.dpe)} · {fmtT(b.t)}</title>
               </rect>
               <rect x={cx - barW / 2} y={zeroY} width={barW} height={cH} rx={1} fill={CE} fillOpacity={b.dce >= 0 ? 0.95 : 0.4}>
-                <title>Call ΔOI {b.dce >= 0 ? "+" : ""}{compact(b.dce)} · {fmtT(b.t)}</title>
+                <title>Call ΔOI {b.dce >= 0 ? "+" : ""}{oiCr(b.dce)} · {fmtT(b.t)}</title>
               </rect>
             </g>
           );

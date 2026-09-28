@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import { useStore } from "../store";
 import { api, type OiWallPt } from "../lib/api";
 import { bucketStart, istTime } from "../lib/istTime";
-import { compact, nf, oiCr, sk } from "../lib/format";
+import { compact, nf, oiCr, oiSigned, sk } from "../lib/format";
 import { PcrChart } from "./PcrChart";
 import { SelectMenu } from "./SelectMenu";
 import { useIsMobile } from "../lib/useIsMobile";
@@ -918,11 +918,10 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   // crores on both sides (compact() mixed K and L: 7.0K calls beside 13.24L puts);
   // 3 decimals when the biggest strike is under 1 Cr
   const ldp = stats.maxOI < 1e7 ? 3 : 2;
-  const lk = (v: number) => nf(v / 1e7, ldp);
-  const slk = (v: number) => {
-    const l = Math.round(v / 10 ** (7 - ldp)) / 10 ** ldp;
-    return `${l > 0 ? "+" : l < 0 ? "−" : ""}${nf(Math.abs(l), ldp)}`;
-  };
+  // OI in Lakh under 1 Cr, Crore from there (lib/format oiCr)
+  void ldp;
+  const lk = (v: number) => oiCr(v);
+  const slk = (v: number) => oiSigned(v);
   const ladderEl = (
     <div ref={jumpBoxRef} className={isMobile ? "" : "min-h-0 flex-1 overflow-y-auto"}>
       {/* ONE sticky row: jump chips + legend (was three rows) */}
@@ -933,7 +932,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           <span className="flex items-center gap-1"><Sw c={PUT_OI} /> put</span>
           <span className="flex items-center gap-1"><Sw c={OI_ADD} /> added</span>
           <span className="flex items-center gap-1"><Sw c={OI_CUT} /> cut · {tf === 0 ? "day" : `${tf}m`}</span>
-          <span>· Cr</span>
+          <span>· L / Cr</span>
         </div>
       </div>
       <div className={isMobile ? "" : "mx-auto max-w-3xl"}>
@@ -974,11 +973,10 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   // crores: 2 decimals, 3 when the biggest strike is under 1 Cr (SENSEX /
   // BANKEX / stocks -- otherwise most of their strikes read 0.00)
   const dp = stats.maxOI < 1e7 ? 3 : 2;
-  const L1 = (v: number) => nf(v / 1e7, dp);
-  const S1 = (v: number) => {
-    const l = Math.round(v / 10 ** (7 - dp)) / 10 ** dp; // rounded first, so a tiny change reads 0.00, not +0.00
-    return `${l > 0 ? "+" : l < 0 ? "−" : ""}${nf(Math.abs(l), dp)}`;
-  };
+  // OI in Lakh under 1 Cr, Crore from there (lib/format oiCr)
+  void dp;
+  const L1 = (v: number) => oiCr(v);
+  const S1 = (v: number) => oiSigned(v);
   const tone = (v: number, pos: string, neg: string) => (v > 0 ? pos : v < 0 ? neg : "text-term-dim");
   const GRID = "w-full border-separate border-spacing-0 text-[12px] tabular-nums [&_tr>*:first-child]:border-l";
   const GTH =
@@ -1186,13 +1184,13 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           <tbody>
             <tr>
               <td className={`${GTD} text-term-dim`}>Biggest</td>
-              <td className={`${GTD} text-right font-semibold text-down`}>{sk(last.cw)} · {L1(last.cwOI)}Cr</td>
-              <td className={`${GTD} text-right font-semibold text-up`}>{sk(last.pw)} · {L1(last.pwOI)}Cr</td>
+              <td className={`${GTD} text-right font-semibold text-down`}>{sk(last.cw)} · {L1(last.cwOI)}</td>
+              <td className={`${GTD} text-right font-semibold text-up`}>{sk(last.pw)} · {L1(last.pwOI)}</td>
             </tr>
             <tr>
               <td className={`${GTD} rounded-bl-lg text-term-dim`}>Next</td>
-              <td className={`${GTD} text-right text-term-text`}>{last.cw2 != null ? `${sk(last.cw2)} · ${L1(last.cw2OI ?? 0)}Cr` : "–"}</td>
-              <td className={`${GTD} rounded-br-lg text-right text-term-text`}>{last.pw2 != null ? `${sk(last.pw2)} · ${L1(last.pw2OI ?? 0)}Cr` : "–"}</td>
+              <td className={`${GTD} text-right text-term-text`}>{last.cw2 != null ? `${sk(last.cw2)} · ${L1(last.cw2OI ?? 0)}` : "–"}</td>
+              <td className={`${GTD} rounded-br-lg text-right text-term-text`}>{last.pw2 != null ? `${sk(last.pw2)} · ${L1(last.pw2OI ?? 0)}` : "–"}</td>
             </tr>
           </tbody>
         </table>
@@ -1980,7 +1978,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           ] as const
         ).map(([side, oi, add, cut, wall, tag, addCls, cutCls], i) => {
           const net = add + cut;
-          const l1 = (v: number) => `${nf(v / 1e7, dp)}Cr`;
+          const l1 = (v: number) => oiCr(v);
           const sgn = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${l1(Math.abs(v))}`;
           return (
             <tr key={side}>

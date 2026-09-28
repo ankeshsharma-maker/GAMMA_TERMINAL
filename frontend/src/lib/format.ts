@@ -7,10 +7,14 @@ export const nf = (n: number | null | undefined, d = 2): string =>
 export const lakhs = (n: number | null | undefined): string =>
   n === null || n === undefined || Number.isNaN(n) ? "–" : `${(n / 1e5).toFixed(2)}L`;
 
-/** OI in crores -- every OI figure in the app (asked 25-Sep): 2 decimals,
- *  3 under 0.1 Cr so small strikes / SENSEX don't read 0.00 */
-export const oiCr = (n: number | null | undefined): string =>
-  n === null || n === undefined || Number.isNaN(n) ? "–" : `${(n / 1e7).toFixed(Math.abs(n) < 1e6 ? 3 : 2)}Cr`;
+/** every OI figure in the app: in Lakh under 1 Crore ("78.40L"), in Crore from there ("1.64Cr")
+ *  -- asked 28-Sep (was always Crore, so most strikes read 0.0xxCr) */
+export const oiCr = (n: number | null | undefined): string => {
+  if (n === null || n === undefined || Number.isNaN(n)) return "–";
+  return Math.abs(n) >= 1e7 ? `${(n / 1e7).toFixed(2)}Cr` : `${(n / 1e5).toFixed(2)}L`;
+};
+/** the same with a sign: "+78.40L" / "−1.64Cr" / "0" */
+export const oiSigned = (n: number): string => (n ? `${n > 0 ? "+" : "−"}${oiCr(Math.abs(n))}` : "0");
 
 /** always-crores formatter, e.g. "1.04 Cr" */
 export const crores = (n: number | null | undefined): string =>

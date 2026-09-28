@@ -46,13 +46,13 @@ function HotCell({ hs }: { hs?: HotStrike[] }) {
         <span
           key={`${h.strike}${h.side}`}
           className={`num whitespace-nowrap text-[10.5px] font-semibold ${hotStyle(h)}`}
-          title={`${h.side} OI now ${oiCr(h.oi)} · ${h.chg >= 0 ? "built" : "unwound"} ${nf(
-            Math.abs(h.chg) / 1e7,
-            1
-          )}L (${nf(Math.abs(h.pct), 0)}%) in ~${h.mins} min`}
+          title={`${h.side} OI now ${oiCr(h.oi)} · ${h.chg >= 0 ? "built" : "unwound"} ${oiCr(Math.abs(h.chg))} (${nf(
+            Math.abs(h.pct),
+            0
+          )}%) in ~${h.mins} min`}
         >
           {sk(h.strike)} {h.side} {h.chg >= 0 ? "+" : "−"}
-          {nf(Math.abs(h.chg) / 1e7, 2)}Cr{" "}
+          {oiCr(Math.abs(h.chg))}{" "}
           <span className="font-normal opacity-80">
             ({h.pct >= 0 ? "+" : "−"}
             {nf(Math.abs(h.pct), 0)}%)
