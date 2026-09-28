@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
@@ -15,6 +15,17 @@ import type { ShortGuardLeg } from "../types";
 import { Capacitor } from "@capacitor/core";
 
 /** open-position card text: 2px smaller in the phone app (asked 28-Sep), the website keeps its sizes */
+/** the phone app: position cards exactly like Flattrade's (3 lines, nothing else); a tap opens the
+ *  BUY / SELL sheet, which also carries Exit, + SL / TGT and the short-strike warning (asked 28-Sep).
+ *  ("preview.app" = 1 in localStorage shows the same in a browser, for previews) */
+const APP = (() => {
+  try {
+    return Capacitor.isNativePlatform() || localStorage.getItem("preview.app") === "1";
+  } catch {
+    return Capacitor.isNativePlatform();
+  }
+})();
+
 const FS = Capacitor.isNativePlatform()
   ? { line: "text-[12px]", name: "text-[14px]", pct: "text-[13px]" }
   : { line: "text-[14px]", name: "text-[16px]", pct: "text-[15px]" };
@@ -85,6 +96,15 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
   };
   // tapping a card opens its actions (target / SL, select, square off)
   const [openKey, setOpenKey] = useState<string | null>(null);
+  // press and hold a card (~0.7 s): the Flattrade-style BUY / SELL sheet for that contract
+  const [sheet, setSheet] = useState<{ r: any; avg: number; pnl: number } | null>(null);
+  const pressT = useRef<number | null>(null);
+  const pressFired = useRef(false);
+  const pressXY = useRef<[number, number] | null>(null);
+  const cancelPress = () => {
+    if (pressT.current) window.clearTimeout(pressT.current);
+    pressT.current = null;
+  };
   useEffect(() => onCount?.(rows.length), [rows.length, onCount]);
 
   // the short-strike guard's read of each short leg, keyed by trading symbol --
@@ -327,16 +347,47 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
           return (
             <div
               key={key || i}
-              onClick={() => setOpenKey(open ? null : key)}
-              className={`cursor-pointer rounded-lg bg-term-panel px-4 py-2.5 ${
+              onPointerDown={(e) => {
+                pressFired.current = false;
+                pressXY.current = [e.clientX, e.clientY];
+                cancelPress();
+                pressT.current = window.setTimeout(() => {
+                  pressFired.current = true;
+                  pressT.current = null;
+                  try {
+                    navigator.vibrate?.(30);
+                  } catch {
+                    /* no vibration */
+                  }
+                  setSheet({ r, avg, pnl });
+                }, 700);
+              }}
+              onPointerMove={(e) => {
+                const p = pressXY.current;
+                if (p && Math.hypot(e.clientX - p[0], e.clientY - p[1]) > 10) cancelPress(); // a scroll, not a hold
+              }}
+              onPointerUp={cancelPress}
+              onPointerLeave={cancelPress}
+              onPointerCancel={cancelPress}
+              onContextMenu={(e) => e.preventDefault()}
+              onClick={() => {
+                if (pressFired.current) {
+                  pressFired.current = false; // the hold opened the sheet; don't also toggle the card
+                  return;
+                }
+                if (APP) return setSheet({ r, avg, pnl }); // the app: a tap opens the sheet, like Flattrade
+                setOpenKey(open ? null : key);
+              }}
+              title="Tap for actions · press and hold to BUY / SELL"
+              className={`cursor-pointer select-none rounded-lg bg-term-panel px-4 py-2.5 ${
                 sel ? "ring-1 ring-term-accent" : ""
               }`}
             >
               <div className={`flex items-baseline justify-between gap-2 ${FS.line}`}>
                 <span className="flex items-center gap-2 text-term-text">
                   {prd} | {r.exch ?? "NFO"}
-                  {/* exit right from the card -- no need to open it first */}
-                  {!!qty && (
+                  {/* exit right from the card -- no need to open it first (the app: in the tap sheet) */}
+                  {!!qty && !APP && (
                     <button
                       disabled={isBusy}
                       onClick={(e) => {
@@ -389,7 +440,7 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
                 </span>
               </div>
 
-              {(() => {
+              {!APP && (() => {
                 const g = qty < 0 ? guard[String(r.tsym ?? "")] : undefined;
                 if (!g || g.level < 1) return null;
                 const t = guardText(g);
@@ -417,12 +468,12 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
                 );
               })()}
               {/* SL / target on this leg: always on the card (it used to hide in the tap-to-expand area) */}
-              {!!qty && (
+              {!!qty && !APP && (
                 <div className="mt-1.5 flex" onClick={(e) => e.stopPropagation()}>
                   <LegBracketBadge r={r} bracket={findBracket(r, legRules)} onChanged={loadLegRules} />
                 </div>
               )}
-              {open && (
+              {open && !APP && (
                 <div
                   className="mt-2 flex flex-col gap-1.5 border-t border-term-border/60 pt-2"
                   onClick={(e) => e.stopPropagation()}
@@ -453,6 +504,217 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
             </div>
           );
         })}
+      </div>
+      {sheet && (
+        <PositionSheet
+          r={sheet.r}
+          avg={sheet.avg}
+          pnl={sheet.pnl}
+          onClose={() => setSheet(null)}
+          extras={
+            APP && (n(sheet.r.netqty) ?? 0) !== 0
+              ? (() => {
+                  const r = sheet.r;
+                  const g = (n(r.netqty) ?? 0) < 0 ? guard[String(r.tsym ?? "")] : undefined;
+                  const t = g && g.level >= 1 ? guardText(g) : null;
+                  return (
+                    <div className="mt-3 flex flex-col gap-2">
+                      {t && g && (
+                        <div className={`rounded-md px-2.5 py-1.5 text-[12px] leading-snug ${g.level >= 2 ? "bg-down/15 text-down" : "bg-amber-500/15 text-amber-400"}`}>
+                          <b>{g.level >= 2 ? "🔴 DANGER" : "🟠 WARNING"}</b> · {t.where}
+                          {t.next && <> · {t.next}</>}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <LegBracketBadge r={r} bracket={findBracket(r, legRules)} onChanged={loadLegRules} />
+                        <button
+                          disabled={busy.has(r.tsym)}
+                          onClick={() => {
+                            setSheet(null);
+                            squareOff(r);
+                          }}
+                          className="ml-auto rounded border border-down/60 bg-down/10 px-3 py-1.5 text-[12px] font-semibold text-down disabled:opacity-40"
+                          title="Exit the whole position at market"
+                        >
+                          Exit all
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()
+              : null
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+/** Press-and-hold on a position: the broker app's sheet for that contract -- BUY / SELL, lots, at
+ *  market or at YOUR price (a limit order that waits in the order book, e.g. "sell 2 of my 4 lots at
+ *  480"). Orders by the position's own broker symbol, so SENSEX / BSE contracts need no lookup.
+ *  Starts on the side that reduces the position, with half of it. */
+function PositionSheet({
+  r,
+  avg,
+  pnl,
+  onClose,
+  init,
+  extras,
+}: {
+  r: any;
+  avg: number;
+  pnl: number;
+  onClose: () => void;
+  /** start values (Repeat Order: the executed order's side / lots / type / price) */
+  init?: { side: "BUY" | "SELL"; lots: number; type: "LMT" | "MKT"; price: number | null };
+  /** more actions under the order form (the app: Exit all, + SL / TGT, the short-strike warning) */
+  extras?: ReactNode;
+}) {
+  const net = Number(r.netqty) || 0;
+  const lotSize = Number(r.ls) || 1;
+  const heldLots = Math.floor(Math.abs(net) / lotSize);
+  const lp = r.lp != null ? Number(r.lp) : null;
+  const name = r.dname || r.tsym;
+  const prd = r.s_prdt_ali ?? PRD[String(r.prd ?? "")] ?? r.prd ?? "NRML";
+  const closeSide: "BUY" | "SELL" = net > 0 ? "SELL" : "BUY";
+  const [side, setSide] = useState<"BUY" | "SELL">(init?.side ?? (net ? closeSide : "BUY"));
+  const [lots, setLots] = useState(init?.lots ?? Math.max(1, Math.floor(heldLots / 2) || 1));
+  const [type, setType] = useState<"LMT" | "MKT">(init?.type ?? "LMT");
+  const [limit, setLimit] = useState(
+    init?.price ? init.price.toFixed(2) : lp != null ? lp.toFixed(2) : ""
+  );
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const buy = side === "BUY";
+  const qty = lots * lotSize;
+  const reduces = !!net && side === closeSide;
+  const price = type === "LMT" ? parseFloat(limit) || 0 : 0;
+  const px = price || lp || 0;
+
+  const place = async () => {
+    setErr(null);
+    if (type === "LMT" && !(price > 0)) return setErr("Enter your price, or pick Market.");
+    const lines = [
+      `${side} ${lots} lot${lots === 1 ? "" : "s"} (${qty} qty) of ${name}`,
+      type === "LMT" ? `LIMIT @ ${price.toFixed(2)} — waits in the order book until the price reaches it` : "at MARKET — fills now",
+      "REAL order on Flattrade.",
+    ];
+    if (reduces && qty <= Math.abs(net)) lines.push(`Books ${qty} of your ${Math.abs(net)} (${Math.abs(net) - qty} left).`);
+    if (reduces && qty > Math.abs(net)) lines.push(`⚠ That is MORE than you hold (${Math.abs(net)}): the rest opens a position the other way.`);
+    if (net && !reduces && pnl < 0) lines.push(`⚠ This ADDS to a LOSING position (₹${nf(pnl, 0)}). Is it in your plan?`);
+    if (type === "LMT" && lp != null && (buy ? price > lp : price < lp))
+      lines.push(`Note: your price is past the current ${lp.toFixed(2)}, so it will fill right away.`);
+    if (!window.confirm(lines.join("\n"))) return;
+    setBusy(true);
+    try {
+      // units, not lots: the server checks they are whole lots of ITS lot size
+      await api.brokerOrderTsym({ tsym: r.tsym, exch: r.exch, side, lots, qty, prd: r.prd, price: type === "LMT" ? price : 0 });
+      onClose();
+    } catch (e: any) {
+      setErr(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const seg = (on: boolean, tone = "accent") =>
+    `flex-1 rounded border py-1.5 text-[12px] font-semibold ${
+      on
+        ? tone === "up"
+          ? "border-up bg-up text-white"
+          : tone === "down"
+          ? "border-down bg-down text-white"
+          : "border-term-accent bg-term-accent/20 text-term-accent"
+        : "border-term-border text-term-dim"
+    }`;
+  const row = (k: string, v: ReactNode) => (
+    <div className="flex items-baseline justify-between border-b border-term-border/50 py-1.5 text-[12px]">
+      <span className="text-term-dim">{k}</span>
+      <span className="tabular-nums text-term-text">{v}</span>
+    </div>
+  );
+  return (
+    <div className="fixed inset-0 z-[55] flex items-end justify-center bg-black/60 sm:items-center" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-t-xl border border-term-border bg-term-panel p-3 shadow-2xl sm:rounded-xl"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="truncate text-[15px] font-semibold text-term-text">{name}</div>
+        <div className="mt-0.5 flex items-center gap-2 text-[12px]">
+          <span className="text-term-accent">{r.exch ?? "NFO"}</span>
+          <span className="tabular-nums font-semibold text-term-text">{lp != null ? lp.toFixed(2) : "–"}</span>
+          <span className="rounded border border-term-border px-1.5 text-[10px] text-term-text">{prd}</span>
+          <span className="ml-auto rounded bg-down px-1 text-[9px] font-bold text-white">LIVE</span>
+        </div>
+
+        <div className="mt-3 flex gap-2">
+          <button onClick={() => setSide("BUY")} className={seg(buy, "up")}>BUY</button>
+          <button onClick={() => setSide("SELL")} className={seg(!buy, "down")}>SELL</button>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <div>
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-term-dim">
+              Lots · qty {qty}
+              {heldLots > 0 && <span className="normal-case"> · you hold {heldLots}</span>}
+            </div>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setLots((n) => Math.max(1, n - 1))} className="rounded border border-term-border px-3 py-1.5 text-term-text">−</button>
+              <span className="tabular-nums flex-1 text-center text-[14px] font-semibold text-term-text">{lots}</span>
+              <button onClick={() => setLots((n) => Math.min(500, n + 1))} className="rounded border border-term-border px-3 py-1.5 text-term-text">+</button>
+            </div>
+            {reduces && heldLots > 1 && (
+              <div className="mt-1 flex gap-1">
+                {[
+                  ["½", Math.max(1, Math.floor(heldLots / 2))],
+                  ["All", heldLots],
+                ].map(([l, v]) => (
+                  <button key={String(l)} onClick={() => setLots(Number(v))} className="chipbtn text-[11px]">
+                    {l}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-term-dim">Price</div>
+            <div className="flex gap-1">
+              <button onClick={() => setType("LMT")} className={seg(type === "LMT")}>Limit</button>
+              <button onClick={() => setType("MKT")} className={seg(type === "MKT")}>Market</button>
+            </div>
+            <input
+              id="pos-sheet-price"
+              inputMode="decimal"
+              disabled={type !== "LMT"}
+              value={type === "LMT" ? limit : ""}
+              onChange={(e) => setLimit(e.target.value.replace(/[^\d.]/g, ""))}
+              placeholder={type === "LMT" ? "your price" : "at market"}
+              className="mt-1 w-full rounded border border-term-border bg-term-bg px-2 py-1.5 text-right text-[13px] tabular-nums text-term-text outline-none focus:border-term-accent disabled:opacity-40"
+            />
+          </div>
+        </div>
+
+        <div className="mt-3">
+          {row("Net qty", net ? `${Math.abs(net)} ${net > 0 ? "long" : "short"}` : "0 (closed)")}
+          {!!net && row("Avg price", avg ? avg.toFixed(2) : "–")}
+          {row("P&L", <span className={signColor(pnl)}>{nf(pnl, 2)}</span>)}
+        </div>
+
+        {err && <div className="mt-2 text-[12px] text-down">{err}</div>}
+        <button
+          disabled={busy}
+          onClick={place}
+          className={`mt-3 w-full rounded-lg py-3 text-[14px] font-bold text-white disabled:opacity-50 ${buy ? "bg-up" : "bg-down"}`}
+        >
+          {busy ? "…" : `${side} ${lots} lot${lots === 1 ? "" : "s"} ${type === "LMT" && price ? `@ ${price.toFixed(2)}` : "at market"}`}
+          {px ? <span className="ml-1.5 text-[12px] font-normal opacity-90">≈ ₹{nf(px * qty, 0)}</span> : null}
+        </button>
+        <div className="mt-1.5 text-center text-[10px] text-term-dim">
+          {type === "LMT" ? "A limit order waits in Orders until your price is reached — modify or cancel it there." : "Fills at the market now."}
+        </div>
+        {extras}
       </div>
     </div>
   );
@@ -767,11 +1029,26 @@ export function OrdersTab() {
   const [liveLog, setLiveLog] = useState<any[]>([]);
   const [tab, setTab] = useState<"open" | "done">("open");
   const [openKey, setOpenKey] = useState<string | null>(null);
+  // tap an executed live order: its details + Repeat Order (the broker app's order sheet)
+  const [detail, setDetail] = useState<OrderCard | null>(null);
+  // each contract's LTP, from the live positions (the order book carries none)
+  const [ltpOf, setLtpOf] = useState<Record<string, number>>({});
   useEffect(() => {
     let alive = true;
     const load = () => {
       api.liveOrderLog().then((d) => alive && setLiveLog(d.orders || []), () => {});
       if (broker?.authed) api.brokerOrders().then((d) => alive && setBook(d.orders || []), () => {});
+      if (broker?.authed)
+        api.brokerPositions().then(
+          (d) =>
+            alive &&
+            setLtpOf(
+              Object.fromEntries(
+                (d.positions || []).filter((r: any) => r.tsym && r.lp != null && r.lp !== "").map((r: any) => [r.tsym, Number(r.lp)])
+              )
+            ),
+          () => {}
+        );
     };
     load();
     const t = setInterval(load, 5000);
@@ -880,7 +1157,7 @@ export function OrdersTab() {
       <div className="flex shrink-0 items-stretch border-b border-term-border bg-term-panel">
         {(
           [
-            ["open", "Open", openCards.length],
+            ["open", "Pending", openCards.length],
             ["done", "Executed", doneCards.length],
           ] as const
         ).map(([k, label, count]) => (
@@ -930,48 +1207,52 @@ export function OrdersTab() {
           {shown.map((c) => {
             // Modify / Cancel on every open order (was hidden until the card was tapped)
             const expanded = c.open && !!c.book?.norenordno;
+            const tappable = !c.open && !!c.book?.tsym;
             return (
-              <div key={c.key} className="rounded-lg bg-term-panel px-4 py-2.5">
-                <div className="flex items-center justify-between gap-2 text-[14px]">
-                  <span className="text-term-text">
-                    <span className={c.side === "BUY" ? "text-up" : "text-down"}>{c.side}</span> | {c.prd} | {c.exch}
+              <div
+                key={c.key}
+                onClick={tappable ? () => setDetail(c) : undefined}
+                title={tappable ? "Tap for the order's details · Repeat Order" : undefined}
+                className={`rounded-lg bg-term-panel px-4 py-2.5 ${tappable ? "cursor-pointer active:bg-term-panel2" : ""}`}
+              >
+                {/* the broker app's order card: [BUY] Qty. 40/40 · time [STATUS] / contract · price / exch prd type · LTP */}
+                <div className="flex items-center justify-between gap-2 text-[12px]">
+                  <span className="flex items-center gap-2 tabular-nums">
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${
+                        c.side === "BUY" ? "bg-term-accent/15 text-term-accent" : "bg-down/15 text-down"
+                      }`}
+                    >
+                      {c.side}
+                    </span>
+                    <span className="text-term-dim">
+                      Qty.{" "}
+                      {c.filled != null && c.qty != null
+                        ? `${c.filled}/${c.qty}`
+                        : c.qty ?? (c.lots ? `${c.lots} lot${c.lots > 1 ? "s" : ""}` : "–")}
+                    </span>
                   </span>
-                  <span className={`whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium ${statusCls(c.status)}`}>
-                    {c.status}
+                  <span className="flex items-center gap-2 whitespace-nowrap">
+                    <span className="tabular-nums text-term-dim">⏱ {c.time}</span>
+                    <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${statusCls(c.status)}`}>{c.status}</span>
                   </span>
                 </div>
                 <div className="mt-1 flex items-baseline justify-between gap-2">
-                  <span className="truncate text-[16px] text-term-text">{c.name}</span>
-                  <span className="whitespace-nowrap text-[13px] tabular-nums text-term-dim">{c.time}</span>
+                  <span className="truncate text-[14px] text-term-text">{c.name}</span>
+                  <span className="whitespace-nowrap text-[14px] tabular-nums text-term-text">
+                    {/* executed: what it filled at; working: its own price (trigger for a stop order) */}
+                    {c.avg != null && c.avg > 0 ? c.avg.toFixed(2) : c.trg != null && c.trg > 0 ? `${c.price} · trg ${c.trg.toFixed(2)}` : c.price}
+                  </span>
                 </div>
-                <div className="mt-1 flex items-baseline justify-between gap-2 text-[14px]">
-                  <span className="flex gap-4 whitespace-nowrap tabular-nums">
-                    <span>
-                      <span className="text-term-dim">Qty : </span>
-                      <span className="text-term-text">
-                        {c.filled != null && c.qty != null
-                          ? `${c.filled}/${c.qty}`
-                          : c.qty ?? (c.lots ? `${c.lots} lot${c.lots > 1 ? "s" : ""}` : "–")}
-                      </span>
-                    </span>
-                    <span>
-                      <span className="text-term-dim">Price : </span>
-                      <span className="text-term-text">{c.price}</span>
-                    </span>
+                <div className="mt-1 flex items-baseline justify-between gap-2 text-[12px] text-term-dim">
+                  <span className="flex gap-2 whitespace-nowrap">
+                    <span>{c.exch}</span>
+                    <span>{c.prd}</span>
+                    <span>{c.price === "MKT" ? "MKT" : c.book?.prctyp || (c.price !== "–" ? "LMT" : "")}</span>
                   </span>
-                  <span className="whitespace-nowrap tabular-nums">
-                    {c.trg != null && c.trg > 0 ? (
-                      <>
-                        <span className="text-term-dim">Trg </span>
-                        <span className="text-term-text">{c.trg.toFixed(2)}</span>
-                      </>
-                    ) : c.avg != null && c.avg > 0 ? (
-                      <>
-                        <span className="text-term-dim">Avg </span>
-                        <span className="text-term-text">{c.avg.toFixed(2)}</span>
-                      </>
-                    ) : null}
-                  </span>
+                  {c.book?.tsym && ltpOf[c.book.tsym] != null && (
+                    <span className="whitespace-nowrap tabular-nums">LTP {ltpOf[c.book.tsym].toFixed(2)}</span>
+                  )}
                 </div>
                 {c.reason && <div className="mt-1 text-[12px] leading-snug text-down/90">{c.reason}</div>}
                 {expanded && (
@@ -982,6 +1263,89 @@ export function OrdersTab() {
               </div>
             );
           })}
+        </div>
+      </div>
+      {detail && <OrderDetailSheet c={detail} onClose={() => setDetail(null)} />}
+    </div>
+  );
+}
+
+/** An executed order's sheet (the broker app's): what filled, at what, its IDs -- and Repeat Order,
+ *  which opens the BUY / SELL sheet with this order's side, lots and price type filled in. */
+function OrderDetailSheet({ c, onClose }: { c: OrderCard; onClose: () => void }) {
+  const o = c.book || {};
+  const [repeat, setRepeat] = useState(false);
+  const ls = Number(o.ls) || 1;
+  const mkt = /MKT/i.test(o.prctyp || "");
+  if (repeat) {
+    return (
+      <PositionSheet
+        r={{ tsym: o.tsym, exch: o.exch, netqty: 0, ls, lp: null, dname: c.name, prd: o.prd, s_prdt_ali: o.s_prdt_ali }}
+        avg={0}
+        pnl={0}
+        onClose={onClose}
+        init={{
+          side: c.side,
+          lots: Math.max(1, Math.round((c.qty ?? ls) / ls)),
+          type: mkt ? "MKT" : "LMT",
+          price: mkt ? null : Number(o.prc) || null,
+        }}
+      />
+    );
+  }
+  const row = (k: string, v: ReactNode) => (
+    <div className="flex items-baseline justify-between gap-3 border-b border-term-border/50 py-1.5 text-[12px]">
+      <span className="text-term-dim">{k}</span>
+      <span className="truncate text-right tabular-nums text-term-text">{v}</span>
+    </div>
+  );
+  return (
+    <div className="fixed inset-0 z-[55] flex items-end justify-center bg-black/60 sm:items-center" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-t-xl border border-term-border bg-term-panel p-3 shadow-2xl sm:rounded-xl"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="truncate text-[15px] font-semibold text-term-text">{c.name}</div>
+        <div className="mt-1 flex items-center gap-2 text-[12px]">
+          <span className="text-term-accent">{c.exch}</span>
+          <span className={`rounded px-1.5 text-[11px] font-semibold ${c.side === "BUY" ? "bg-up/15 text-up" : "bg-down/15 text-down"}`}>{c.side}</span>
+          <span className={`rounded px-1.5 text-[11px] font-medium ${statusCls(c.status)}`}>{c.status}</span>
+        </div>
+
+        {!isViewer() && (
+          <button
+            onClick={() => setRepeat(true)}
+            className="mx-auto mt-3 block w-2/3 rounded-lg bg-term-accent py-2.5 text-[14px] font-bold text-white active:brightness-110"
+          >
+            Repeat Order
+          </button>
+        )}
+
+        <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+          {(
+            [
+              ["Filled qty", c.filled != null && c.qty != null ? `${c.filled}/${c.qty}` : c.qty ?? "–"],
+              ["Avg. price", c.avg != null && c.avg > 0 ? c.avg.toFixed(2) : "–"],
+              ["Type", mkt ? "MKT" : o.prctyp || "LMT"],
+            ] as [string, ReactNode][]
+          ).map(([k, v]) => (
+            <div key={k}>
+              <div className="text-[11px] text-term-dim">{k}</div>
+              <div className="tabular-nums text-[14px] font-semibold text-term-accent">{v}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-3">
+          {row("Status", c.status)}
+          {row("Price", c.price)}
+          {c.trg != null && c.trg > 0 && row("Trigger price", c.trg.toFixed(2))}
+          {row("Validity / Product", `${o.ret || "DAY"} / ${c.prd}`)}
+          {row("Time", o.norentm || c.time)}
+          {o.exchordid && row("Exchange order ID", o.exchordid)}
+          {o.norenordno && row("Order ID", o.norenordno)}
+          {c.reason && row("Reason", <span className="text-down">{c.reason}</span>)}
         </div>
       </div>
     </div>

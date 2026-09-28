@@ -255,11 +255,25 @@ async def funds():
     }
 
 
+def _with_lot_size(rows):
+    """The lot size on every row when the broker leaves it out (the position sheet and Repeat Order
+    count lots from it; a missing one would read 100 qty as "100 lots")."""
+    from .brokers.flattrade import parse_noren_tsym
+    from .processing import lot_size
+
+    for o in rows or []:
+        if isinstance(o, dict) and not o.get("ls"):
+            sym = (parse_noren_tsym(o.get("tsym") or "") or {}).get("symbol")
+            if sym:
+                o["ls"] = str(lot_size(sym))
+    return rows
+
+
 @router.get("/positions")
 async def positions():
     b = _require_auth()
     try:
-        return {"positions": await b.positions()}
+        return {"positions": _with_lot_size(await b.positions())}
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
 
@@ -349,22 +363,38 @@ async def order_tsym(body: dict):
         # qty is lots x the underlying's lot size -- unknown underlying, unknown qty
         raise HTTPException(status_code=422, detail=f"can't size an order for {tsym}: not a recognised option symbol")
     exch = d.get("exch") or ("BFO" if is_bse_index(parsed["symbol"]) else "NFO")
-    qty = lots * lot_size(parsed["symbol"])
+    lot = lot_size(parsed["symbol"])
+    qty = lots * lot
+    if d.get("qty") not in (None, ""):
+        # an exact quantity (the position sheet sends units, so a lot-size mix-up between the app and
+        # the server can never multiply an order) -- it must be whole lots
+        try:
+            qty = int(float(d["qty"]))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="qty must be a number")
+        if qty <= 0 or qty % lot:
+            raise HTTPException(status_code=422, detail=f"qty {qty} isn't a whole number of {lot}-lots")
+    # a limit price (the position sheet: "sell 2 lots at 480") -- none / 0 = at market
+    try:
+        price = float(d.get("price") or 0)
+    except (TypeError, ValueError):
+        price = 0.0
+    price = round(round(price / 0.05) * 0.05, 2) if price > 0 else 0.0
     log_base = {
         "mode": "live", "tsym": tsym, "side": side, "qty": qty,
         "symbol": parsed.get("symbol"), "strike": parsed.get("strike"),
-        "optionType": parsed.get("optionType"),
+        "optionType": parsed.get("optionType"), **({"note": f"limit {price}"} if price else {}),
     }
     try:
         res = await b.place_order(
             exch=exch, tsym=tsym, qty=qty, side=side,
-            order_type="MKT", price=0.0, product=prd,
+            order_type="LMT" if price else "MKT", price=price, product=prd,
         )
     except Exception as exc:  # noqa: BLE001
         store.log_live_order({**log_base, "status": "REJECTED", "error": str(exc)})
         raise HTTPException(status_code=502, detail=f"broker rejected: {exc}")
     store.log_live_order({**log_base, "status": "PLACED", "orderId": res.get("orderId")})
-    return {**res, "qty": qty}
+    return {**res, "qty": qty, "price": price}
 
 
 def _num(v) -> float:
@@ -429,7 +459,7 @@ async def basket_margin(body: dict):
 async def orders():
     b = _require_auth()
     try:
-        return {"orders": await b.order_book()}
+        return {"orders": _with_lot_size(await b.order_book())}
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
 

@@ -1047,8 +1047,12 @@ export const api = {
     side: "BUY" | "SELL";
     lots?: number;
     prd?: string;
+    /** a limit price; none / 0 = at market */
+    price?: number;
+    /** an exact quantity in units (must be whole lots) -- overrides `lots` */
+    qty?: number;
   }) =>
-    j<{ ok: boolean; orderId?: string; qty: number; raw?: any }>("/api/broker/order-tsym", {
+    j<{ ok: boolean; orderId?: string; qty: number; price?: number; raw?: any }>("/api/broker/order-tsym", {
       method: "POST",
       body: JSON.stringify(body),
     }),
