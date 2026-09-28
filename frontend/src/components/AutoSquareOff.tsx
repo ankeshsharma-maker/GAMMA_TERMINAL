@@ -2,11 +2,10 @@ import { useEffect, useState } from "react";
 import { api, type BrokerBracket } from "../lib/api";
 import { nf } from "../lib/format";
 
-/** Portfolio-level auto square-off: a compact trigger + popover (moved out of
- *  BrokerTab's own body and into the Positions tab bar to save vertical
- *  space) — server-side MARKET-flattens every open broker position once the
- *  P&L threshold is crossed, works with the app closed. Only rendered while
- *  the Broker Positions sub-tab is active and a broker is connected. */
+/** Profit Guard + portfolio-level auto square-off for live broker positions, as a compact trigger
+ *  and popover. Server-side, so it works with the app closed. Profit Guard watches the day's PEAK
+ *  P&L: lock part of it once it's big enough, warn when it starts slipping, and exit (or only
+ *  alert) when too much has been given back. The older rupee SL / target / trail / floor stay. */
 export function AutoSquareOff() {
   const [open, setOpen] = useState(false);
   const [bracket, setBracket] = useState<BrokerBracket | null>(null);
@@ -15,6 +14,12 @@ export function AutoSquareOff() {
   const [trailAmt, setTrailAmt] = useState("");
   const [floorAmt, setFloorAmt] = useState("");
   const [bBasis, setBBasis] = useState<"today" | "mtm">("today");
+  // Profit Guard
+  const [lockAfter, setLockAfter] = useState("3000");
+  const [lockPct, setLockPct] = useState("50");
+  const [giveback, setGiveback] = useState("");
+  const [warnPct, setWarnPct] = useState("25");
+  const [action, setAction] = useState<"alert" | "squareoff">("alert");
 
   useEffect(() => {
     let alive = true;
@@ -27,35 +32,43 @@ export function AutoSquareOff() {
     };
   }, []);
 
+  const n = (v: string) => parseFloat(v) || 0;
+  const guardParts = [
+    n(lockAfter) > 0 ? (n(lockPct) > 0 ? `keep ${n(lockPct)}% of the peak once it reaches ₹${nf(n(lockAfter), 0)}` : `never below breakeven once it reaches ₹${nf(n(lockAfter), 0)}`) : "",
+    n(giveback) > 0 ? `exit after giving back ${n(giveback)}% of the peak` : "",
+    n(warnPct) > 0 ? `warn at ${n(warnPct)}% given back` : "",
+  ].filter(Boolean);
+  const oldParts = [
+    n(slAmt) > 0 ? `≤ −₹${nf(n(slAmt), 0)}` : "",
+    n(trailAmt) > 0 ? `₹${nf(n(trailAmt), 0)} back off its peak` : "",
+    n(floorAmt) > 0 ? `back down to ₹${nf(n(floorAmt), 0)} (once above it)` : "",
+    n(tgtAmt) > 0 ? `≥ +₹${nf(n(tgtAmt), 0)}` : "",
+  ].filter(Boolean);
+  const anything = guardParts.length > 0 || oldParts.length > 0;
+
   const armBracket = async () => {
-    const sl = parseFloat(slAmt) || 0;
-    const tgt = parseFloat(tgtAmt) || 0;
-    const trail = parseFloat(trailAmt) || 0;
-    const floor = parseFloat(floorAmt) || 0;
-    if (sl <= 0 && tgt <= 0 && trail <= 0 && floor <= 0) return;
+    if (!anything) return;
     const lbl = bBasis === "today" ? "today's P&L" : "open MTM";
-    const parts = [
-      sl > 0 ? `≤ −₹${nf(sl, 0)}` : "",
-      trail > 0 ? `₹${nf(trail, 0)} back off its peak` : "",
-      floor > 0 ? `back down to ₹${nf(floor, 0)} (once it's gone above that)` : "",
-      tgt > 0 ? `≥ +₹${nf(tgt, 0)}` : "",
-    ].filter(Boolean);
-    const cond = parts.join(" or ");
-    if (
-      !window.confirm(
-        `Auto square-off: flatten ALL broker positions with MARKET orders when ${lbl} is ${cond}.\nRuns on the server. Arm it now?`
-      )
-    )
-      return;
+    const what =
+      action === "alert"
+        ? "ALERT you (app + Telegram) — nothing is sold or bought"
+        : "flatten ALL broker positions with MARKET orders";
+    const cond = [...guardParts, ...oldParts.map((p) => `${lbl} ${p}`)].join("; ");
+    if (!window.confirm(`Profit Guard on ${lbl}:\n${cond}\n\nWhen a level is hit it will ${what}.\nRuns on the server. Turn it on?`)) return;
     try {
       setBracket(
         await api.brokerBracketSet({
           enabled: true,
-          slAmount: sl,
-          targetAmount: tgt,
-          trailAmount: trail,
-          floorAmount: floor,
+          slAmount: n(slAmt),
+          targetAmount: n(tgtAmt),
+          trailAmount: n(trailAmt),
+          floorAmount: n(floorAmt),
           basis: bBasis,
+          lockAfter: n(lockAfter),
+          lockPct: n(lockPct),
+          givebackPct: n(giveback),
+          warnPct: n(warnPct),
+          action,
         })
       );
     } catch (e: any) {
@@ -71,22 +84,22 @@ export function AutoSquareOff() {
   };
 
   const armed = !!bracket?.enabled;
+  const b = bracket;
   const statusLine = armed
-    ? `ARMED — flattens ALL when ${bracket!.basis === "today" ? "today's P&L" : "MTM"} ${[
-        bracket!.slAmount > 0 ? `≤ −₹${nf(bracket!.slAmount, 0)}` : "",
-        bracket!.trailAmount > 0 ? `₹${nf(bracket!.trailAmount, 0)} back off its peak` : "",
-        bracket!.targetAmount > 0 ? `≥ +₹${nf(bracket!.targetAmount, 0)}` : "",
-        bracket!.floorAmount > 0 ? `back to ₹${nf(bracket!.floorAmount, 0)} (once above it)` : "",
-      ]
-        .filter(Boolean)
-        .join(" or ")}${
-        (bracket!.trailAmount > 0 || bracket!.floorAmount > 0) && bracket!.peakPnl != null
-          ? ` · peak ₹${nf(bracket!.peakPnl, 0)}`
-          : ""
-      }${bracket!.lastPnl != null ? ` · now ₹${nf(bracket!.lastPnl, 0)}` : ""}`
-    : bracket?.triggeredAt
-    ? `⚠ ${bracket.lastReason}`
-    : "server-side: MARKET-flattens every position when the P&L threshold is crossed (works with the app closed).";
+    ? `ON — ${b!.action === "alert" ? "alerts you" : "flattens ALL"} at ${
+        b!.stopLevel != null ? `₹${nf(b!.stopLevel, 0)}` : "the levels you set"
+      }${b!.peakPnl != null ? ` · peak ₹${nf(b!.peakPnl, 0)}` : ""}${b!.lastPnl != null ? ` · now ₹${nf(b!.lastPnl, 0)}` : ""}`
+    : b?.triggeredAt
+    ? `⚠ ${b.lastReason}`
+    : "Watches your live positions on the server, even with the app closed.";
+
+  const inp = "num w-14 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent";
+  const numOnly = (f: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => f(e.target.value.replace(/[^\d.]/g, ""));
+  const preset = (label: string, set: () => void) => (
+    <button key={label} type="button" onClick={set} className="chipbtn">
+      {label}
+    </button>
+  );
 
   return (
     <div className="relative ml-auto">
@@ -95,78 +108,108 @@ export function AutoSquareOff() {
         className={`flex items-center gap-1 rounded border px-2 py-1 text-2xs font-semibold ${
           armed
             ? "border-up/50 bg-up/15 text-up"
-            : bracket?.triggeredAt
+            : b?.triggeredAt
             ? "border-amber-500/50 bg-amber-500/15 text-amber-400"
             : "border-term-dim/70 text-term-dim hover:bg-term-border"
         }`}
         title={statusLine}
       >
-        ⛨ Auto square-off {armed ? "· ARMED" : bracket?.triggeredAt ? "· ⚠" : ""}
+        ⛨ Profit guard {armed ? `· ON${b?.stopLevel != null ? ` @ ₹${nf(b.stopLevel, 0)}` : ""}` : b?.triggeredAt ? "· ⚠" : ""}
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full z-50 mt-1 w-[340px] space-y-1.5 rounded-lg border border-term-border bg-term-panel p-3 text-2xs shadow-2xl">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+          <div className="absolute right-0 top-full z-50 mt-1 w-[360px] max-w-[calc(100vw-16px)] space-y-2.5 rounded-lg border border-term-border bg-term-panel p-3 text-2xs shadow-2xl">
+            {/* ---- protect a profit that is slipping away ---- */}
+            <div className="space-y-1.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-term-dim">Protect my profit</div>
+              <div className="flex flex-wrap gap-1">
+                {preset("Breakeven after ₹2,000", () => {
+                  setLockAfter("2000");
+                  setLockPct("0");
+                })}
+                {preset("Keep 50% after ₹3,000", () => {
+                  setLockAfter("3000");
+                  setLockPct("50");
+                })}
+                {preset("Exit at 40% given back", () => setGiveback("40"))}
+                {preset("Warn at 25%", () => setWarnPct("25"))}
+              </div>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-term-dim">
+                <span>once profit reaches ₹</span>
+                <input value={lockAfter} onChange={numOnly(setLockAfter)} placeholder="0" className={inp} />
+                <span>keep</span>
+                <input value={lockPct} onChange={numOnly(setLockPct)} placeholder="0" className={`${inp} w-10`} />
+                <span>% of the peak (0 = breakeven)</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-term-dim">
+                <span>exit after giving back</span>
+                <input value={giveback} onChange={numOnly(setGiveback)} placeholder="off" className={`${inp} w-10`} />
+                <span>% · warn at</span>
+                <input value={warnPct} onChange={numOnly(setWarnPct)} placeholder="off" className={`${inp} w-10`} />
+                <span>%</span>
+              </div>
+            </div>
+
+            {/* ---- the fixed rupee levels (unchanged) ---- */}
+            <div className="space-y-1.5 border-t border-term-border pt-2">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-term-dim">Fixed ₹ levels (optional)</div>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-term-dim">
+                <label className="flex items-center gap-1">
+                  SL ₹
+                  <input value={slAmt} onChange={numOnly(setSlAmt)} placeholder="0" className={inp} />
+                </label>
+                <label className="flex items-center gap-1">
+                  Target ₹
+                  <input value={tgtAmt} onChange={numOnly(setTgtAmt)} placeholder="0" className={inp} />
+                </label>
+                <label className="flex items-center gap-1" title="Stop rises with the peak P&L and fires this many rupees off it">
+                  Trail ₹
+                  <input value={trailAmt} onChange={numOnly(setTrailAmt)} placeholder="0" className={inp} />
+                </label>
+                <label className="flex items-center gap-1" title="Once P&L first rises above this, exits if it ever drops back down to it">
+                  Floor ₹
+                  <input value={floorAmt} onChange={numOnly(setFloorAmt)} placeholder="0" className={inp} />
+                </label>
+              </div>
+            </div>
+
+            {/* ---- what to do, and on which P&L ---- */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-term-border pt-2">
+              <span className="text-term-dim">when hit</span>
               <div className="seg">
-                {(["today", "mtm"] as const).map((b) => (
-                  <button key={b} onClick={() => setBBasis(b)} className={bBasis === b ? "on" : ""}>
-                    {b === "today" ? "Today P&L" : "MTM"}
+                <button type="button" className={action === "alert" ? "on" : ""} onClick={() => setAction("alert")}>
+                  Alert me
+                </button>
+                <button type="button" className={action === "squareoff" ? "on" : ""} onClick={() => setAction("squareoff")}>
+                  Square off all
+                </button>
+              </div>
+              <div className="seg">
+                {(["today", "mtm"] as const).map((x) => (
+                  <button key={x} onClick={() => setBBasis(x)} className={bBasis === x ? "on" : ""}>
+                    {x === "today" ? "Today P&L" : "MTM"}
                   </button>
                 ))}
               </div>
-              <label className="flex items-center gap-1 text-term-dim">
-                SL ₹
-                <input
-                  value={slAmt}
-                  onChange={(e) => setSlAmt(e.target.value.replace(/[^\d.]/g, ""))}
-                  placeholder="0"
-                  className="num w-16 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-down"
-                />
-              </label>
-              <label className="flex items-center gap-1 text-term-dim">
-                Target ₹
-                <input
-                  value={tgtAmt}
-                  onChange={(e) => setTgtAmt(e.target.value.replace(/[^\d.]/g, ""))}
-                  placeholder="0"
-                  className="num w-16 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-up"
-                />
-              </label>
-              <label className="flex items-center gap-1 text-term-dim">
-                Trail ₹
-                <input
-                  value={trailAmt}
-                  onChange={(e) => setTrailAmt(e.target.value.replace(/[^\d.]/g, ""))}
-                  placeholder="0"
-                  title="Stop rises with the peak P&L and fires this many rupees off it"
-                  className="num w-16 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent"
-                />
-              </label>
-              <label className="flex items-center gap-1 text-term-dim">
-                Floor ₹
-                <input
-                  value={floorAmt}
-                  onChange={(e) => setFloorAmt(e.target.value.replace(/[^\d.]/g, ""))}
-                  placeholder="0"
-                  title="Fixed profit floor — once P&L first rises above this, exits if it ever drops back down to it, no matter how high it peaked"
-                  className="num w-16 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent"
-                />
-              </label>
               {armed ? (
                 <button onClick={disarmBracket} className="btn ml-auto font-semibold text-amber-400">
-                  Disarm
+                  Turn off
                 </button>
               ) : (
-                <button
-                  onClick={armBracket}
-                  disabled={!parseFloat(slAmt) && !parseFloat(tgtAmt) && !parseFloat(trailAmt) && !parseFloat(floorAmt)}
-                  className="btn btn-sell ml-auto font-semibold disabled:opacity-40"
-                >
-                  Arm
+                <button onClick={armBracket} disabled={!anything} className="btn btn-buy ml-auto font-semibold disabled:opacity-40">
+                  Turn on
                 </button>
               )}
             </div>
+            {!armed && anything && (
+              <p className="text-[11px] leading-snug text-term-text">
+                {[...guardParts, ...oldParts].join("; ")} →{" "}
+                <span className={action === "alert" ? "text-amber-400" : "text-down"}>
+                  {action === "alert" ? "alert me (no orders)" : "square off everything"}
+                </span>
+              </p>
+            )}
             <p className="text-[10px] leading-snug text-term-dim">{statusLine}</p>
           </div>
         </>

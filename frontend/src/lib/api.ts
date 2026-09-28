@@ -579,6 +579,9 @@ export const api = {
     j<{ alerts: any[] }>(`/api/price-alerts/${id}`, { method: "DELETE" }),
 
   shortGuard: () => j<{ legs: ShortGuardLeg[]; levels: number[]; target: number }>("/api/short-guard"),
+  /** buy back a tested SOLD option, then sell the same size at newStrike (same expiry) -- real orders on a live leg */
+  shortGuardRoll: (body: { src: string; symbol: string; expiry: string; strike: number; ot: string; newStrike: number }) =>
+    j<{ ok: boolean; message: string }>("/api/short-guard/roll", { method: "POST", body: JSON.stringify(body) }),
   indicatorAlerts: () => j<{ alerts: any[] }>("/api/indicator-alerts"),
   indicatorAlertAdd: (body: Record<string, unknown>) =>
     j<{ alert: any; alerts: any[] }>("/api/indicator-alerts", {
@@ -1041,7 +1044,8 @@ export const api = {
   brokerBracket: () => j<BrokerBracket>("/api/broker/bracket"),
   brokerBracketSet: (
     body: Partial<
-      Pick<BrokerBracket, "enabled" | "slAmount" | "targetAmount" | "trailAmount" | "floorAmount" | "basis">
+      Pick<BrokerBracket, "enabled" | "slAmount" | "targetAmount" | "trailAmount" | "floorAmount" | "basis"> &
+        Partial<Pick<BrokerBracket, "lockAfter" | "lockPct" | "givebackPct" | "warnPct" | "action">>
     >
   ) => j<BrokerBracket>("/api/broker/bracket", { method: "POST", body: JSON.stringify(body) }),
   brokerBracketClear: () => j<BrokerBracket>("/api/broker/bracket/clear", { method: "POST" }),
@@ -1059,4 +1063,13 @@ export interface BrokerBracket {
   lastReason: string;
   lastPnl: number | null;
   peakPnl: number | null;
+  /** Profit Guard: once the peak reaches lockAfter keep lockPct% of it (0 = breakeven); exit after
+   *  giving back givebackPct% of the peak; warn (no orders) at warnPct%; "alert" = only tell me */
+  lockAfter?: number;
+  lockPct?: number;
+  givebackPct?: number;
+  warnPct?: number;
+  action?: "squareoff" | "alert";
+  /** the P&L level the guard acts at right now (the highest of every active stop) */
+  stopLevel?: number | null;
 }

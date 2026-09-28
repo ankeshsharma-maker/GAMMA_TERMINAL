@@ -321,6 +321,23 @@ const COND_DEFS: Record<
       { key: "bars", label: "bars", type: "num", def: 5 },
     ],
   },
+  adx: {
+    label: "ADX — trend strength",
+    group: "trend",
+    fields: [
+      { key: "period", label: "period", type: "num", def: 14 },
+      {
+        key: "op",
+        label: "when",
+        type: "sel",
+        def: "strong",
+        opts: ["strong", "cross_up", "weak", "di"],
+        hint: "strong = ADX at or above the level (a real trend) · cross_up = ADX rises through the level on this candle (a trend starting) · weak = ADX below the level (no trend, choppy) · di = only who is in control: +DI above −DI = buyers",
+      },
+      { key: "dir", label: "side", type: "sel", def: "up", opts: ["up", "down", "any"] },
+      { key: "value", label: "level", type: "num", def: 25 },
+    ],
+  },
   supertrend: {
     label: "Supertrend (ATR)",
     group: "trend",
@@ -836,16 +853,37 @@ const RISK_PRESETS: Record<Risk, { title: string; blurb: string; patch: Partial<
     patch: { slBasis: "pct", slPct: 40, targetPct: 100, trailPct: 20, trailArmPct: 40, beArmPct: 0, maxTradesPerDay: 5, maxConsecLosses: undefined },
   },
 };
+/** for an option SELLER: profit is the premium falling, so the target can't pass 100% and the stop
+ *  (premium rising) sits wider -- a sold option's loss isn't capped, the stop is the protection */
+const RISK_PRESETS_SELL: Record<Risk, { title: string; blurb: string; patch: Partial<AutoRule> }> = {
+  safe: {
+    title: "Safe",
+    blurb: "tight stop, takes quick decay, few trades",
+    patch: { slBasis: "pct", slPct: 25, targetPct: 30, trailPct: 10, trailArmPct: 15, beArmPct: 15, maxTradesPerDay: 2, maxConsecLosses: 2 },
+  },
+  normal: {
+    title: "Normal",
+    blurb: "balanced stop and decay target",
+    patch: { slBasis: "pct", slPct: 40, targetPct: 50, trailPct: 15, trailArmPct: 25, beArmPct: 20, maxTradesPerDay: 3, maxConsecLosses: 3 },
+  },
+  aggressive: {
+    title: "Aggressive",
+    blurb: "wide stop, holds for most of the decay",
+    patch: { slBasis: "pct", slPct: 60, targetPct: 80, trailPct: 20, trailArmPct: 40, beArmPct: 0, maxTradesPerDay: 5, maxConsecLosses: undefined },
+  },
+};
 const RISK_KEYS = Object.keys(RISK_PRESETS) as Risk[];
+const riskSet = (side?: string) => (side === "SELL" ? RISK_PRESETS_SELL : RISK_PRESETS);
 /** the preset a rule's numbers match exactly, or null when they have been hand-tuned */
 function riskOf(r: Partial<AutoRule>): Risk | null {
   const same = (a: unknown, b: unknown) => (a ?? 0) === (b ?? 0);
-  return RISK_KEYS.find((k) => Object.entries(RISK_PRESETS[k].patch).every(([f, v]) => same(r[f as keyof AutoRule], v))) ?? null;
+  const set = riskSet(r.side);
+  return RISK_KEYS.find((k) => Object.entries(set[k].patch).every(([f, v]) => same(r[f as keyof AutoRule], v))) ?? null;
 }
-function riskLine(p: Partial<AutoRule>): string {
+function riskLine(p: Partial<AutoRule>, sell = false): string {
   return [
-    `stop −${p.slPct}%`,
-    `target +${p.targetPct}%`,
+    sell ? `stop: premium +${p.slPct}%` : `stop −${p.slPct}%`,
+    sell ? `target: premium −${p.targetPct}%` : `target +${p.targetPct}%`,
     p.trailPct ? `trail ${p.trailPct}% after +${p.trailArmPct}%` : "",
     p.beArmPct ? `no-loss after +${p.beArmPct}%` : "",
     `${p.maxTradesPerDay} trades/day`,
@@ -857,11 +895,13 @@ function riskLine(p: Partial<AutoRule>): string {
 
 function RiskPicker({ r, set }: { r: Partial<AutoRule>; set: (p: Partial<AutoRule>) => void }) {
   const cur = riskOf(r);
+  const sell = r.side === "SELL";
+  const presets = riskSet(r.side);
   return (
     <div className="space-y-1.5">
       <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
         {RISK_KEYS.map((k) => {
-          const p = RISK_PRESETS[k];
+          const p = presets[k];
           const on = cur === k;
           return (
             <button
@@ -877,7 +917,7 @@ function RiskPicker({ r, set }: { r: Partial<AutoRule>; set: (p: Partial<AutoRul
                 {p.title}
               </span>
               <span className="text-[11px] text-term-dim">{p.blurb}</span>
-              <span className="num text-[10px] leading-snug text-term-dim">{riskLine(p.patch)}</span>
+              <span className="num text-[10px] leading-snug text-term-dim">{riskLine(p.patch, sell)}</span>
             </button>
           );
         })}
@@ -973,6 +1013,18 @@ const SIMPLE_SIGNALS: SimpleSignal[] = [
     confirmTitle: (d) => `price is ${d === "up" ? "above the first 15 minutes' high" : "below the first 15 minutes' low"}`,
   },
   {
+    key: "adx",
+    title: (d) => `A strong trend starts (ADX rises above 25, ${d === "up" ? "buyers" : "sellers"} in control)`,
+    tf: 900,
+    build: (d) => ({
+      entry: [{ kind: "adx", period: 14, op: "cross_up", dir: d, value: 25 }],
+      // out when the other side takes over
+      exit: [{ kind: "adx", period: 14, op: "di", dir: d === "up" ? "down" : "up", value: 0 }],
+    }),
+    confirm: (d) => [{ kind: "adx", period: 14, op: "strong", dir: d, value: 25 }],
+    confirmTitle: (d) => `the trend is strong (ADX ≥ 25, ${d === "up" ? "buyers" : "sellers"} in control)`,
+  },
+  {
     key: "rsi",
     title: (d) => (d === "up" ? "RSI bounces back above 30 (oversold)" : "RSI drops back below 70 (overbought)"),
     tf: 300,
@@ -1018,6 +1070,11 @@ function SimpleRuleEditor({
     setSigs((cur) => (cur.includes(k) ? (cur.length > 1 ? cur.filter((x) => x !== k) : cur) : [...cur, k]));
   const [risk, setRisk] = useState<Risk>("normal");
   const [lots, setLots] = useState(1);
+  // how to play the view: buy the option that gains, or sell the one that loses
+  const [how, setHow] = useState<"buy" | "sell">("buy");
+  const sell = how === "sell";
+  const ot: "CE" | "PE" = (dir === "up") !== sell ? "CE" : "PE"; // up+buy = CE, up+sell = PE, down+buy = PE, down+sell = CE
+  const presets = riskSet(sell ? "SELL" : "BUY");
   const picks = sigs.map((k) => SIMPLE_SIGNALS.find((x) => x.key === k)).filter((x): x is SimpleSignal => !!x);
   const S = picks[0] ?? SIMPLE_SIGNALS[0];
   const trig = S.build(dir);
@@ -1034,10 +1091,10 @@ function SimpleRuleEditor({
     });
   const rule: Partial<AutoRule> = {
     ...blankRule(symbol),
-    ...RISK_PRESETS[risk].patch,
-    name: `${symbol} · ${S.title(dir).split(" (")[0]}${picks.length > 1 ? ` + ${picks.length - 1} confirm` : ""} → buy ${dir === "up" ? "CE" : "PE"}`,
-    instrument: dir === "up" ? "ATM_CE" : "ATM_PE",
-    side: "BUY",
+    ...presets[risk].patch,
+    name: `${symbol} · ${S.title(dir).split(" (")[0]}${picks.length > 1 ? ` + ${picks.length - 1} confirm` : ""} → ${how} ${ot}`,
+    instrument: `ATM_${ot}`,
+    side: sell ? "SELL" : "BUY",
     lots,
     entryTf: S.tf,
     noEntryBefore: "09:30",
@@ -1067,15 +1124,32 @@ function SimpleRuleEditor({
           </label>
         </div>
       </SimpleQ>
-      <SimpleQ n={2} q="When to buy? (pick one or more)">
-        <div className="seg w-fit">
-          <button type="button" className={dir === "up" ? "on" : ""} onClick={() => setDir("up")}>
-            ▲ Market going up → buy Call
-          </button>
-          <button type="button" className={dir === "down" ? "on" : ""} onClick={() => setDir("down")}>
-            ▼ Market going down → buy Put
-          </button>
+      <SimpleQ n={2} q="When to trade? (pick one or more)">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="seg w-fit">
+            <button type="button" className={dir === "up" ? "on" : ""} onClick={() => setDir("up")}>
+              ▲ Market going up
+            </button>
+            <button type="button" className={dir === "down" ? "on" : ""} onClick={() => setDir("down")}>
+              ▼ Market going down
+            </button>
+          </div>
+          <span className="text-[11px] text-term-dim">→</span>
+          <div className="seg w-fit">
+            <button type="button" className={!sell ? "on" : ""} onClick={() => setHow("buy")}>
+              Buy {dir === "up" ? "Call" : "Put"}
+            </button>
+            <button type="button" className={sell ? "on" : ""} onClick={() => setHow("sell")}>
+              Sell {dir === "up" ? "Put" : "Call"}
+            </button>
+          </div>
         </div>
+        {sell && (
+          <div className="rounded bg-amber-500/10 px-2 py-1 text-[11px] leading-snug text-amber-400">
+            Selling earns the option's premium as it falls, but needs margin (about ₹1–1.5 lakh per NIFTY lot) and its loss
+            is not capped — the stop-loss is your protection. Try it in paper first.
+          </div>
+        )}
         <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
           {SIMPLE_SIGNALS.map((x) => {
             const at = sigs.indexOf(x.key);
@@ -1114,13 +1188,16 @@ function SimpleRuleEditor({
         </div>
       </SimpleQ>
       <SimpleQ n={3} q="How much risk?">
-        <RiskPicker r={RISK_PRESETS[risk].patch} set={(p) => setRisk(RISK_KEYS.find((k) => RISK_PRESETS[k].patch === p) ?? "normal")} />
+        <RiskPicker
+          r={{ ...presets[risk].patch, side: sell ? "SELL" : "BUY" }}
+          set={(p) => setRisk(RISK_KEYS.find((k) => presets[k].patch === p) ?? "normal")}
+        />
         <div className="text-[10px] text-term-dim">Intraday: new trades 09:30 – 14:45, everything closed by 15:20.</div>
       </SimpleQ>
       <div className="rounded border border-term-border bg-term-bg/40 px-2.5 py-2 text-[11px] leading-snug text-term-dim">
         <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide">In plain words</span>
-        On <span className="text-term-text">{symbol}</span> {tfLabel(S.tf)} candles, buy the ATM{" "}
-        <span className={dir === "up" ? "text-up" : "text-down"}>{dir === "up" ? "Call" : "Put"}</span> when{" "}
+        On <span className="text-term-text">{symbol}</span> {tfLabel(S.tf)} candles, {how} the ATM{" "}
+        <span className={dir === "up" ? "text-up" : "text-down"}>{ot === "CE" ? "Call" : "Put"}</span> when{" "}
         <span className="text-term-text">{words.enter}</span> · exit on <span className="text-term-text">{words.exit}</span> ·{" "}
         <span className="text-term-text">paper</span> (no real orders)
       </div>
@@ -2122,7 +2199,7 @@ function RuleEditor({
         ];
         return (
           <div className="rounded border border-term-border/70 p-2">
-            {!isStruct && (r.side ?? "BUY") === "BUY" && (
+            {!isStruct && (
               <div className="mb-3">
                 <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-term-dim">Quick set</div>
                 <RiskPicker r={r} set={set} />
@@ -3409,6 +3486,19 @@ function describe(c: AutoCondition): string {
       return `${String(g("state")).replace(/_/g, " ").toLowerCase()} (${g("bars")} bars)`;
     case "supertrend":
       return `Supertrend(${g("period")},${g("mult")}) ${g("op") === "flip" ? "flips" : "is"} ${g("dir")}`;
+    case "adx": {
+      const side = g("dir") === "up" ? ", buyers in control (+DI > −DI)" : g("dir") === "down" ? ", sellers in control (−DI > +DI)" : "";
+      const p = `ADX(${g("period")})`;
+      return g("op") === "cross_up"
+        ? `${p} rises through ${g("value")}${side}`
+        : g("op") === "weak"
+        ? `${p} below ${g("value")} (no trend)`
+        : g("op") === "di"
+        ? g("dir") === "down"
+          ? "sellers in control (−DI > +DI)"
+          : "buyers in control (+DI > −DI)"
+        : `${p} at or above ${g("value")}${side}`;
+    }
     case "pivot":
       return `spot ${g("op")} pivot ${g("level")}`;
     case "delta_change":

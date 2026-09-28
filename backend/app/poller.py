@@ -364,7 +364,7 @@ async def run_poller(stop: asyncio.Event) -> None:
                 store.add_alert(
                     {
                         "ts": time.time(), "symbol": "", "kind": e["kind"],
-                        "severity": "warning", "message": e["message"], "score": 0,
+                        "severity": e.get("severity") or "warning", "message": e["message"], "score": 0,
                     }
                 )
                 log.info("BROKER-BRACKET %s", e["message"])

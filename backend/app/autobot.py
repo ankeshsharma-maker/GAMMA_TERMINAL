@@ -799,6 +799,65 @@ class _Ctx:
             out.append(atr)
         return out
 
+    def _adx_series(self, period: int) -> tuple[list[float], float, float]:
+        """ADX with +DI / -DI (Wilder's smoothing) over the candle OHLC -- the same maths as the
+        Home tab's trend table (frontend lib/indicators.ts adx). Returns the ADX series and the
+        latest +DI / -DI."""
+        cs = self.candles
+        tr: list[float] = []
+        pdm: list[float] = []
+        mdm: list[float] = []
+        for i in range(1, len(cs)):
+            c, p = cs[i], cs[i - 1]
+            up, dn = c["h"] - p["h"], p["l"] - c["l"]
+            pdm.append(up if up > dn and up > 0 else 0.0)
+            mdm.append(dn if dn > up and dn > 0 else 0.0)
+            tr.append(max(c["h"] - c["l"], abs(c["h"] - p["c"]), abs(c["l"] - p["c"])))
+        if len(tr) < 2 * period + 1:
+            return [], 0.0, 0.0
+        st, sp, sm = sum(tr[:period]), sum(pdm[:period]), sum(mdm[:period])
+        dx: list[float] = []
+        pdi = mdi = 0.0
+
+        def push() -> None:
+            nonlocal pdi, mdi
+            pdi = 100 * sp / st if st else 0.0
+            mdi = 100 * sm / st if st else 0.0
+            dx.append(100 * abs(pdi - mdi) / (pdi + mdi) if pdi + mdi else 0.0)
+
+        push()
+        for i in range(period, len(tr)):
+            st = st - st / period + tr[i]
+            sp = sp - sp / period + pdm[i]
+            sm = sm - sm / period + mdm[i]
+            push()
+        a = sum(dx[:period]) / period
+        out = [a]
+        for v in dx[period:]:
+            a = (a * (period - 1) + v) / period
+            out.append(a)
+        return out, pdi, mdi
+
+    def _adx(self, c) -> bool:
+        """strong: ADX >= value (with +DI / -DI on the chosen side) · cross_up: ADX rises through value
+        on this candle (a trend starting) · weak: ADX < value (no trend) · di: just who is in control."""
+        a, pdi, mdi = self._adx_series(int(c.get("period", 14)))
+        if len(a) < 2:
+            return False
+        d = c.get("dir", "up")
+        side = pdi > mdi if d == "up" else mdi > pdi if d == "down" else True
+        v = float(c.get("value", 25) or 0)
+        op = c.get("op", "strong")
+        if op == "strong":
+            return a[-1] >= v and side
+        if op == "cross_up":
+            return a[-2] < v <= a[-1] and side
+        if op == "weak":
+            return a[-1] < v
+        if op == "di":
+            return side
+        return False
+
     def _atr(self, c) -> bool:
         period = int(c.get("period", 14))
         s = self._atr_series(period)
@@ -1158,7 +1217,7 @@ class _Ctx:
         "delta_change": _delta_change, "gamma_change": _gamma_change, "gamma_vs_delta": _gamma_vs_delta,
         "theta_level": _theta_level, "vega_level": _vega_level, "blast_score": _blast_score,
         "iv_rank": _iv_rank,
-        "candle": _candle, "atr": _atr, "prev_candle": _prev_candle, "gap": _gap,
+        "candle": _candle, "atr": _atr, "adx": _adx, "prev_candle": _prev_candle, "gap": _gap,
         "candle_streak": _candle_streak, "candle_range": _candle_range,
         "time_of_day": _time_of_day, "day_of_week": _day_of_week,
     }

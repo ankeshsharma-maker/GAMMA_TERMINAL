@@ -71,8 +71,41 @@ export function guardText(r: ShortGuardLeg) {
   };
 }
 
+/** buy the tested strike back, then sell the ~0.20-delta one -- after a plain-words confirm */
+async function rollLeg(r: ShortGuardLeg, setBusy: (b: boolean) => void) {
+  const rl = r.roll;
+  if (!rl) return;
+  const live = r.src === "live";
+  const q = nf(r.qty, 0);
+  const net = rl.netTotal >= 0 ? `collects about ₹${nf(rl.netTotal, 0)}` : `costs about ₹${nf(-rl.netTotal, 0)}`;
+  const ok = window.confirm(
+    `Roll ${r.symbol} ${sk(r.strike)} ${r.ot} (${live ? "LIVE — real orders on Flattrade" : "paper"}):
+
+` +
+      `1. BUY back ${q} × ${sk(r.strike)} ${r.ot} at market (~₹${nf(rl.buyBack, 2)})
+` +
+      `2. then SELL ${q} × ${sk(rl.strike)} ${r.ot} at market (~₹${nf(rl.sellNew, 2)})
+
+` +
+      `Net: ${net} now. The new strike is further away (delta ${nf(Math.abs(rl.delta), 2)}), so it is safer but earns less.
+` +
+      `If step 2 fails you are left flat on this leg. Go ahead?`
+  );
+  if (!ok) return;
+  setBusy(true);
+  try {
+    const res = await api.shortGuardRoll({ src: r.src, symbol: r.symbol, expiry: r.expiry, strike: r.strike, ot: r.ot, newStrike: rl.strike });
+    alert(res.message);
+  } catch (e: any) {
+    alert(`Roll not done: ${String(e?.message || e)}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
 function GuardLeg({ r }: { r: ShortGuardLeg }) {
   const t = guardText(r);
+  const [busy, setBusy] = useState(false);
   const tone =
     r.level >= 2 ? "bg-down/20 text-down" : r.level === 1 ? "bg-amber-500/20 text-amber-400" : "bg-up/15 text-up";
   return (
@@ -114,6 +147,20 @@ function GuardLeg({ r }: { r: ShortGuardLeg }) {
                 </span>
               )}
             </div>
+          )}
+          {r.level > 0 && r.roll && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => rollLeg(r, setBusy)}
+              className={`mt-1 rounded border px-2 py-0.5 text-[11px] font-semibold disabled:opacity-50 ${
+                r.src === "live" ? "border-amber-500/60 text-amber-400 hover:bg-amber-500/10" : "border-term-accent/60 text-term-accent hover:bg-term-accent/10"
+              }`}
+              title="Buy this strike back and sell the further one in one go (you confirm first)"
+            >
+              {busy ? "Rolling…" : `↻ Roll to ${sk(r.roll.strike)} ${r.ot}`}
+              {r.src === "live" ? " · live" : " · paper"}
+            </button>
           )}
           <div className="mt-0.5 text-[9px] text-term-dim/80">delta {r.absDelta != null ? nf(r.absDelta, 2) : "–"}</div>
         </>

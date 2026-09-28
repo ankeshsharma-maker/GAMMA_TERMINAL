@@ -990,7 +990,7 @@ function AdvancedTab() {
       {broker?.authed && (
         <div className="flex items-center gap-2 border-b border-term-border bg-term-panel px-3 py-2">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-term-dim">
-            Auto square-off
+            Profit guard · auto square-off
           </span>
           <AutoSquareOff />
         </div>

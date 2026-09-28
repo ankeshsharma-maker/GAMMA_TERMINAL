@@ -1404,6 +1404,49 @@ def short_guard_view():
     return {"legs": short_guard.snapshot(), "levels": list(short_guard.LEVELS), "target": short_guard.TARGET}
 
 
+@router.post("/short-guard/roll")
+async def short_guard_roll(body: dict):
+    """Roll a tested SOLD option: buy it back, then sell the same quantity at `newStrike` (same
+    expiry). Two real orders on a live leg (paper on a paper one), in that order -- the new
+    strike is only sold once the buy-back went through. Market orders, like the square-off."""
+    from . import short_guard
+
+    src = body.get("src")
+    sym = str(body.get("symbol") or "").upper()
+    exp = body.get("expiry")
+    ot = str(body.get("ot") or "").upper()
+    try:
+        strike, new_k = float(body["strike"]), float(body["newStrike"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="strike and newStrike are required")
+    leg = next((r for r in short_guard.snapshot()
+                if r["src"] == src and r["symbol"] == sym and r["expiry"] == exp
+                and abs(r["strike"] - strike) < 1e-6 and r["ot"] == ot), None)
+    if not leg:
+        raise HTTPException(status_code=404, detail="that sold option is no longer open")
+    chain = store.get_chain(sym, exp) or {}
+    lot = int(chain.get("lotSize") or 0) or 1
+    lots = int(round(float(leg["qty"]) / lot))
+    if lots < 1 or abs(lots * lot - float(leg["qty"])) > 1e-6:
+        raise HTTPException(status_code=409, detail=f"{leg['qty']:g} units isn't a whole number of {lot}-lots; roll it by hand")
+    mode = "live" if src == "live" else "paper"
+    product = "NRML"
+    if mode == "live":
+        row = next((r for r in store.broker_positions if r.get("tsym") == leg.get("name")), None)
+        product = "MIS" if (row or {}).get("prd") == "I" else "NRML"
+    common = dict(symbol=sym, expiry=exp, option_type=ot, qty_lots=lots, order_type="MKT", price=None,
+                  product=product, mode=mode)
+    back = await _route_leg(strike=strike, side="BUY", **common)
+    try:
+        new = await _route_leg(strike=new_k, side="SELL", **common)
+    except HTTPException as exc:
+        return {"ok": False, "buyBack": back, "sellNew": None,
+                "message": f"Bought back {strike:g} {ot}, but selling {new_k:g} {ot} failed: {exc.detail}. "
+                           "You are now flat on this leg."}
+    return {"ok": True, "buyBack": back, "sellNew": new,
+            "message": f"Rolled: bought back {lots} lot(s) of {strike:g} {ot}, sold {new_k:g} {ot} ({mode})."}
+
+
 # ---- indicator alerts (fire once when EMA proximity / RSI level hits, on a chosen timeframe) ----
 @router.get("/indicator-alerts")
 def indicator_alerts_list():
