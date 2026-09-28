@@ -238,39 +238,60 @@ export function HomeDashboard() {
       ? { tone: "up", text: `${ups} of 4 point UP — signals agree` }
       : { tone: "flat", text: `${ups} up · ${downs} down — signals disagree, no clear direction` };
   const spot = chain?.liveSpot?.ltp ?? chain?.spot ?? null;
+  const chgPct = chain?.liveSpot?.chgPct ?? null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-term-bg">
-      {/* symbol + market read */}
+      {/* symbol + market read -- one row of cards shaped like the four below (the market read
+          used to be a line of its own under them) */}
       <div className="border-b border-term-border bg-term-panel px-3 py-2.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[16px] font-bold text-term-text">{symbol}</span>
-          {spot != null && <span className="text-[15px] font-semibold tabular-nums text-term-text">{nf(spot, 2)}</span>}
-          <div className="seg ml-auto text-[11px]">
-            {[...new Set([...QUICK, symbol])].map((s) => (
-              <button key={s} onClick={() => selectSymbol(s, true)} className={s === symbol ? "on" : ""}>
-                {s}
-              </button>
-            ))}
+        {/* laptop: the symbol card lines up with the Price action card under it, the switch takes
+            the width it needs, the market read fills the rest */}
+        <div className="grid grid-cols-2 gap-1.5 sm:flex sm:items-stretch">
+          <div className="rounded border border-term-border bg-term-bg/40 px-2 py-1.5 sm:w-[calc(25%-4.5px)] sm:shrink-0">
+            <div className="text-[10px] font-medium uppercase tracking-wide text-term-dim">{symbol}</div>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-[15px] font-bold tabular-nums text-term-text">{spot != null ? nf(spot, 2) : "–"}</span>
+              {chgPct != null && (
+                <span className={`text-[11px] font-semibold tabular-nums ${chgPct >= 0 ? "text-up" : "text-down"}`}>
+                  {chgPct >= 0 ? "▲" : "▼"}
+                  {nf(Math.abs(chgPct), 2)}%
+                </span>
+              )}
+            </div>
+          </div>
+          <div className={`min-w-0 rounded border px-2 py-1.5 sm:flex-1 ${TONE[agree.tone]}`}>
+            <div className="text-[10px] font-medium uppercase tracking-wide opacity-80">
+              {agree.tone === "up" ? "▲" : agree.tone === "down" ? "▼" : "◆"} Market read
+            </div>
+            <div className="text-[12px] font-bold leading-snug">
+              {agree.text}
+              {vs?.verdict && (
+                <span className="font-medium opacity-80">
+                  {" "}
+                  · options {vs.verdict}
+                  {vs.lean && vs.lean !== "none" ? ` (lean ${vs.lean})` : ""}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="col-span-2 flex items-center sm:shrink-0">
+            <div className="seg text-[11px]">
+              {[...new Set([...QUICK, symbol])].map((s) => (
+                <button key={s} onClick={() => selectSymbol(s, true)} className={s === symbol ? "on" : ""}>
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-        <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+        <div className="mt-1.5 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
           {reads.map((r) => (
             <div key={r.name} className={`rounded border px-2 py-1.5 ${TONE[r.tone]}`}>
               <div className="text-[10px] font-medium uppercase tracking-wide opacity-80">{r.name}</div>
               <div className="truncate text-[12px] font-bold">{r.word}</div>
             </div>
           ))}
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px]">
-          <Chip tone={agree.tone}>{agree.tone === "up" ? "▲" : agree.tone === "down" ? "▼" : "◆"} MARKET READ</Chip>
-          <span className="text-term-text">{agree.text}</span>
-          {vs?.verdict && (
-            <span className="text-term-dim">
-              · options {vs.verdict}
-              {vs.lean && vs.lean !== "none" ? ` (lean ${vs.lean})` : ""}
-            </span>
-          )}
         </div>
       </div>
 
