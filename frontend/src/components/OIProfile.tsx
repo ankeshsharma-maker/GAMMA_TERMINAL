@@ -24,78 +24,85 @@ const PUT_CHG = "#22c55e";
 
 const zClamp = (z: number) => Math.min(3, Math.max(0.5, z));
 
-/** One side's Change in OI as two small bars from a zero line: OI added rises (solid),
- *  OI reduced falls (faded). Scaled to `m`, the biggest move of either side. */
-const SideBars = ({ add, cut, m, col }: { add: number; cut: number; m: number; col: string }) => {
-  const W = 90;
-  const H = 70;
-  const base = H / 2;
-  const hgt = (v: number) => (Math.abs(v) / (m || 1)) * (base - 3);
-  const ha = hgt(add);
-  const hc = hgt(cut);
+/** One side's Change in OI as a small card: the Net in large type, what it means for price, then
+ *  OI added / reduced as labelled bars scaled to `m` (the biggest move of either side), so both
+ *  cards share one scale. Bars are percentages of the card, so it fits any panel width. */
+const DeltaSide = ({
+  side,
+  add,
+  cut,
+  m,
+  col,
+}: {
+  side: "Call" | "Put";
+  add: number;
+  cut: number;
+  m: number;
+  col: string;
+}) => {
+  const signed = (v: number) => (v ? `${v > 0 ? "+" : "−"}${oiCr(Math.abs(v))}` : "0");
+  const net = add + cut;
+  const written = net >= 0;
+  // call writing caps price (bearish), call unwinding frees it (bullish); puts the other way round
+  const bullish = side === "Call" ? !written : written;
+  const read = `${side} ${written ? "written" : "unwound"}`;
+  const pct = (v: number) => `${Math.min(100, (Math.abs(v) / (m || 1)) * 100)}%`;
+  const bar = (label: string, v: number, faded: boolean) => (
+    <div>
+      <div className="flex items-baseline justify-between gap-1 text-[10px]">
+        <span className="text-term-dim">{label}</span>
+        <span className={`num ${faded ? "text-term-dim" : "text-term-text"}`}>{signed(v)}</span>
+      </div>
+      <div className="mt-0.5 h-1.5 overflow-hidden rounded-sm bg-term-border/50">
+        <div
+          className="h-full rounded-sm"
+          style={{ width: pct(v), background: col, opacity: faded ? 0.4 : 1 }}
+        />
+      </div>
+    </div>
+  );
   return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="mx-auto block" aria-hidden="true">
-      <line x1="4" x2={W - 4} y1={base} y2={base} stroke="#64748b" strokeWidth="1" />
-      <rect x={W / 2 - 30} y={base - ha} width="26" height={Math.max(ha, add > 0 ? 1.5 : 0)} rx="2" fill={col} />
-      <rect x={W / 2 + 4} y={base} width="26" height={Math.max(hc, cut < 0 ? 1.5 : 0)} rx="2" fill={col} fillOpacity={0.4} stroke={col} strokeWidth="1" />
-    </svg>
+    <div className="min-w-0 rounded-md border border-term-border bg-term-bg/40 px-2 py-1.5" style={{ borderTop: `2px solid ${col}` }}>
+      <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: col }}>
+        {side}
+      </div>
+      <div className={`num text-[15px] font-bold leading-tight ${net > 0 ? "text-up" : net < 0 ? "text-down" : "text-term-dim"}`}>
+        {signed(net)}
+      </div>
+      <div className={`text-[10px] font-semibold leading-tight ${bullish ? "text-up" : "text-down"}`}>
+        {read} {bullish ? "▲" : "▼"}
+      </div>
+      <div className="mt-1.5 space-y-1">
+        {bar("Added", add, false)}
+        {bar("Reduced", cut, true)}
+      </div>
+    </div>
   );
 };
 
-/** Change in OI as a table split into Call | Put: each side's bars, then OI added, OI reduced,
- *  the Net and what it means (written / unwound). */
+/** Change in OI as two cards, Call | Put, and one line saying what they add up to. */
 const DeltaOITable = ({ ceAdd, ceCut, peAdd, peCut }: { ceAdd: number; ceCut: number; peAdd: number; peCut: number }) => {
   const m = Math.max(1, ceAdd, -ceCut, peAdd, -peCut);
-  const signed = (v: number) => (v ? `${v > 0 ? "+" : "−"}${oiCr(Math.abs(v))}` : "0");
   const ceNet = ceAdd + ceCut;
   const peNet = peAdd + peCut;
-  const netCls = (v: number) => (v > 0 ? "text-up" : v < 0 ? "text-down" : "text-term-dim");
-  const rows: [string, React.ReactNode, React.ReactNode][] = [
-    ["Added", <span className="text-term-text">{signed(ceAdd)}</span>, <span className="text-term-text">{signed(peAdd)}</span>],
-    ["Reduced", <span className="text-term-dim">{signed(ceCut)}</span>, <span className="text-term-dim">{signed(peCut)}</span>],
-    [
-      "Net",
-      <span className={`font-semibold ${netCls(ceNet)}`}>{signed(ceNet)}</span>,
-      <span className={`font-semibold ${netCls(peNet)}`}>{signed(peNet)}</span>,
-    ],
-    [
-      "Reads",
-      <span className="text-term-text">{ceNet >= 0 ? "Call written" : "Call unwound"}</span>,
-      <span className="text-term-text">{peNet >= 0 ? "Put written" : "Put unwound"}</span>,
-    ],
-  ];
+  const bulls = (ceNet < 0 ? 1 : 0) + (peNet > 0 ? 1 : 0);
+  const verdict =
+    bulls === 2
+      ? { cls: "text-up", txt: "▲ Both sides bullish", why: "calls unwinding, puts being written" }
+      : bulls === 0
+      ? { cls: "text-down", txt: "▼ Both sides bearish", why: "calls being written, puts unwinding" }
+      : { cls: "text-term-dim", txt: "◆ Mixed", why: ceNet >= 0 ? "both sides being written" : "both sides unwinding" };
   return (
-    <table className="w-full border-collapse text-[12px]">
-      <thead>
-        <tr>
-          <th className="w-[26%] border border-term-border px-2 py-1" />
-          <th className="border border-term-border px-2 py-1 text-center font-semibold" style={{ color: CALL_CHG }}>
-            Call
-          </th>
-          <th className="border border-term-border px-2 py-1 text-center font-semibold" style={{ color: PUT_CHG }}>
-            Put
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td className="border border-term-border px-2 py-1 text-[11px] text-term-dim">ΔOI</td>
-          <td className="border border-term-border px-1 py-1">
-            <SideBars add={ceAdd} cut={ceCut} m={m} col={CALL_CHG} />
-          </td>
-          <td className="border border-term-border px-1 py-1">
-            <SideBars add={peAdd} cut={peCut} m={m} col={PUT_CHG} />
-          </td>
-        </tr>
-        {rows.map(([k, c, p]) => (
-          <tr key={k}>
-            <td className="border border-term-border px-2 py-1 text-[11px] text-term-dim">{k}</td>
-            <td className="num border border-term-border px-2 py-1 text-center">{c}</td>
-            <td className="num border border-term-border px-2 py-1 text-center">{p}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="w-full space-y-1.5">
+      <div className="grid grid-cols-2 gap-1.5">
+        <DeltaSide side="Call" add={ceAdd} cut={ceCut} m={m} col={CALL_CHG} />
+        <DeltaSide side="Put" add={peAdd} cut={peCut} m={m} col={PUT_CHG} />
+      </div>
+      <div className="rounded-md border border-term-border/60 px-2 py-1 text-center text-[11px] leading-snug">
+        <span className={`font-semibold ${verdict.cls}`}>{verdict.txt}</span>
+        <span className="text-term-dim"> — {verdict.why}</span>
+      </div>
+    </div>
   );
 };
 
@@ -1285,10 +1292,6 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         {dtot > 0 ? (
           <>
             <DeltaOITable ceAdd={flow.ceAdd} ceCut={flow.ceCut} peAdd={flow.peAdd} peCut={flow.peCut} />
-            <div className="flex w-full flex-wrap justify-center gap-x-3 text-[10px] text-term-dim">
-              <span>▲ solid = OI added</span>
-              <span>▼ faded = OI reduced</span>
-            </div>
           </>
         ) : (
           <div className="text-2xs text-term-dim">no OI change yet</div>
