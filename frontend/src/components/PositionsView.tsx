@@ -12,6 +12,12 @@ import { PortfolioSummary } from "./PortfolioSummary";
 import { AutoSquareOff } from "./AutoSquareOff";
 import { ShortGuard, guardText } from "./ShortGuard";
 import type { ShortGuardLeg } from "../types";
+import { Capacitor } from "@capacitor/core";
+
+/** open-position card text: 2px smaller in the phone app (asked 28-Sep), the website keeps its sizes */
+const FS = Capacitor.isNativePlatform()
+  ? { line: "text-[12px]", name: "text-[14px]", pct: "text-[13px]" }
+  : { line: "text-[14px]", name: "text-[16px]", pct: "text-[15px]" };
 
 type Tab = "broker" | "holdings" | "orders" | "advanced";
 // Positions / Holdings read like the Flattrade app's Portfolio screen; the
@@ -326,7 +332,7 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
                 sel ? "ring-1 ring-term-accent" : ""
               }`}
             >
-              <div className="flex items-baseline justify-between gap-2 text-[14px]">
+              <div className={`flex items-baseline justify-between gap-2 ${FS.line}`}>
                 <span className="flex items-center gap-2 text-term-text">
                   {prd} | {r.exch ?? "NFO"}
                   {/* exit right from the card -- no need to open it first */}
@@ -350,17 +356,17 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
                 </span>
               </div>
               <div className="mt-1 flex items-baseline justify-between gap-2">
-                <span className="truncate text-[16px] text-term-text">
+                <span className={`truncate ${FS.name} text-term-text`}>
                   {r.dname ?? r.tsym ?? r.symname ?? "—"}
                 </span>
                 {!closed && (
-                  <span className={`tabular-nums whitespace-nowrap text-[15px] ${signColor(pct)}`}>
+                  <span className={`tabular-nums whitespace-nowrap ${FS.pct} ${signColor(pct)}`}>
                     ({pct > 0 ? "+" : ""}
                     {nf(pct, 2)} %)
                   </span>
                 )}
               </div>
-              <div className="mt-1 flex items-baseline justify-between gap-2 text-[14px]">
+              <div className={`mt-1 flex items-baseline justify-between gap-2 ${FS.line}`}>
                 {closed ? (
                   // a closed leg: what it booked, not "Qty 0 · Price 0.00"
                   <span className="tabular-nums whitespace-nowrap text-term-dim">
