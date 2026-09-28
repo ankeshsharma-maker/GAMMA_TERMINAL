@@ -305,11 +305,30 @@ class _Ctx:
         # point's rank against the history up to and including it) so cross_up/
         # cross_down can reuse the plain-series _greek_level below.
         self._iv_series = list(store.iv_history.get(symbol, []))
-        self.iv_rank_series: list[float] = []
-        for i in range(len(self._iv_series)):
-            r, _ = _iv_rank_calc(self._iv_series[: i + 1], self._iv_series[i])
-            if r is not None:
-                self.iv_rank_series.append(r)
+        self._ivr: list[float] | None = None
+
+    @property
+    def iv_rank_series(self) -> list[float]:
+        """Each IV sample's rank against the samples up to it -- the same number as
+        screener.iv_rank(series[: i + 1], series[i]), but built only when an iv_rank condition
+        asks, and in one pass with a running min / max. (It used to be rebuilt on every context,
+        quadratic in the session's IV history: thousands of samples by mid-day, on every live tick
+        and on every bar of a backtest -- ~90 s of a server backtest, blocking the event loop.)"""
+        if self._ivr is None:
+            out: list[float] = []
+            lo = hi = None
+            n = 0
+            for v in self._iv_series:
+                if v is not None and v > 0:
+                    n += 1
+                    lo = v if lo is None else min(lo, v)
+                    hi = v if hi is None else max(hi, v)
+                if v is None or n < 5:
+                    continue
+                rank = 100.0 * (v - lo) / (hi - lo) if hi > lo else 50.0
+                out.append(round(max(0.0, min(100.0, rank)), 1))
+            self._ivr = out
+        return self._ivr
 
     # -- indicator conditions ------------------------------------------------ #
     def _rsi(self, c) -> bool:
