@@ -46,40 +46,42 @@ export function VolumeScreener() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-term-bg">
-      <div className="space-y-2 border-b border-term-border bg-term-panel2 px-3 py-2">
+      <div className="border-b border-term-border bg-term-panel2 px-3 py-2">
         <ScanHeader title="Volume" universe={universe} setUniverse={setUniverse} data={data}>
-        <Chips<Mode>
-          items={[
-            ["spikes", "Volume spikes"],
-            ["volume", "Most traded"],
-            ["value", "Top value"],
-            ["breakouts", "Breakouts"],
-          ]}
-          value={mode}
-          onChange={setMode}
-        />
-        <MinTraded value={minCr} onChange={setMinCr}>
-          {!viewer && data && (
-            <span className="ml-auto flex items-center gap-1">
-              🔔
-              <select
-                id="vol-alert-level"
-                value={data.cfg.alertLevel}
-                onChange={(e) => setAlert(Number(e.target.value))}
-                className="rounded border border-term-border bg-term-bg px-1 py-0.5 text-[11px] text-term-text"
-                title="Alert (app + Telegram) when a stock crosses this many times its usual volume"
-              >
-                <option value={0}>alerts off</option>
-                <option value={2}>alert at 2x</option>
-                <option value={3}>alert at 3x</option>
-                <option value={5}>alert at 5x</option>
-              </select>
-            </span>
-          )}
-        </MinTraded>
+          <div className="mx-1 h-4 w-px bg-term-border/60" />
+          <Chips<Mode>
+            items={[
+              ["spikes", "Volume spikes"],
+              ["volume", "Most traded"],
+              ["value", "Top value"],
+              ["breakouts", "Breakouts"],
+            ]}
+            value={mode}
+            onChange={setMode}
+          />
+          <div className="mx-1 h-4 w-px bg-term-border/60" />
+          <MinTraded value={minCr} onChange={setMinCr}>
+            {!viewer && data && (
+              <span className="ml-auto flex items-center gap-1">
+                🔔
+                <select
+                  id="vol-alert-level"
+                  value={data.cfg.alertLevel}
+                  onChange={(e) => setAlert(Number(e.target.value))}
+                  className="rounded border border-term-border bg-term-bg px-1 py-0.5 text-[11px] text-term-text"
+                  title="Alert (app + Telegram) when a stock crosses this many times its usual volume"
+                >
+                  <option value={0}>alerts off</option>
+                  <option value={2}>alert at 2x</option>
+                  <option value={3}>alert at 3x</option>
+                  <option value={5}>alert at 5x</option>
+                </select>
+              </span>
+            )}
+          </MinTraded>
         </ScanHeader>
         {base && base.ready < base.total && (
-          <div className="text-[11px] text-amber-400">
+          <div className="mt-1 text-[11px] text-amber-400">
             Working out each stock's usual volume: {base.ready} / {base.total} ready
             {universe !== "fo" ? " — the first time for all NSE takes about 45 min" : ""}.
           </div>

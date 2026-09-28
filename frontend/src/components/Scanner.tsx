@@ -1,26 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useStore } from "../store";
 import { compact, nf, sk, signColor, oiCr } from "../lib/format";
 import type { HotStrike, ScanRow } from "../types";
 import { Num } from "./Screener";
 
-type Spec = {
+export type Spec = {
   scoreMin?: number;
   dteMax?: number;
   building?: boolean;
   hotOnly?: boolean;
   bias?: "UP" | "DOWN";
-};
-
-const LS_KEY = "blastFilter";
-
-const loadSpec = (): Spec => {
-  try {
-    const v = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
-    return v && typeof v === "object" ? v : {};
-  } catch {
-    return {};
-  }
 };
 
 const matches = (r: ScanRow, s: Spec) =>
@@ -48,24 +37,6 @@ const specKey = (s: Spec) =>
 // same 4-colour OI scheme as the OI Profile: call add red, call cut amber, put add green, put cut sky
 const hotStyle = (h: HotStrike) =>
   h.side === "CE" ? (h.chg >= 0 ? "text-down" : "text-amber-400") : h.chg >= 0 ? "text-up" : "text-sky-400";
-
-function Chip({
-  on,
-  onClick,
-  title,
-  children,
-}: {
-  on?: boolean;
-  onClick: () => void;
-  title?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <button onClick={onClick} title={title} className={`chipbtn ${on ? "on" : ""}`}>
-      {children}
-    </button>
-  );
-}
 
 function HotCell({ hs }: { hs?: HotStrike[] }) {
   if (!hs?.length) return <span className="text-term-dim">—</span>;
@@ -165,17 +136,8 @@ const TD = ({
   cls?: string;
 }) => <td className={`border-b border-r border-term-border/60 px-2 py-2 ${cls}`}>{children}</td>;
 
-export function Scanner() {
+export function Scanner({ spec, setSpec }: { spec: Spec; setSpec: (s: Spec) => void }) {
   const { scan, selectSymbol, setView, symClassOk } = useStore();
-  const [spec, setSpec] = useState<Spec>(loadSpec);
-  useEffect(() => {
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify(spec));
-    } catch {
-      /* storage blocked: the filter just won't survive a reload */
-    }
-  }, [spec]);
-  const patch = (p: Partial<Spec>) => setSpec((s) => ({ ...s, ...p }));
 
   const all = useMemo(() => scan.filter((r) => symClassOk(r.symbol)), [scan, symClassOk]);
   const rows = useMemo(
@@ -190,35 +152,6 @@ export function Scanner() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-term-border bg-term-panel2 px-3 py-2">
-        <Num label="Score≥" value={spec.scoreMin} onChange={(v) => patch({ scoreMin: v })} />
-        <Num label="DTE≤" value={spec.dteMax} onChange={(v) => patch({ dteMax: v })} />
-        <Chip
-          on={spec.building}
-          onClick={() => patch({ building: spec.building ? undefined : true })}
-          title="Blast score climbing fast over the last 5 minutes (the trigger of the 'starting to build' alert)"
-        >
-          Building
-        </Chip>
-        <Chip
-          on={spec.hotOnly}
-          onClick={() => patch({ hotOnly: spec.hotOnly ? undefined : true })}
-          title="A near-ATM strike with an outsized OI move in the last ~15 minutes"
-        >
-          Hot OI strike
-        </Chip>
-        <div className="flex gap-1">
-          {(["UP", "DOWN"] as const).map((b) => (
-            <Chip key={b} on={spec.bias === b} onClick={() => patch({ bias: spec.bias === b ? undefined : b })}>
-              {b === "UP" ? "Bias up" : "Bias down"}
-            </Chip>
-          ))}
-        </div>
-        <button onClick={() => setSpec({})} className="btn px-2 py-0.5 text-2xs">
-          Reset
-        </button>
-      </div>
-
       <div className="flex flex-wrap items-center gap-1 border-b border-term-border bg-term-panel2 px-3 py-1 text-2xs">
         <span className="text-term-dim">Presets:</span>
         {PRESETS.map(([name, hint, p]) => (

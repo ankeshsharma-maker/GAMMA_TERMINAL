@@ -21,7 +21,7 @@ type CompareRow = {
   sevenDayPct: number | null;
   buildup?: string;
 };
-type Timeframe = "today" | "yesterday" | "7d" | "compare";
+export type Timeframe = "today" | "yesterday" | "7d" | "compare";
 type SortCol = "today" | "yesterday" | "7d";
 
 const TF_LABEL: Record<"today" | "yesterday" | "7d", string> = {
@@ -47,14 +47,13 @@ const Pct = ({ v }: { v: number | null }) => (
  *  Compare merges all three into one sortable table per symbol, so a move
  *  can be read in context (e.g. "up today but down over 7 days") instead of
  *  only ever seeing one ranking at a time. */
-export function Movers() {
+export function Movers({ tf, setTf }: { tf: Timeframe; setTf: (v: Timeframe) => void }) {
   const selectSymbol = useStore((s) => s.selectSymbol);
   const setChartQueue = useStore((s) => s.setChartQueue);
   const setView = useStore((s) => s.setView);
   const symClassOk = useStore((s) => s.symClassOk);
   const symClass = useStore((s) => s.symClass);
 
-  const [tf, setTf] = useState<Timeframe>("today");
   const [rows, setRows] = useState<Row[]>([]);
   const [compareRows, setCompareRows] = useState<CompareRow[]>([]);
   const [sortCol, setSortCol] = useState<SortCol>("today");
@@ -253,29 +252,6 @@ export function Movers() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
-        <span className="font-semibold uppercase tracking-wide">Top movers</span>
-        <div className="segx">
-          {(
-            [
-              ["today", "Today"],
-              ["yesterday", "Yesterday"],
-              ["7d", "7 Day"],
-              ["compare", "Compare"],
-            ] as const
-          ).map(([v, label]) => (
-            <button
-              key={v}
-              onClick={() => setTf(v)}
-              className={`px-2 py-0.5 font-semibold ${
-                tf === v
-                  ? "bg-term-accent text-white"
-                  : "text-term-dim hover:bg-term-border hover:text-term-text"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
         {tf !== "compare" && (
           <label className="flex items-center gap-1">
             show
