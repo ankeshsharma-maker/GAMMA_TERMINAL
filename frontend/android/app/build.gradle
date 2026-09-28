@@ -8,8 +8,13 @@ android {
         applicationId "in.gammaterminal.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // a new, rising version on every build (minutes since 2026-01-01) so Android and the user can
+        // tell builds apart -- it was 1 / "1.0" on every APK
+        versionCode = (int) ((System.currentTimeMillis() - 1767225600000L) / 60000L)
+        versionName = new java.text.SimpleDateFormat("yyyy.MM.dd-HHmm").with {
+            setTimeZone(TimeZone.getTimeZone("Asia/Kolkata"))
+            format(new Date())
+        }
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

@@ -2,12 +2,15 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
-export default defineConfig({
+// the phone app (--mode capacitor) bundles its screens inside the APK: no service worker there --
+// an old one survives an app update and keeps serving the PREVIOUS version's screens
+export default defineConfig(({ mode }) => ({
   define: { __APP_BUILD__: JSON.stringify(new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC") },
   plugins: [
     react(),
     VitePWA({
       registerType: "autoUpdate",
+      injectRegister: mode === "capacitor" ? false : "auto",
       includeAssets: ["favicon.png", "icons/apple-touch-icon.png"],
       manifest: {
         name: "GammaTerminal",
@@ -50,4 +53,4 @@ export default defineConfig({
       "/ws": { target: "ws://localhost:8000", ws: true },
     },
   },
-});
+}));

@@ -2,6 +2,7 @@
  *  VAPID-keyed backend in push.py. iOS Safari only supports this once the
  *  app is added to the Home Screen and opened from there (iOS 16.4+) --
  *  a plain browser tab never gets permission to subscribe. */
+import { Capacitor } from "@capacitor/core";
 import { api } from "./api";
 
 function urlBase64ToUint8Array(base64: string): Uint8Array {
@@ -16,6 +17,7 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
 export function pushSupported(): boolean {
   return (
     typeof window !== "undefined" &&
+    !Capacitor.isNativePlatform() && // the phone app has no service worker (see main.tsx)
     "serviceWorker" in navigator &&
     "PushManager" in window &&
     typeof Notification !== "undefined"
