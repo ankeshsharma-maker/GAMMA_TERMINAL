@@ -93,7 +93,14 @@ async def read(symbol: str) -> dict:
     if len(pts) < 3:
         return out
     day = datetime.fromtimestamp(pts[-1][ix["t"]], IST).date()
-    pts = [p for p in pts if datetime.fromtimestamp(p[ix["t"]], IST).date() == day]
+
+    def _in_day(t: float) -> bool:
+        # the session only: a pre-open reading still carries the previous close, which would
+        # measure the move from yesterday instead of today's 09:15 open
+        dt = datetime.fromtimestamp(t, IST)
+        return dt.date() == day and dt.hour * 60 + dt.minute >= 9 * 60 + 15
+
+    pts = [p for p in pts if _in_day(p[ix["t"]])]
     if len(pts) < 3:
         return out
     o, now = float(pts[0][ix["spot"]]), float(pts[-1][ix["spot"]])
