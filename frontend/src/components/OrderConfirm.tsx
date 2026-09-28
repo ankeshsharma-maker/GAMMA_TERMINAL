@@ -99,6 +99,48 @@ export function OrderConfirm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [legs, pending?.symbol, pending?.expiry]);
 
+  // adding to a LOSING live position? (the order is the same way as an open position that is in the red)
+  const [losers, setLosers] = useState<{ name: string; qty: number; mtm: number }[]>([]);
+  useEffect(() => {
+    setLosers([]);
+    if (!pending || !legs.length) return;
+    let alive = true;
+    const MON = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+    const ed = (() => {
+      const m = /^(\d{1,2})-([A-Za-z]{3})/.exec(pending.expiry || "");
+      return m ? `${m[1].padStart(2, "0")} ${m[2].toUpperCase()}` : "";
+    })();
+    api.brokerPositions().then(
+      (d) => {
+        if (!alive) return;
+        const rows: any[] = d.positions || [];
+        const out: { name: string; qty: number; mtm: number }[] = [];
+        for (const l of legs) {
+          if (l.optionType === "FUT") continue;
+          const r = rows.find((x) => {
+            const nm = String(x.dname || "").toUpperCase();
+            return (
+              nm.startsWith(pending.symbol.toUpperCase() + " ") &&
+              nm.includes(` ${sk(l.strike)} ${l.optionType}`) &&
+              (!ed || !MON.some((mo) => nm.includes(mo)) || nm.includes(ed))
+            );
+          });
+          if (!r) continue;
+          const q = Number(r.netqty) || 0;
+          const mtm = Number(r.urmtom ?? r.mtm) || 0;
+          const adds = (q > 0 && l.side === "BUY") || (q < 0 && l.side === "SELL");
+          if (adds && mtm < 0) out.push({ name: r.dname || r.tsym, qty: q, mtm });
+        }
+        setLosers(out);
+      },
+      () => {}
+    );
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [legs, pending?.symbol, pending?.expiry]);
+
   if (!pending) return null;
 
   const need = brokerMargin?.margin ?? marginEst;
@@ -146,6 +188,13 @@ export function OrderConfirm() {
           Flattrade with real money. Review carefully.
         </p>
 
+        {losers.length > 0 && (
+          <div className="mb-3 rounded border border-amber-500/60 bg-amber-500/10 px-2 py-1.5 text-[12px] leading-snug text-amber-400">
+            <b>⚠ You're adding to a LOSING position.</b>{" "}
+            {losers.map((x) => `${x.name}: ${Math.abs(x.qty)} ${x.qty < 0 ? "short" : "long"} at ₹${nf(x.mtm, 0)}`).join(" · ")}. Adding
+            to a loser is how one bad trade becomes the day's biggest loss — is this in your plan?
+          </div>
+        )}
         <div className="mb-3 divide-y divide-term-border rounded border border-term-border">
           {legs.map((l, i) => {
             const px = priceFor(l.strike, l.optionType, l.price);

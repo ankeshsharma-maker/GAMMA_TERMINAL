@@ -139,6 +139,7 @@ _ALLOW: list[tuple[str, re.Pattern]] = [
         ("GET", rf"/api/(option-chain|volatility|history|pcr|gex-intraday|oi-change|oi-walls|flow|chart)/(?!drawings$){_SYM}"),
         ("GET", rf"/api/(scan|screener)(/{_SYM})?"),
         ("GET", r"/api/(alerts|unusual)"),
+        ("GET", rf"/api/trend-guard/{_SYM}"),
         ("GET", r"/api/health"),
         ("GET", r"/api/volume-screener"),
         ("GET", r"/api/upstox/(expiries|history-chain|history-greeks|weekly-gex|movers-history|chain-preview|data-source)"),
@@ -177,7 +178,7 @@ def viewer_allowed(method: str, path: str) -> bool:
 
 # ---- alerts a viewer may see: about the market, never about the owner's book ----
 _MARKET_KINDS = {"blast-crit", "blast-warn", "blast-build", "iv-spike", "straddle-exp", "oi-surge", "flow-reversal",
-                 "volume-spike"}  # keep in step with alert_delivery._MARKET_KINDS
+                 "volume-spike", "trend-reversal"}  # keep in step with alert_delivery._MARKET_KINDS
 
 
 def market_alert(a: dict) -> bool:

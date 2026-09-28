@@ -98,6 +98,19 @@ export function HomeDashboard() {
     { t: number; pcr: number | null; ceOI: number; peOI: number; ceChg: number | null; peChg: number | null; spot: number }[]
   >([]);
   const [vol, setVol] = useState<VolatilityData | null>(null);
+  // trend-day guard: is today a trend day, and how many of the 3 reversal signs are on
+  const [guard, setGuard] = useState<Awaited<ReturnType<typeof api.trendGuard>> | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const get = () => api.trendGuard(symbol).then((g) => alive && setGuard(g), () => alive && setGuard(null));
+    setGuard(null);
+    get();
+    const id = window.setInterval(() => !document.hidden && get(), 30_000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [symbol]);
 
   useEffect(() => {
     let alive = true;
@@ -291,6 +304,7 @@ export function HomeDashboard() {
             </div>
           </div>
         </div>
+        {guard && <TrendGuardLine g={guard} />}
         <div className="mt-1.5 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
           {reads.map((r) => (
             <div key={r.name} className={`rounded border px-2 py-1.5 ${TONE[r.tone]}`}>
@@ -602,6 +616,48 @@ export function HomeDashboard() {
           )}
         </Card>
       </div>
+    </div>
+  );
+}
+
+/** "▼ TREND DAY — down 533 pts · reversal signs 0 of 3 · ✗ structure ✗ OI ✗ flow": answers "is it reversing
+ *  yet?" with evidence, so a trend day isn't traded against on a feeling. Amber at 2 of 3. */
+function TrendGuardLine({ g }: { g: Awaited<ReturnType<typeof api.trendGuard>> }) {
+  if (!g.trend) {
+    return (
+      <div className="mt-1.5 rounded border border-term-border bg-term-bg/40 px-2 py-1 text-[11px] text-term-dim">
+        ◆ No trend day{g.pct != null ? ` (${g.pct >= 0 ? "+" : ""}${nf(g.pct, 2)}% since open)` : ""} — no side has taken control yet
+      </div>
+    );
+  }
+  const down = g.trend === "down";
+  const warn = g.count >= 2;
+  const tone = warn ? "border-amber-500/60 bg-amber-500/10 text-amber-400" : down ? "border-down/40 bg-down/10 text-down" : "border-up/40 bg-up/10 text-up";
+  const short: Record<string, string> = { structure: "structure", oi: "OI", flow: "flow" };
+  return (
+    <div className={`mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 rounded border px-2 py-1 text-[11px] ${tone}`}>
+      <span className="font-bold">
+        {warn ? "⚠ POSSIBLE REVERSAL" : `${down ? "▼" : "▲"} TREND DAY — ${g.trend}`}
+      </span>
+      <span className="tabular-nums">
+        {g.move != null ? `${g.move >= 0 ? "+" : "−"}${nf(Math.abs(g.move), 0)} pts` : ""}
+        {g.pct != null ? ` (${g.pct >= 0 ? "+" : ""}${nf(g.pct, 2)}%)` : ""} since open
+      </span>
+      <span className="font-semibold">· reversal signs {g.count} of 3</span>
+      <span className="flex flex-wrap gap-1">
+        {g.signs.map((x) => (
+          <span
+            key={x.key}
+            title={`${x.label} — ${x.detail}`}
+            className={`rounded px-1 ${x.on ? "bg-amber-500/25 text-amber-300" : "bg-term-bg/60 text-term-dim"}`}
+          >
+            {x.on ? "✓" : "✗"} {short[x.key] ?? x.key}
+          </span>
+        ))}
+      </span>
+      <span className="text-term-dim">
+        {warn ? "— confirm on the chart before trading against the trend" : "— trading against it needs 2 of 3"}
+      </span>
     </div>
   );
 }

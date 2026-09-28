@@ -250,6 +250,14 @@ def gex_intraday_view(symbol: str, day: str | None = Query(None)):
     return pcr_series.gex_intraday(symbol, day, store.get_history(symbol))
 
 
+@router.get("/trend-guard/{symbol}")
+async def trend_guard_view(symbol: str):
+    """Is today a trend day for this index, and how many of the 3 reversal signs are on (trend_guard.py)."""
+    from . import trend_guard
+
+    return await trend_guard.read(symbol)
+
+
 @router.get("/pcr/{symbol}")
 def pcr_view(symbol: str, day: str | None = Query(None), bucket: int = Query(5, ge=1, le=30)):
     """PCR + spot for one trading day, for the OI tab's PCR chart. Indices carry whole days (and earlier days) from the

@@ -223,6 +223,18 @@ export const api = {
   pcr: (symbol: string, day: string | null, bucket: number) =>
     j<PcrSeries>(`/api/pcr/${symbol}?bucket=${bucket}` + (day ? `&day=${encodeURIComponent(day)}` : "")),
 
+  /** is today a trend day, and how many of the 3 reversal signs are on (backend trend_guard.py) */
+  trendGuard: (symbol: string) =>
+    j<{
+      symbol: string;
+      trend: "up" | "down" | null;
+      move: number | null;
+      pct: number | null;
+      since: number | null;
+      signs: { key: string; label: string; on: boolean; detail: string }[];
+      count: number;
+    }>(`/api/trend-guard/${symbol}`),
+
   flow: (symbol: string, expiry: string | undefined, window: string) =>
     j<FlowData>(
       `/api/flow/${symbol}?window=${encodeURIComponent(window)}` +
