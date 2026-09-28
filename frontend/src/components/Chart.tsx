@@ -22,6 +22,7 @@ import { detectPatterns, PATTERN_LEGEND, type PatternHit } from "../lib/candlePa
 import { detectChartPatterns, type ChartEvent } from "../lib/chartPatterns";
 import { AutoPatternsPrimitive } from "../lib/autoPatternsPrimitive";
 import { TrendCompass } from "./TrendCompass";
+import { useIsMobile } from "../lib/useIsMobile";
 import {
   bollinger,
   ema,
@@ -465,6 +466,23 @@ export function Chart() {
   }, [eff]);
 
   // collapse the whole settings toolbar for a full-height chart
+  // phone: the settings bar shows only symbol / timeframe / ƒx / Patterns until "⋯ More" (remembered)
+  const phone = useIsMobile();
+  const [moreTools, setMoreToolsRaw] = useState(() => {
+    try {
+      return localStorage.getItem("chart.moreTools") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const setMoreTools = (v: boolean) => {
+    setMoreToolsRaw(v);
+    try {
+      localStorage.setItem("chart.moreTools", v ? "1" : "0");
+    } catch {
+      /* private mode */
+    }
+  };
   const [barOpen, setBarOpen] = useState(() => {
     try {
       return localStorage.getItem("chart.barOpen") !== "0";
@@ -1691,9 +1709,21 @@ export function Chart() {
         </div>
       )}
       <div
-        className="flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs"
+        className="chart-bar flex flex-wrap items-center gap-1.5 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs"
+        data-compact={phone && !moreTools ? "1" : "0"}
         style={barOpen ? undefined : { display: "none" }}
       >
+        {/* phone: the rest of the settings behind this (placed last) */}
+        {phone && (
+          <button
+            type="button"
+            onClick={() => setMoreTools(!moreTools)}
+            className="chart-keep order-last rounded border border-term-dim/70 px-2 py-0.5 font-semibold text-term-dim hover:text-term-text"
+            title={moreTools ? "Show only symbol, timeframe, indicators and patterns" : "Show every chart setting"}
+          >
+            {moreTools ? "⌃ less" : "⋯ More"}
+          </button>
+        )}
         {view !== "scalper" && (
           <div className="flex flex-wrap items-center gap-1">
             {(
@@ -1720,13 +1750,15 @@ export function Chart() {
             ))}
           </div>
         )}
-        <SelectMenu
-          value={symbol}
-          options={symOptions.map((s) => [s, s] as [string, string])}
-          onChange={(v) => selectSymbol(v, true)}
-          title="Index / stock to chart"
-          width={150}
-        />
+        <span className="chart-keep contents">
+          <SelectMenu
+            value={symbol}
+            options={symOptions.map((s) => [s, s] as [string, string])}
+            onChange={(v) => selectSymbol(v, true)}
+            title="Index / stock to chart"
+            width={150}
+          />
+        </span>
         <ChartStepper />
         <SelectMenu
           value={instrument}
@@ -1844,12 +1876,9 @@ export function Chart() {
           );
         })()}
 
-        <SelectMenu
-          value={intervalS}
-          options={TIMEFRAMES}
-          onChange={setIntervalS}
-          title="Candle timeframe"
-        />
+        <span className="chart-keep contents">
+          <SelectMenu value={intervalS} options={TIMEFRAMES} onChange={setIntervalS} title="Candle timeframe" />
+        </span>
 
         <SelectMenu
           value={rangeD}
@@ -2129,7 +2158,7 @@ export function Chart() {
           ⌃ hide bar
         </button>
 
-        <span className="relative">
+        <span className="chart-keep relative">
           <button
             onClick={() => setFxOpen((o) => !o)}
             title="Indicators"
@@ -2217,7 +2246,7 @@ export function Chart() {
             </>
           )}
         </span>
-        <span className="relative">
+        <span className="chart-keep relative">
           <button
             onClick={() => setPatOpen((o) => !o)}
             title="Candle patterns, range breakouts, chart patterns, market structure"

@@ -76,6 +76,52 @@ function StatCol({
 
 /** ‹ strike › : step one strike down / up; the strike itself still opens the full list.
  *  Shows the distance from ATM ("ATM", "ATM+2", "ATM-1"). */
+/** A price box that keeps what is being typed ("125." on the way to "125.50") and only passes on a
+ *  real number -- a type=number input reports a half-typed "125." as empty, which cleared the leg's
+ *  price. Blank = no price (use the live LTP). Decimal keypad on phones. */
+function PriceInput({
+  value,
+  onChange,
+  placeholder,
+  className,
+  id,
+}: {
+  value: number | null | undefined;
+  onChange: (v: number | null) => void;
+  placeholder?: string;
+  className?: string;
+  id?: string;
+}) {
+  const [draft, setDraft] = useState(value == null ? "" : String(value));
+  // follow outside changes (↺ back to live, a strategy loaded) but not our own keystrokes
+  useEffect(() => {
+    setDraft((d) => {
+      const cur = d.trim() === "" ? null : Number(d);
+      return cur === (value ?? null) ? d : value == null ? "" : String(value);
+    });
+  }, [value]);
+  return (
+    <input
+      id={id}
+      type="text"
+      inputMode="decimal"
+      autoComplete="off"
+      value={draft}
+      placeholder={placeholder}
+      onChange={(e) => {
+        let v = e.target.value.replace(/[^\d.]/g, "");
+        const dot = v.indexOf(".");
+        if (dot >= 0) v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, "").slice(0, 2);
+        setDraft(v);
+        if (v === "") onChange(null);
+        else if (v !== "." && Number.isFinite(Number(v))) onChange(Number(v));
+      }}
+      onBlur={() => setDraft(value == null ? "" : String(value))}
+      className={className}
+    />
+  );
+}
+
 function StrikeStepper({
   value,
   strikes,
@@ -271,6 +317,7 @@ export function StrategyBuilder() {
   const [newLegOT, setNewLegOT] = useState<OptionType>("CE");
   const [newLegSide, setNewLegSide] = useState<"BUY" | "SELL">("BUY");
   const [newLegLots, setNewLegLots] = useState(1);
+  const [newLegPrice, setNewLegPrice] = useState<number | null>(null); // blank = live LTP
   const [newLegStrike, setNewLegStrike] = useState(0); // 0 => ATM
   const [addingLeg, setAddingLeg] = useState(false); // collapse the add-leg form
   const doExecute = useCallback(async () => {
@@ -527,6 +574,7 @@ export function StrategyBuilder() {
             : newLegStrike || atm || strikes[Math.floor(strikes.length / 2)] || 0,
         side,
         lots: Math.max(1, newLegLots || 1),
+        ...(newLegPrice != null ? { price: newLegPrice } : {}),
       },
     ]);
 
@@ -614,7 +662,17 @@ export function StrategyBuilder() {
     api.strategyScheduleDel(id).then((d) => setSchedules(d.schedules), () => {});
 
   // clamp the "time to expiry" slider whenever the position / expiry changes
-  const dte = Math.max(1, Math.round(analysis?.dte ?? 0));
+  // exact time left (the server's fractional days, e.g. 1.3 or 0.3 on expiry morning) for PRICING;
+  // `dte` = whole-day steps for the slider, whose last step is always expiry
+  const dteExact = Math.max(analysis?.dte ?? 0, 0);
+  const dte = Math.max(1, Math.ceil(dteExact - 0.01));
+  /** days left after moving `t` whole days ahead (0 at the slider's last step = expiry) */
+  const daysLeft = (t: number) => (t >= dte ? 0 : Math.max(dteExact - t, 0));
+  /** "1.3d left" / "7h left" */
+  const leftLbl = (t: number) => {
+    const d = daysLeft(t);
+    return d <= 0 ? "0d left" : d < 1 ? `${Math.max(1, Math.round(d * 24))}h left` : `${nf(d, 1)}d left`;
+  };
   useEffect(() => {
     setTDays((d) => Math.min(d, dte));
   }, [dte, analysis?.symbol, analysis?.expiry, legs.length]);
@@ -622,12 +680,12 @@ export function StrategyBuilder() {
   // intermediate payoff curve at (dte - tDays) days left / ivShift% IV, computed client-side
   const tPnl = useMemo(() => {
     if (!analysis || (tDays <= 0 && !ivShift)) return null;
-    const remYears = Math.max((dte - tDays) / 365, 0);
+    const remYears = daysLeft(tDays) / 365;
     return strategyPnlCurve(analysis.legs, analysis.x, remYears, ivShift);
-  }, [analysis, tDays, dte, ivShift]);
+  }, [analysis, tDays, dte, dteExact, ivShift]);
   const tDate = new Date(Date.now() + tDays * 86400000);
   const tDateLbl = tDate.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
-  const remYears = Math.max((dte - tDays) / 365, 0);
+  const remYears = daysLeft(tDays) / 365;
   // combined what-if label for the chart legend, e.g. "T+7d (18 Sep) · +20% IV" or "now · -15% IV"
   const tLineLabel = tPnl
     ? [tDays > 0 ? `T+${tDays}d (${tDateLbl})` : "now", ivShift ? `${ivShift > 0 ? "+" : ""}${ivShift}% IV` : ""]
@@ -653,14 +711,14 @@ export function StrategyBuilder() {
 
   // position time value / intrinsic value (Sensibull-style), current
   const posVal = useMemo(
-    () => (analysis ? positionValue(analysis.legs, analysis.spot, dte / 365) : null),
-    [analysis, dte]
+    () => (analysis ? positionValue(analysis.legs, analysis.spot, dteExact / 365) : null),
+    [analysis, dteExact]
   );
 
   // per-leg P&L at the (target price, target date)
   const legRows = useMemo(() => {
     if (!analysis) return [];
-    const nowY = dte / 365;
+    const nowY = dteExact / 365;
     return analysis.legs.map((leg) => ({
       leg,
       label: `${leg.side === "BUY" ? "B" : "S"} ${leg.lots}×${
@@ -671,7 +729,7 @@ export function StrategyBuilder() {
       tgtPx: legPriceAt(leg, tgtPrice, remYears, ivShift),
       tgtPnl: legPnlAt(leg, tgtPrice, remYears, ivShift),
     }));
-  }, [analysis, tgtPrice, remYears, dte, ivShift]);
+  }, [analysis, tgtPrice, remYears, dteExact, ivShift]);
 
   // per-leg greeks at the target (price, date)
   const greekRows = useMemo(() => {
@@ -760,8 +818,8 @@ export function StrategyBuilder() {
     }
 
     const exp = strategyPnlCurve(analysis.legs, strikes, 0);
-    const now = strategyPnlCurve(analysis.legs, strikes, dte / 365);
-    const remYears = Math.max((dte - tDays) / 365, 0);
+    const now = strategyPnlCurve(analysis.legs, strikes, dteExact / 365);
+    const remYears = daysLeft(tDays) / 365;
     const tv = tDays > 0 || ivShift ? strategyPnlCurve(analysis.legs, strikes, remYears, ivShift) : null;
 
     return strikes
@@ -776,7 +834,7 @@ export function StrategyBuilder() {
         isFloor: k === floor.k && floor.v > 0,
       }))
       .reverse(); // high strike on top, like the chain ladder
-  }, [analysis, tDays, dte, strikeSpan, tableInterval, chain, ivShift]);
+  }, [analysis, tDays, dte, dteExact, strikeSpan, tableInterval, chain, ivShift]);
 
   // scroll the P&L table to the ATM row by default instead of the top of the ladder
   const atmRowRef = useRef<HTMLTableRowElement | null>(null);
@@ -1141,16 +1199,11 @@ export function StrategyBuilder() {
                 </button>
                 <label className="ml-auto flex items-center gap-1">
                   <span>@</span>
-                  <input
-                    type="number"
-                    step="0.05"
-                    min="0"
-                    value={leg.price ?? ""}
+                  <PriceInput
+                    value={leg.price}
                     placeholder={analysis?.legs[i] ? nf(analysis.legs[i].entry) : "LTP"}
-                    onChange={(e) =>
-                      setLeg(i, { price: e.target.value === "" ? null : Number(e.target.value) })
-                    }
-                    className="num w-16 rounded border border-term-border bg-term-bg px-1 py-0.5 text-right text-term-text"
+                    onChange={(v) => setLeg(i, { price: v })}
+                    className="num w-20 rounded border border-term-border bg-term-bg px-1.5 py-1 text-right text-term-text"
                   />
                   {leg.price != null && (
                     <button
@@ -1254,9 +1307,19 @@ export function StrategyBuilder() {
                     className="num w-14 rounded border border-term-border bg-term-bg px-2 py-1 text-term-text"
                   />
                 </label>
+                <label className="flex flex-col gap-0.5">
+                  <span className="text-[9px] uppercase text-term-dim">Price</span>
+                  <PriceInput
+                    value={newLegPrice}
+                    onChange={setNewLegPrice}
+                    placeholder="live"
+                    className="num w-20 rounded border border-term-border bg-term-bg px-2 py-1 text-right text-term-text"
+                  />
+                </label>
                 <button
                   onClick={() => {
                     addLeg();
+                    setNewLegPrice(null);
                     setAddingLeg(false);
                   }}
                   className="btn ml-auto px-4 py-1 font-semibold"
@@ -1941,13 +2004,13 @@ export function StrategyBuilder() {
                       ))}
                     </div>
                     <div className="seg text-[10px]">
-                      {([["strikes", 0], ["50", 50], ["100", 100], ["200", 200]] as const).map(
+                      {([["strikes", 0], ["50 pts", 50], ["100 pts", 100], ["200 pts", 200]] as const).map(
                         ([lbl, v]) => (
                           <button
                             key={lbl}
                             onClick={() => setTableInterval(v)}
                             className={tableInterval === v ? "on" : ""}
-                            title="row interval"
+                            title={v ? `one row every ${v} points of the index (a target level, not an option strike)` : "one row per real strike in the option chain"}
                           >
                             {lbl}
                           </button>
@@ -1957,8 +2020,9 @@ export function StrategyBuilder() {
                     <button
                       onClick={() => setShowPct((v) => !v)}
                       className={`chipbtn ${showPct ? "on" : ""}`}
+                      title="add a Move column: how far each row is from spot, in %"
                     >
-                      %
+                      % move
                     </button>
                   </div>
                 </div>
@@ -2077,12 +2141,12 @@ export function StrategyBuilder() {
               />
               <span className="num w-[188px] shrink-0 text-right text-term-text">
                 {tDays === 0 ? (
-                  <>now · T+0 · {dte}d left</>
+                  <>now · T+0 · {leftLbl(0)}</>
                 ) : tDays >= dte ? (
                   <>expiry day · 0d left</>
                 ) : (
                   <>
-                    T+{tDays}d · {tDateLbl} · {dte - tDays}d left
+                    T+{tDays}d · {tDateLbl} · {leftLbl(tDays)}
                   </>
                 )}
               </span>
@@ -2099,7 +2163,7 @@ export function StrategyBuilder() {
                       : `${new Date(Date.now() + d * 86400000).toLocaleDateString("en-IN", {
                           day: "2-digit",
                           month: "short",
-                        })} · ${dte - d}d left`
+                        })} · ${leftLbl(d)}`
                   }
                   className={`chipbtn num ${tDays === d ? "border-transparent bg-amber-500 text-black" : ""}`}
                 >

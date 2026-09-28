@@ -228,3 +228,8 @@ select:focus-visible {
     --cell-w: calc(16.6cqw - 13.7px);
   }
 }
+
+/* phone Chart tab: only the controls marked .chart-keep show until "⋯ More" */
+.chart-bar[data-compact="1"] > :not(.chart-keep) {
+  display: none !important;
+}

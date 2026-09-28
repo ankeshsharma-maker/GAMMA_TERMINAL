@@ -388,11 +388,6 @@ export function Watchlist({ band }: { band?: ReactNode } = {}) {
   const wlAdd = useStore((s) => s.wlAdd);
   const wlAddList = useStore((s) => s.wlAddList);
   const wlDeleteList = useStore((s) => s.wlDeleteList);
-  const openNotif = useStore((s) => s.openNotif);
-  const alertsUnseen = useStore(
-    (s) =>
-      Math.max(0, s.alerts.length - s.alertsSeen) + Math.max(0, s.unusual.length - s.unusualSeen)
-  );
 
   // the panel's own width decides full vs compact sizing (the desktop pane is
   // resizable; a phone is always full)
@@ -525,7 +520,6 @@ export function Watchlist({ band }: { band?: ReactNode } = {}) {
     if (i !== (useStore.getState().watchlists?.active ?? 0)) await wlSetActive(i);
   };
   const headBtns = [
-    { ic: "bell", title: "Alerts", on: false, w: 1.9, fn: () => openNotif() },
     { ic: "sort", title: "Sort", on: sortOpen, w: 1.9, fn: () => setSortOpen((o) => !o) },
     { ic: "search", title: "Search & add", on: searchOpen, w: 1.9, fn: () => setSearchOpen((o) => !o) },
     { ic: "dots", title: "Strikes, future, presets, edit list", on: toolsOpen, w: 3.2, fn: () => setToolsOpen((o) => !o) },
@@ -546,9 +540,8 @@ export function Watchlist({ band }: { band?: ReactNode } = {}) {
           <span className={`text-xs text-term-dim transition-transform ${listsOpen ? "rotate-180" : ""}`}>▾</span>
         </button>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {/* a narrow (desktop) pane has no room for all four -- the desktop
-              header already carries its own alerts bell */}
-          {headBtns.filter((b) => !(compact && b.ic === "bell")).map((b) => (
+          {/* no alerts bell here: the top bar already has one (desktop 🔔, phone ⚿ with the unread count) */}
+          {headBtns.map((b) => (
             <button
               key={b.ic}
               onClick={b.fn}
@@ -560,11 +553,6 @@ export function Watchlist({ band }: { band?: ReactNode } = {}) {
               }`}
             >
               <HeadIcon d={ICON[b.ic]} w={b.w} size={compact ? 16 : 21} />
-              {b.ic === "bell" && alertsUnseen > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 min-w-[15px] rounded-full bg-down px-1 text-center text-[9px] font-bold leading-4 text-white">
-                  {alertsUnseen}
-                </span>
-              )}
             </button>
           ))}
         </div>

@@ -147,15 +147,17 @@ function useTrendingOI() {
 /* ================================================================== *
  *  Wrapper — Live / Classic view switch                              *
  * ================================================================== */
+type ToiView = "live" | "classic" | "cross";
 export function TrendingOI() {
-  const [view, setView] = useState<"live" | "classic">(() => {
+  const [view, setView] = useState<ToiView>(() => {
     try {
-      return localStorage.getItem(VIEW_LS) === "classic" ? "classic" : "live";
+      const v = localStorage.getItem(VIEW_LS);
+      return v === "classic" || v === "cross" ? v : "live";
     } catch {
       return "live";
     }
   });
-  const pick = (v: "live" | "classic") => {
+  const pick = (v: ToiView) => {
     setView(v);
     try {
       localStorage.setItem(VIEW_LS, v);
@@ -173,14 +175,19 @@ export function TrendingOI() {
           <button className={view === "classic" ? "on" : ""} onClick={() => pick("classic")}>
             Classic chart
           </button>
+          <button className={view === "cross" ? "on" : ""} onClick={() => pick("cross")}>
+            Crossover
+          </button>
         </div>
-        <span className="ml-auto normal-case">
+        <span className="ml-auto hidden normal-case sm:inline">
           {view === "live"
             ? "NiftyTrader-style summary + per-bucket data"
+            : view === "cross"
+            ? "where Put OI change crosses Call OI change, and what spot did next"
             : "original CE/PE build-up trend + PCR overlay"}
         </span>
       </div>
-      {view === "live" ? <TrendingOILive /> : <TrendingOIClassic />}
+      {view === "live" ? <TrendingOILive /> : view === "cross" ? <TrendingOICrossover /> : <TrendingOIClassic />}
     </div>
   );
 }
@@ -652,6 +659,269 @@ function TrendingOILive() {
             )}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================== *
+ *  CROSSOVER -- Call OI change vs Put OI change through the day       *
+ * ================================================================== */
+type Cross = { t: number; spot: number; up: boolean; endT: number; endSpot: number; move: number; open: boolean };
+
+function TrendingOICrossover() {
+  const { symbol, selectSymbol, symOptions, daily, pts, tf, setTf } = useTrendingOI();
+
+  // one point per tf bucket (its last snapshot)
+  const bars = useMemo(() => {
+    const w = daily ? 86400 : Math.max(1, tf) * 60;
+    const out: Pt[] = [];
+    let key = -1;
+    for (const p of pts) {
+      const k = Math.floor(p.t / w);
+      if (k !== key) {
+        out.push({ ...p, t: k * w });
+        key = k;
+      } else out[out.length - 1] = { ...p, t: k * w };
+    }
+    return out;
+  }, [pts, tf, daily]);
+
+  // crossovers, with a small dead-band so a tie wobbling around zero isn't a string of "crosses":
+  // a side only counts once Put - Call is more than 3% of their combined size
+  const { crosses, side, since } = useMemo(() => {
+    const out: Cross[] = [];
+    let cur = 0;
+    let sinceT: number | null = null;
+    bars.forEach((b) => {
+      const diff = b.pe - b.ce;
+      const band = (Math.abs(b.ce) + Math.abs(b.pe)) * 0.03;
+      const s = diff > band ? 1 : diff < -band ? -1 : 0;
+      if (!s || s === cur) return;
+      if (cur !== 0) out.push({ t: b.t, spot: b.spot, up: s > 0, endT: 0, endSpot: 0, move: 0, open: false });
+      if (cur === 0 && sinceT == null) sinceT = b.t;
+      cur = s;
+      sinceT = b.t;
+    });
+    const last = bars[bars.length - 1];
+    out.forEach((c, i) => {
+      const nx = out[i + 1];
+      const end = nx ? bars.find((b) => b.t === nx.t) ?? last : last;
+      c.endT = end?.t ?? c.t;
+      c.endSpot = end?.spot ?? c.spot;
+      c.move = (c.endSpot - c.spot) * (c.up ? 1 : -1); // + = spot went the way the cross said
+      c.open = !nx;
+    });
+    return { crosses: out, side: cur, since: sinceT as number | null };
+  }, [bars]);
+
+  const last = bars[bars.length - 1];
+  const first = bars[0];
+  const lastCross = crosses[crosses.length - 1];
+  const worked = crosses.filter((c) => !c.open && c.move > 0).length;
+  const closed = crosses.filter((c) => !c.open).length;
+  const fmt = (t: number) =>
+    daily
+      ? new Date(t * 1000).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })
+      : new Date(t * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+  const pts2 = (v: number) => `${v >= 0 ? "+" : "−"}${nf(Math.abs(v), 0)}`;
+  const held = (a: number, b: number) => {
+    const m = Math.max(0, Math.round((b - a) / 60));
+    return daily ? `${Math.round(m / 1440)}d` : m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
+  };
+
+  // ---- chart, drawn at the box's real size ----
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setBox({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    setBox({ w: el.clientWidth, h: el.clientHeight });
+    return () => ro.disconnect();
+  }, []);
+  const chart = useMemo(() => {
+    const W = box.w;
+    const H = box.h;
+    if (bars.length < 2 || W < 160 || H < 150) return null;
+    const pad = { l: 46, r: 10, t: 8, b: 18 };
+    const gap = 8;
+    const spotH = Math.round((H - pad.t - pad.b - gap) * 0.36);
+    const oiTop = pad.t + spotH + gap;
+    const oiH = H - pad.b - oiTop;
+    const t0 = bars[0].t;
+    const t1 = bars[bars.length - 1].t || t0 + 1;
+    const x = (t: number) => pad.l + ((t - t0) / (t1 - t0 || 1)) * (W - pad.l - pad.r);
+    const sp = bars.map((b) => b.spot);
+    const sLo = Math.min(...sp);
+    const sHi = Math.max(...sp);
+    const ys = (v: number) => pad.t + (1 - (v - sLo) / (sHi - sLo || 1)) * spotH;
+    const ov = bars.flatMap((b) => [b.ce, b.pe, 0]);
+    const oLo = Math.min(...ov);
+    const oHi = Math.max(...ov);
+    const g = (oHi - oLo) * 0.08 || 1;
+    const yo = (v: number) => oiTop + (1 - (v - (oLo - g)) / (oHi - oLo + 2 * g || 1)) * oiH;
+    const path = (f: (b: Pt) => number, y: (v: number) => number) =>
+      bars.map((b, i) => `${i ? "L" : "M"}${x(b.t).toFixed(1)},${y(f(b)).toFixed(1)}`).join(" ");
+    // shade between the two lines: green where puts lead, red where calls lead
+    const bands = bars.slice(1).map((b, i) => {
+      const a = bars[i];
+      const up = (a.pe - a.ce + (b.pe - b.ce)) / 2 >= 0;
+      return (
+        <path
+          key={i}
+          d={`M${x(a.t)},${yo(a.pe)} L${x(b.t)},${yo(b.pe)} L${x(b.t)},${yo(b.ce)} L${x(a.t)},${yo(a.ce)} Z`}
+          fill={up ? PE : CE}
+          fillOpacity={0.14}
+        />
+      );
+    });
+    return (
+      <svg width={W} height={H} className="block">
+        {/* spot pane */}
+        <text x={W - pad.r} y={pad.t + 10} fontSize={10} textAnchor="end" className="fill-term-dim">
+          spot
+        </text>
+        {[sHi, sLo].map((v, i) => (
+          <text key={i} x={4} y={ys(v) + (i ? -2 : 12)} fontSize={10} className="fill-term-dim">
+            {nf(v, 0)}
+          </text>
+        ))}
+        <path d={path((b) => b.spot, ys)} fill="none" stroke="#93c5fd" strokeWidth={1.5} />
+        {/* OI pane */}
+        <line x1={pad.l} x2={W - pad.r} y1={yo(0)} y2={yo(0)} stroke="currentColor" strokeOpacity={0.35} className="text-term-dim" />
+        {[oHi, 0, oLo].map((v, i) => (
+          <text key={i} x={4} y={yo(v) + 3} fontSize={10} className="fill-term-dim">
+            {compact(v)}
+          </text>
+        ))}
+        {bands}
+        <path d={path((b) => b.ce, yo)} fill="none" stroke={CE} strokeWidth={2} />
+        <path d={path((b) => b.pe, yo)} fill="none" stroke={PE} strokeWidth={2} />
+        {/* every crossover: a line through both panes and a marker on spot */}
+        {crosses.map((c, i) => (
+          <g key={i}>
+            <line x1={x(c.t)} x2={x(c.t)} y1={pad.t} y2={oiTop + oiH} stroke={c.up ? PE : CE} strokeDasharray="3 3" strokeOpacity={0.7} />
+            <text x={x(c.t)} y={ys(c.spot) + (c.up ? 14 : -5)} fontSize={12} textAnchor="middle" fill={c.up ? PE : CE}>
+              {c.up ? "▲" : "▼"}
+            </text>
+          </g>
+        ))}
+        {[t0, (t0 + t1) / 2, t1].map((t, i) => (
+          <text key={i} x={x(t)} y={H - 4} fontSize={10} textAnchor={i === 0 ? "start" : i === 2 ? "end" : "middle"} className="fill-term-dim">
+            {fmt(t)}
+          </text>
+        ))}
+      </svg>
+    );
+  }, [bars, crosses, box, daily]);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      {/* toolbar */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
+        <span className="text-sm font-semibold text-term-text">{symbol} OI crossover</span>
+        <SelectMenu value={symbol} options={symOptions.map((x) => [x, x] as [string, string])} onChange={(v) => selectSymbol(v, true)} title="Underlying" width={130} />
+        <div className="seg">
+          {[5, 15, 60].map((m) => (
+            <button key={m} className={tf === m ? "on" : ""} onClick={() => setTf(m)}>
+              {m < 60 ? `${m} min` : "1 hour"}
+            </button>
+          ))}
+        </div>
+        <span className="flex items-center gap-2">
+          <span style={{ color: CE }}>■</span> Call OI Δ <span style={{ color: PE }}>■</span> Put OI Δ
+        </span>
+      </div>
+
+      {/* where it stands, in plain words */}
+      <div className="border-b border-term-border bg-term-panel px-3 py-2">
+        {!last ? (
+          <div className="text-2xs text-term-dim">collecting OI history for {symbol}… (needs a few snapshots)</div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <span
+              className={`rounded px-2 py-0.5 text-[12px] font-bold ${
+                side > 0 ? "bg-up text-white" : side < 0 ? "bg-down text-white" : "bg-term-border text-term-dim"
+              }`}
+            >
+              {side > 0 ? "▲ PUTS LEADING — bullish" : side < 0 ? "▼ CALLS LEADING — bearish" : "NO CLEAR LEAD"}
+            </span>
+            <span className="text-[12px] text-term-text">
+              {lastCross ? (
+                <>
+                  since the {fmt(lastCross.t)} crossover at {nf(lastCross.spot, 0)} · spot now {nf(last.spot, 0)}{" "}
+                  <span className={lastCross.move >= 0 ? "text-up" : "text-down"}>({pts2(last.spot - lastCross.spot)} pts)</span>
+                </>
+              ) : since != null ? (
+                <>no crossover yet today — {side > 0 ? "puts" : "calls"} have led since {fmt(since)}</>
+              ) : (
+                <>Put and Call OI change are level</>
+              )}
+            </span>
+            <span className="text-[11px] text-term-dim">
+              Put Δ {oiCr(last.pe)} · Call Δ {oiCr(last.ce)} · gap {oiCr(last.pe - last.ce)}
+              {first ? ` · spot ${pts2(last.spot - first.spot)} today` : ""}
+            </span>
+            {closed > 0 && (
+              <span className="text-[11px] text-term-dim">
+                {crosses.length} crossover{crosses.length === 1 ? "" : "s"} · {worked} of {closed} finished ones moved spot the way they pointed
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div ref={boxRef} className="h-[280px] shrink-0 border-b border-term-border px-1 py-2 sm:h-[340px]">
+        {chart ?? <div className="flex h-full items-center justify-center text-2xs text-term-dim">need a few snapshots</div>}
+      </div>
+
+      {/* every crossover, newest first */}
+      <div className="max-w-full shrink-0 px-1 pb-2 pt-1 sm:p-2">
+        <table className="w-full border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
+          <thead className="sticky -top-px z-10 bg-term-panel text-[10px] uppercase text-term-dim sm:top-0">
+            <tr>
+              <th className="bg-term-panel px-1 py-1.5 text-left font-medium sm:px-2">Time</th>
+              <th className="bg-term-panel px-1 py-1.5 text-left font-medium sm:px-2">Crossover</th>
+              <th className="bg-term-panel px-1 py-1.5 text-right font-medium sm:px-2">Spot</th>
+              <th className="bg-term-panel px-1 py-1.5 text-right font-medium sm:px-2" title="spot move from this crossover to the next one (or now), in the direction it pointed">
+                Then
+              </th>
+              <th className="bg-term-panel px-1 py-1.5 text-right font-medium sm:px-2">Held</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...crosses].reverse().map((c) => (
+              <tr key={c.t} className={c.open ? "bg-term-accent/[0.06]" : ""}>
+                <td className="num px-1 py-1 text-term-dim sm:px-2">{fmt(c.t)}</td>
+                <td className={`px-1 py-1 font-semibold sm:px-2 ${c.up ? "text-up" : "text-down"}`}>
+                  {c.up ? "▲ Puts over calls" : "▼ Calls over puts"}
+                  {c.open && <span className="ml-1 text-[10px] font-normal text-term-dim">(now)</span>}
+                </td>
+                <td className="num px-1 py-1 text-right sm:px-2">{nf(c.spot, 0)}</td>
+                <td className={`num px-1 py-1 text-right sm:px-2 ${c.move >= 0 ? "text-up" : "text-down"}`}>
+                  {pts2(c.move)}
+                  {c.open ? "" : c.move >= 0 ? " ✓" : " ✗"}
+                </td>
+                <td className="num px-1 py-1 text-right text-term-dim sm:px-2">{held(c.t, c.endT)}</td>
+              </tr>
+            ))}
+            {crosses.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-3 py-5 text-center text-2xs text-term-dim">
+                  {bars.length < 2 ? "collecting OI history…" : "no crossover yet today at this timeframe"}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+        <div className="px-1 pt-2 text-[10px] leading-snug text-term-dim">
+          A crossover is where the day's Put OI change passes the Call OI change. Puts over calls = more put writing than
+          call writing (support building, bullish); calls over puts = the reverse. A side only counts once it leads by more
+          than 3% of their combined size, so a near-tie wobbling around zero doesn't make a string of crossovers. "Then" =
+          how far spot went in the crossover's direction until the next one (or now).
+        </div>
       </div>
     </div>
   );
