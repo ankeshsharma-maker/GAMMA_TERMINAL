@@ -1371,6 +1371,11 @@ def _week_key(now: datetime) -> str:
     return f"{iso[0]}-W{iso[1]:02d}"
 
 
+def _owner(rule: dict) -> str | None:
+    """Whose rule: None = the owner's; a view-only user's id = that sub-user's practice rule."""
+    return rule.get("owner") or None
+
+
 def _num_or_none(v):
     if v in (None, ""):
         return None
@@ -1462,7 +1467,7 @@ class AutoBot:
         if prev is None:
             log.info("[%s] %s", rec["ruleName"], msg)
         sev = _ALERT_LEVELS.get(level)
-        if sev:
+        if sev and not _owner(rule):   # a sub-user's practice rule: its log only, not the owner's alerts
             self._alert(rule, level, msg, sev)
 
     def _alert(self, rule: dict, level: str, msg: str, sev: str) -> None:
@@ -1516,6 +1521,7 @@ class AutoBot:
             "entryPx": round(float(pos["entryPx"]), 2), "exitPx": round(float(exit_px), 2),
             "pnl": round(pnl, 2), "charges": round(cost, 2), "reason": reason, "partial": partial,
             "mode": pos.get("mode", "paper"), "entryTs": pos.get("ts"), "exitTs": time.time(), "day": day,
+            **({"owner": _owner(rule)} if _owner(rule) else {}),   # a sub-user's practice trade
         })
         if len(self.trades) > self.TRADES_MAX + 200:
             self.trades = self.trades[-self.TRADES_MAX:]
@@ -1566,8 +1572,9 @@ class AutoBot:
             "today": round(sum(t["pnl"] - t["charges"] for t in trips if t["day"] == day), 0),
         }
 
-    def stats(self, limit: int = 60) -> dict:
-        trips = self._round_trips()
+    def stats(self, limit: int = 60, uid: str | None = None) -> dict:
+        """uid = whose rules (None = the owner's; a sub-user id = only theirs)."""
+        trips = [t for t in self._round_trips() if (t.get("owner") or None) == uid]
         rules: dict[str, dict] = {}
         for rid in {t["ruleId"] for t in trips}:
             mine = [t for t in trips if t["ruleId"] == rid]
@@ -1575,14 +1582,18 @@ class AutoBot:
         return {
             "overall": self._summ(trips),
             "rules": rules,
-            "recent": list(reversed(self.trades[-limit:])),
+            "recent": list(reversed([t for t in self.trades if (t.get("owner") or None) == uid][-limit:])),
         }
 
     # -- CRUD ------------------------------------------------------------- #
-    def snapshot(self) -> dict:
+    def snapshot(self, uid: str | None = None) -> dict:
+        """uid = whose view (None = the owner: their rules and engine; a sub-user id = only that
+        user's practice rules, which always run and never touch the owner's engine / P&L)."""
         day = datetime.now(IST).date().isoformat()
         out_rules = []
         for r in self.rules:
+            if _owner(r) != uid:
+                continue
             rid = r.get("id", "")
             st = self.state.get(rid, {})
             out_rules.append({
@@ -1599,14 +1610,28 @@ class AutoBot:
                 "_why": self._why.get(rid),
                 "_stats": self._rule_stats(rid, day),
             })
+        if uid is not None:
+            mine = {r["id"] for r in out_rules}
+            return {
+                "master": True, "maxLossPerDay": 0, "marketOpen": _in_market_hours(),
+                "dailyPnl": round(sum((self.state.get(i) or {}).get("dayPnl", 0.0) for i in mine), 2),
+                "rules": out_rules, "log": [x for x in self.log if x.get("ruleId") in mine][:100],
+                "practice": True,
+            }
         return {
             "master": self.master,
             "maxLossPerDay": self.max_loss_per_day,
             "marketOpen": _in_market_hours(),
             "dailyPnl": round(self.daily_pnl, 2),
             "rules": out_rules,
-            "log": list(self.log)[:100],
+            "log": [x for x in self.log if x.get("ruleId") in {r["id"] for r in out_rules} or not x.get("ruleId")][:100],
         }
+
+    def owns(self, rid: str, uid: str | None) -> bool:
+        return any(r.get("id") == rid and _owner(r) == uid for r in self.rules)
+
+    def count_for(self, uid: str | None) -> int:
+        return sum(1 for r in self.rules if _owner(r) == uid)
 
     def set_master(self, on: bool) -> dict:
         self.master = bool(on)
@@ -1619,10 +1644,17 @@ class AutoBot:
         self._save_doc()
         return self.snapshot()
 
-    def upsert_rule(self, rule: dict) -> dict:
+    def upsert_rule(self, rule: dict, uid: str | None = None) -> dict:
         rule = dict(rule or {})
         rid = rule.get("id") or f"r{int(time.time() * 1000) % 10_000_000}"
         rule["id"] = rid
+        for k in ("_state", "_live", "_why", "_stats"):   # read-only fields the UI echoes back
+            rule.pop(k, None)
+        if uid is not None:
+            rule["owner"] = uid
+            rule["mode"] = "paper"   # a sub-user can never trade live
+        else:
+            rule.pop("owner", None)
         rule.setdefault("enabled", False)
         rule.setdefault("lots", 1)
         rule.setdefault("mode", "paper")
@@ -1642,24 +1674,24 @@ class AutoBot:
         else:
             self.rules.append(rule)
         self._save_doc()
-        return self.snapshot()
+        return self.snapshot(uid)
 
-    def delete_rule(self, rid: str) -> dict:
+    def delete_rule(self, rid: str, uid: str | None = None) -> dict:
         self.rules = [r for r in self.rules if r.get("id") != rid]
         self.state.pop(rid, None)
         self._why.pop(rid, None)
         self._save_doc()
         self._save_state()
-        return self.snapshot()
+        return self.snapshot(uid)
 
-    def set_rule_enabled(self, rid: str, on: bool) -> dict:
+    def set_rule_enabled(self, rid: str, on: bool, uid: str | None = None) -> dict:
         for r in self.rules:
             if r.get("id") == rid:
                 r["enabled"] = bool(on)
         self._save_doc()
-        return self.snapshot()
+        return self.snapshot(uid)
 
-    def resume_rule(self, rid: str) -> dict:
+    def resume_rule(self, rid: str, uid: str | None = None) -> dict:
         """Lift a safety pause (loss streak / rule loss cap) for the rest of today."""
         st = self.state.get(rid)
         if st:
@@ -1667,14 +1699,15 @@ class AutoBot:
             st.pop("pauseWhy", None)
             st["lossStreak"] = 0
             self._save_state()
-        return self.snapshot()
+        return self.snapshot(uid)
 
     def kill(self) -> dict:
         """Panic button: master OFF + flag every open rule position for square-off. The
         flagged positions are then closed by tick() even though the master is off."""
         self.master = False
+        owner_rules = {r.get("id") for r in self.rules if not _owner(r)}
         for rid, st in self.state.items():
-            if st.get("open"):
+            if st.get("open") and rid in owner_rules:
                 st["open"]["forceExit"] = True
         self._save_doc()
         self._save_state()
@@ -1695,16 +1728,24 @@ class AutoBot:
         from .routes import _route_leg  # lazy: routes imports store, not autobot
         from .brokers import get_broker
 
-        want_live = rule.get("mode") == "live"
+        owner = _owner(rule)
+        want_live = rule.get("mode") == "live" and owner is None   # a sub-user's rule is never live
         mode = "live" if (want_live and store.order_mode() == "live"
                           and get_broker().authed) else "paper"
 
         async def one(n: int) -> dict:
-            return await _route_leg(
-                symbol=rule["symbol"], expiry=expiry, strike=strike, option_type=ot,
-                side=side, qty_lots=int(n), order_type="MKT", price=None,
-                product=rule.get("product", "NRML"), mode=mode,
-            )
+            from .users import current_user
+
+            # a sub-user's rule fills in THAT user's paper book (store.paper follows current_user)
+            tok = current_user.set(owner)
+            try:
+                return await _route_leg(
+                    symbol=rule["symbol"], expiry=expiry, strike=strike, option_type=ot,
+                    side=side, qty_lots=int(n), order_type="MKT", price=None,
+                    product=rule.get("product", "NRML"), mode=mode,
+                )
+            finally:
+                current_user.reset(tok)
 
         lots = int(lots)
         chunk = self._lots_per_order(rule, mode)
@@ -1765,7 +1806,9 @@ class AutoBot:
         # KILL turns the master off but flags open positions for square-off; those still have
         # to be closed, so an off master only stops entries and normal management.
         unwinding = any((st.get("open") or {}).get("forceExit") for st in self.state.values())
-        if not self.master and not unwinding:
+        practice = any(_owner(r) and (r.get("enabled") or (self.state.get(r.get("id", "")) or {}).get("open"))
+                       for r in self.rules)
+        if not self.master and not unwinding and not practice:
             return False
 
         now = datetime.now(IST)
@@ -1786,7 +1829,7 @@ class AutoBot:
             if not sym:
                 continue
             pos0 = (self.state.get(rid) or {}).get("open")
-            if not self.master:
+            if not self.master and not _owner(rule):   # the owner's switch; sub-users' practice rules keep running
                 if not (pos0 and pos0.get("forceExit")):
                     continue
             elif not rule.get("enabled"):
@@ -1809,7 +1852,7 @@ class AutoBot:
                 continue
             if not self.master:
                 continue
-            if await self._look_for_entry(rule, st, now, day, open_mkt, loss_lock, ctx_cache):
+            if await self._look_for_entry(rule, st, now, day, open_mkt, loss_lock and not _owner(rule), ctx_cache):
                 changed = True
 
         if changed:
@@ -1974,7 +2017,8 @@ class AutoBot:
         # after a broken multi-leg exit the entry premium no longer matches the legs left, so a
         # P&L computed against it would be nonsense; say so instead of booking a wrong number
         pnl = 0.0 if pos.get("unwind") else X.pnl_rs(ev, pos["lots"], ls)
-        self.daily_pnl += pnl
+        if not _owner(rule):
+            self.daily_pnl += pnl
         self._emit(rule, "exit", f"CLOSE {label} @~{ltp:.1f} ({reason}) "
                                  + ("P&L not tracked for a broken exit - check the broker" if pos.get("unwind") else f"P&L~{pnl:+.0f}"))
         self._record_trade(rule, pos, lots=pos["lots"], exit_px=ltp, pnl=pnl, reason=reason,
@@ -1990,7 +2034,8 @@ class AutoBot:
         if lots <= 0:
             return
         pnl = X.pnl_rs(ev, lots, ls) if pnl is None else pnl
-        self.daily_pnl += pnl
+        if not _owner(rule):
+            self.daily_pnl += pnl
         st["dayPnl"] = st.get("dayPnl", 0.0) + pnl
         pos["lots"] -= lots
         pos["realized"] = pos.get("realized", 0.0) + pnl

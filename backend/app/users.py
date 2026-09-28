@@ -8,7 +8,7 @@ token they hold, and changing the app password kills them all.
 
 Viewers see market data only. The server enforces it (``viewer_allowed``):
 anything not on the allowlist -- orders, positions, funds, journal, broker,
-AutoBot, alert settings, the owner's alerts / strategies / schedules -- is 403,
+the owner's AutoBot, alert settings, the owner's alerts / strategies / schedules -- is 403,
 including routes added later (default deny). Their watchlists are their own
 (``store`` keys them by the request's user via ``current_user``)."""
 from __future__ import annotations
@@ -160,6 +160,13 @@ _ALLOW: list[tuple[str, re.Pattern]] = [
         # the strategy builder, analysis only (no execute / import / save / schedule)
         ("GET", r"/api/strategy/templates"),
         ("POST", r"/api/strategy/(analyze|chart|hedge)"),
+        # AutoBot: THEIR OWN practice rules -- paper only, into their own paper book (routes_autobot
+        # scopes every call to the caller's rules and forces paper); never /master, /max-loss, /kill
+        ("GET", r"/api/autobot"),
+        ("GET", r"/api/autobot/(stats|structures|structure-preview)"),
+        ("POST", r"/api/autobot/(rules|backtest)"),
+        ("POST", rf"/api/autobot/rules/{_SYM}/(enabled|resume)"),
+        ("DELETE", rf"/api/autobot/rules/{_SYM}"),
     ]
 ]
 

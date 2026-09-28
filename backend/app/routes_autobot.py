@@ -5,13 +5,28 @@ from fastapi import APIRouter, HTTPException
 
 from . import autobot_structures as ST
 from .autobot import autobot
+from .users import current_user
 
 router = APIRouter(prefix="/api/autobot")
+
+# a sub-user (view-only account) has their own practice rules -- paper only, into their own paper
+# book; the server allowlist (users._ALLOW) keeps them off the master switch, loss cap and KILL
+MAX_PRACTICE_RULES = 10
+
+
+def _uid() -> str | None:
+    return current_user.get()
+
+
+def _mine(rid: str) -> None:
+    """404 unless this rule belongs to whoever is asking (owner: the owner's rules only)."""
+    if not autobot.owns(rid, _uid()):
+        raise HTTPException(status_code=404, detail="no such rule")
 
 
 @router.get("")
 def get_autobot():
-    return autobot.snapshot()
+    return autobot.snapshot(_uid())
 
 
 @router.post("/master")
@@ -28,29 +43,38 @@ def set_max_loss(body: dict):
 def upsert_rule(body: dict):
     if not (body or {}).get("symbol"):
         raise HTTPException(status_code=400, detail="rule needs a symbol")
-    return autobot.upsert_rule(body)
+    uid = _uid()
+    rid = (body or {}).get("id")
+    if rid and any(r.get("id") == rid for r in autobot.rules):
+        _mine(rid)   # editing: only your own rule
+    elif uid is not None and autobot.count_for(uid) >= MAX_PRACTICE_RULES:
+        raise HTTPException(status_code=409, detail=f"at most {MAX_PRACTICE_RULES} practice rules -- delete one first")
+    return autobot.upsert_rule(body, uid)
 
 
 @router.post("/rules/{rid}/enabled")
 def set_enabled(rid: str, body: dict):
-    return autobot.set_rule_enabled(rid, bool((body or {}).get("on")))
+    _mine(rid)
+    return autobot.set_rule_enabled(rid, bool((body or {}).get("on")), _uid())
 
 
 @router.delete("/rules/{rid}")
 def delete_rule(rid: str):
-    return autobot.delete_rule(rid)
+    _mine(rid)
+    return autobot.delete_rule(rid, _uid())
 
 
 @router.post("/rules/{rid}/resume")
 def resume(rid: str):
     """Lift a safety pause (losing streak / rule loss cap) for the rest of today."""
-    return autobot.resume_rule(rid)
+    _mine(rid)
+    return autobot.resume_rule(rid, _uid())
 
 
 @router.get("/stats")
 def stats(limit: int = 60):
     """Performance of every rule from the closed-trade ledger, net of estimated charges."""
-    return autobot.stats(max(1, min(int(limit), 500)))
+    return autobot.stats(max(1, min(int(limit), 500)), _uid())
 
 
 @router.get("/structures")
@@ -110,6 +134,7 @@ async def backtest(body: dict):
 
     rule = body.get("rule")
     if not rule and body.get("ruleId"):
+        _mine(body["ruleId"])
         rule = next((r for r in autobot.rules if r.get("id") == body["ruleId"]), None)
     if not rule:
         raise HTTPException(400, "rule or ruleId required")

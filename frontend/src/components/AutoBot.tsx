@@ -22,6 +22,7 @@ import type { AutoCondition, AutoRule, AutoStats, AutoStructureDef, Chain, Struc
 import { FigureBoard, TONE_TEXT, money, tone, tradeTicks } from "./Figures";
 import { LineChart } from "./LineChart";
 import { RuleBacktest } from "./RuleBacktest";
+import { isViewer } from "../lib/auth";
 import { SelectMenu } from "./SelectMenu";
 
 /* ------------------------------------------------------------------ */
@@ -2147,13 +2148,19 @@ function RuleEditor({
         </label>
         <label className="flex flex-col text-[10px] text-term-dim">
           mode
-          <SelectMenu
-            value={r.mode}
-            options={[["paper", "paper"], ["live", "live"]] as const}
-            onChange={(v) => set({ mode: v as "paper" | "live" })}
-            title="Order mode"
-            width={90}
-          />
+          {isViewer() ? (
+            <span className="rounded border border-term-border px-2 py-1 text-[11px] text-term-text" title="Practice rules are paper only">
+              paper (practice)
+            </span>
+          ) : (
+            <SelectMenu
+              value={r.mode}
+              options={[["paper", "paper"], ["live", "live"]] as const}
+              onChange={(v) => set({ mode: v as "paper" | "live" })}
+              title="Order mode"
+              width={90}
+            />
+          )}
         </label>
       </div>
 
@@ -3135,13 +3142,34 @@ export function AutoBotView() {
     });
   }, [bot?.rules]);
 
+  // a sub-user gets no websocket pushes for Auto: poll their practice rules while the tab is open
+  const practice = isViewer();
+  useEffect(() => {
+    if (!practice) return;
+    const t = window.setInterval(() => !document.hidden && load(), 8000);
+    return () => window.clearInterval(t);
+  }, [practice, load]);
+
   const rules = bot?.rules ?? [];
   const anyLive = useMemo(() => rules.some((r) => r.mode === "live" && r.enabled), [rules]);
 
   return (
     <div className="flex flex-col md:min-h-0 md:flex-1 md:overflow-hidden">
-      {/* control bar */}
-      <div className="flex flex-wrap items-center gap-3 border-b border-term-border bg-term-panel2 px-3 py-2">
+      {/* control bar -- a sub-user's: their practice space, no engine switch / loss cap */}
+      {practice && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-term-border bg-term-panel2 px-3 py-2">
+          <span className="rounded bg-term-accent/15 px-2 py-1 text-xs font-semibold text-term-accent">🧪 Practice rules</span>
+          <span className="text-[11px] leading-snug text-term-dim">
+            Your own rules, <span className="text-term-text">paper only</span> — their trades land in your paper Positions.
+            Nothing here touches the owner's account.
+          </span>
+          <div className="ml-auto flex flex-col leading-tight">
+            <span className="text-[11px] uppercase tracking-wide text-term-dim">P&L today</span>
+            <span className={`num text-base font-semibold ${toneCls(bot?.dailyPnl ?? 0)}`}>{money(bot?.dailyPnl ?? 0, { sign: true })}</span>
+          </div>
+        </div>
+      )}
+      <div className={`flex flex-wrap items-center gap-3 border-b border-term-border bg-term-panel2 px-3 py-2 ${practice ? "hidden" : ""}`}>
         <button
           onClick={() => setMaster(!bot?.master)}
           className={`rounded px-3 py-1 text-xs font-semibold ${
@@ -3240,7 +3268,7 @@ export function AutoBotView() {
             + New rule
           </button>
           <button
-            className="rounded bg-down px-3 py-1 text-xs font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_1px_3px_rgba(0,0,0,0.45)] hover:brightness-110"
+            className={`rounded bg-down px-3 py-1 text-xs font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_1px_3px_rgba(0,0,0,0.45)] hover:brightness-110 ${practice ? "hidden" : ""}`}
             onClick={() => {
               if (window.confirm("KILL: turn the engine off and square off every open auto position?"))
                 kill();
@@ -3282,8 +3310,12 @@ export function AutoBotView() {
                   symbols={symbols}
                   fallbackSymbol={storeSymbol}
                   onSave={async (r) => {
-                    await saveRule(r);
-                    setPicking(false);
+                    try {
+                      await saveRule(r);
+                      setPicking(false);
+                    } catch (e: any) {
+                      alert(String(e?.message || e));
+                    }
                   }}
                   onAdvanced={(r) => {
                     setPicking(false);
@@ -3311,8 +3343,12 @@ export function AutoBotView() {
               seed={editing}
               symbols={symbols}
               onSave={async (r) => {
-                await saveRule(r);
-                setEditing(null);
+                try {
+                  await saveRule(r);
+                  setEditing(null);
+                } catch (e: any) {
+                  alert(String(e?.message || e));
+                }
               }}
               onCancel={() => setEditing(null)}
             />
