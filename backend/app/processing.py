@@ -161,21 +161,10 @@ def _leg(raw: dict | None, kind: str, spot: float, strike: float, t: float, q: f
     }
 
 
-def _gamma_flip(rows: list[dict], spot: float, atm: float) -> float | None:
-    """The strike where cumulative dealer gamma exposure (put gamma*OI - call
-    gamma*OI, running over `rows` ascending by strike) crosses zero: below it
-    dealers are short gamma (moves amplified), above it long gamma (moves
-    dampened). `rows` need only have strike/call.gamma/call.oi/put.gamma/put.oi.
-
-    When call/put gamma exposure is roughly balanced near the money, the
-    cumulative curve can cross zero at SEVERAL strikes -- picking the first
-    one (ascending) is arbitrary and noise-sensitive: a small OI tick at any
-    strike in that band can relocate "first" to a different level between
-    polls even though nothing meaningful changed. The crossing nearest spot
-    is both the economically relevant one (the regime boundary AT the price
-    that matters) and far more stable, since noise in strikes away from spot
-    no longer relocates it. Falls back to ATM when the curve never crosses
-    (e.g. one-sided OI, or too few strikes)."""
+def _cum_strike_flip(rows: list[dict], spot: float, atm: float) -> float | None:
+    """(The old definition, now only the fallback.) The strike where cumulative
+    (put gamma*OI - call gamma*OI), running over `rows` ascending by strike, crosses
+    zero -- the crossing nearest spot when there are several. Falls back to ATM."""
     cum = 0.0
     pts: list[tuple[float, float]] = []
     for r in rows:
@@ -188,6 +177,68 @@ def _gamma_flip(rows: list[dict], spot: float, atm: float) -> float | None:
     if crossings:
         return round(min(crossings, key=lambda k: abs(k - spot)), 2)
     return atm if rows else None
+
+
+def _gamma_flip(
+    rows: list[dict], spot: float, atm: float, t: float | None = None, q: float = DIVIDEND_YIELD
+) -> float | None:
+    """The gamma flip the way SpotGamma / NiftyTrader and most GEX tools define it: the SPOT
+    level at which the dealers' total gamma exposure changes sign. Move the spot across a
+    +/-6% grid, re-price every option's gamma AT that spot (its own IV, the same time to
+    expiry), sum  call gamma*OI - put gamma*OI  (dealers long the calls, short the puts they
+    sold the public), and find where that total crosses zero -- the crossing nearest spot.
+    Above it dealers are long gamma (they damp moves), below it short gamma (they chase them).
+
+    Until 2026-09-29 this was the strike where the CUMULATIVE per-strike (put - call) gamma*OI
+    crossed zero, which is a different number: on 29-Sep SENSEX it gave 73,964 while this
+    definition (and NiftyTrader) gave ~72,750. That old reading is kept as the fallback when the
+    total never changes sign inside the grid (one-sided OI), or when no time / IV is known."""
+    if not rows:
+        return None
+    if not t or t <= 0 or not spot:
+        return _cum_strike_flip(rows, spot, atm)
+    legs: list[tuple[float, float, float]] = []  # (strike, +/-OI, sigma): +call / -put
+    for r in rows:
+        k = r["strike"]
+        for side, sgn in (("call", 1.0), ("put", -1.0)):
+            leg = r[side]
+            # NSE's published IV first (what NiftyTrader & co. use: on 29-Sep SENSEX it put the flip
+            # at 72,728 vs their 72,737; our own mid-price IV gave 72,549), ours when NSE has none
+            sig = (leg.get("iv") or leg.get("ivCalc") or 0) / 100.0
+            if leg["oi"] and sig > 0:
+                legs.append((k, sgn * leg["oi"], sig))
+    if not legs:
+        return _cum_strike_flip(rows, spot, atm)
+    sq_t = math.sqrt(t)
+    carry = RISK_FREE_RATE - q
+    disc_q = math.exp(-q * t)
+
+    def total(sp: float) -> float:
+        tot = 0.0
+        for k, w, sig in legs:
+            st = sig * sq_t
+            d1 = (math.log(sp / k) + (carry + 0.5 * sig * sig) * t) / st
+            tot += w * disc_q * math.exp(-0.5 * d1 * d1) / (sp * st)
+        return tot * sp * sp  # dollar-gamma scaling; the sign (all that matters here) is unchanged
+
+    grid = [spot * (1 + (i - 24) * 0.0025) for i in range(49)]  # -6% .. +6% in 0.25% steps
+    vals = [(g, total(g)) for g in grid]
+    crossings: list[float] = []
+    for (s0, v0), (s1, v1) in zip(vals, vals[1:]):
+        if v0 == 0 or (v0 < 0) != (v1 < 0):
+            # the grid only brackets it; bisect to ~1 pt (gamma isn't linear across 0.25%)
+            lo_s, hi_s, v_lo = s0, s1, v0
+            for _ in range(16):
+                mid = (lo_s + hi_s) / 2
+                v_mid = total(mid)
+                if (v_mid < 0) == (v_lo < 0):
+                    lo_s, v_lo = mid, v_mid
+                else:
+                    hi_s = mid
+            crossings.append((lo_s + hi_s) / 2)
+    if not crossings:
+        return _cum_strike_flip(rows, spot, atm)
+    return round(min(crossings, key=lambda x: abs(x - spot)), 2)
 
 
 def build_chain(
@@ -296,7 +347,7 @@ def build_chain(
     max_pain = min(strikes, key=lambda k: pain_ce[k] + pain_pe[k]) if strikes else atm
     pcr = round(tot_pe_oi / tot_ce_oi, 3) if tot_ce_oi else None
 
-    gamma_flip = _gamma_flip(rows, spot, atm)
+    gamma_flip = _gamma_flip(rows, spot, atm, tc, q)
 
     atm_row = next((r for r in rows if r["strike"] == atm), None)
     atm_iv = None
