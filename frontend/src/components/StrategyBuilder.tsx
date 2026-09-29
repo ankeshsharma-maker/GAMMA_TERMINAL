@@ -2265,188 +2265,230 @@ export function StrategyBuilder() {
             )}
           </div>
         ) : payoffTab === "table" ? (
-          <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3">
-            {analysis && (
-              <>
-                <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
-                  <span className="text-2xs font-semibold uppercase tracking-wide text-term-dim">
-                    P&amp;L by {tableInterval > 0 ? "target" : "strike"} — spot {nf(analysis.spot, 0)}
-                  </span>
-                  <div className="flex flex-wrap items-center gap-1">
-                    <div className="seg text-[10px]">
-                      {[5, 10, 15, 20, 0].map((n) => (
-                        <button
-                          key={n}
-                          onClick={() => setStrikeSpan(n)}
-                          className={strikeSpan === n ? "on" : ""}
-                        >
-                          {n === 0 ? "All" : `±${n}`}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="seg text-[10px]">
-                      {([["strikes", 0], ["50 pts", 50], ["100 pts", 100], ["200 pts", 200]] as const).map(
-                        ([lbl, v]) => (
-                          <button
-                            key={lbl}
-                            onClick={() => setTableInterval(v)}
-                            className={tableInterval === v ? "on" : ""}
-                            title={v ? `one row every ${v} points of the index (a target level, not an option strike)` : "one row per real strike in the option chain"}
-                          >
-                            {lbl}
-                          </button>
-                        )
-                      )}
-                    </div>
-                    <div className="seg text-[10px]" title="Sensibull-style: P&L on each trading day, or by the hour">
-                      {(
-                        [
-                          ["basic", "Today · Expiry"],
-                          ["day", "Day-wise"],
-                          ["hour", "Hour-wise"],
-                        ] as const
-                      ).map(([k, l]) => (
-                        <button key={k} onClick={() => setTimeMode(k)} className={timeMode === k ? "on" : ""}>
-                          {l}
-                        </button>
-                      ))}
-                    </div>
-                    <button
-                      onClick={() => setShowPct((v) => !v)}
-                      className={`chipbtn ${showPct ? "on" : ""}`}
-                      title="add a Move column: how far each row is from spot, in %"
-                    >
-                      % move
-                    </button>
-                  </div>
-                </div>
-                {timeMode === "hour" && (
-                  <div className="mb-1 flex flex-wrap items-center gap-1 text-[10px]">
-                    <span className="text-term-dim">Day:</span>
-                    {tradeDays.map((d, i) => (
-                      <button key={d.key} onClick={() => setHourDay(i)} className={`chipbtn ${hourDay === i ? "on" : ""}`}>
-                        {d.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
-                  <thead className="text-[10px] uppercase text-term-dim">
-                    <tr>
-                      <th className="sticky left-0 z-[1] border-b border-term-border bg-term-panel px-2 py-1 text-right font-medium">
-                        {tableInterval > 0 ? "Target" : "Strike"}
-                      </th>
-                      {showPct && (
-                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                          Move
-                        </th>
-                      )}
-                      {timeMode !== "basic" &&
-                        timeCols.map((c) => (
-                          <th key={c.key} className="border-b border-term-border px-2 py-1 text-right font-medium">
-                            <div className="normal-case text-term-text">{c.label}</div>
-                            {c.sub && <div className="text-[9px] normal-case">{c.sub}</div>}
-                          </th>
-                        ))}
-                      {timeMode === "basic" && (
-                      <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                        Today
-                      </th>
-                      )}
-                      {timeMode === "basic" && (
-                      <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                        Expiry
-                      </th>
-                      )}
-                      {timeMode === "basic" && (tDays > 0 || ivShift !== 0) && (
-                        <th className="border-b border-term-border px-2 py-1 text-right font-medium">
-                          {tvColLabel}
-                        </th>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {levelRows.map((r, i) => (
-                      <tr
-                        key={i}
-                        ref={r.isATM ? atmRowRef : undefined}
-                        className={r.isATM ? "bg-term-accent/10" : ""}
-                      >
-                        <td
-                          className={`num sticky left-0 border-b border-term-border/40 px-2 py-1 text-right font-medium text-term-text ${
-                            r.isATM ? "bg-term-panel2" : "bg-term-panel"
-                          }`}
-                          style={{
-                            boxShadow: r.isWall
-                              ? "inset 2px 0 0 #ef4444"
-                              : r.isFloor
-                              ? "inset 2px 0 0 #22c55e"
-                              : undefined,
-                          }}
-                          title={
-                            r.isWall
-                              ? "biggest Call OI (resistance)"
-                              : r.isFloor
-                              ? "biggest Put OI (support)"
-                              : undefined
-                          }
-                        >
-                          {sk(r.K)}
-                          {r.isWall && <sup className="ml-0.5 text-down">R</sup>}
-                          {r.isFloor && <sup className="ml-0.5 text-up">S</sup>}
-                        </td>
-                        {showPct && (
-                          <td
-                            className={`num border-b border-term-border/40 px-2 py-1 text-right ${
-                              r.pct >= 0 ? "text-up" : "text-down"
+          <div className="m-2 rounded border border-term-border bg-term-bg/20">
+            {analysis &&
+              (() => {
+                // one set of columns for every view: Today + Expiry (+ the slider's what-if), or day / hour columns
+                type Col = { key: string; label: string; sub?: string; exp?: boolean; val: (i: number) => number };
+                const cols: Col[] =
+                  timeMode === "basic"
+                    ? [
+                        { key: "now", label: "Today", sub: "now", val: (i) => levelRows[i].now },
+                        ...(tDays > 0 || ivShift !== 0
+                          ? [{ key: "tv", label: tvColLabel, sub: "what-if", val: (i: number) => levelRows[i].tv ?? 0 }]
+                          : []),
+                        { key: "exp", label: "Expiry", sub: analysis.expiry, exp: true, val: (i) => levelRows[i].exp },
+                      ]
+                    : timeCols.map((c, ci) => ({
+                        key: c.key,
+                        label: c.label,
+                        sub: c.sub,
+                        exp: c.rem <= 0.0001,
+                        val: (i: number) => timeVals[ci]?.[i] ?? 0,
+                      }));
+                let maxAbs = 1;
+                levelRows.forEach((_, i) => cols.forEach((c) => (maxAbs = Math.max(maxAbs, Math.abs(c.val(i) + manualPnl)))));
+                // heatmap: green profit / red loss, deeper the bigger (sqrt so small amounts still show)
+                const heat = (v: number) => {
+                  const a = 0.06 + 0.34 * Math.sqrt(Math.min(1, Math.abs(v) / maxAbs));
+                  return v >= 0 ? `rgba(34,197,94,${a.toFixed(3)})` : `rgba(239,68,68,${a.toFixed(3)})`;
+                };
+                // spot + breakeven lines drawn BETWEEN the rows they fall between (rows run high -> low)
+                const marks = [
+                  { v: analysis.spot, kind: "spot" as const },
+                  ...analysis.breakevens.map((v) => ({ v, kind: "be" as const })),
+                ].sort((x, y) => y.v - x.v);
+                const nCols = 1 + (showPct ? 1 : 0) + cols.length;
+                const lbl = "text-[9px] font-semibold uppercase tracking-wider text-term-dim";
+                const body: React.ReactNode[] = [];
+                let mi = 0;
+                levelRows.forEach((r, i) => {
+                  while (mi < marks.length && marks[mi].v > r.K) {
+                    const m = marks[mi++];
+                    if (i === 0) continue; // above the table's top row: nothing to draw between
+                    body.push(
+                      <tr key={`m${mi}`}>
+                        <td colSpan={nCols} className="p-0">
+                          <div
+                            className={`flex items-center gap-2 px-2 py-0.5 text-[10px] font-semibold ${
+                              m.kind === "spot" ? "bg-amber-500/15 text-amber-300" : "text-sky-300"
                             }`}
+                            style={{
+                              borderTop: `1px ${m.kind === "spot" ? "solid rgba(245,158,11,.7)" : "dashed rgba(56,189,248,.7)"}`,
+                            }}
                           >
-                            {r.pct >= 0 ? "+" : ""}
-                            {nf(r.pct * 100, 1)}%
-                          </td>
-                        )}
-                        {timeMode !== "basic" &&
-                          timeCols.map((c, ci) => {
-                            const v = (timeVals[ci]?.[i] ?? 0) + manualPnl;
-                            return (
-                              <td key={c.key} className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(v)}`}>
-                                {pnlTxt(v)}
-                              </td>
-                            );
-                          })}
-                        {timeMode === "basic" && (
-                        <td
-                          className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
-                            r.now + manualPnl
-                          )}`}
-                        >
-                          {pnlTxt(r.now + manualPnl)}
+                            {m.kind === "spot" ? `▶ Spot ${nf(m.v, 2)}` : `Breakeven ${nf(m.v, 0)}`}
+                            <span className="font-normal opacity-70">
+                              {m.kind === "be" &&
+                                `${m.v >= analysis.spot ? "+" : ""}${nf(((m.v - analysis.spot) / analysis.spot) * 100, 1)}% from spot`}
+                            </span>
+                          </div>
                         </td>
-                        )}
-                        {timeMode === "basic" && (
-                        <td
-                          className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
-                            r.exp + manualPnl
-                          )}`}
-                        >
-                          {pnlTxt(r.exp + manualPnl)}
-                        </td>
-                        )}
-                        {timeMode === "basic" && (tDays > 0 || ivShift !== 0) && (
-                          <td
-                            className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
-                              (r.tv ?? 0) + manualPnl
-                            )}`}
-                          >
-                            {pnlTxt(mp(r.tv))}
-                          </td>
-                        )}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </>
-            )}
+                    );
+                  }
+                  body.push(
+                    <tr key={i} ref={r.isATM ? atmRowRef : undefined} className="group">
+                      <td
+                        className={`num sticky left-0 z-[1] border-b border-r border-term-border/50 bg-term-panel px-3 py-1.5 text-right text-[12px] font-semibold text-term-text group-hover:bg-term-panel2 ${
+                          r.isATM ? "text-amber-300" : ""
+                        }`}
+                        style={{
+                          boxShadow: r.isWall ? "inset 3px 0 0 #ef4444" : r.isFloor ? "inset 3px 0 0 #22c55e" : undefined,
+                        }}
+                        title={r.isWall ? "biggest Call OI (resistance)" : r.isFloor ? "biggest Put OI (support)" : undefined}
+                      >
+                        {sk(r.K)}
+                        {r.isWall && <sup className="ml-0.5 text-down">R</sup>}
+                        {r.isFloor && <sup className="ml-0.5 text-up">S</sup>}
+                      </td>
+                      {showPct && (
+                        <td
+                          className={`num border-b border-r border-term-border/50 px-2 py-1.5 text-right text-[11px] ${
+                            r.pct >= 0 ? "text-up" : "text-down"
+                          }`}
+                        >
+                          {r.pct >= 0 ? "+" : ""}
+                          {nf(r.pct * 100, 1)}%
+                        </td>
+                      )}
+                      {cols.map((c) => {
+                        const v = c.val(i) + manualPnl;
+                        return (
+                          <td
+                            key={c.key}
+                            className={`num border-b border-r border-term-border/40 px-3 py-1.5 text-right text-[12px] font-medium group-hover:brightness-125 ${
+                              v >= 0 ? "text-green-300" : "text-red-300"
+                            } ${c.exp ? "border-l border-l-term-border" : ""}`}
+                            style={{ backgroundColor: heat(v) }}
+                          >
+                            {pnlTxt(v)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                });
+                return (
+                  <>
+                    {/* header: what the table is + the controls, grouped */}
+                    <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 border-b border-term-border bg-term-panel2/60 px-3 py-2">
+                      <div>
+                        <div className="text-[13px] font-semibold text-term-text">
+                          P&amp;L table <span className="font-normal text-term-dim">· {analysis.symbol} {analysis.expiry}</span>
+                        </div>
+                        <div className="text-[11px] text-term-dim">
+                          spot <span className="num text-amber-300">{nf(analysis.spot, 2)}</span> · by{" "}
+                          {tableInterval > 0 ? `${tableInterval}-pt targets` : "strike"}
+                          {ivShift ? ` · IV ${ivShift > 0 ? "+" : ""}${ivShift}%` : ""}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-end gap-3">
+                        <div>
+                          <div className={lbl}>View</div>
+                          <div className="seg mt-0.5 text-[10.5px]" title="Sensibull-style: P&L on each trading day, or by the hour">
+                            {(
+                              [
+                                ["basic", "Today · Expiry"],
+                                ["day", "Day-wise"],
+                                ["hour", "Hour-wise"],
+                              ] as const
+                            ).map(([k, l]) => (
+                              <button key={k} onClick={() => setTimeMode(k)} className={timeMode === k ? "on" : ""}>
+                                {l}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <div className={lbl}>Rows</div>
+                          <div className="seg mt-0.5 text-[10.5px]">
+                            {[5, 10, 15, 20, 0].map((n) => (
+                              <button key={n} onClick={() => setStrikeSpan(n)} className={strikeSpan === n ? "on" : ""}>
+                                {n === 0 ? "All" : `±${n}`}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <div className={lbl}>Step</div>
+                          <div className="seg mt-0.5 text-[10.5px]">
+                            {([["strikes", 0], ["50", 50], ["100", 100], ["200", 200]] as const).map(([l, v]) => (
+                              <button
+                                key={l}
+                                onClick={() => setTableInterval(v)}
+                                className={tableInterval === v ? "on" : ""}
+                                title={v ? `one row every ${v} points of the index (a target level, not an option strike)` : "one row per real strike in the option chain"}
+                              >
+                                {l}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setShowPct((v) => !v)}
+                          className={`chipbtn ${showPct ? "on" : ""}`}
+                          title="add a Move column: how far each row is from spot, in %"
+                        >
+                          % move
+                        </button>
+                      </div>
+                    </div>
+                    {timeMode === "hour" && (
+                      <div className="flex flex-wrap items-center gap-1 border-b border-term-border px-3 py-1.5 text-[11px]">
+                        <span className="mr-1 text-term-dim">Day</span>
+                        {tradeDays.map((d, i) => (
+                          <button key={d.key} onClick={() => setHourDay(i)} className={`chipbtn ${hourDay === i ? "on" : ""}`}>
+                            {d.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="max-h-[560px] overflow-auto">
+                      <table className="w-full border-separate border-spacing-0 whitespace-nowrap">
+                        <thead className="sticky top-0 z-[2]">
+                          <tr>
+                            <th className="sticky left-0 z-[3] border-b border-r border-term-border bg-term-panel2 px-3 py-1.5 text-right text-[10px] font-semibold uppercase tracking-wide text-term-dim">
+                              {tableInterval > 0 ? "Target" : "Strike"}
+                            </th>
+                            {showPct && (
+                              <th className="border-b border-r border-term-border bg-term-panel2 px-2 py-1.5 text-right text-[10px] font-semibold uppercase tracking-wide text-term-dim">
+                                Move
+                              </th>
+                            )}
+                            {cols.map((c) => (
+                              <th
+                                key={c.key}
+                                className={`border-b border-r border-term-border bg-term-panel2 px-3 py-1.5 text-right ${
+                                  c.exp ? "border-l border-l-term-border" : ""
+                                }`}
+                              >
+                                <div className={`text-[11.5px] font-semibold ${c.exp ? "text-term-accent" : "text-term-text"}`}>{c.label}</div>
+                                {c.sub && <div className="text-[9.5px] font-normal text-term-dim">{c.sub}</div>}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>{body}</tbody>
+                      </table>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-term-border px-3 py-1.5 text-[10px] text-term-dim">
+                      <span className="flex items-center gap-1">
+                        <span className="inline-block h-2.5 w-4 rounded-sm" style={{ background: "rgba(34,197,94,.35)" }} /> profit
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="inline-block h-2.5 w-4 rounded-sm" style={{ background: "rgba(239,68,68,.35)" }} /> loss · deeper = bigger
+                      </span>
+                      <span>
+                        <span className="text-amber-300">▶ spot</span> · <span className="text-sky-300">┄ breakeven</span>
+                      </span>
+                      <span>
+                        <span className="text-down">R</span> biggest call OI · <span className="text-up">S</span> biggest put OI
+                      </span>
+                    </div>
+                  </>
+                );
+              })()}
           </div>
         ) : payoffTab === "legs" ? (
           legsEl
