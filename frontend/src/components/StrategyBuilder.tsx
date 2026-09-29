@@ -293,6 +293,10 @@ export function StrategyBuilder() {
   );
   // folded phone (layout "B", 28-Sep): chart first, then Legs | P&L table | Greeks under it
   const [phoneTab, setPhoneTab] = useState<"legs" | "table" | "greeks">("table");
+  // P&L table time view (Sensibull-style): Today + Expiry, one column per trading day, or by the hour
+  const [timeMode, setTimeMode] = useState<"basic" | "day" | "hour">("basic");
+  const [hourDay, setHourDay] = useState(0); // which trading day the hour view shows
+  const [phonePt, setPhonePt] = useState("now"); // phone: the point in time the middle column shows
   const [phoneRows, setPhoneRows] = useState(3); // P&L table: rows each side of spot
   // width of the leg-editor column vs. the payoff/chart column, drag-resizable like the watchlist panel
   const [builderW, setBuilderW] = useState(() => readNum(BUILDER_W_LS, 330));
@@ -838,6 +842,83 @@ export function StrategyBuilder() {
       }))
       .reverse(); // high strike on top, like the chain ladder
   }, [analysis, tDays, dte, dteExact, strikeSpan, tableInterval, chain, ivShift]);
+
+  // ---- day-wise / hour-wise P&L (Sensibull "by date and time") ----
+  /** the expiry's 15:30 IST close from its date ("06-Oct-2026"); the days-left figure if it won't parse */
+  const expiryTs = (exp: string, daysLeft: number) => {
+    const m = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/.exec(exp || "");
+    const mi = m ? ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"].indexOf(m[2].toLowerCase()) : -1;
+    return m && mi >= 0
+      ? Date.UTC(Number(m[3]), mi, Number(m[1]), 15, 30) - 5.5 * 3600e3
+      : Date.now() + daysLeft * 86400000;
+  };
+  // Every point is priced with the time left from IT to expiry (IST, 15:30 close); weekends skipped
+  // (exchange holidays aren't known here, so a holiday still gets a column).
+  const tradeDays = useMemo(() => {
+    if (!analysis) return [] as { key: string; label: string; close: number; points: { key: string; label: string; ts: number }[] }[];
+    const IST = 5.5 * 3600e3;
+    const nowTs = Date.now();
+    const expTs = expiryTs(analysis.expiry, dteExact);
+    const at = (y: number, m: number, d: number, hh: number, mm: number) => Date.UTC(y, m, d, hh, mm) - IST;
+    const out: { key: string; label: string; close: number; points: { key: string; label: string; ts: number }[] }[] = [];
+    const t0 = new Date(nowTs + IST);
+    for (let i = 0; i <= Math.ceil((expTs - nowTs) / 86400000) + 1 && out.length < 40; i++) {
+      const d = new Date(Date.UTC(t0.getUTCFullYear(), t0.getUTCMonth(), t0.getUTCDate() + i));
+      const dow = d.getUTCDay();
+      if (dow === 0 || dow === 6) continue;
+      const [y, m, dd] = [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()];
+      const close = Math.min(at(y, m, dd, 15, 30), expTs);
+      if (close <= nowTs) continue;
+      const isExp = close >= expTs - 60000;
+      const lbl = i === 0 ? "Today" : d.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", timeZone: "UTC" });
+      const points = [10, 11, 12, 13, 14, 15]
+        .map((h) => ({ key: `${y}-${m}-${dd}-${h}`, label: `${h > 12 ? h - 12 : h}:00`, ts: at(y, m, dd, h, 0) }))
+        .filter((pt) => pt.ts > nowTs && pt.ts < close);
+      points.push({ key: `${y}-${m}-${dd}-close`, label: isExp ? "Expiry" : "3:30", ts: close });
+      out.push({ key: `${y}-${m}-${dd}`, label: isExp ? `${lbl} · Expiry` : lbl, close, points });
+      if (isExp) break;
+    }
+    return out;
+  }, [analysis, dteExact]);
+  const expTsNow = analysis ? expiryTs(analysis.expiry, dteExact) : 0;
+  /** the columns the table shows for the chosen time view */
+  const timeCols = useMemo(() => {
+    if (!analysis || timeMode === "basic") return [] as { key: string; label: string; sub?: string; rem: number }[];
+    const rem = (ts: number) => Math.max(0, (expTsNow - ts) / 86400000);
+    if (timeMode === "day")
+      return [
+        { key: "now", label: "Now", rem: dteExact },
+        ...tradeDays.map((d) => ({
+          key: d.key,
+          label: d.label.replace(" · Expiry", ""),
+          sub: d.close >= expTsNow - 60000 ? "expiry" : "3:30",
+          rem: rem(d.close),
+        })),
+      ];
+    const day = tradeDays[Math.min(hourDay, tradeDays.length - 1)];
+    if (!day) return [];
+    return day.points.map((pt) => ({ key: pt.key, label: pt.label, sub: day.label.replace(" · Expiry", ""), rem: rem(pt.ts) }));
+  }, [analysis, timeMode, tradeDays, hourDay, dteExact]);
+  const timeVals = useMemo(() => {
+    if (!analysis || !timeCols.length) return [] as number[][];
+    const ks = levelRows.map((r) => r.K);
+    return timeCols.map((c) => strategyPnlCurve(analysis.legs, ks, c.rem / 365, ivShift));
+  }, [analysis, timeCols, levelRows, ivShift]);
+  /** phone: the middle column's point in time ("now", a day's close, or an hour) */
+  const phoneCol = useMemo(() => {
+    if (!analysis || phonePt === "now") return null;
+    for (const d of tradeDays)
+      for (const pt of d.points)
+        if (pt.key === phonePt) {
+          const ks = levelRows.map((r) => r.K);
+          const rem = Math.max(0, (expTsNow - pt.ts) / 86400000);
+          return {
+            label: `${d.label.replace(" · Expiry", "")} ${pt.label}`,
+            vals: strategyPnlCurve(analysis.legs, ks, rem / 365, ivShift),
+          };
+        }
+    return null;
+  }, [analysis, phonePt, tradeDays, levelRows, ivShift]);
 
   // scroll the P&L table to the ATM row by default instead of the top of the ladder
   const atmRowRef = useRef<HTMLTableRowElement | null>(null);
@@ -1978,11 +2059,36 @@ export function StrategyBuilder() {
                   const all = levelRows;
                   const ai = Math.max(0, all.findIndex((r) => r.isATM));
                   const rowsP = all.slice(Math.max(0, ai - phoneRows), ai + phoneRows + 1);
+                  const off = Math.max(0, ai - phoneRows); // rowsP[j] = all[off + j]
+                  const selDay = tradeDays.find((d) => d.points.some((pt) => pt.key === phonePt));
                   return (
                     <>
+                      <div className="flex gap-1 overflow-x-auto py-1 text-[11px] [scrollbar-width:none]">
+                        <button onClick={() => setPhonePt("now")} className={`chipbtn shrink-0 ${phonePt === "now" ? "on" : ""}`}>
+                          Now
+                        </button>
+                        {tradeDays.map((d) => (
+                          <button
+                            key={d.key}
+                            onClick={() => setPhonePt(d.points[d.points.length - 1].key)}
+                            className={`chipbtn shrink-0 ${selDay?.key === d.key ? "on" : ""}`}
+                          >
+                            {d.label.replace(" · Expiry", "")}
+                          </button>
+                        ))}
+                      </div>
+                      {selDay && selDay.points.length > 1 && (
+                        <div className="flex gap-1 overflow-x-auto pb-1 text-[10.5px] [scrollbar-width:none]">
+                          {selDay.points.map((pt) => (
+                            <button key={pt.key} onClick={() => setPhonePt(pt.key)} className={`chipbtn shrink-0 ${phonePt === pt.key ? "on" : ""}`}>
+                              {pt.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <div className="flex border-b border-term-border py-1 text-[10px] uppercase text-term-dim">
                         <span className="flex-1">{tableInterval > 0 ? "Target" : "Strike"}</span>
-                        <span className="flex-1 text-right">Today</span>
+                        <span className="flex-1 text-right normal-case">{phoneCol ? phoneCol.label : "Now"}</span>
                         <span className="flex-1 text-right">Expiry</span>
                       </div>
                       {rowsP.map((r, i) => (
@@ -1994,7 +2100,10 @@ export function StrategyBuilder() {
                             {sk(r.K)}
                             {r.isATM && <span className="text-amber-400"> ●</span>}
                           </span>
-                          <span className={`flex-1 text-right ${pnlCls(r.now + manualPnl)}`}>{pnlTxt(r.now + manualPnl)}</span>
+                          {(() => {
+                            const v = (phoneCol ? phoneCol.vals[off + i] : r.now) + manualPnl;
+                            return <span className={`flex-1 text-right ${pnlCls(v)}`}>{pnlTxt(v)}</span>;
+                          })()}
                           <span className={`flex-1 text-right ${pnlCls(r.exp + manualPnl)}`}>{pnlTxt(r.exp + manualPnl)}</span>
                         </div>
                       ))}
@@ -2189,6 +2298,19 @@ export function StrategyBuilder() {
                         )
                       )}
                     </div>
+                    <div className="seg text-[10px]" title="Sensibull-style: P&L on each trading day, or by the hour">
+                      {(
+                        [
+                          ["basic", "Today · Expiry"],
+                          ["day", "Day-wise"],
+                          ["hour", "Hour-wise"],
+                        ] as const
+                      ).map(([k, l]) => (
+                        <button key={k} onClick={() => setTimeMode(k)} className={timeMode === k ? "on" : ""}>
+                          {l}
+                        </button>
+                      ))}
+                    </div>
                     <button
                       onClick={() => setShowPct((v) => !v)}
                       className={`chipbtn ${showPct ? "on" : ""}`}
@@ -2198,10 +2320,20 @@ export function StrategyBuilder() {
                     </button>
                   </div>
                 </div>
+                {timeMode === "hour" && (
+                  <div className="mb-1 flex flex-wrap items-center gap-1 text-[10px]">
+                    <span className="text-term-dim">Day:</span>
+                    {tradeDays.map((d, i) => (
+                      <button key={d.key} onClick={() => setHourDay(i)} className={`chipbtn ${hourDay === i ? "on" : ""}`}>
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
                   <thead className="text-[10px] uppercase text-term-dim">
                     <tr>
-                      <th className="border-b border-term-border px-2 py-1 text-right font-medium">
+                      <th className="sticky left-0 z-[1] border-b border-term-border bg-term-panel px-2 py-1 text-right font-medium">
                         {tableInterval > 0 ? "Target" : "Strike"}
                       </th>
                       {showPct && (
@@ -2209,13 +2341,24 @@ export function StrategyBuilder() {
                           Move
                         </th>
                       )}
+                      {timeMode !== "basic" &&
+                        timeCols.map((c) => (
+                          <th key={c.key} className="border-b border-term-border px-2 py-1 text-right font-medium">
+                            <div className="normal-case text-term-text">{c.label}</div>
+                            {c.sub && <div className="text-[9px] normal-case">{c.sub}</div>}
+                          </th>
+                        ))}
+                      {timeMode === "basic" && (
                       <th className="border-b border-term-border px-2 py-1 text-right font-medium">
                         Today
                       </th>
+                      )}
+                      {timeMode === "basic" && (
                       <th className="border-b border-term-border px-2 py-1 text-right font-medium">
                         Expiry
                       </th>
-                      {(tDays > 0 || ivShift !== 0) && (
+                      )}
+                      {timeMode === "basic" && (tDays > 0 || ivShift !== 0) && (
                         <th className="border-b border-term-border px-2 py-1 text-right font-medium">
                           {tvColLabel}
                         </th>
@@ -2230,7 +2373,9 @@ export function StrategyBuilder() {
                         className={r.isATM ? "bg-term-accent/10" : ""}
                       >
                         <td
-                          className="num border-b border-term-border/40 px-2 py-1 text-right font-medium text-term-text"
+                          className={`num sticky left-0 border-b border-term-border/40 px-2 py-1 text-right font-medium text-term-text ${
+                            r.isATM ? "bg-term-panel2" : "bg-term-panel"
+                          }`}
                           style={{
                             boxShadow: r.isWall
                               ? "inset 2px 0 0 #ef4444"
@@ -2260,6 +2405,16 @@ export function StrategyBuilder() {
                             {nf(r.pct * 100, 1)}%
                           </td>
                         )}
+                        {timeMode !== "basic" &&
+                          timeCols.map((c, ci) => {
+                            const v = (timeVals[ci]?.[i] ?? 0) + manualPnl;
+                            return (
+                              <td key={c.key} className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(v)}`}>
+                                {pnlTxt(v)}
+                              </td>
+                            );
+                          })}
+                        {timeMode === "basic" && (
                         <td
                           className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
                             r.now + manualPnl
@@ -2267,6 +2422,8 @@ export function StrategyBuilder() {
                         >
                           {pnlTxt(r.now + manualPnl)}
                         </td>
+                        )}
+                        {timeMode === "basic" && (
                         <td
                           className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
                             r.exp + manualPnl
@@ -2274,7 +2431,8 @@ export function StrategyBuilder() {
                         >
                           {pnlTxt(r.exp + manualPnl)}
                         </td>
-                        {(tDays > 0 || ivShift !== 0) && (
+                        )}
+                        {timeMode === "basic" && (tDays > 0 || ivShift !== 0) && (
                           <td
                             className={`num border-b border-term-border/40 px-2 py-1 text-right ${pnlCls(
                               (r.tv ?? 0) + manualPnl
