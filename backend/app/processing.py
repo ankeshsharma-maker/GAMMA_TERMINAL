@@ -347,7 +347,8 @@ def build_chain(
     max_pain = min(strikes, key=lambda k: pain_ce[k] + pain_pe[k]) if strikes else atm
     pcr = round(tot_pe_oi / tot_ce_oi, 3) if tot_ce_oi else None
 
-    gamma_flip = _gamma_flip(rows, spot, atm, tc, q)
+    # plain carry (not the parity-implied q): NSE publishes its IV without it, and the flip uses NSE IV
+    gamma_flip = _gamma_flip(rows, spot, atm, tc)
 
     atm_row = next((r for r in rows if r["strike"] == atm), None)
     atm_iv = None
