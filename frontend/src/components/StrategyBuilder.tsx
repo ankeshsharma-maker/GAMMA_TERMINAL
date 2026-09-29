@@ -1313,6 +1313,42 @@ export function StrategyBuilder() {
           ))}
         </div>
 
+        {/* ---- manual P&L: booked / adjustment P&L added to every figure (moved here from under the payoff) ---- */}
+        {legs.length > 0 && (
+          <div className="flex items-center gap-2 border-t border-term-border px-3 py-2 text-2xs">
+            <label htmlFor="sb-manual-pnl" className="shrink-0 font-semibold uppercase tracking-wide text-term-dim">
+              Manual P&amp;L ₹
+            </label>
+            <input
+              id="sb-manual-pnl"
+              inputMode="decimal"
+              value={manualStr}
+              onChange={(e) => {
+                const s = e.target.value.replace(/[^\d.-]/g, "");
+                setManualStr(s);
+                setManualPnl(parseFloat(s) || 0);
+              }}
+              placeholder="0"
+              title="Booked / adjustment P&L added to every P&L figure and the payoff curves"
+              className={`num w-28 rounded border border-term-border bg-term-bg px-2 py-1 text-right text-[12px] outline-none focus:border-term-accent ${
+                manualPnl > 0 ? "text-up" : manualPnl < 0 ? "text-down" : "text-term-text"
+              }`}
+            />
+            {manualPnl !== 0 && (
+              <button
+                onClick={() => {
+                  setManualStr("");
+                  setManualPnl(0);
+                }}
+                className="chipbtn"
+              >
+                clear
+              </button>
+            )}
+            <span className="min-w-0 truncate text-[10px] text-term-dim">booked / adjustments — added to every P&amp;L</span>
+          </div>
+        )}
+
         {/* ---- add a leg (collapsed by default; hidden clutter when a template is loaded) ---- */}
         <div className="border-t-2 border-term-border bg-term-panel2 p-2">
           {!addingLeg ? (
@@ -2666,20 +2702,6 @@ export function StrategyBuilder() {
               >
                 reset
               </button>
-              <label className="flex items-center gap-1 text-term-dim">
-                Manual P&amp;L ₹
-                <input
-                  value={manualStr}
-                  onChange={(e) => {
-                    const s = e.target.value.replace(/[^\d.-]/g, "");
-                    setManualStr(s);
-                    setManualPnl(parseFloat(s) || 0);
-                  }}
-                  placeholder="0"
-                  title="Booked / adjustment P&L added to every P&L figure and the payoff curves"
-                  className="num w-24 rounded border border-term-border bg-term-bg px-1.5 py-0.5 text-term-text outline-none focus:border-term-accent"
-                />
-              </label>
             </div>
           </div>
         )}
