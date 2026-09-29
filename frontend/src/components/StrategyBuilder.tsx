@@ -2581,15 +2581,16 @@ export function StrategyBuilder() {
             backtest: "Replay these legs against past daily data",
           };
           return (
-            <div className="flex shrink-0 items-end gap-0.5 overflow-x-auto border-b border-term-border bg-term-panel px-2 pt-1 [scrollbar-width:none]">
+            <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-term-border bg-term-panel px-2 py-1.5 [scrollbar-width:none]">
+              {/* tab BUTTONS, the app's own sub-nav look (GroupSubNav: Scalp / Build / Positions ...) */}
               {TABS.map(([k, l, phone]) => (
                 <button
                   key={k}
                   onClick={() => pick(k)}
-                  className={`${phone ? "" : "hidden sm:block"} shrink-0 border-b-2 px-3 py-2 text-[12px] font-semibold transition-colors sm:text-[13.5px] ${
+                  className={`${phone ? "" : "hidden sm:block"} shrink-0 rounded border px-3 py-1 text-[12px] font-semibold transition-colors sm:text-[13px] ${
                     active === k
-                      ? "border-term-accent text-term-accent"
-                      : "border-transparent text-term-dim hover:text-term-text"
+                      ? "border-term-accent/50 bg-term-accent/15 text-term-accent"
+                      : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
                   }`}
                 >
                   {l}
