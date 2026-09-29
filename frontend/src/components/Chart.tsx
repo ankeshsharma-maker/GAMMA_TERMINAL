@@ -17,7 +17,7 @@ import { SelectMenu } from "./SelectMenu";
 import { getDataSrc, getIntervalS } from "../lib/prefs";
 import { computeGammaFlip } from "../lib/gammaFlip";
 import { DrawingPrimitive, describeDrawing, type Drawing, type Point } from "../lib/chartDrawings";
-import { bucketStart } from "../lib/istTime";
+import { bucketStart, istDay } from "../lib/istTime";
 import { detectPatterns, PATTERN_LEGEND, type PatternHit } from "../lib/candlePatterns";
 import { detectChartPatterns, type ChartEvent } from "../lib/chartPatterns";
 import { AutoPatternsPrimitive } from "../lib/autoPatternsPrimitive";
@@ -1703,42 +1703,38 @@ export function Chart() {
     );
   }, [mtf, priceCandles, data, indHidden]);
 
-  // dealer gamma flip (the SERVER's value -- processing.py, the standard spot-sweep definition
-  // NiftyTrader & co. use, since 29-Sep 08:42 IST).
-  //  - intraday charts: a stepped LINE through the session (the flip recorded on every chain
-  //    refresh, /api/gex-intraday) + the live value at the latest bar -- a real series, so the
-  //    price scale always makes room for it (a flat price line could sit off-screen, which is why
-  //    it only showed on 1D)
-  //  - daily and up: one reference line at today's value
-  //  - an option contract's chart: nothing (the flip is an index level, not a premium)
-  const [gfPts, setGfPts] = useState<[number, number][]>([]);
+  // dealer gamma flip = the DAILY flip, on EVERY timeframe (asked 29-Sep: "5 min gamma flip doesn't
+  // matter, plot the daily gamma flip on all time frames"). One value per trading day -- the same
+  // numbers as the OI Profile weekly / daily GEX dashboard (server: standard spot-sweep definition,
+  // NSE bhavcopy / Upstox) -- drawn as a step: flat across that day's bars on intraday charts, one
+  // point per bar on daily and up. Today's value is the live chain's. A real series, so the price
+  // scale always makes room for it; an option contract's chart gets nothing (an index level).
+  const [gfDaily, setGfDaily] = useState<Map<string, number>>(new Map());
   useEffect(() => {
-    setGfPts([]);
-    if (!eff.gammaFlip || isOption || intervalS >= 86400) return;
+    setGfDaily(new Map());
+    if (!eff.gammaFlip || isOption || !symbol) return;
     let alive = true;
-    // readings before the switch used the old cumulative-by-strike formula (off by up to ~1,200 pts
-    // on SENSEX) -- they're left out rather than drawn as a jump
-    const SINCE = Date.UTC(2026, 8, 29, 3, 12) / 1000; // 29-Sep-2026 08:42 IST
+    let timer = 0;
     const load = () =>
-      api.gexIntraday(symbol, null).then(
-        (d) =>
-          alive &&
-          setGfPts(
-            d.points
-              .filter((pt) => pt[3] != null && pt[0] >= SINCE)
-              .map((pt) => [pt[0], pt[3] as number] as [number, number])
-          ),
-        () => {}
+      api.weeklyGex(symbol, 30).then(
+        (d) => {
+          if (!alive) return;
+          const m = new Map<string, number>();
+          for (const r of d.series) if (r.gammaFlip) m.set(r.date, r.gammaFlip);
+          setGfDaily(m);
+          // fully loaded: refresh in 10 min; nothing yet (the server is still fetching NSE's files): 30 s
+          timer = window.setTimeout(load, m.size ? 600000 : 30000);
+        },
+        () => {
+          if (alive) timer = window.setTimeout(load, 30000);
+        }
       );
     load();
-    const id = window.setInterval(() => {
-      if (!document.hidden) load();
-    }, 60000);
     return () => {
       alive = false;
-      window.clearInterval(id);
+      window.clearTimeout(timer);
     };
-  }, [eff.gammaFlip, isOption, intervalS, symbol]);
+  }, [eff.gammaFlip, isOption, symbol]);
   const gfSerRef = useRef<{ chart: IChartApi; ser: ISeriesApi<"Line"> } | null>(null);
   useEffect(() => {
     const chart = chartRef.current;
@@ -1759,33 +1755,31 @@ export function Chart() {
       }
     };
     if (gfSerRef.current && gfSerRef.current.chart !== chart) gfSerRef.current = null; // chart rebuilt
-    if (!eff.gammaFlip || isOption || !chain?.rows.length) return drop();
-    const flip = chain.gammaFlip ?? computeGammaFlip(chain.rows, chain.liveSpot?.ltp ?? chain.spot)?.strike ?? null;
-    if (intervalS >= 86400 || !candles.length) {
-      drop();
-      if (flip == null) return;
-      gfRef.current = cs.createPriceLine({
-        price: Number(flip.toFixed(2)),
-        color: "#e879f9",
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: "γ-flip",
-      });
-      return;
-    }
-    // the recorded flips on this chart's bars (the last reading in each bar) + the live one
-    const byBar = new Map<number, number>();
-    for (const [t, v] of gfPts) byBar.set(bucketStart(t, intervalS), v);
-    const lastBar = candles[candles.length - 1].time as number;
-    if (flip != null) byBar.set(lastBar, flip);
-    const firstBar = candles[0].time as number;
-    const pts = [...byBar.entries()]
-      .filter(([t]) => t >= firstBar && t <= lastBar)
-      .sort((x, y) => x[0] - y[0])
-      .map(([t, v]) => ({ time: t as any, value: Number(v.toFixed(2)) }));
+    if (!eff.gammaFlip || isOption) return drop();
+    const flip = chain?.gammaFlip ?? (chain?.rows.length ? computeGammaFlip(chain.rows, chain.liveSpot?.ltp ?? chain.spot)?.strike : null) ?? null;
+    // each bar's daily flip: intraday / daily -> that bar's IST date; weekly / monthly -> the last
+    // trading day inside the bar. The latest session takes the live chain's value.
+    const dates = [...gfDaily.keys()].sort();
+    const lastDate = candles.length ? istDay(candles[candles.length - 1].time as number) : "";
+    const wide = intervalS >= 604800;
+    const pts: { time: any; value: number }[] = [];
+    candles.forEach((c, i) => {
+      const d0 = istDay(c.time as number);
+      let v: number | undefined;
+      if (d0 === lastDate && flip != null) v = flip;
+      else if (!wide) v = gfDaily.get(d0);
+      else {
+        const d1 = i + 1 < candles.length ? istDay(candles[i + 1].time as number) : "9999-99-99";
+        for (let j = dates.length - 1; j >= 0; j--)
+          if (dates[j] >= d0 && dates[j] < d1) {
+            v = gfDaily.get(dates[j]);
+            break;
+          }
+      }
+      if (v != null) pts.push({ time: c.time as any, value: Number(v.toFixed(2)) });
+    });
     if (!pts.length) return drop();
-    // no readings of this session yet (before the open): the level itself, across the chart
+    // just the one level (the daily series hasn't arrived yet): a reference line across the chart
     if (pts.length < 2 && flip != null)
       gfRef.current = cs.createPriceLine({
         price: Number(flip.toFixed(2)),
@@ -1810,7 +1804,7 @@ export function Chart() {
         }),
       };
     gfSerRef.current.ser.setData(pts);
-  }, [eff.gammaFlip, isOption, chain?.rows, chain?.gammaFlip, gfPts, candles, intervalS, data]);
+  }, [eff.gammaFlip, isOption, chain?.rows, chain?.gammaFlip, gfDaily, candles, intervalS, data]);
 
   // what the on-canvas loading / error / empty message calls this chart
   const chartLabel = isOption
