@@ -1343,13 +1343,16 @@ export function StrategyBuilder() {
           ].filter((g) => g[2].length);
           return (
             <div className="hidden border-b border-term-border sm:block">
-              <div className="flex items-center gap-0.5 px-2 pt-1">
+              <div className="flex flex-wrap items-center gap-1.5 px-2 py-1.5">
+                {/* tab BUTTONS, same look as the Payoff graph / P&L table row */}
                 {tabs.map(([k, l]) => (
                   <button
                     key={k}
                     onClick={() => setSrcTab(open === k ? "none" : k)}
-                    className={`border-b-2 px-2.5 py-1.5 text-[13.5px] font-semibold ${
-                      open === k ? "border-term-accent text-term-accent" : "border-transparent text-term-dim hover:text-term-text"
+                    className={`rounded border px-3 py-1 text-[13px] font-semibold transition-colors ${
+                      open === k
+                        ? "border-term-accent/50 bg-term-accent/15 text-term-accent"
+                        : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
                     }`}
                   >
                     {l}
@@ -2664,6 +2667,7 @@ export function StrategyBuilder() {
                 sd={payoffSd}
                 margin={analysis.margin?.estimate}
                 oi={payoffOi}
+                targetPrice={tgtPrice}
               />
             </div>
             <div className="mx-1.5 mt-1.5 grid grid-cols-3 gap-1">
@@ -2848,6 +2852,7 @@ export function StrategyBuilder() {
                 sd={payoffSd}
                 margin={analysis.margin?.estimate}
                 oi={payoffOi}
+                targetPrice={tgtPrice}
               />
             )}
           </div>
@@ -3185,6 +3190,34 @@ export function StrategyBuilder() {
                 className="mt-2 h-1 w-full cursor-pointer accent-sky-500"
                 aria-label="Target price"
               />
+              {/* what the target does to the position -- the figures follow the target */}
+              <div className="mt-1.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                {(() => {
+                  // read off the SAME curves the payoff chart draws (its badge / the summary's P&L now),
+                  // so every figure agrees: the T+n / today curve and the expiry line at the target
+                  const xs = analysis.x;
+                  const at = (arr: number[]) => {
+                    if (xs.length < 2) return arr[0] ?? 0;
+                    let j = 1;
+                    while (j < xs.length - 1 && xs[j] < tgtPrice) j++;
+                    const f = (tgtPrice - xs[j - 1]) / (xs[j] - xs[j - 1] || 1);
+                    return arr[j - 1] + (arr[j] - arr[j - 1]) * Math.min(1, Math.max(0, f));
+                  };
+                  const vT = at(tPnl ?? analysis.nowPnl) + manualPnl;
+                  const vE = at(analysis.expiryPnl) + manualPnl;
+                  return (
+                    <>
+                      <span className="text-term-dim">
+                        P&amp;L at target · {tLegLabel}{" "}
+                        <span className={`num font-semibold ${pnlCls(vT)}`}>{pnlTxt(vT)}</span>
+                      </span>
+                      <span className="text-term-dim">
+                        on expiry <span className={`num font-semibold ${pnlCls(vE)}`}>{pnlTxt(vE)}</span>
+                      </span>
+                    </>
+                  );
+                })()}
+              </div>
             </div>
             {/* target date (on the P&L table, laptop / unfolded: in the table's own header) */}
             <div className={payoffTab === "table" ? "sm:hidden" : ""}>

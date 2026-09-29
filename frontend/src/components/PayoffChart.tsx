@@ -27,6 +27,8 @@ interface Props {
   margin?: number;
   /** open interest per strike (calls / puts), drawn as bars behind the curves */
   oi?: OiRow[];
+  /** the Build tab's target price: a dashed line + the projected-P&L badge read there (Sensibull) */
+  targetPrice?: number;
 }
 
 const PAD = { l: 56, r: 44, t: 30, b: 26 };
@@ -48,6 +50,8 @@ const niceStep = (span: number, n: number) => {
  *  blue, and call / put open interest as bars behind it. */
 export function PayoffChart(props: Props) {
   const { x, spot, breakevens, symbol, tLabel, sd, margin, oi } = props;
+  // a target away from the spot (half a point is "at spot")
+  const tp = props.targetPrice != null && Math.abs(props.targetPrice - spot) >= 0.5 ? props.targetPrice : null;
   const off = props.offset || 0;
   const expiryPnl = useMemo(() => (off ? props.expiryPnl.map((v) => v + off) : props.expiryPnl), [props.expiryPnl, off]);
   const nowPnl = useMemo(() => (off ? props.nowPnl.map((v) => v + off) : props.nowPnl), [props.nowPnl, off]);
@@ -86,7 +90,8 @@ export function PayoffChart(props: Props) {
   const [zoom, setZoom] = useState(1); // window = defHalf * zoom either side of the spot
   useEffect(() => setZoom(1), [symbol]);
   const maxZoom = Math.max(1, Math.max(spot - dataLo, dataHi - spot) / (defHalf || 1));
-  const half = defHalf * zoom;
+  // wide enough to show the target too
+  const half = Math.max(defHalf * zoom, tp != null ? Math.abs(tp - spot) * 1.15 : 0);
   const vLo = Math.max(dataLo, spot - half);
   const vHi = Math.min(dataHi, spot + half);
 
@@ -154,7 +159,8 @@ export function PayoffChart(props: Props) {
     const f = (v - x[j - 1]) / (x[j] - x[j - 1] || 1);
     return arr[j - 1] + (arr[j] - arr[j - 1]) * Math.min(1, Math.max(0, f));
   };
-  const projected = at(target, spot);
+  const projAt = tp ?? spot;
+  const projected = at(target, projAt);
   const pct = margin && margin > 0 ? (projected / margin) * 100 : null;
 
   const cur = hi != null ? { k: x[hi], exp: expiryPnl[hi], tgt: target[hi] } : null;
@@ -238,6 +244,14 @@ export function PayoffChart(props: Props) {
         >
           Current price: <span className="num">{nf(spot, 2)}</span>
         </div>
+        {tp != null && tp >= vLo && tp <= vHi && (
+          <div
+            className="pointer-events-none absolute top-[24px] z-10 -translate-x-1/2 whitespace-nowrap rounded border border-sky-500/50 bg-term-panel px-2 py-0.5 text-[11px] font-semibold text-sky-300"
+            style={{ left: `${(g.px(tp) / W) * 100}%` }}
+          >
+            Target: <span className="num">{nf(tp, 0)}</span>
+          </div>
+        )}
 
         <svg
           width={W}
@@ -311,6 +325,13 @@ export function PayoffChart(props: Props) {
 
           {/* current price */}
           <line x1={g.px(spot)} x2={g.px(spot)} y1={PAD.t - 6} y2={H - PAD.b} stroke="#94a3b8" strokeWidth={1} />
+          {/* target price (dashed) + the P&L there on the target-date curve */}
+          {tp != null && tp >= vLo && tp <= vHi && (
+            <g>
+              <line x1={g.px(tp)} x2={g.px(tp)} y1={PAD.t + 16} y2={H - PAD.b} stroke={TARGET} strokeWidth={1.2} strokeDasharray="5 4" />
+              <circle cx={g.px(tp)} cy={g.py(at(target, tp))} r={4.5} fill={TARGET} stroke="#0b1220" strokeWidth={1.5} />
+            </g>
+          )}
 
           {/* breakevens */}
           {breakevens
@@ -374,9 +395,10 @@ export function PayoffChart(props: Props) {
           className={`num rounded px-3 py-1 text-[12px] font-semibold ${
             projected >= 0 ? "bg-up/20 text-up" : "bg-down/20 text-down"
           }`}
-          title={`P&L at the current price ${hasT ? `on ${tLabel ?? "the target date"}` : "today"} (model value)`}
+          title={`P&L at ${tp != null ? `the target ${nf(tp, 0)}` : "the current price"} ${hasT ? `on ${tLabel ?? "the target date"}` : "today"} (model value)`}
         >
-          Projected {projected >= 0 ? "profit" : "loss"}: ₹{nf(Math.abs(projected), 0)}
+          Projected {projected >= 0 ? "profit" : "loss"}
+          {tp != null && <> at {nf(tp, 0)}</>}: ₹{nf(Math.abs(projected), 0)}
           {pct != null && ` (${pct >= 0 ? "+" : ""}${nf(pct, 1)}%)`}
         </span>
       </div>
