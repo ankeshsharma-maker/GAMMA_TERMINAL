@@ -2425,6 +2425,58 @@ export function StrategyBuilder() {
                             ))}
                           </div>
                         </div>
+                        {timeMode === "basic" && (
+                          <div>
+                            <div className={lbl}>
+                              Time{" "}
+                              <span className="normal-case tracking-normal text-amber-300">
+                                {tDays === 0 ? "now" : tDays >= dte ? "expiry" : `${tDateLbl} · ${leftLbl(tDays)}`}
+                              </span>
+                            </div>
+                            <div className="seg mt-0.5 text-[10.5px]" title="adds a what-if column: P&L on that day">
+                              {dayChips.map((d) => (
+                                <button
+                                  key={d}
+                                  onClick={() => setTDays(d)}
+                                  title={
+                                    d === 0
+                                      ? "today (T+0)"
+                                      : `${new Date(Date.now() + d * 86400000).toLocaleDateString("en-IN", {
+                                          day: "2-digit",
+                                          month: "short",
+                                        })} · ${leftLbl(d)}`
+                                  }
+                                  className={tDays === d ? "on" : ""}
+                                >
+                                  {d === 0 ? "Now" : d === dte ? "Exp" : `+${d}`}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <div>
+                          <div className={lbl}>IV shift</div>
+                          <div className="mt-0.5 flex items-center gap-1 text-[10.5px]" title="moves every leg's IV by this many points, in every column">
+                            <button onClick={() => setIvShift((v) => Math.max(-15, v - 1))} className="chipbtn px-2">
+                              −
+                            </button>
+                            <span
+                              className={`num w-14 text-center font-semibold ${
+                                ivShift > 0 ? "text-up" : ivShift < 0 ? "text-down" : "text-term-text"
+                              }`}
+                            >
+                              {ivShift === 0 ? "0 (now)" : `${ivShift > 0 ? "+" : ""}${ivShift}%`}
+                            </span>
+                            <button onClick={() => setIvShift((v) => Math.min(15, v + 1))} className="chipbtn px-2">
+                              +
+                            </button>
+                            {ivShift !== 0 && (
+                              <button onClick={() => setIvShift(0)} className="chipbtn">
+                                reset
+                              </button>
+                            )}
+                          </div>
+                        </div>
                         <button
                           onClick={() => setShowPct((v) => !v)}
                           className={`chipbtn ${showPct ? "on" : ""}`}
@@ -2499,6 +2551,8 @@ export function StrategyBuilder() {
 
         {analysis && (
           <div className="m-2 mt-0 rounded border border-term-border bg-term-bg/20 p-3 text-[10px]">
+            {/* on the P&L table (laptop / unfolded) Time + IV shift sit in the table's own header instead */}
+            <div className={payoffTab === "table" ? "sm:hidden" : ""}>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <span className="font-semibold uppercase tracking-wide text-term-dim">
                 Time to expiry
@@ -2580,8 +2634,13 @@ export function StrategyBuilder() {
                 </button>
               ))}
             </div>
+            </div>
             {/* target price — drives Legs P&L, Greeks and the T+n column */}
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-term-border/50 pt-1.5">
+            <div
+              className={`flex flex-wrap items-center gap-x-3 gap-y-1 ${
+                payoffTab === "table" ? "sm:mt-0 sm:border-t-0 sm:pt-0" : ""
+              } mt-1.5 border-t border-term-border/50 pt-1.5`}
+            >
               <span className="font-semibold uppercase tracking-wide text-term-dim">
                 {symbol} target
               </span>
