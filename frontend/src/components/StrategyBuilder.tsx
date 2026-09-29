@@ -360,8 +360,9 @@ export function StrategyBuilder() {
     } catch {}
   }, [builderW]);
   const bumpBuilder = useCallback((dx: number) => setBuilderW((w) => clamp(w + dx, 260, 600)), []);
-  const [strikeSpan, setStrikeSpan] = useState(0); // ATM ± N strikes in the P&L table; 0 = All
-  const [tableInterval, setTableInterval] = useState(0); // 0 = chain strikes; else ₹ step
+  // P&L table defaults (asked 29-Sep): ±5 rows, one row every 100 points
+  const [strikeSpan, setStrikeSpan] = useState(5); // ATM ± N strikes in the P&L table; 0 = All
+  const [tableInterval, setTableInterval] = useState(100); // 0 = chain strikes; else ₹ step
   const [showPct, setShowPct] = useState(true); // show the "Move %" column
   const [gMulLot, setGMulLot] = useState(true); // greeks × lot size
   const [gMulQty, setGMulQty] = useState(true); // greeks × number of lots
@@ -891,6 +892,12 @@ export function StrategyBuilder() {
     const remYears = daysLeft(tDays) / 365;
     const tv = tDays > 0 || ivShift ? strategyPnlCurve(analysis.legs, strikes, remYears, ivShift) : null;
 
+    // the "at the money" row: the chain's ATM strike when it is a row, else the row nearest the spot
+    // (100-pt targets needn't include a 50-pt ATM strike)
+    const atmK =
+      chain && strikes.includes(chain.atmStrike)
+        ? chain.atmStrike
+        : strikes.reduce((b, k) => (Math.abs(k - spot) < Math.abs(b - spot) ? k : b), strikes[0]);
     return strikes
       .map((k, i) => ({
         K: k,
@@ -898,7 +905,7 @@ export function StrategyBuilder() {
         now: now[i],
         exp: exp[i],
         tv: tv ? tv[i] : null,
-        isATM: chain ? k === chain.atmStrike : Math.abs(k - spot) <= step / 2,
+        isATM: k === atmK,
         isWall: k === wall.k && wall.v > 0,
         isFloor: k === floor.k && floor.v > 0,
       }))
