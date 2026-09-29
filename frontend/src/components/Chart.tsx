@@ -112,12 +112,14 @@ const TOGGLES = [
   ["smcLiq", "Liquidity (EQH / EQL)"],
   ["smcPD", "Premium / discount"],
   ["smcLvl", "Prev day / week high-low"],
+  ["smcSweep", "Liquidity sweeps"],
+  ["smcStruct", "Swing / internal structure"],
 ] as const;
 type ToggleKey = (typeof TOGGLES)[number][0];
 /** drawn-on-price analysis: its own "Patterns" button, not the ƒx indicator list */
 const PATTERN_KEYS = new Set<ToggleKey>(["patterns", "ranges", "chartpat", "structure"]);
 /** Smart Money Concepts: their own "◈ SMC" button */
-const SMC_KEYS = new Set<ToggleKey>(["smcOB", "smcFVG", "smcLiq", "smcPD", "smcLvl"]);
+const SMC_KEYS = new Set<ToggleKey>(["smcOB", "smcFVG", "smcLiq", "smcPD", "smcLvl", "smcSweep", "smcStruct"]);
 /** everything drawn on price (Patterns + SMC) -- kept out of the ƒx indicator list */
 const DRAWN_KEYS = new Set<ToggleKey>([...PATTERN_KEYS, ...SMC_KEYS]);
 const DEFAULT_ON: Record<ToggleKey, boolean> = {
@@ -150,6 +152,8 @@ const DEFAULT_ON: Record<ToggleKey, boolean> = {
   smcLiq: false,
   smcPD: false,
   smcLvl: false,
+  smcSweep: false,
+  smcStruct: false,
 };
 
 /** Everything a saved chart layout brings back (TradingView-style). */
@@ -1461,9 +1465,9 @@ export function Chart() {
       priceType && (eff.ranges || eff.chartpat || eff.structure)
         ? detectChartPatterns(closed, intervalS, { ranges: eff.ranges, patterns: eff.chartpat, structure: eff.structure })
         : { shapes: [], events: [] };
-    const smcOn = eff.smcOB || eff.smcFVG || eff.smcLiq || eff.smcPD || eff.smcLvl;
+    const smcOn = eff.smcOB || eff.smcFVG || eff.smcLiq || eff.smcPD || eff.smcLvl || eff.smcSweep || eff.smcStruct;
     const smc = priceType && smcOn
-      ? detectSmc(closed as any, intervalS, { ob: eff.smcOB, fvg: eff.smcFVG, liq: eff.smcLiq, pd: eff.smcPD, levels: eff.smcLvl })
+      ? detectSmc(closed as any, intervalS, { ob: eff.smcOB, fvg: eff.smcFVG, liq: eff.smcLiq, pd: eff.smcPD, levels: eff.smcLvl, sweep: eff.smcSweep, struct: eff.smcStruct })
       : [];
     // premium / discount washes go first so every other shape draws over them
     const drawn = [...smc.filter((x) => x.kind === "box" && x.faint), ...auto.shapes, ...smc.filter((x) => !(x.kind === "box" && x.faint))];
@@ -1507,7 +1511,7 @@ export function Chart() {
     markers.sort((x, y) => (x.time as number) - (y.time as number));
     (c.candle as ISeriesApi<"Candlestick">).setMarkers(ctype === "bar" ? [] : markers);
     (c.barS as ISeriesApi<"Bar">).setMarkers(ctype === "bar" ? markers : []);
-  }, [candles, priceCandles, data, eff.patterns, eff.ranges, eff.chartpat, eff.structure, eff.smcOB, eff.smcFVG, eff.smcLiq, eff.smcPD, eff.smcLvl, ctype, intervalS, barSpacing]);
+  }, [candles, priceCandles, data, eff.patterns, eff.ranges, eff.chartpat, eff.structure, eff.smcOB, eff.smcFVG, eff.smcLiq, eff.smcPD, eff.smcLvl, eff.smcSweep, eff.smcStruct, ctype, intervalS, barSpacing]);
 
   // log / linear price scale
   useEffect(() => {
@@ -2451,6 +2455,18 @@ export function Chart() {
                           <div>
                             Recent range split at 50% (<span className="text-slate-300">EQ</span>): above = <span className="text-down">premium</span>{" "}
                             (better to sell), below = <span className="text-up">discount</span> (better to buy)
+                          </div>
+                        )}
+                        {k === "smcSweep" && (
+                          <div>
+                            <span className="text-down">Sweep ▼</span> = a wick above a swing high that closed back below it (stops
+                            taken, often a turn down); <span className="text-up">Sweep ▲</span> = the mirror at a swing low
+                          </div>
+                        )}
+                        {k === "smcStruct" && (
+                          <div>
+                            Solid <span className="text-term-text">BOS / CHoCH</span> = swing structure (big swings);{" "}
+                            dashed <span className="text-term-text">iBOS / iCHoCH</span> = internal (small swings). Green = up, red = down.
                           </div>
                         )}
                         {k === "smcLvl" && (

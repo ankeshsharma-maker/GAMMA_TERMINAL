@@ -22,14 +22,19 @@ const alpha = (hex: string, a: number) => {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 };
 
+/** "shapes" = the boxes / lines, drawn BELOW the candles (zones must never hide price);
+ *  "labels" = the small name tags, drawn on top. Two pane views, one per layer. */
+type Layer = "shapes" | "labels";
+
 class Renderer implements ISeriesPrimitivePaneRenderer {
-  constructor(private _px: Px[]) {}
+  constructor(private _px: Px[], private _layer: Layer) {}
   draw(target: Parameters<ISeriesPrimitivePaneRenderer["draw"]>[0]): void {
     const px = this._px;
+    const layer = this._layer;
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       const W = mediaSize.width;
       // 1) the lines and boxes
-      for (const s of px) {
+      if (layer === "shapes") for (const s of px) {
         if (s.kind === "text") continue;
         ctx.save();
         if (s.kind === "box") {
@@ -59,6 +64,7 @@ class Renderer implements ISeriesPrimitivePaneRenderer {
       // 2) the labels, on top: each on a dark tag so it reads over candles, kept inside
       // the pane, and nudged up / down when it would sit on a label already placed.
       // A label whose anchor has scrolled off the left edge is skipped.
+      if (layer !== "labels") return;
       const placed: { x: number; y: number; w: number; h: number }[] = [];
       const hits = (r: { x: number; y: number; w: number; h: number }) =>
         placed.some((p) => r.x < p.x + p.w && p.x < r.x + r.w && r.y < p.y + p.h && p.y < r.y + r.h);
@@ -115,12 +121,15 @@ class Renderer implements ISeriesPrimitivePaneRenderer {
 
 class View implements ISeriesPrimitivePaneView {
   private _px: Px[] = [];
-  constructor(private _src: AutoPatternsPrimitive) {}
+  constructor(private _src: AutoPatternsPrimitive, private _layer: Layer) {}
   update(): void {
     this._px = this._src.toPixels();
   }
+  zOrder(): "bottom" | "top" {
+    return this._layer === "shapes" ? "bottom" : "top";
+  }
   renderer(): ISeriesPrimitivePaneRenderer | null {
-    return new Renderer(this._px);
+    return new Renderer(this._px, this._layer);
   }
 }
 
@@ -132,7 +141,7 @@ export class AutoPatternsPrimitive implements ISeriesPrimitive {
   private _shapes: Shape[] = [];
 
   constructor() {
-    this._views = [new View(this)];
+    this._views = [new View(this, "shapes"), new View(this, "labels")];
   }
   attached(p: SeriesAttachedParameter): void {
     this._chart = p.chart as IChartApi;

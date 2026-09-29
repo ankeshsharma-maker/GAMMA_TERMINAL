@@ -11,7 +11,15 @@
 import type { Shape } from "./chartPatterns";
 
 export type Candle = { time: number; open: number; high: number; low: number; close: number };
-export type SmcOpts = { ob: boolean; fvg: boolean; liq: boolean; pd: boolean; levels: boolean };
+export type SmcOpts = {
+  ob: boolean;
+  fvg: boolean;
+  liq: boolean;
+  pd: boolean;
+  levels: boolean;
+  sweep?: boolean;
+  struct?: boolean;
+};
 
 const C = {
   obBull: "#22c55e",
@@ -24,7 +32,12 @@ const C = {
   eq: "#94a3b8",
   pd: "#a5b4fc",
   pw: "#fbbf24",
+  up: "#22c55e",
+  down: "#ef4444",
 };
+const SWING_LEN = 10; // swing structure: pivots with 10 bars each side (internal uses PIVOT = 3)
+const KEEP_SWEEP = 4;
+const KEEP_EVT = 3; // structure events per kind (swing / internal)
 const MAX_BARS = 500;
 const PIVOT = 3; // bars each side for a swing high / low
 const KEEP_OB = 3; // per side
@@ -44,13 +57,13 @@ function atrSeries(c: Candle[], n = 14): number[] {
 }
 
 type Swing = { i: number; p: number };
-function swings(c: Candle[]): { highs: Swing[]; lows: Swing[] } {
+function swings(c: Candle[], len = PIVOT): { highs: Swing[]; lows: Swing[] } {
   const highs: Swing[] = [];
   const lows: Swing[] = [];
-  for (let i = PIVOT; i < c.length - PIVOT; i++) {
+  for (let i = len; i < c.length - len; i++) {
     let h = true;
     let l = true;
-    for (let k = 1; k <= PIVOT; k++) {
+    for (let k = 1; k <= len; k++) {
       if (!(c[i].high > c[i - k].high && c[i].high >= c[i + k].high)) h = false;
       if (!(c[i].low < c[i - k].low && c[i].low <= c[i + k].low)) l = false;
     }
@@ -253,6 +266,78 @@ export function detectSmc(all: Candle[], intervalS: number, o: SmcOpts): Shape[]
       out.push({ kind: "line", t1, p1: pw.h, t2: lastT, p2: pw.h, color: C.pw, dash: true, label: `PWH ${fmt(pw.h)}` });
       out.push({ kind: "line", t1, p1: pw.l, t2: lastT, p2: pw.l, color: C.pw, dash: true, label: `PWL ${fmt(pw.l)}` });
     }
+  }
+  // ---- liquidity sweeps: a wick through a swing high / low that closes back inside ----
+  if (o.sweep) {
+    type Sw = { up: boolean; from: number; i: number; p: number };
+    const found: Sw[] = [];
+    let hi: Swing | null = null;
+    let lo: Swing | null = null;
+    let hIx = 0;
+    let lIx = 0;
+    for (let i = 0; i < n; i++) {
+      while (hIx < sw.highs.length && sw.highs[hIx].i + PIVOT <= i) hi = sw.highs[hIx++];
+      while (lIx < sw.lows.length && sw.lows[lIx].i + PIVOT <= i) lo = sw.lows[lIx++];
+      if (hi && c[i].high > hi.p) {
+        if (c[i].close < hi.p) found.push({ up: true, from: hi.i, i, p: hi.p }); // took the stops, closed back below
+        hi = null; // swept or broken: either way this high is spent
+      }
+      if (lo && c[i].low < lo.p) {
+        if (c[i].close > lo.p) found.push({ up: false, from: lo.i, i, p: lo.p });
+        lo = null;
+      }
+    }
+    for (const f of found.slice(-KEEP_SWEEP)) {
+      // the swept level (from the swing to the sweep bar) + a tag on the sweeping candle
+      out.push({ kind: "line", t1: c[f.from].time, p1: f.p, t2: c[f.i].time, p2: f.p, color: f.up ? C.down : C.up, dash: true });
+      out.push({
+        kind: "text",
+        t: c[f.i].time,
+        p: f.up ? c[f.i].high : c[f.i].low,
+        text: f.up ? "Sweep ▼" : "Sweep ▲",
+        color: f.up ? C.down : C.up,
+        above: f.up,
+      });
+    }
+  }
+
+  // ---- swing (big, solid) vs internal (small, dashed) structure: BOS / CHoCH ----
+  if (o.struct) {
+    const events = (s: { highs: Swing[]; lows: Swing[] }, len: number, internal: boolean) => {
+      type E = { up: boolean; from: number; i: number; p: number; kind: "BOS" | "CHoCH" };
+      const ev: E[] = [];
+      let trend: "up" | "down" | null = null;
+      let hi: Swing | null = null;
+      let lo: Swing | null = null;
+      let hIx = 0;
+      let lIx = 0;
+      for (let i = 0; i < n; i++) {
+        while (hIx < s.highs.length && s.highs[hIx].i + len <= i) hi = s.highs[hIx++];
+        while (lIx < s.lows.length && s.lows[lIx].i + len <= i) lo = s.lows[lIx++];
+        if (hi && c[i].close > hi.p) {
+          ev.push({ up: true, from: hi.i, i, p: hi.p, kind: trend === "down" ? "CHoCH" : "BOS" });
+          trend = "up";
+          hi = null;
+        }
+        if (lo && c[i].close < lo.p) {
+          ev.push({ up: false, from: lo.i, i, p: lo.p, kind: trend === "up" ? "CHoCH" : "BOS" });
+          trend = "down";
+          lo = null;
+        }
+      }
+      return ev.slice(-KEEP_EVT).map((e) => ({
+        kind: "line" as const,
+        t1: c[e.from].time,
+        p1: e.p,
+        t2: c[e.i].time,
+        p2: e.p,
+        color: e.up ? C.up : C.down,
+        dash: internal,
+        label: internal ? `i${e.kind}` : e.kind,
+      }));
+    };
+    out.push(...events(sw, PIVOT, true));
+    out.push(...events(swings(c, SWING_LEN), SWING_LEN, false));
   }
   return out;
 }
