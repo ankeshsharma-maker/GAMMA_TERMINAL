@@ -2875,7 +2875,8 @@ export function StrategyBuilder() {
                 levelRows.forEach((_, i) => cols.forEach((c) => (maxAbs = Math.max(maxAbs, Math.abs(c.val(i) + manualPnl)))));
                 // heatmap: green profit / red loss, deeper the bigger (sqrt so small amounts still show)
                 const heat = (v: number) => {
-                  const a = 0.06 + 0.34 * Math.sqrt(Math.min(1, Math.abs(v) / maxAbs));
+                  // capped at 0.24 (was 0.40): deeper fills washed out the green / red numbers on them
+                  const a = 0.04 + 0.2 * Math.sqrt(Math.min(1, Math.abs(v) / maxAbs));
                   return v >= 0 ? `rgba(34,197,94,${a.toFixed(3)})` : `rgba(239,68,68,${a.toFixed(3)})`;
                 };
                 // spot + breakeven lines drawn BETWEEN the rows they fall between (rows run high -> low)
@@ -2942,8 +2943,8 @@ export function StrategyBuilder() {
                         return (
                           <td
                             key={c.key}
-                            className={`num border-b border-r border-term-border/40 px-3 py-1.5 text-center text-[12px] font-medium group-hover:brightness-125 ${
-                              v >= 0 ? "text-green-300" : "text-red-300"
+                            className={`num border-b border-r border-term-border/40 px-3 py-1.5 text-center text-[12.5px] font-semibold group-hover:brightness-125 ${
+                              v >= 0 ? "text-green-200" : "text-red-200"
                             } ${c.exp ? "border-l border-l-term-border" : ""}`}
                             style={{ backgroundColor: heat(v) }}
                           >
@@ -3111,10 +3112,10 @@ export function StrategyBuilder() {
                     </div>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-term-border px-3 py-1.5 text-[10px] text-term-dim">
                       <span className="flex items-center gap-1">
-                        <span className="inline-block h-2.5 w-4 rounded-sm" style={{ background: "rgba(34,197,94,.35)" }} /> profit
+                        <span className="inline-block h-2.5 w-4 rounded-sm" style={{ background: "rgba(34,197,94,.24)" }} /> profit
                       </span>
                       <span className="flex items-center gap-1">
-                        <span className="inline-block h-2.5 w-4 rounded-sm" style={{ background: "rgba(239,68,68,.35)" }} /> loss · deeper = bigger
+                        <span className="inline-block h-2.5 w-4 rounded-sm" style={{ background: "rgba(239,68,68,.24)" }} /> loss · deeper = bigger
                       </span>
                       <span>
                         <span className="text-amber-300">▶ spot</span> · <span className="text-sky-300">┄ breakeven</span>
