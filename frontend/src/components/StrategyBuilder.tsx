@@ -26,7 +26,7 @@ import { VSplit, clamp, readNum } from "./VSplit";
 
 // IV points: +1 = IV 12% -> 13% (asked 25-Sep: 1-5% steps instead of 10 / 20 / 30)
 const IV_SHIFT_CHIPS = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5];
-const BUILDER_W_LS = "layout.builderW2"; // v2: 470 px default for the Sensibull-style trades table
+const BUILDER_W_LS = "layout.builderW3"; // v3: 520 px default -- the Sensibull-style trades table at full text size
 
 // Sensibull-style ready-made groups (template names come from the server, strategy.templates)
 const TPL_GROUPS: [string, string, string[]][] = [
@@ -101,7 +101,7 @@ function Fold({
       <button
         onClick={toggle}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-term-dim hover:bg-term-bg/40 hover:text-term-text"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-semibold sm:text-[12.5px] uppercase tracking-wide text-term-dim hover:bg-term-bg/40 hover:text-term-text"
       >
         <span className={`inline-block w-2.5 transition-transform ${open ? "rotate-90" : ""}`}>▸</span>
         <span className={titleCls}>{title}</span>
@@ -245,7 +245,7 @@ function StrikeStepper({
         options={sorted.map((k) => [`${sk(k)}${k === atm ? "  (ATM)" : ""}`, k] as [string, number])}
         onChange={(k) => onChange(Number(k))}
         title="Strike"
-        width={compact ? 80 : 96}
+        width={compact ? 90 : 96}
         highlightValue={atm}
       />
       <button
@@ -390,7 +390,7 @@ export function StrategyBuilder() {
   const [phonePt, setPhonePt] = useState("now"); // phone: the point in time the middle column shows
   const [phoneRows, setPhoneRows] = useState(3); // P&L table: rows each side of spot
   // width of the leg-editor column vs. the payoff/chart column, drag-resizable like the watchlist panel
-  const [builderW, setBuilderW] = useState(() => readNum(BUILDER_W_LS, 470));
+  const [builderW, setBuilderW] = useState(() => readNum(BUILDER_W_LS, 520));
   useEffect(() => {
     try {
       localStorage.setItem(BUILDER_W_LS, String(builderW));
@@ -1040,7 +1040,17 @@ export function StrategyBuilder() {
   }, [payoffTab, analysis?.symbol, analysis?.expiry, strikeSpan, tableInterval]);
 
   const pnlCls = (v: number) => (v >= 0 ? "text-up" : "text-down");
-  const mp = (v: number | null | undefined) => (v == null ? null : v + manualPnl);
+  // risk : reward -- meaningless with an unlimited side (the server's rr then comes from the edge of
+  // the price grid, e.g. "1 : 0.15" on a naked straddle), so NA / ∞ like Sensibull
+  const rrTxt = (sep: string) =>
+    !analysis || analysis.rr == null
+      ? "–"
+      : analysis.maxLossUnbounded
+      ? "NA"
+      : analysis.maxProfitUnbounded
+      ? "∞"
+      : `1${sep}${nf(analysis.rr, 2)}`;
+  const mp =(v: number | null | undefined) => (v == null ? null : v + manualPnl);
   const pnlTxt = (v: number | null) => (v == null ? "–" : `${v >= 0 ? "+" : ""}${nf(v, 0)}`);
 
   // P&L right now, at the actual current spot -- same "now" curve the payoff
@@ -1251,7 +1261,7 @@ export function StrategyBuilder() {
                 <span className={`num ${posVal ? signColor(posVal.intrinsic) : ""}`}>{posVal ? `₹${nf(posVal.intrinsic, 0)}` : "–"}</span>
               </span>
               <span>
-                R : R <span className="num text-term-text">{analysis.rr != null ? `1:${nf(analysis.rr, 2)}` : "–"}</span>
+                R : R <span className="num text-term-text">{rrTxt(":")}</span>
               </span>
             </div>
           </>
@@ -1338,16 +1348,32 @@ export function StrategyBuilder() {
                   <button
                     key={k}
                     onClick={() => setSrcTab(open === k ? "none" : k)}
-                    className={`border-b-2 px-2.5 py-1.5 text-[12px] font-semibold ${
+                    className={`border-b-2 px-2.5 py-1.5 text-[13.5px] font-semibold ${
                       open === k ? "border-term-accent text-term-accent" : "border-transparent text-term-dim hover:text-term-text"
                     }`}
                   >
                     {l}
                   </button>
                 ))}
+                <span className="ml-auto" />
+                {/* always in view: pull the live Flattrade positions straight in (asked 29-Sep) */}
+                {!isViewer() && (
+                  <button
+                    className="rounded border border-up/60 bg-up/10 px-2 py-1 text-[12.5px] font-semibold text-up hover:bg-up/20"
+                    onClick={() => {
+                      if (broker?.authed) {
+                        loadFromBroker();
+                        setSrcTab(null);
+                      } else setSrcTab("pos");
+                    }}
+                    title={`Load your live Flattrade ${symbol} option positions into the builder (held legs: in the payoff, skipped on Execute)`}
+                  >
+                    ⚡ Fetch live positions
+                  </button>
+                )}
                 {legs.length > 0 && (
                   <button
-                    className="ml-auto rounded px-2 py-1 text-[11px] text-term-dim hover:text-down"
+                    className="rounded px-2 py-1 text-[12.5px] text-term-dim hover:text-down"
                     onClick={() => {
                       setFromBroker(false);
                       setStratName("");
@@ -1363,7 +1389,7 @@ export function StrategyBuilder() {
                 <div className="max-h-[300px] overflow-y-auto px-2 pb-2 pt-1">
                   {groups.map(([g, c, list]) => (
                     <div key={g} className="mt-1.5">
-                      <div className={`mb-1 text-[9.5px] font-semibold uppercase tracking-wider ${c}`}>{g}</div>
+                      <div className={`mb-1 text-[11px] font-semibold uppercase tracking-wider ${c}`}>{g}</div>
                       <div className="grid grid-cols-2 gap-1 xl:grid-cols-3">
                         {list.map((n) => (
                           <button
@@ -1372,7 +1398,7 @@ export function StrategyBuilder() {
                               loadTemplate(n);
                               setSrcTab(null);
                             }}
-                            className={`flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight transition-colors hover:border-term-accent hover:bg-term-accent/10 ${
+                            className={`flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-left text-[12.5px] leading-tight transition-colors hover:border-term-accent hover:bg-term-accent/10 ${
                               stratName === n ? "border-term-accent bg-term-accent/10 text-term-text" : "border-term-border bg-term-panel/60 text-term-text"
                             }`}
                           >
@@ -1385,14 +1411,14 @@ export function StrategyBuilder() {
                       </div>
                     </div>
                   ))}
-                  {!groups.length && <div className="py-3 text-center text-[11px] text-term-dim">Loading templates…</div>}
+                  {!groups.length && <div className="py-3 text-center text-[12.5px] text-term-dim">Loading templates…</div>}
                 </div>
               )}
               {open === "pos" && (
                 <div className="flex flex-col gap-1.5 px-2 pb-2 pt-1.5">
                   {broker?.authed && !isViewer() && (
                     <button
-                      className="w-full rounded border border-up/60 bg-up/10 px-2 py-1.5 text-xs font-semibold text-up hover:bg-up/20"
+                      className="w-full rounded border border-up/60 bg-up/10 px-2 py-1.5 text-[13px] font-semibold text-up hover:bg-up/20"
                       onClick={() => {
                         loadFromBroker();
                         setSrcTab(null);
@@ -1402,9 +1428,14 @@ export function StrategyBuilder() {
                       ⚡ Live positions ({symbol})
                     </button>
                   )}
+                  {!broker?.authed && !isViewer() && (
+                    <div className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[12.5px] text-amber-400">
+                      Flattrade isn't connected. Log in to the broker (header) to fetch your live positions.
+                    </div>
+                  )}
                   {!isViewer() && (
                     <button
-                      className="btn w-full py-1.5 text-[11.5px]"
+                      className="btn w-full py-1.5 text-[13px]"
                       onClick={() => {
                         loadFromPaper();
                         setSrcTab(null);
@@ -1413,7 +1444,7 @@ export function StrategyBuilder() {
                       Paper positions
                     </button>
                   )}
-                  <div className="text-[10.5px] text-term-dim">
+                  <div className="text-[12px] text-term-dim">
                     Loaded legs are marked 🔒 held: they count in the payoff but Execute skips them — add a hedge and send only that.
                   </div>
                 </div>
@@ -1425,15 +1456,15 @@ export function StrategyBuilder() {
                       value={saveName}
                       onChange={(e) => setSaveName(e.target.value)}
                       placeholder="Save these legs as…"
-                      className="min-w-0 flex-1 rounded border border-term-border bg-term-bg px-2 py-1 text-2xs outline-none focus:border-term-accent"
+                      className="min-w-0 flex-1 rounded border border-term-border bg-term-bg px-2 py-1 text-[12px] outline-none focus:border-term-accent"
                     />
-                    <button className="btn text-2xs" onClick={doSave} disabled={!legs.length}>
+                    <button className="btn text-[12px]" onClick={doSave} disabled={!legs.length}>
                       Save
                     </button>
                   </div>
                   <div className="max-h-[220px] overflow-y-auto">
                     {saved.map((sv) => (
-                      <div key={sv.id} className="flex items-center gap-1.5 border-b border-term-border/50 px-1 py-1 text-2xs">
+                      <div key={sv.id} className="flex items-center gap-1.5 border-b border-term-border/50 px-1 py-1 text-[12px]">
                         <span className="num min-w-0 flex-1 truncate">
                           {sv.name} <span className="text-term-dim">· {sv.symbol}</span>
                         </span>
@@ -1464,7 +1495,7 @@ export function StrategyBuilder() {
                         </button>
                       </div>
                     ))}
-                    {!saved.length && <div className="py-2 text-center text-[11px] text-term-dim">Nothing saved yet.</div>}
+                    {!saved.length && <div className="py-2 text-center text-[12.5px] text-term-dim">Nothing saved yet.</div>}
                   </div>
                 </div>
               )}
@@ -1535,7 +1566,7 @@ export function StrategyBuilder() {
         </div>
 
         <div className="flex flex-col gap-1.5 p-2">
-          <div className="flex items-baseline justify-between px-0.5 text-[11px]">
+          <div className="flex items-baseline justify-between px-0.5 text-[11px] sm:text-[12.5px]">
             <span className="font-semibold uppercase tracking-wide text-term-dim">
               Legs{legs.length ? ` (${legs.length})` : ""}
             </span>
@@ -1555,8 +1586,8 @@ export function StrategyBuilder() {
           )}
           {legs.length > 0 && (
             <div className="hidden overflow-hidden rounded-md border border-term-border bg-term-panel/40 sm:block">
-              <table className="w-full border-collapse text-[11.5px]">
-                <thead className="bg-term-panel text-[9.5px] uppercase tracking-wide text-term-dim">
+              <table className="w-full border-collapse text-[13px]">
+                <thead className="bg-term-panel text-[11px] uppercase tracking-wide text-term-dim">
                   <tr>
                     <th className="w-6 py-1 font-medium" title="🔒 held = already open: in the payoff, skipped on Execute" />
                     <th className="px-1 py-1 text-left font-medium">B/S</th>
@@ -1576,7 +1607,7 @@ export function StrategyBuilder() {
                     const mkt = row ? (leg.optionType === "CE" ? row.call.ltp : row.put.ltp) : 0;
                     // no chain row: the server's entry IS the market LTP when no price was typed
                     const srvLtp = leg.price == null ? analysis?.legs[i]?.entry : undefined;
-                    const ltp = mkt > 0 ? mkt : srvLtp != null && srvLtp > 0 ? srvLtp : lr?.ltp ?? null;
+                    const ltp = mkt > 0 ? mkt : srvLtp != null && srvLtp > 0 ? srvLtp : lr ? Math.max(0, lr.ltp) : null;
                     return (
                       <tr
                         key={i}
@@ -1590,7 +1621,7 @@ export function StrategyBuilder() {
                                 ? `Held position (${executeHeld ? "will be sent on Execute" : "in payoff, skipped on Execute"}) — tap to include it in Execute`
                                 : "Tap to mark as an already-open position (skipped on Execute)"
                             }
-                            className={`text-[12px] leading-none ${leg.held ? "text-amber-400" : "opacity-35 hover:opacity-100"}`}
+                            className={`text-[13.5px] leading-none ${leg.held ? "text-amber-400" : "opacity-35 hover:opacity-100"}`}
                           >
                             {leg.held ? "🔒" : "🔓"}
                           </button>
@@ -1599,7 +1630,7 @@ export function StrategyBuilder() {
                           <button
                             onClick={() => setLeg(i, { side: leg.side === "BUY" ? "SELL" : "BUY" })}
                             title="tap to switch Buy / Sell"
-                            className={`w-6 rounded py-0.5 text-center text-[11px] font-bold ${
+                            className={`w-6 rounded py-0.5 text-center text-[12.5px] font-bold ${
                               leg.side === "BUY" ? "bg-up/20 text-up" : "bg-down/20 text-down"
                             }`}
                           >
@@ -1627,7 +1658,7 @@ export function StrategyBuilder() {
                               })
                             }
                             title="tap to switch CE / PE / FUT"
-                            className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${
+                            className={`rounded px-1.5 py-0.5 text-[12.5px] font-bold ${
                               leg.optionType === "CE"
                                 ? "bg-up/15 text-up"
                                 : leg.optionType === "PE"
@@ -1649,7 +1680,7 @@ export function StrategyBuilder() {
                             </button>
                             <span className="num min-w-[22px] text-center text-term-text" title={mult > 1 ? `× ${mult} = ${leg.lots * mult} lots` : undefined}>
                               {leg.lots}
-                              {mult > 1 && <span className="text-[9.5px] text-term-accent">×{mult}</span>}
+                              {mult > 1 && <span className="text-[11px] text-term-accent">×{mult}</span>}
                             </span>
                             <button
                               className="h-5 w-4 text-term-dim hover:text-term-text"
@@ -1688,7 +1719,7 @@ export function StrategyBuilder() {
                   })}
                 </tbody>
               </table>
-              <div className="flex flex-wrap items-center gap-1 border-t border-term-border bg-term-panel/70 px-2 py-1 text-[10.5px] text-term-dim">
+              <div className="flex flex-wrap items-center gap-1 border-t border-term-border bg-term-panel/70 px-2 py-1 text-[12px] text-term-dim">
                 <span>Multiplier</span>
                 {[1, 2, 3, 5, 10].map((n) => (
                   <button
@@ -1973,7 +2004,7 @@ export function StrategyBuilder() {
         {/* ---- Sensibull-style strategy summary (laptop / unfolded; the folded phone has its own tiles) ---- */}
         {analysis && legs.length > 0 && (
           <div className="hidden border-t border-term-border p-2 sm:block">
-            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-term-border bg-term-border text-[11.5px]">
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-term-border bg-term-border text-[13px]">
               {(
                 [
                   ["Prob. of profit", analysis.pop != null ? `${nf(analysis.pop, 0)}%` : "–", "text-term-text", "chance the position is in profit at expiry"],
@@ -1985,7 +2016,12 @@ export function StrategyBuilder() {
                   ],
                   ["Max profit", analysis.maxProfitUnbounded ? "Unlimited" : pnlTxt(analysis.maxProfit + manualPnl), "text-up", undefined],
                   ["Max loss", analysis.maxLossUnbounded ? "Unlimited" : pnlTxt(analysis.maxLoss + manualPnl), "text-down", undefined],
-                  ["Max RR ratio", analysis.rr != null ? `1 : ${nf(analysis.rr, 2)}` : "–", "text-term-text", "max loss : max profit"],
+                  [
+                    "Max RR ratio",
+                    rrTxt(" : "),
+                    "text-term-text",
+                    analysis.maxLossUnbounded ? "not applicable: the loss is unlimited" : "max loss : max profit",
+                  ],
                   [
                     analysis.netPremiumType === "CREDIT" ? "Net credit" : "Net debit",
                     `₹${nf(Math.abs(analysis.netPremium), 0)}`,
@@ -2501,14 +2537,14 @@ export function StrategyBuilder() {
         {analysis && (
           <div className="hidden shrink-0 border-b border-term-border bg-term-panel px-3 py-2 sm:block">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-              <span className="text-[14px] font-semibold text-term-text">
+              <span className="text-[15px] font-semibold text-term-text">
                 {stratName || `${legs.length} leg${legs.length === 1 ? "" : "s"}`}
                 <span className="font-normal text-term-dim">
                   {" "}
                   · {analysis.symbol} {analysis.expiry}
                 </span>
               </span>
-              <span className="text-[11px] text-term-dim">
+              <span className="text-[12.5px] text-term-dim">
                 spot <span className="num text-amber-300">{nf(analysis.spot, 2)}</span> · {leftLbl(0)} · ATM IV{" "}
                 {chain?.atmIV ? `${nf(chain.atmIV, 1)}%` : "–"} <span className={ivReg.cls}>({ivReg.label})</span>
                 {busy && " · updating…"}
@@ -2550,7 +2586,7 @@ export function StrategyBuilder() {
                 <button
                   key={k}
                   onClick={() => pick(k)}
-                  className={`${phone ? "" : "hidden sm:block"} shrink-0 border-b-2 px-3 py-2 text-[12px] font-semibold transition-colors ${
+                  className={`${phone ? "" : "hidden sm:block"} shrink-0 border-b-2 px-3 py-2 text-[12px] font-semibold transition-colors sm:text-[13.5px] ${
                     active === k
                       ? "border-term-accent text-term-accent"
                       : "border-transparent text-term-dim hover:text-term-text"
@@ -3099,7 +3135,7 @@ export function StrategyBuilder() {
         </div>
 
         {analysis && (
-          <div className="m-2 mt-0 grid gap-x-6 gap-y-3 rounded-lg border border-term-border bg-term-panel/60 p-3 text-[10.5px] sm:grid-cols-2 xl:grid-cols-3">
+          <div className="m-2 mt-0 grid gap-x-6 gap-y-3 rounded-lg border border-term-border bg-term-panel/60 p-3 text-[10.5px] sm:text-[12px] sm:grid-cols-2 xl:grid-cols-3">
             {/* target price -- drives Legs P&L, Greeks and the T+n column */}
             <div>
               <div className="flex items-center justify-between">
@@ -3110,26 +3146,26 @@ export function StrategyBuilder() {
               </div>
               <div className="mt-1 flex items-center gap-1">
                 <button
-                  className="btn px-2 py-0.5 text-[13px]"
+                  className="btn px-2 py-0.5 text-[13px] sm:text-[15px]"
                   onClick={() => setTPrice(Math.round(tgtPrice - (chain?.strikeStep || 50)))}
                   aria-label="Target lower"
                 >
                   −
                 </button>
-                <div className="num flex-1 rounded border border-term-border bg-term-bg px-2 py-1 text-center text-[13px] font-semibold text-term-text">
+                <div className="num flex-1 rounded border border-term-border bg-term-bg px-2 py-1 text-center text-[13px] sm:text-[15px] font-semibold text-term-text">
                   {nf(tgtPrice, 0)}{" "}
                   {(() => {
                     const pc = ((tgtPrice - analysis.spot) / analysis.spot) * 100;
                     const z = Math.abs(pc) < 0.05;
                     return (
-                      <span className={`text-[11px] ${z ? "text-term-dim" : pc > 0 ? "text-up" : "text-down"}`}>
+                      <span className={`text-[11px] sm:text-[12.5px] ${z ? "text-term-dim" : pc > 0 ? "text-up" : "text-down"}`}>
                         ({z ? "at spot" : `${pc > 0 ? "+" : ""}${nf(pc, 1)}%`})
                       </span>
                     );
                   })()}
                 </div>
                 <button
-                  className="btn px-2 py-0.5 text-[13px]"
+                  className="btn px-2 py-0.5 text-[13px] sm:text-[15px]"
                   onClick={() => setTPrice(Math.round(tgtPrice + (chain?.strikeStep || 50)))}
                   aria-label="Target higher"
                 >
