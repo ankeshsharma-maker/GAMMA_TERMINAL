@@ -33,6 +33,7 @@ class Renderer implements ISeriesPrimitivePaneRenderer {
     const layer = this._layer;
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       const W = mediaSize.width;
+      const H = mediaSize.height;
       // 1) the lines and boxes
       if (layer === "shapes") for (const s of px) {
         if (s.kind === "text") continue;
@@ -75,6 +76,7 @@ class Renderer implements ISeriesPrimitivePaneRenderer {
         const x = Math.max(1, Math.min(cx - w / 2, W - w - 2));
         let y = cy - h / 2;
         for (let k = 0; k < 6 && hits({ x, y, w, h }); k++) y += dir * (h + 1);
+        y = Math.max(1, Math.min(y, H - h - 1)); // never cut off at the top / bottom edge
         placed.push({ x, y, w, h });
         ctx.fillStyle = "rgba(13,17,23,0.85)";
         ctx.strokeStyle = alpha(color, 0.55);
@@ -123,7 +125,7 @@ class View implements ISeriesPrimitivePaneView {
   private _px: Px[] = [];
   constructor(private _src: AutoPatternsPrimitive, private _layer: Layer) {}
   update(): void {
-    this._px = this._src.toPixels();
+    this._px = this._layer === "labels" && !this._src.showLabels ? [] : this._src.toPixels();
   }
   zOrder(): "bottom" | "top" {
     return this._layer === "shapes" ? "bottom" : "top";
@@ -139,6 +141,8 @@ export class AutoPatternsPrimitive implements ISeriesPrimitive {
   private _series: ISeriesApi<any> | null = null;
   private _requestUpdate: (() => void) | null = null;
   private _shapes: Shape[] = [];
+  /** false = "clean": zones and lines only, no name tags */
+  showLabels = true;
 
   constructor() {
     this._views = [new View(this, "shapes"), new View(this, "labels")];
@@ -159,8 +163,9 @@ export class AutoPatternsPrimitive implements ISeriesPrimitive {
   paneViews(): readonly ISeriesPrimitivePaneView[] {
     return this._views;
   }
-  setShapes(shapes: Shape[]): void {
+  setShapes(shapes: Shape[], showLabels = true): void {
     this._shapes = shapes;
+    this.showLabels = showLabels;
     this._requestUpdate?.();
   }
 

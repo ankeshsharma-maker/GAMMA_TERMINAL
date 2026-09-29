@@ -477,6 +477,21 @@ export function Chart() {
   const [fxOpen, setFxOpen] = useState(false);
   const [patOpen, setPatOpen] = useState(false);
   const [smcOpen, setSmcOpen] = useState(false);
+  // "clean": the Patterns / SMC zones and lines stay, their name tags and marker texts go
+  const [cleanTags, setCleanTags] = useState(() => {
+    try {
+      return localStorage.getItem("chart.cleanTags") === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("chart.cleanTags", cleanTags ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [cleanTags]);
   const [mtfOpen, setMtfOpen] = useState(false);
   const activeInd = TOGGLES.filter(([k]) => on[k] && !DRAWN_KEYS.has(k)).length;
   const activeSmc = TOGGLES.filter(([k]) => on[k] && SMC_KEYS.has(k)).length;
@@ -1463,7 +1478,13 @@ export function Chart() {
     // range boxes / opening range / double tops, H&S, triangles -- lines + breakout markers
     const auto =
       priceType && (eff.ranges || eff.chartpat || eff.structure)
-        ? detectChartPatterns(closed, intervalS, { ranges: eff.ranges, patterns: eff.chartpat, structure: eff.structure })
+        ? detectChartPatterns(closed, intervalS, {
+            ranges: eff.ranges,
+            patterns: eff.chartpat,
+            structure: eff.structure,
+            // SMC structure draws the BOS / CHoCH: Patterns keeps only its HH / HL / LH / LL then
+            structureBreaks: !eff.smcStruct,
+          })
         : { shapes: [], events: [] };
     const smcOn = eff.smcOB || eff.smcFVG || eff.smcLiq || eff.smcPD || eff.smcLvl || eff.smcSweep || eff.smcStruct;
     const smc = priceType && smcOn
@@ -1471,8 +1492,8 @@ export function Chart() {
       : [];
     // premium / discount washes go first so every other shape draws over them
     const drawn = [...smc.filter((x) => x.kind === "box" && x.faint), ...auto.shapes, ...smc.filter((x) => !(x.kind === "box" && x.faint))];
-    autoPrimRef.current?.candle.setShapes(ctype === "bar" ? [] : drawn);
-    autoPrimRef.current?.bar.setShapes(ctype === "bar" ? drawn : []);
+    autoPrimRef.current?.candle.setShapes(ctype === "bar" ? [] : drawn, !cleanTags);
+    autoPrimRef.current?.bar.setShapes(ctype === "bar" ? drawn : [], !cleanTags);
     const evMap = new Map<number, ChartEvent[]>();
     auto.events.forEach((e) => evMap.set(e.time, [...(evMap.get(e.time) ?? []), e]));
     eventsRef.current = evMap;
@@ -1489,7 +1510,7 @@ export function Chart() {
       const i = idx.get(h.time) ?? 0;
       const crowded = lastAt[side] != null && i - lastAt[side] < gap;
       if (!crowded) lastAt[side] = i;
-      return { h, text: crowded ? "" : h.short };
+      return { h, text: crowded || cleanTags ? "" : h.short };
     }).map(({ h, text }) => ({
       time: h.time as any,
       position: h.bias === "bull" ? ("belowBar" as const) : ("aboveBar" as const),
@@ -1504,14 +1525,14 @@ export function Chart() {
       position: e.dir === "up" ? ("belowBar" as const) : ("aboveBar" as const),
       shape: e.dir === "up" ? ("arrowUp" as const) : ("arrowDown" as const),
       color: e.dir === "up" ? "#16a34a" : "#dc2626",
-      text: e.short,
+      text: cleanTags ? "" : e.short,
       size: 2,
     }));
     markers.push(...evMarkers);
     markers.sort((x, y) => (x.time as number) - (y.time as number));
     (c.candle as ISeriesApi<"Candlestick">).setMarkers(ctype === "bar" ? [] : markers);
     (c.barS as ISeriesApi<"Bar">).setMarkers(ctype === "bar" ? markers : []);
-  }, [candles, priceCandles, data, eff.patterns, eff.ranges, eff.chartpat, eff.structure, eff.smcOB, eff.smcFVG, eff.smcLiq, eff.smcPD, eff.smcLvl, eff.smcSweep, eff.smcStruct, ctype, intervalS, barSpacing]);
+  }, [candles, priceCandles, data, eff.patterns, eff.ranges, eff.chartpat, eff.structure, eff.smcOB, eff.smcFVG, eff.smcLiq, eff.smcPD, eff.smcLvl, eff.smcSweep, eff.smcStruct, cleanTags, ctype, intervalS, barSpacing]);
 
   // log / linear price scale
   useEffect(() => {
@@ -2433,10 +2454,10 @@ export function Chart() {
                         {k === "smcOB" && (
                           <>
                             <div>
-                              <span className="text-up">Bull OB</span> / <span className="text-down">Bear OB</span> = the last opposite candle before
-                              the move that broke a swing — where big orders likely sat
+                              <span className="text-up">OB</span> (green = bullish) / <span className="text-down">OB</span> (red = bearish) = the last
+                              opposite candle before the move that broke a swing — where big orders likely sat
                             </div>
-                            <div>“tested” = price has come back into it; gone once a close breaks through</div>
+                            <div>OB✓ = tested (price came back into it); gone once a close breaks through</div>
                           </>
                         )}
                         {k === "smcFVG" && (
@@ -2459,8 +2480,8 @@ export function Chart() {
                         )}
                         {k === "smcSweep" && (
                           <div>
-                            <span className="text-down">Sweep ▼</span> = a wick above a swing high that closed back below it (stops
-                            taken, often a turn down); <span className="text-up">Sweep ▲</span> = the mirror at a swing low
+                            <span className="text-down">Swp▼</span> = a wick above a swing high that closed back below it (stops
+                            taken, often a turn down); <span className="text-up">Swp▲</span> = the mirror at a swing low
                           </div>
                         )}
                         {k === "smcStruct" && (
@@ -2479,8 +2500,19 @@ export function Chart() {
                     )}
                   </div>
                 ))}
-                <div className="px-2 pb-1 pt-0.5 text-[9px] leading-snug text-term-dim">
-                  From closed candles only; the latest few zones of each kind are shown.
+                <button
+                  onClick={() => setCleanTags((v) => !v)}
+                  className={`mt-1 flex w-full items-center justify-between gap-2 rounded border px-2 py-1 text-left ${
+                    cleanTags ? "border-violet-500/50 bg-violet-500/15 text-term-text" : "border-term-dim/50 text-term-dim hover:text-term-text"
+                  }`}
+                  title="Hide the name tags of Patterns and SMC (OB, FVG, BOS, Swp…) and keep the zones and lines"
+                >
+                  <span>Clean — zones only, no tags</span>
+                  {cleanTags && <span className="text-violet-300">✓</span>}
+                </button>
+                <div className="px-2 pb-1 pt-1 text-[9px] leading-snug text-term-dim">
+                  From closed candles only. Order blocks / gaps: the 2 nearest the price on each side.
+                  {eff.structure && eff.smcStruct && " Patterns' BOS / CHoCH give way to SMC structure (its HH / HL stay)."}
                 </div>
                 {indHidden && activeSmc > 0 && (
                   <div className="px-2 py-1 text-[9px] text-amber-400">hidden — “▨ hide indicators” is on</div>

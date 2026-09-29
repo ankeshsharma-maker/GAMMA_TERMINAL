@@ -304,7 +304,7 @@ function triangle(cs: Candle[], a: number[], zz: Pivot[]): AutoPatterns {
  *  structure) when it goes with the trend, a CHoCH (change of character) when it's the
  *  first break against it. Swings count only once confirmed (k bars later), so nothing
  *  here is drawn with hindsight the live chart didn't have. Latest 8 labels / 4 breaks. */
-function structure(cs: Candle[], a: number[]): AutoPatterns {
+function structure(cs: Candle[], a: number[], withBreaks = true): AutoPatterns {
   const K = 5;
   const zz = zigzag(cs, a, K, 0.8);
   const shapes: Shape[] = [];
@@ -353,7 +353,7 @@ function structure(cs: Candle[], a: number[]): AutoPatterns {
       actL = null;
     }
   }
-  shapes.push(...breaks.slice(-4), ...labels.slice(-8));
+  shapes.push(...(withBreaks ? breaks.slice(-4) : []), ...labels.slice(-8));
   return { shapes, events: [] };
 }
 
@@ -361,14 +361,14 @@ function structure(cs: Candle[], a: number[]): AutoPatterns {
 export function detectChartPatterns(
   cs: Candle[],
   intervalS: number,
-  want: { ranges: boolean; patterns: boolean; structure?: boolean }
+  want: { ranges: boolean; patterns: boolean; structure?: boolean; structureBreaks?: boolean }
 ): AutoPatterns {
   const out: AutoPatterns = { shapes: [], events: [] };
   if (cs.length < 30) return out;
   const a = atr(cs);
   const parts: AutoPatterns[] = [];
   if (want.ranges) parts.push(ranges(cs, a), openingRange(cs, intervalS));
-  if (want.structure) parts.push(structure(cs, a));
+  if (want.structure) parts.push(structure(cs, a, want.structureBreaks !== false));
   if (want.patterns) {
     const zz = zigzag(cs, a);
     parts.push(reversals(cs, a, zz), triangle(cs, a, zz));

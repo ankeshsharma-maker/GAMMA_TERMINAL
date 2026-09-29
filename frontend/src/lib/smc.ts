@@ -40,8 +40,9 @@ const KEEP_SWEEP = 4;
 const KEEP_EVT = 3; // structure events per kind (swing / internal)
 const MAX_BARS = 500;
 const PIVOT = 3; // bars each side for a swing high / low
-const KEEP_OB = 3; // per side
-const KEEP_FVG = 3; // per side
+const KEEP_OB = 2; // per side: the ones nearest the price
+const KEEP_FVG = 2; // per side: the ones nearest the price
+const NEAR_ATR = 4; // a zone further than this many ATRs from the price is left off
 const KEEP_LIQ = 2; // per side
 const fmt = (p: number) => p.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
@@ -126,10 +127,14 @@ export function detectSmc(all: Candle[], intervalS: number, o: SmcOpts): Shape[]
       }
       return true;
     });
+    const px = c[n - 1].close;
+    const reach = atr[n - 1] * NEAR_ATR;
+    const dist = (top: number, bottom: number) => (px > top ? px - top : px < bottom ? bottom - px : 0);
     for (const dir of ["bull", "bear"] as const) {
       alive
-        .filter((b) => b.dir === dir)
-        .slice(-KEEP_OB)
+        .filter((b) => b.dir === dir && dist(b.top, b.bottom) <= reach)
+        .sort((a, b) => dist(a.top, a.bottom) - dist(b.top, b.bottom))
+        .slice(0, KEEP_OB)
         .forEach((b) =>
           out.push({
             kind: "box",
@@ -138,7 +143,7 @@ export function detectSmc(all: Candle[], intervalS: number, o: SmcOpts): Shape[]
             top: b.top,
             bottom: b.bottom,
             color: dir === "bull" ? C.obBull : C.obBear,
-            label: `${dir === "bull" ? "Bull" : "Bear"} OB${b.tested ? " · tested" : ""}`,
+            label: b.tested ? "OB✓" : "OB",
             labelBelow: dir === "bull",
           })
         );
@@ -166,10 +171,14 @@ export function detectSmc(all: Candle[], intervalS: number, o: SmcOpts): Shape[]
       }
       return g.top > g.bottom;
     });
+    const px = c[n - 1].close;
+    const reach = atr[n - 1] * NEAR_ATR;
+    const dist = (top: number, bottom: number) => (px > top ? px - top : px < bottom ? bottom - px : 0);
     for (const dir of ["bull", "bear"] as const) {
       open
-        .filter((g) => g.dir === dir)
-        .slice(-KEEP_FVG)
+        .filter((g) => g.dir === dir && dist(g.top, g.bottom) <= reach)
+        .sort((a, b) => dist(a.top, a.bottom) - dist(b.top, b.bottom))
+        .slice(0, KEEP_FVG)
         .forEach((g) =>
           out.push({
             kind: "box",
@@ -204,7 +213,7 @@ export function detectSmc(all: Candle[], intervalS: number, o: SmcOpts): Shape[]
       // the most recent distinct levels
       const uniq: typeof found = [];
       for (const f of found.sort((p, q) => q.b.i - p.b.i))
-        if (!uniq.some((u) => Math.abs(u.lvl - f.lvl) <= tolAt(f.b.i))) uniq.push(f);
+        if (!uniq.some((u) => Math.abs(u.lvl - f.lvl) <= atr[f.b.i] * 0.5)) uniq.push(f);
       return uniq.slice(0, KEEP_LIQ);
     };
     for (const f of pairs(sw.highs, true))
@@ -294,7 +303,7 @@ export function detectSmc(all: Candle[], intervalS: number, o: SmcOpts): Shape[]
         kind: "text",
         t: c[f.i].time,
         p: f.up ? c[f.i].high : c[f.i].low,
-        text: f.up ? "Sweep ▼" : "Sweep ▲",
+        text: f.up ? "Swp▼" : "Swp▲",
         color: f.up ? C.down : C.up,
         above: f.up,
       });
