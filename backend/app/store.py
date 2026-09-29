@@ -172,6 +172,7 @@ class Store:
         symbol = symbol.upper()
         now = time.time()
         with _lock:
+            self._evict_stale_chains(now)
             self.raw[(symbol, expiry)] = payload
             self.fetched_at[(symbol, expiry)] = now
             self.errors.pop(symbol, None)
@@ -186,11 +187,36 @@ class Store:
             try:
                 chain = build_chain(payload, symbol, expiry)
             except Exception:
-                return []
+                return []  # keep the raw payload: get_chain retries the build and reports the error
             self._record_history(symbol, expiry, now, chain)
             self._record_opt_history(symbol, expiry, chain, now)
             self._record_oi_series(symbol, expiry, chain, now)
-            return self._detect_greek_moves(symbol, expiry, chain, now)
+            events = self._detect_greek_moves(symbol, expiry, chain, now)
+            # keep ONE copy: this processed chain (what get_chain would have rebuilt from the raw
+            # payload on its first call) -- the raw payload is dropped (it was kept alongside, 2x memory)
+            chain["fetchedAt"] = now
+            if self.expiries.get(symbol):
+                chain["expiries"] = self.expiries[symbol]
+            self._processed[(symbol, expiry, now)] = chain
+            self.raw.pop((symbol, expiry), None)
+            return events
+
+    _CHAIN_TTL_S = 1800  # a chain nobody has re-fetched for 30 min is dropped (re-fetched on demand)
+
+    def _evict_stale_chains(self, now: float) -> None:
+        """Every (symbol, expiry) ever opened used to stay in memory for the life of the process.
+        Drop the ones not re-fetched for _CHAIN_TTL_S; the polled ones refresh every 15-60 s and
+        stay. Caller holds _lock; runs at most once a minute."""
+        if now - getattr(self, "_last_evict", 0.0) < 60:
+            return
+        self._last_evict = now
+        stale = {k for k, ts in self.fetched_at.items() if now - ts > self._CHAIN_TTL_S}
+        if not stale:
+            return
+        for k in stale:
+            self.fetched_at.pop(k, None)
+            self.raw.pop(k, None)
+        self._processed = {k: v for k, v in self._processed.items() if (k[0], k[1]) not in stale}
 
     _OI_SERIES_MAXLEN = 600  # ~10h at 60s polls
 
@@ -317,13 +343,16 @@ class Store:
             exp = self.resolve_expiry(symbol, expiry)
             if exp is None:
                 return None
-            raw = self.raw.get((symbol, exp))
             fa = self.fetched_at.get((symbol, exp))
-            if raw is None:
+            if fa is None:
                 return None
             key = (symbol, exp, fa)
             chain = self._processed.get(key)
             if chain is None:
+                # only kept when put_raw's build failed (the processed chain replaces it otherwise)
+                raw = self.raw.get((symbol, exp))
+                if raw is None:
+                    return None
                 try:
                     chain = build_chain(raw, symbol, exp)
                 except Exception as exc:  # noqa: BLE001

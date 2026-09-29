@@ -36,8 +36,17 @@ from .processing import IST, _MIN_T, gamma_flip_from_legs, year_fraction
 
 _STEP = {"NIFTY": 50, "BANKNIFTY": 100, "FINNIFTY": 50, "MIDCPNIFTY": 25, "NIFTYNXT50": 50}
 
-_ROWS_CACHE: dict[str, list[dict] | None] = {}  # "YYYYMMDD" -> that day's IDO rows (all symbols), or None
+# Per-day RESULTS, not rows. Until 29-Sep this kept every IDO row of every day it had read (a full
+# csv dict each, ~35 columns, tens of thousands a day) for the life of the process; the chart's daily
+# gamma flip asks for 30 trading days (~46 files), which pushed the 1 GB VM deep into swap and froze
+# the live P&L. Now a day's file is read once, every index in it is reduced to its one summary row,
+# and the rows are dropped.
+_DAY_CACHE: dict[tuple[str, str], dict | None] = {}  # (symbol, "YYYYMMDD") -> that day's summary (or None)
+_DAY_DONE: set[str] = set()                           # days already reduced (incl. no file / holiday)
+_DAY_LOCKS: dict[str, asyncio.Lock] = {}
 _GREEKS_CACHE: dict[tuple, list[dict]] = {}
+# the only columns _compute_day reads
+_KEEP = ("TckrSymb", "XpryDt", "UndrlygPric", "StrkPric", "OptnTp", "ClsPric", "SttlmPric", "OpnIntrst")
 log = logging.getLogger("nse_bhavcopy")
 
 
@@ -49,8 +58,7 @@ def _num(v, d: float = 0.0) -> float:
 
 
 async def _fetch_day_rows(yyyymmdd: str) -> list[dict] | None:
-    if yyyymmdd in _ROWS_CACHE:
-        return _ROWS_CACHE[yyyymmdd]
+    """That day's index-option rows, only the columns _compute_day needs. NOT cached (see _DAY_CACHE)."""
     content = await nse_client.client.bhavcopy_fo(yyyymmdd)
     rows: list[dict] | None = None
     if content:
@@ -58,11 +66,34 @@ async def _fetch_day_rows(yyyymmdd: str) -> list[dict] | None:
             z = zipfile.ZipFile(io.BytesIO(content))
             with z.open(z.namelist()[0]) as f:
                 reader = csv.DictReader(io.TextIOWrapper(f, encoding="utf-8"))
-                rows = [r for r in reader if r.get("FinInstrmTp") == "IDO"]
+                rows = [{k: r.get(k) for k in _KEEP} for r in reader if r.get("FinInstrmTp") == "IDO"]
         except Exception:  # noqa: BLE001
             rows = None
-    _ROWS_CACHE[yyyymmdd] = rows
     return rows
+
+
+def _compute_all(rows: list[dict], d: date) -> dict[str, dict | None]:
+    """Every index in the day's file -> its summary row (sync; run in a thread)."""
+    return {sym: _compute_day(sym, rows, d) for sym in sorted({r.get("TckrSymb") for r in rows if r.get("TckrSymb")})}
+
+
+async def _day_summary(symbol: str, d: date) -> dict | None:
+    """(symbol, day) summary; the first request for a day reads its file once for every index."""
+    ymd = d.strftime("%Y%m%d")
+    if ymd not in _DAY_DONE:
+        lock = _DAY_LOCKS.setdefault(ymd, asyncio.Lock())
+        async with lock:
+            if ymd not in _DAY_DONE:
+                rows = await _fetch_day_rows(ymd)
+                if rows:
+                    for sym, res in (await asyncio.to_thread(_compute_all, rows, d)).items():
+                        _DAY_CACHE[(sym, ymd)] = res
+                # no file yet for today / yesterday (NSE publishes it in the evening): ask again later
+                if rows or (date.today() - d).days > 2:
+                    _DAY_DONE.add(ymd)
+                del rows
+                _DAY_LOCKS.pop(ymd, None)
+    return _DAY_CACHE.get((symbol, ymd))
 
 
 def _compute_day(symbol: str, rows: list[dict], d: date) -> dict | None:
@@ -185,14 +216,11 @@ async def fetch_bhavcopy_greeks(symbol: str, from_date: str, to_date: str) -> di
     days = [start + timedelta(n) for n in range((end - start).days + 1)
             if (start + timedelta(n)).weekday() < 5]
 
-    sem = asyncio.Semaphore(8)
+    sem = asyncio.Semaphore(3)  # at most 3 day files parsed at once (was 8: a memory spike on a 1 GB box)
 
     async def _one(d: date):
         async with sem:
-            rows = await _fetch_day_rows(d.strftime("%Y%m%d"))
-            if not rows:
-                return None
-            return await asyncio.to_thread(_compute_day, symbol, rows, d)
+            return await _day_summary(symbol, d)
 
     results = await asyncio.gather(*[_one(d) for d in days])
     series = [r for r in results if r]

@@ -270,8 +270,16 @@ def _with_lot_size(rows):
 
 
 @router.get("/positions")
-async def positions():
+async def positions(fresh: bool = False):
     b = _require_auth()
+    # The position feed (broker_feed.run_position_feed) re-reads the PositionBook every 2 s and
+    # re-marks it with live leg prices. Answer from that copy -- instant -- instead of a new Flattrade
+    # round-trip per request (1,925 of them on 29-Sep, some abandoned by the app while the server
+    # swapped). `?fresh=1` still forces a live read.
+    import time as _time
+
+    if not fresh and store.broker_positions_ts and _time.time() - store.broker_positions_ts < 6:
+        return {"positions": _with_lot_size(store.live_positions()["rows"]), "cached": True}
     try:
         return {"positions": _with_lot_size(await b.positions())}
     except Exception as exc:  # noqa: BLE001

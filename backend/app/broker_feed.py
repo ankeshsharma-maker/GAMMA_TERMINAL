@@ -246,15 +246,18 @@ async def _poll_leg_quotes(broker) -> None:
     the leg ticks never came, so MTM only moved on the PositionBook polls. The
     REST quote service isn't limited to one session: price each open leg from
     it and feed the same re-mark path the socket ticks use."""
-    for exch, token in list(_leg_keys):
+    async def one(exch: str, token: str) -> None:
         try:
             q = await broker.quotes(exch, token)
         except Exception as exc:  # noqa: BLE001
             log.debug("leg quote failed for %s|%s: %s", exch, token, exc)
-            continue
+            return
         ltp = _num((q or {}).get("lp"))
         if ltp is not None and token in _leg_tokens:
             store.set_leg_ltp(token, ltp)
+
+    # all legs at once (was one after another: 6 legs x ~0.3 s = a 2 s-old MTM by the last leg)
+    await asyncio.gather(*(one(e, t) for e, t in list(_leg_keys)))
     await _emit_positions()
 
 
