@@ -2571,6 +2571,7 @@ export function StrategyBuilder() {
               setPayoffTab(k as "chart" | "table" | "legs" | "greeks");
             }
           };
+          // hover tooltips only (the line of text beside the tabs was removed 29-Sep on request)
           const hint: Record<string, string> = {
             chart: "Payoff at expiry, today and any day in between",
             table: "P&L at each price — today, by day or by hour",
@@ -2587,6 +2588,7 @@ export function StrategyBuilder() {
                 <button
                   key={k}
                   onClick={() => pick(k)}
+                  title={hint[k]}
                   className={`${phone ? "" : "hidden sm:block"} shrink-0 rounded border px-3 py-1 text-[12px] font-semibold transition-colors sm:text-[13px] ${
                     active === k
                       ? "border-term-accent/50 bg-term-accent/15 text-term-accent"
@@ -2596,7 +2598,6 @@ export function StrategyBuilder() {
                   {l}
                 </button>
               ))}
-              <span className="ml-auto hidden shrink-0 self-center pl-3 text-[10.5px] text-term-dim xl:inline">{hint[active]}</span>
             </div>
           );
         })()}
