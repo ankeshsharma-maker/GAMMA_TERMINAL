@@ -2763,24 +2763,24 @@ export function StrategyBuilder() {
                         </div>
                       )}
                       <div className="flex border-b border-term-border py-1 text-[10px] uppercase text-term-dim">
-                        <span className="flex-1">{tableInterval > 0 ? "Target" : "Strike"}</span>
-                        <span className="flex-1 text-right normal-case">{phoneCol ? phoneCol.label : "Now"}</span>
-                        <span className="flex-1 text-right">Expiry</span>
+                        <span className="flex-1 text-center">{tableInterval > 0 ? "Target" : "Strike"}</span>
+                        <span className="flex-1 text-center normal-case">{phoneCol ? phoneCol.label : "Now"}</span>
+                        <span className="flex-1 text-center">Expiry</span>
                       </div>
                       {rowsP.map((r, i) => (
                         <div
                           key={i}
                           className={`num flex border-b border-term-border/50 py-1.5 ${r.isATM ? "bg-amber-500/15" : ""}`}
                         >
-                          <span className="flex-1 font-medium text-term-text">
+                          <span className="flex-1 text-center font-medium text-term-text">
                             {sk(r.K)}
                             {r.isATM && <span className="text-amber-400"> ●</span>}
                           </span>
                           {(() => {
                             const v = (phoneCol ? phoneCol.vals[off + i] : r.now) + manualPnl;
-                            return <span className={`flex-1 text-right ${pnlCls(v)}`}>{pnlTxt(v)}</span>;
+                            return <span className={`flex-1 text-center ${pnlCls(v)}`}>{pnlTxt(v)}</span>;
                           })()}
-                          <span className={`flex-1 text-right ${pnlCls(r.exp + manualPnl)}`}>{pnlTxt(r.exp + manualPnl)}</span>
+                          <span className={`flex-1 text-center ${pnlCls(r.exp + manualPnl)}`}>{pnlTxt(r.exp + manualPnl)}</span>
                         </div>
                       ))}
                       <button
@@ -2915,7 +2915,7 @@ export function StrategyBuilder() {
                   body.push(
                     <tr key={i} ref={r.isATM ? atmRowRef : undefined} className="group">
                       <td
-                        className={`num sticky left-0 z-[1] border-b border-r border-term-border/50 bg-term-panel px-3 py-1.5 text-right text-[12px] font-semibold text-term-text group-hover:bg-term-panel2 ${
+                        className={`num sticky left-0 z-[1] border-b border-r border-term-border/50 bg-term-panel px-3 py-1.5 text-center text-[12px] font-semibold text-term-text group-hover:bg-term-panel2 ${
                           r.isATM ? "text-amber-300" : ""
                         }`}
                         style={{
@@ -2929,7 +2929,7 @@ export function StrategyBuilder() {
                       </td>
                       {showPct && (
                         <td
-                          className={`num border-b border-r border-term-border/50 px-2 py-1.5 text-right text-[11px] ${
+                          className={`num border-b border-r border-term-border/50 px-2 py-1.5 text-center text-[11px] ${
                             r.pct >= 0 ? "text-up" : "text-down"
                           }`}
                         >
@@ -2942,7 +2942,7 @@ export function StrategyBuilder() {
                         return (
                           <td
                             key={c.key}
-                            className={`num border-b border-r border-term-border/40 px-3 py-1.5 text-right text-[12px] font-medium group-hover:brightness-125 ${
+                            className={`num border-b border-r border-term-border/40 px-3 py-1.5 text-center text-[12px] font-medium group-hover:brightness-125 ${
                               v >= 0 ? "text-green-300" : "text-red-300"
                             } ${c.exp ? "border-l border-l-term-border" : ""}`}
                             style={{ backgroundColor: heat(v) }}
@@ -3085,18 +3085,18 @@ export function StrategyBuilder() {
                       <table className="w-full border-separate border-spacing-0 whitespace-nowrap">
                         <thead className="sticky top-0 z-[2]">
                           <tr>
-                            <th className="sticky left-0 z-[3] border-b border-r border-term-border bg-term-panel2 px-3 py-1.5 text-right text-[10px] font-semibold uppercase tracking-wide text-term-dim">
+                            <th className="sticky left-0 z-[3] border-b border-r border-term-border bg-term-panel2 px-3 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wide text-term-dim">
                               {tableInterval > 0 ? "Target" : "Strike"}
                             </th>
                             {showPct && (
-                              <th className="border-b border-r border-term-border bg-term-panel2 px-2 py-1.5 text-right text-[10px] font-semibold uppercase tracking-wide text-term-dim">
+                              <th className="border-b border-r border-term-border bg-term-panel2 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wide text-term-dim">
                                 Move
                               </th>
                             )}
                             {cols.map((c) => (
                               <th
                                 key={c.key}
-                                className={`border-b border-r border-term-border bg-term-panel2 px-3 py-1.5 text-right ${
+                                className={`border-b border-r border-term-border bg-term-panel2 px-3 py-1.5 text-center ${
                                   c.exp ? "border-l border-l-term-border" : ""
                                 }`}
                               >
