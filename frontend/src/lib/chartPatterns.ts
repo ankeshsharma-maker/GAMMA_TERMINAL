@@ -4,7 +4,7 @@ import { IST_OFFSET_S } from "./istTime";
 /** Something drawn on the price pane, in chart units (bar time, price). */
 export type Shape =
   | { kind: "line"; t1: number; p1: number; t2: number; p2: number; color: string; dash?: boolean; label?: string }
-  | { kind: "box"; t1: number; t2: number; top: number; bottom: number; color: string; label?: string; labelBelow?: boolean }
+  | { kind: "box"; t1: number; t2: number; top: number; bottom: number; color: string; label?: string; labelBelow?: boolean; faint?: boolean }
   | { kind: "text"; t: number; p: number; text: string; color: string; above: boolean };
 
 /** A breakout / confirmation on one bar -- drawn as a marker on that bar. */

@@ -14,7 +14,7 @@ import type { Shape } from "./chartPatterns";
 
 type Px =
   | { kind: "line"; x1: number; y1: number; x2: number; y2: number; color: string; dash: boolean; label?: string; flat: boolean }
-  | { kind: "box"; x1: number; y1: number; x2: number; y2: number; color: string; label?: string; below?: boolean }
+  | { kind: "box"; x1: number; y1: number; x2: number; y2: number; color: string; label?: string; below?: boolean; faint?: boolean }
   | { kind: "text"; x: number; y: number; text: string; color: string; above: boolean };
 
 const alpha = (hex: string, a: number) => {
@@ -35,12 +35,15 @@ class Renderer implements ISeriesPrimitivePaneRenderer {
         if (s.kind === "box") {
           const x = Math.min(s.x1, s.x2);
           const y = Math.min(s.y1, s.y2);
-          ctx.fillStyle = alpha(s.color, 0.1);
+          // a faint box (premium / discount) is a light wash with no border, so it sits behind
+          ctx.fillStyle = alpha(s.color, s.faint ? 0.05 : 0.1);
           ctx.fillRect(x, y, Math.max(2, Math.abs(s.x2 - s.x1)), Math.max(1, Math.abs(s.y2 - s.y1)));
-          ctx.strokeStyle = alpha(s.color, 0.7);
-          ctx.lineWidth = 1;
-          ctx.setLineDash([3, 3]);
-          ctx.strokeRect(x, y, Math.max(2, Math.abs(s.x2 - s.x1)), Math.max(1, Math.abs(s.y2 - s.y1)));
+          if (!s.faint) {
+            ctx.strokeStyle = alpha(s.color, 0.7);
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.strokeRect(x, y, Math.max(2, Math.abs(s.x2 - s.x1)), Math.max(1, Math.abs(s.y2 - s.y1)));
+          }
         } else {
           ctx.strokeStyle = s.color;
           ctx.lineWidth = 1.5;
@@ -173,7 +176,7 @@ export class AutoPatternsPrimitive implements ISeriesPrimitive {
         const y1 = Y(s.top);
         const y2 = Y(s.bottom);
         if (y1 == null || y2 == null) continue;
-        out.push({ kind: "box", x1, y1, x2, y2, color: s.color, label: s.label, below: s.labelBelow });
+        out.push({ kind: "box", x1, y1, x2, y2, color: s.color, label: s.label, below: s.labelBelow, faint: s.faint });
       } else {
         const y1 = Y(s.p1);
         const y2 = Y(s.p2);

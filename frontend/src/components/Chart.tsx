@@ -21,6 +21,7 @@ import { bucketStart } from "../lib/istTime";
 import { detectPatterns, PATTERN_LEGEND, type PatternHit } from "../lib/candlePatterns";
 import { detectChartPatterns, type ChartEvent } from "../lib/chartPatterns";
 import { AutoPatternsPrimitive } from "../lib/autoPatternsPrimitive";
+import { detectSmc } from "../lib/smc";
 import { TrendCompass } from "./TrendCompass";
 import { useIsMobile } from "../lib/useIsMobile";
 import {
@@ -106,10 +107,19 @@ const TOGGLES = [
   ["ranges", "Range breakouts"],
   ["chartpat", "Chart patterns"],
   ["structure", "Market structure"],
+  ["smcOB", "Order blocks"],
+  ["smcFVG", "Fair value gaps"],
+  ["smcLiq", "Liquidity (EQH / EQL)"],
+  ["smcPD", "Premium / discount"],
+  ["smcLvl", "Prev day / week high-low"],
 ] as const;
 type ToggleKey = (typeof TOGGLES)[number][0];
 /** drawn-on-price analysis: its own "Patterns" button, not the ƒx indicator list */
 const PATTERN_KEYS = new Set<ToggleKey>(["patterns", "ranges", "chartpat", "structure"]);
+/** Smart Money Concepts: their own "◈ SMC" button */
+const SMC_KEYS = new Set<ToggleKey>(["smcOB", "smcFVG", "smcLiq", "smcPD", "smcLvl"]);
+/** everything drawn on price (Patterns + SMC) -- kept out of the ƒx indicator list */
+const DRAWN_KEYS = new Set<ToggleKey>([...PATTERN_KEYS, ...SMC_KEYS]);
 const DEFAULT_ON: Record<ToggleKey, boolean> = {
   ema9: true,
   ema21: true,
@@ -134,6 +144,12 @@ const DEFAULT_ON: Record<ToggleKey, boolean> = {
   ranges: false,
   chartpat: false,
   structure: false,
+  // Smart Money Concepts (◈ SMC) start off too
+  smcOB: false,
+  smcFVG: false,
+  smcLiq: false,
+  smcPD: false,
+  smcLvl: false,
 };
 
 /** Everything a saved chart layout brings back (TradingView-style). */
@@ -456,8 +472,10 @@ export function Chart() {
   // ƒx indicator picker + MTF overlay picker
   const [fxOpen, setFxOpen] = useState(false);
   const [patOpen, setPatOpen] = useState(false);
+  const [smcOpen, setSmcOpen] = useState(false);
   const [mtfOpen, setMtfOpen] = useState(false);
-  const activeInd = TOGGLES.filter(([k]) => on[k] && !PATTERN_KEYS.has(k)).length;
+  const activeInd = TOGGLES.filter(([k]) => on[k] && !DRAWN_KEYS.has(k)).length;
+  const activeSmc = TOGGLES.filter(([k]) => on[k] && SMC_KEYS.has(k)).length;
   const activePat = TOGGLES.filter(([k]) => on[k] && PATTERN_KEYS.has(k)).length;
 
   const onRef = useRef(eff);
@@ -1443,8 +1461,14 @@ export function Chart() {
       priceType && (eff.ranges || eff.chartpat || eff.structure)
         ? detectChartPatterns(closed, intervalS, { ranges: eff.ranges, patterns: eff.chartpat, structure: eff.structure })
         : { shapes: [], events: [] };
-    autoPrimRef.current?.candle.setShapes(ctype === "bar" ? [] : auto.shapes);
-    autoPrimRef.current?.bar.setShapes(ctype === "bar" ? auto.shapes : []);
+    const smcOn = eff.smcOB || eff.smcFVG || eff.smcLiq || eff.smcPD || eff.smcLvl;
+    const smc = priceType && smcOn
+      ? detectSmc(closed as any, intervalS, { ob: eff.smcOB, fvg: eff.smcFVG, liq: eff.smcLiq, pd: eff.smcPD, levels: eff.smcLvl })
+      : [];
+    // premium / discount washes go first so every other shape draws over them
+    const drawn = [...smc.filter((x) => x.kind === "box" && x.faint), ...auto.shapes, ...smc.filter((x) => !(x.kind === "box" && x.faint))];
+    autoPrimRef.current?.candle.setShapes(ctype === "bar" ? [] : drawn);
+    autoPrimRef.current?.bar.setShapes(ctype === "bar" ? drawn : []);
     const evMap = new Map<number, ChartEvent[]>();
     auto.events.forEach((e) => evMap.set(e.time, [...(evMap.get(e.time) ?? []), e]));
     eventsRef.current = evMap;
@@ -1483,7 +1507,7 @@ export function Chart() {
     markers.sort((x, y) => (x.time as number) - (y.time as number));
     (c.candle as ISeriesApi<"Candlestick">).setMarkers(ctype === "bar" ? [] : markers);
     (c.barS as ISeriesApi<"Bar">).setMarkers(ctype === "bar" ? markers : []);
-  }, [candles, priceCandles, data, eff.patterns, eff.ranges, eff.chartpat, eff.structure, ctype, intervalS, barSpacing]);
+  }, [candles, priceCandles, data, eff.patterns, eff.ranges, eff.chartpat, eff.structure, eff.smcOB, eff.smcFVG, eff.smcLiq, eff.smcPD, eff.smcLvl, ctype, intervalS, barSpacing]);
 
   // log / linear price scale
   useEffect(() => {
@@ -2182,7 +2206,7 @@ export function Chart() {
                         setOn((o) => {
                           const z = { ...o };
                           (Object.keys(z) as ToggleKey[]).forEach((k) => {
-                            if (!PATTERN_KEYS.has(k)) z[k] = false;
+                            if (!DRAWN_KEYS.has(k)) z[k] = false;
                           });
                           return z;
                         })
@@ -2193,7 +2217,7 @@ export function Chart() {
                     </button>
                   )}
                 </div>
-                {TOGGLES.filter(([k]) => !PATTERN_KEYS.has(k)).map(([k, lbl]) => {
+                {TOGGLES.filter(([k]) => !DRAWN_KEYS.has(k)).map(([k, lbl]) => {
                   const dis = isOption && (k === "straddle" || k === "score" || k === "greeks");
                   return (
                     <div key={k}>
@@ -2256,7 +2280,9 @@ export function Chart() {
                 : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
             }`}
           >
-            ◇ Patterns{activePat ? ` · ${activePat}` : ""}
+            ◇ <span className="sm:hidden">Pat</span>
+            <span className="hidden sm:inline">Patterns</span>
+            {activePat ? ` · ${activePat}` : ""}
           </button>
           {patOpen && (
             <>
@@ -2350,6 +2376,98 @@ export function Chart() {
                   <div className="px-2 py-1 text-[9px] text-amber-400">
                     hidden — “▨ hide indicators” is on
                   </div>
+                )}
+              </div>
+            </>
+          )}
+        </span>
+        <span className="chart-keep relative">
+          <button
+            onClick={() => setSmcOpen((o) => !o)}
+            title="Smart Money Concepts: order blocks, fair value gaps, liquidity, premium / discount, previous day / week levels"
+            className={`rounded border px-2 py-0.5 font-semibold ${
+              smcOpen || activeSmc
+                ? "border-violet-500/50 bg-violet-500/15 text-term-text"
+                : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
+            }`}
+          >
+            ◈ SMC{activeSmc ? ` · ${activeSmc}` : ""}
+          </button>
+          {smcOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setSmcOpen(false)} />
+              <div className="absolute left-0 top-full z-50 mt-1 max-h-[60vh] w-[230px] overflow-y-auto rounded-lg border border-term-border bg-term-panel p-1 text-2xs shadow-2xl">
+                <div className="flex items-center justify-between px-2 py-1 text-term-dim">
+                  <span className="font-semibold uppercase tracking-wide">Smart money</span>
+                  <button
+                    onClick={() =>
+                      setOn((o) => {
+                        const all = [...SMC_KEYS].every((k) => o[k]);
+                        const z = { ...o };
+                        SMC_KEYS.forEach((k) => (z[k] = !all));
+                        return z;
+                      })
+                    }
+                    className="underline underline-offset-2 hover:text-term-text"
+                  >
+                    {activeSmc === SMC_KEYS.size ? "none" : "all"}
+                  </button>
+                </div>
+                {TOGGLES.filter(([k]) => SMC_KEYS.has(k)).map(([k, lbl]) => (
+                  <div key={k}>
+                    <button
+                      onClick={() => setOn((o) => ({ ...o, [k]: !o[k] }))}
+                      className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left ${
+                        on[k] ? "bg-violet-500/15 text-term-text" : "text-term-dim hover:bg-term-border hover:text-term-text"
+                      }`}
+                    >
+                      <span>{lbl}</span>
+                      {on[k] && <span className="text-violet-300">✓</span>}
+                    </button>
+                    {on[k] && (
+                      <div className="mb-1 ml-2 mt-0.5 rounded border border-term-dim/40 px-1.5 py-1 text-[10px] leading-snug text-term-dim">
+                        {k === "smcOB" && (
+                          <>
+                            <div>
+                              <span className="text-up">Bull OB</span> / <span className="text-down">Bear OB</span> = the last opposite candle before
+                              the move that broke a swing — where big orders likely sat
+                            </div>
+                            <div>“tested” = price has come back into it; gone once a close breaks through</div>
+                          </>
+                        )}
+                        {k === "smcFVG" && (
+                          <div>
+                            <span className="text-teal-300">FVG</span> / <span className="text-rose-400">FVG</span> = a gap left by a fast 3-candle
+                            move (bullish / bearish); shrinks as price fills it, gone when filled
+                          </div>
+                        )}
+                        {k === "smcLiq" && (
+                          <div>
+                            <span className="text-fuchsia-400">EQH / EQL</span> = equal highs / lows — stops rest beyond them; the line goes
+                            once price sweeps through
+                          </div>
+                        )}
+                        {k === "smcPD" && (
+                          <div>
+                            Recent range split at 50% (<span className="text-slate-300">EQ</span>): above = <span className="text-down">premium</span>{" "}
+                            (better to sell), below = <span className="text-up">discount</span> (better to buy)
+                          </div>
+                        )}
+                        {k === "smcLvl" && (
+                          <div>
+                            <span className="text-indigo-300">PDH / PDL</span> = previous day high / low (intraday),{" "}
+                            <span className="text-amber-300">PWH / PWL</span> = previous week (dashed)
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <div className="px-2 pb-1 pt-0.5 text-[9px] leading-snug text-term-dim">
+                  From closed candles only; the latest few zones of each kind are shown.
+                </div>
+                {indHidden && activeSmc > 0 && (
+                  <div className="px-2 py-1 text-[9px] text-amber-400">hidden — “▨ hide indicators” is on</div>
                 )}
               </div>
             </>
