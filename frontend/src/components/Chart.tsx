@@ -1703,28 +1703,114 @@ export function Chart() {
     );
   }, [mtf, priceCandles, data, indHidden]);
 
-  // dealer gamma-flip level, drawn as one reference line: the SERVER's value (processing.py,
-  // the standard spot-sweep definition NiftyTrader & co. use, since 29-Sep); the old in-app
-  // cumulative-by-strike formula (lib/gammaFlip.ts) only when the chain carries none
+  // dealer gamma flip (the SERVER's value -- processing.py, the standard spot-sweep definition
+  // NiftyTrader & co. use, since 29-Sep 08:42 IST).
+  //  - intraday charts: a stepped LINE through the session (the flip recorded on every chain
+  //    refresh, /api/gex-intraday) + the live value at the latest bar -- a real series, so the
+  //    price scale always makes room for it (a flat price line could sit off-screen, which is why
+  //    it only showed on 1D)
+  //  - daily and up: one reference line at today's value
+  //  - an option contract's chart: nothing (the flip is an index level, not a premium)
+  const [gfPts, setGfPts] = useState<[number, number][]>([]);
   useEffect(() => {
+    setGfPts([]);
+    if (!eff.gammaFlip || isOption || intervalS >= 86400) return;
+    let alive = true;
+    // readings before the switch used the old cumulative-by-strike formula (off by up to ~1,200 pts
+    // on SENSEX) -- they're left out rather than drawn as a jump
+    const SINCE = Date.UTC(2026, 8, 29, 3, 12) / 1000; // 29-Sep-2026 08:42 IST
+    const load = () =>
+      api.gexIntraday(symbol, null).then(
+        (d) =>
+          alive &&
+          setGfPts(
+            d.points
+              .filter((pt) => pt[3] != null && pt[0] >= SINCE)
+              .map((pt) => [pt[0], pt[3] as number] as [number, number])
+          ),
+        () => {}
+      );
+    load();
+    const id = window.setInterval(() => {
+      if (!document.hidden) load();
+    }, 60000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [eff.gammaFlip, isOption, intervalS, symbol]);
+  const gfSerRef = useRef<{ chart: IChartApi; ser: ISeriesApi<"Line"> } | null>(null);
+  useEffect(() => {
+    const chart = chartRef.current;
     const cs = s.current.candle as ISeriesApi<"Candlestick"> | undefined;
-    if (!cs) return;
+    if (!chart || !cs) return;
     if (gfRef.current) {
       cs.removePriceLine(gfRef.current);
       gfRef.current = null;
     }
-    if (!eff.gammaFlip || !chain?.rows.length) return;
+    const drop = () => {
+      if (gfSerRef.current) {
+        try {
+          gfSerRef.current.chart.removeSeries(gfSerRef.current.ser);
+        } catch {
+          /* chart rebuilt */
+        }
+        gfSerRef.current = null;
+      }
+    };
+    if (gfSerRef.current && gfSerRef.current.chart !== chart) gfSerRef.current = null; // chart rebuilt
+    if (!eff.gammaFlip || isOption || !chain?.rows.length) return drop();
     const flip = chain.gammaFlip ?? computeGammaFlip(chain.rows, chain.liveSpot?.ltp ?? chain.spot)?.strike ?? null;
-    if (flip == null) return;
-    gfRef.current = cs.createPriceLine({
-      price: Number(flip.toFixed(2)),
-      color: "#e879f9",
-      lineWidth: 1,
-      lineStyle: LineStyle.Dashed,
-      axisLabelVisible: true,
-      title: "γ-flip",
-    });
-  }, [eff.gammaFlip, chain?.rows, chain?.gammaFlip, data]);
+    if (intervalS >= 86400 || !candles.length) {
+      drop();
+      if (flip == null) return;
+      gfRef.current = cs.createPriceLine({
+        price: Number(flip.toFixed(2)),
+        color: "#e879f9",
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: "γ-flip",
+      });
+      return;
+    }
+    // the recorded flips on this chart's bars (the last reading in each bar) + the live one
+    const byBar = new Map<number, number>();
+    for (const [t, v] of gfPts) byBar.set(bucketStart(t, intervalS), v);
+    const lastBar = candles[candles.length - 1].time as number;
+    if (flip != null) byBar.set(lastBar, flip);
+    const firstBar = candles[0].time as number;
+    const pts = [...byBar.entries()]
+      .filter(([t]) => t >= firstBar && t <= lastBar)
+      .sort((x, y) => x[0] - y[0])
+      .map(([t, v]) => ({ time: t as any, value: Number(v.toFixed(2)) }));
+    if (!pts.length) return drop();
+    // no readings of this session yet (before the open): the level itself, across the chart
+    if (pts.length < 2 && flip != null)
+      gfRef.current = cs.createPriceLine({
+        price: Number(flip.toFixed(2)),
+        color: "#e879f9",
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: false,
+        title: "",
+      });
+    if (!gfSerRef.current)
+      gfSerRef.current = {
+        chart,
+        ser: chart.addLineSeries({
+        color: "#e879f9",
+        lineWidth: 2,
+        lineStyle: LineStyle.Dashed,
+        lineType: 1, // steps: the flip holds until the next reading
+        priceLineVisible: false,
+        lastValueVisible: true,
+        crosshairMarkerVisible: false,
+        title: "γ-flip",
+        }),
+      };
+    gfSerRef.current.ser.setData(pts);
+  }, [eff.gammaFlip, isOption, chain?.rows, chain?.gammaFlip, gfPts, candles, intervalS, data]);
 
   // what the on-canvas loading / error / empty message calls this chart
   const chartLabel = isOption
