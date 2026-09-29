@@ -1703,8 +1703,9 @@ export function Chart() {
     );
   }, [mtf, priceCandles, data, indHidden]);
 
-  // dealer gamma-flip level (see lib/gammaFlip.ts — same formula OI Profile's
-  // "weekly gex" panel and chart marker use), drawn as one reference line
+  // dealer gamma-flip level, drawn as one reference line: the SERVER's value (processing.py,
+  // the standard spot-sweep definition NiftyTrader & co. use, since 29-Sep); the old in-app
+  // cumulative-by-strike formula (lib/gammaFlip.ts) only when the chain carries none
   useEffect(() => {
     const cs = s.current.candle as ISeriesApi<"Candlestick"> | undefined;
     if (!cs) return;
@@ -1713,17 +1714,17 @@ export function Chart() {
       gfRef.current = null;
     }
     if (!eff.gammaFlip || !chain?.rows.length) return;
-    const gf = computeGammaFlip(chain.rows, chain.liveSpot?.ltp ?? chain.spot);
-    if (!gf) return;
+    const flip = chain.gammaFlip ?? computeGammaFlip(chain.rows, chain.liveSpot?.ltp ?? chain.spot)?.strike ?? null;
+    if (flip == null) return;
     gfRef.current = cs.createPriceLine({
-      price: Number(gf.strike.toFixed(2)),
+      price: Number(flip.toFixed(2)),
       color: "#e879f9",
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
       axisLabelVisible: true,
       title: "γ-flip",
     });
-  }, [eff.gammaFlip, chain?.rows, data]);
+  }, [eff.gammaFlip, chain?.rows, chain?.gammaFlip, data]);
 
   // what the on-canvas loading / error / empty message calls this chart
   const chartLabel = isOption
