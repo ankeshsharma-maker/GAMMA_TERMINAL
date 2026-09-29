@@ -22,6 +22,7 @@ from .store import store
 
 log = logging.getLogger("poller")
 _tg_last = 0.0   # trend_guard.tick() once a minute
+_smc_last = 0.0  # smc_alerts.tick() once a minute
 IST = ZoneInfo("Asia/Kolkata")
 _MKT_OPEN, _MKT_CLOSE = dtime(9, 15), dtime(15, 30)
 _EXP_TTL = 300  # re-pull the expiry list at most this often
@@ -467,6 +468,23 @@ async def run_poller(stop: asyncio.Event) -> None:
                 await hub.broadcast_all({"type": "alerts", "data": store.get_alerts(50)})
         except Exception as exc:  # noqa: BLE001
             log.warning("trend / loser guard tick failed: %s", exc)
+
+        # Smart Money Concepts alerts (order block first test / sweep / CHoCH / A+ setup), once a minute
+        try:
+            from . import smc_alerts
+
+            global _smc_last
+            if time.time() - _smc_last >= 60:
+                _smc_last = time.time()
+                sev = await smc_alerts.tick()
+                for e in sev:
+                    store.add_alert({"ts": time.time(), "symbol": e.get("symbol", ""), "kind": e["kind"],
+                                     "severity": e["severity"], "message": e["message"], "score": 0})
+                    log.info("SMC %s", e["message"])
+                if sev:
+                    await hub.broadcast_all({"type": "alerts", "data": store.get_alerts(50)})
+        except Exception as exc:  # noqa: BLE001
+            log.warning("smc-alert tick failed: %s", exc)
 
         try:
             from . import indicator_alerts

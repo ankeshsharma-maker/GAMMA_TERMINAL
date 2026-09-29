@@ -56,7 +56,7 @@ _GREEKS_MODES = ("big", "all", "off")
 # alerts about the MARKET (not about the user's own positions or rules) -- the
 # ones the symbol filter applies to
 _MARKET_KINDS = ("blast-crit", "blast-warn", "blast-build", "iv-spike", "straddle-exp", "oi-surge", "flow-reversal", "volume-spike",
-                 "trend-reversal")
+                 "trend-reversal", "smc")
 
 
 def _is_market(alert: dict) -> bool:

@@ -258,6 +258,30 @@ async def trend_guard_view(symbol: str):
     return await trend_guard.read(symbol)
 
 
+@router.get("/smc-alerts")
+def smc_alerts_get():
+    """Smart Money Concepts alert settings (smc_alerts.py): on/off, symbols, 5m / 15m, which kinds."""
+    from . import smc_alerts
+
+    return smc_alerts.settings()
+
+
+@router.post("/smc-alerts")
+def smc_alerts_save(body: dict):
+    from . import smc_alerts
+
+    return smc_alerts.save(body or {})
+
+
+@router.get("/smc-alerts/replay")
+async def smc_alerts_replay(symbol: str = Query("NIFTY"), tf: int = Query(300), days: int = Query(3, ge=1, le=10)):
+    """What the SMC alerts would have said over the last few sessions -- the settings panel's preview."""
+    from . import smc_alerts
+
+    tf = tf if tf in smc_alerts.TFS else 300
+    return {"symbol": symbol.upper(), "tf": tf, "events": await smc_alerts.replay(symbol.upper(), tf, days)}
+
+
 @router.get("/pcr/{symbol}")
 def pcr_view(symbol: str, day: str | None = Query(None), bucket: int = Query(5, ge=1, le=30)):
     """PCR + spot for one trading day, for the OI tab's PCR chart. Indices carry whole days (and earlier days) from the

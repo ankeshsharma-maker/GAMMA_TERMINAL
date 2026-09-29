@@ -22,6 +22,7 @@ import { detectPatterns, PATTERN_LEGEND, type PatternHit } from "../lib/candlePa
 import { detectChartPatterns, type ChartEvent } from "../lib/chartPatterns";
 import { AutoPatternsPrimitive } from "../lib/autoPatternsPrimitive";
 import { detectSmc } from "../lib/smc";
+import { SmcAlertsPanel } from "./SmcAlertsPanel";
 import { TrendCompass } from "./TrendCompass";
 import { useIsMobile } from "../lib/useIsMobile";
 import {
@@ -477,6 +478,7 @@ export function Chart() {
   const [fxOpen, setFxOpen] = useState(false);
   const [patOpen, setPatOpen] = useState(false);
   const [smcOpen, setSmcOpen] = useState(false);
+  const [smcAlertsOpen, setSmcAlertsOpen] = useState(false);
   // "clean": the Patterns / SMC zones and lines stay, their name tags and marker texts go
   const [cleanTags, setCleanTags] = useState(() => {
     try {
@@ -2418,6 +2420,7 @@ export function Chart() {
           >
             ◈ SMC{activeSmc ? ` · ${activeSmc}` : ""}
           </button>
+          {smcAlertsOpen && <SmcAlertsPanel symbol={symbol} onClose={() => setSmcAlertsOpen(false)} />}
           {smcOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setSmcOpen(false)} />
@@ -2500,6 +2503,19 @@ export function Chart() {
                     )}
                   </div>
                 ))}
+                {!isViewer() && (
+                  <button
+                    onClick={() => {
+                      setSmcOpen(false);
+                      setSmcAlertsOpen(true);
+                    }}
+                    className="mt-1 flex w-full items-center justify-between gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-left text-amber-300 hover:bg-amber-500/20"
+                    title="Server-side alerts (app + Telegram): A+ setup, sweeps, CHoCH, order-block first test"
+                  >
+                    <span>🔔 SMC alerts…</span>
+                    <span className="text-[10px]">setup</span>
+                  </button>
+                )}
                 <button
                   onClick={() => setCleanTags((v) => !v)}
                   className={`mt-1 flex w-full items-center justify-between gap-2 rounded border px-2 py-1 text-left ${

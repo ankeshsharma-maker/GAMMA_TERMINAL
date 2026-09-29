@@ -113,6 +113,13 @@ export type VolSnapshot = {
   nse?: { delivDays: number; delivLast: string | null; foDays: number; foLast: string | null };
 };
 
+export type SmcAlertCfg = {
+  enabled: boolean;
+  symbols: string[];
+  tf: number;
+  kinds: { ob: boolean; sweep: boolean; choch: boolean; aplus: boolean };
+};
+
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const tok = getToken();
   const res = await fetch(/^https?:\/\//.test(url) ? url : API_BASE + url, {
@@ -224,6 +231,14 @@ export const api = {
     j<PcrSeries>(`/api/pcr/${symbol}?bucket=${bucket}` + (day ? `&day=${encodeURIComponent(day)}` : "")),
 
   /** is today a trend day, and how many of the 3 reversal signs are on (backend trend_guard.py) */
+  // Smart Money Concepts alerts (server side, smc_alerts.py)
+  smcAlerts: () => j<SmcAlertCfg>("/api/smc-alerts"),
+  smcAlertsSave: (body: Partial<SmcAlertCfg>) =>
+    j<SmcAlertCfg>("/api/smc-alerts", { method: "POST", body: JSON.stringify(body) }),
+  smcAlertsReplay: (symbol: string, tf: number, days = 3) =>
+    j<{ symbol: string; tf: number; events: { time: number; kind: string; dir: "up" | "down"; message: string }[] }>(
+      `/api/smc-alerts/replay?symbol=${encodeURIComponent(symbol)}&tf=${tf}&days=${days}`
+    ),
   trendGuard: (symbol: string) =>
     j<{
       symbol: string;
