@@ -19,16 +19,30 @@ export type LegRule = {
 // mirrors backend parse_noren_tsym (app/brokers/flattrade.py) -- for
 // matching a position row to its bracket rule client-side only; the
 // backend re-parses the tsym itself when a bracket is actually created.
-const TSYM_RE = /^([A-Z]+)(\d{2}[A-Z]{3}\d{2})([CP])(\d+(?:\.\d+)?)$/;
-export function parseTsym(tsym: string | undefined | null) {
-  const m = TSYM_RE.exec((tsym || "").toUpperCase());
-  if (!m) return null;
-  return { symbol: m[1], optionType: m[3] === "C" ? "CE" : "PE", strike: Number(m[4]) };
+const TSYM_RE = /^([A-Z]+)(\d{2}[A-Z]{3}\d{2})([CP])(\d+(?:\.\d+)?)$/; // NFO: NIFTY29SEP26P22700
+// BSE (BFO) SENSEX / BANKEX: weekly YY + month (1-9 / O / N / D) + DD, e.g. SENSEX26O0172500PE,
+// and monthly YY + MON, e.g. SENSEX26OCT72500PE -- the NFO pattern alone left SENSEX legs
+// unmatched (no SL / TGT badge on the card, and a new bracket couldn't replace the old one)
+const BFO_WEEKLY_RE = /^([A-Z]+)(\d{2})([1-9OND])(\d{2})(\d+(?:\.\d+)?)(CE|PE)$/;
+const BFO_MONTHLY_RE = /^([A-Z]+)(\d{2})([A-Z]{3})(\d+(?:\.\d+)?)(CE|PE)$/;
+// the PositionBook's display name, e.g. "SENSEX 01 OCT 72500 PE", as the last resort
+const DNAME_RE = /^([A-Z]+)\s+\d{1,2}\s+[A-Z]{3}\s+(\d+(?:\.\d+)?)\s+(CE|PE)$/;
+export function parseTsym(tsym: string | undefined | null, dname?: string | null) {
+  const up = (tsym || "").toUpperCase();
+  let m = TSYM_RE.exec(up);
+  if (m) return { symbol: m[1], optionType: m[3] === "C" ? "CE" : "PE", strike: Number(m[4]) };
+  m = BFO_WEEKLY_RE.exec(up);
+  if (m) return { symbol: m[1], optionType: m[6], strike: Number(m[5]) };
+  m = BFO_MONTHLY_RE.exec(up);
+  if (m) return { symbol: m[1], optionType: m[5], strike: Number(m[4]) };
+  m = DNAME_RE.exec((dname || "").toUpperCase().trim());
+  if (m) return { symbol: m[1], optionType: m[3], strike: Number(m[2]) };
+  return null;
 }
 
 /** Find the active bracket (if any) for a raw broker position row. */
 export function findBracket(r: any, rules: LegRule[]): LegRule | undefined {
-  const p = parseTsym(r.tsym);
+  const p = parseTsym(r.tsym, r.dname);
   if (!p) return undefined;
   return rules.find(
     (x) =>
