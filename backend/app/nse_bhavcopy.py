@@ -58,8 +58,15 @@ def _num(v, d: float = 0.0) -> float:
 
 
 async def _fetch_day_rows(yyyymmdd: str) -> list[dict] | None:
-    """That day's index-option rows, only the columns _compute_day needs. NOT cached (see _DAY_CACHE)."""
-    content = await nse_client.client.bhavcopy_fo(yyyymmdd)
+    """That day's index-option rows, only the columns _compute_day needs. NOT cached (see _DAY_CACHE).
+    The permanent EOD archive first (no download); a file fetched here is added to it."""
+    from . import eod_archive
+
+    content = eod_archive.read_bytes("nse_fo", yyyymmdd)
+    if content is None:
+        content = await nse_client.client.bhavcopy_fo(yyyymmdd)
+        if content:
+            eod_archive.save_bytes("nse_fo", datetime.strptime(yyyymmdd, "%Y%m%d").date(), content)
     rows: list[dict] | None = None
     if content:
         try:

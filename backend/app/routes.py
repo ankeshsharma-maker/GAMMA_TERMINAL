@@ -282,6 +282,18 @@ async def smc_alerts_replay(symbol: str = Query("NIFTY"), tf: int = Query(300), 
     return {"symbol": symbol.upper(), "tf": tf, "events": await smc_alerts.replay(symbol.upper(), tf, days)}
 
 
+@router.get("/backtest-data/status")
+async def backtest_data_status():
+    """What the backtest data archive holds: exchange EOD files per kind + 1-min option snapshots per index.
+    Owner-only (not on the viewer allowlist)."""
+    import asyncio
+
+    from . import eod_archive, intraday_recorder
+
+    eod, intra = await asyncio.gather(asyncio.to_thread(eod_archive.status), asyncio.to_thread(intraday_recorder.status))
+    return {"eod": eod, "intraday": intra}
+
+
 @router.get("/pcr/{symbol}")
 def pcr_view(symbol: str, day: str | None = Query(None), bucket: int = Query(5, ge=1, le=30)):
     """PCR + spot for one trading day, for the OI tab's PCR chart. Indices carry whole days (and earlier days) from the
