@@ -26,7 +26,41 @@ import { VSplit, clamp, readNum } from "./VSplit";
 
 // IV points: +1 = IV 12% -> 13% (asked 25-Sep: 1-5% steps instead of 10 / 20 / 30)
 const IV_SHIFT_CHIPS = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5];
-const BUILDER_W_LS = "layout.builderW";
+const BUILDER_W_LS = "layout.builderW2"; // v2: 470 px default for the Sensibull-style trades table
+
+// Sensibull-style ready-made groups (template names come from the server, strategy.templates)
+const TPL_GROUPS: [string, string, string[]][] = [
+  ["Bullish", "text-up", ["Bull Call Spread", "Bull Put Spread", "Call Ratio Backspread"]],
+  ["Bearish", "text-down", ["Bear Put Spread", "Bear Call Spread", "Put Ratio Backspread"]],
+  ["Neutral", "text-amber-300", ["Short Straddle", "Short Strangle", "Iron Condor", "Iron Fly", "Call Butterfly"]],
+  ["Volatile", "text-sky-300", ["Long Straddle", "Long Strangle"]],
+];
+
+/** tiny payoff-at-expiry sketch of a template (premiums ignored -- the SHAPE only, like Sensibull's cards) */
+function TplIcon({ legs }: { legs: StrategyLeg[] }) {
+  const ks = legs.map((l) => l.strike).filter((k) => k > 0);
+  if (!ks.length) return null;
+  const lo = Math.min(...ks);
+  const hi = Math.max(...ks);
+  const pad = Math.max((hi - lo) * 0.7, lo * 0.01);
+  const N = 40;
+  const xs = Array.from({ length: N + 1 }, (_, i) => lo - pad + (i / N) * (hi - lo + 2 * pad));
+  const ys = xs.map((x) =>
+    legs.reduce((sum, l) => {
+      const v = l.optionType === "CE" ? Math.max(0, x - l.strike) : l.optionType === "PE" ? Math.max(0, l.strike - x) : x - l.strike;
+      return sum + (l.side === "BUY" ? 1 : -1) * (l.lots || 1) * v;
+    }, 0)
+  );
+  const mn = Math.min(...ys);
+  const span = Math.max(...ys) - mn || 1;
+  const pts = ys.map((y, i) => `${((i / N) * 52 + 2).toFixed(1)},${(24 - ((y - mn) / span) * 20).toFixed(1)}`).join(" ");
+  return (
+    <svg viewBox="0 0 56 28" className="h-7 w-14 shrink-0" aria-hidden="true">
+      <line x1="0" y1="14" x2="56" y2="14" stroke="currentColor" strokeOpacity=".18" />
+      <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 /** A Builder section that folds away (Hedge finder, Bracket, Schedule, Saved); remembers open / closed. */
 function Fold({
@@ -181,11 +215,13 @@ function StrikeStepper({
   strikes,
   atm,
   onChange,
+  compact = false,
 }: {
   value: number;
   strikes: number[];
   atm: number;
   onChange: (k: number) => void;
+  compact?: boolean;
 }) {
   const sorted = strikes.length ? strikes : [value];
   const i = sorted.indexOf(value);
@@ -196,10 +232,11 @@ function StrikeStepper({
     const j = (i >= 0 ? i : sorted.findIndex((k) => k > value)) + d;
     if (j >= 0 && j < sorted.length) onChange(sorted[j]);
   };
-  const btn =
-    "flex h-7 w-7 items-center justify-center rounded border border-term-border text-[15px] font-bold text-term-text active:bg-term-accent/25 disabled:opacity-30";
+  const btn = compact
+    ? "flex h-6 w-5 items-center justify-center rounded text-[14px] font-bold text-term-dim hover:text-term-text active:bg-term-accent/25 disabled:opacity-30"
+    : "flex h-7 w-7 items-center justify-center rounded border border-term-border text-[15px] font-bold text-term-text active:bg-term-accent/25 disabled:opacity-30";
   return (
-    <span className="inline-flex items-center gap-1">
+    <span className={`inline-flex items-center ${compact ? "gap-0" : "gap-1"}`} title={compact && tag ? tag : undefined}>
       <button onClick={() => step(-1)} disabled={i === 0} className={btn} title="Previous strike" aria-label="Previous strike">
         ‹
       </button>
@@ -208,7 +245,7 @@ function StrikeStepper({
         options={sorted.map((k) => [`${sk(k)}${k === atm ? "  (ATM)" : ""}`, k] as [string, number])}
         onChange={(k) => onChange(Number(k))}
         title="Strike"
-        width={96}
+        width={compact ? 80 : 96}
         highlightValue={atm}
       />
       <button
@@ -220,7 +257,7 @@ function StrikeStepper({
       >
         ›
       </button>
-      {tag && off !== 0 && <span className="whitespace-nowrap text-[10px] font-semibold text-term-dim">{tag}</span>}
+      {!compact && tag && off !== 0 && <span className="whitespace-nowrap text-[10px] font-semibold text-term-dim">{tag}</span>}
     </span>
   );
 }
@@ -353,13 +390,13 @@ export function StrategyBuilder() {
   const [phonePt, setPhonePt] = useState("now"); // phone: the point in time the middle column shows
   const [phoneRows, setPhoneRows] = useState(3); // P&L table: rows each side of spot
   // width of the leg-editor column vs. the payoff/chart column, drag-resizable like the watchlist panel
-  const [builderW, setBuilderW] = useState(() => readNum(BUILDER_W_LS, 330));
+  const [builderW, setBuilderW] = useState(() => readNum(BUILDER_W_LS, 470));
   useEffect(() => {
     try {
       localStorage.setItem(BUILDER_W_LS, String(builderW));
     } catch {}
   }, [builderW]);
-  const bumpBuilder = useCallback((dx: number) => setBuilderW((w) => clamp(w + dx, 260, 600)), []);
+  const bumpBuilder = useCallback((dx: number) => setBuilderW((w) => clamp(w + dx, 300, 760)), []);
   // P&L table defaults (asked 29-Sep): ±5 rows, one row every 100 points
   const [strikeSpan, setStrikeSpan] = useState(5); // ATM ± N strikes in the P&L table; 0 = All
   const [tableInterval, setTableInterval] = useState(100); // 0 = chain strikes; else ₹ step
@@ -384,6 +421,9 @@ export function StrategyBuilder() {
   const [newLegPrice, setNewLegPrice] = useState<number | null>(null); // blank = live LTP
   const [newLegStrike, setNewLegStrike] = useState(0); // 0 => ATM
   const [addingLeg, setAddingLeg] = useState(false); // collapse the add-leg form
+  // Sensibull-style source tabs above the trades (laptop / unfolded): open on Ready-made while empty,
+  // folded away once something is loaded; "none" = closed by hand
+  const [srcTab, setSrcTab] = useState<"ready" | "pos" | "saved" | "none" | null>(null);
   const doExecute = useCallback(async () => {
     const toRun = executeHeld ? legs : legs.filter((l) => !l.held);
     const ls = scaled(toRun);
@@ -1278,7 +1318,161 @@ export function StrategyBuilder() {
           )}
         </div>
 
-        <div className="flex flex-col gap-2 border-b border-term-border p-2">
+        {(() => {
+          const open = srcTab ?? (legs.length ? "none" : "ready");
+          const tabs: [typeof open, string][] = [
+            ["ready", "Ready-made"],
+            ["pos", "Positions"],
+            ...(!isViewer() ? ([["saved", `Saved${saved.length ? ` (${saved.length})` : ""}`]] as [typeof open, string][]) : []),
+          ];
+          const names = Object.keys(templates);
+          const known = new Set(TPL_GROUPS.flatMap((g) => g[2]));
+          const groups = [
+            ...TPL_GROUPS.map(([g, c, list]) => [g, c, list.filter((n) => templates[n])] as [string, string, string[]]),
+            ["Others", "text-term-dim", names.filter((n) => !known.has(n))] as [string, string, string[]],
+          ].filter((g) => g[2].length);
+          return (
+            <div className="hidden border-b border-term-border sm:block">
+              <div className="flex items-center gap-0.5 px-2 pt-1">
+                {tabs.map(([k, l]) => (
+                  <button
+                    key={k}
+                    onClick={() => setSrcTab(open === k ? "none" : k)}
+                    className={`border-b-2 px-2.5 py-1.5 text-[12px] font-semibold ${
+                      open === k ? "border-term-accent text-term-accent" : "border-transparent text-term-dim hover:text-term-text"
+                    }`}
+                  >
+                    {l}
+                  </button>
+                ))}
+                {legs.length > 0 && (
+                  <button
+                    className="ml-auto rounded px-2 py-1 text-[11px] text-term-dim hover:text-down"
+                    onClick={() => {
+                      setFromBroker(false);
+                      setStratName("");
+                      setSrcTab(null);
+                      update([]);
+                    }}
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+              {open === "ready" && (
+                <div className="max-h-[300px] overflow-y-auto px-2 pb-2 pt-1">
+                  {groups.map(([g, c, list]) => (
+                    <div key={g} className="mt-1.5">
+                      <div className={`mb-1 text-[9.5px] font-semibold uppercase tracking-wider ${c}`}>{g}</div>
+                      <div className="grid grid-cols-2 gap-1 xl:grid-cols-3">
+                        {list.map((n) => (
+                          <button
+                            key={n}
+                            onClick={() => {
+                              loadTemplate(n);
+                              setSrcTab(null);
+                            }}
+                            className={`flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight transition-colors hover:border-term-accent hover:bg-term-accent/10 ${
+                              stratName === n ? "border-term-accent bg-term-accent/10 text-term-text" : "border-term-border bg-term-panel/60 text-term-text"
+                            }`}
+                          >
+                            <span className={c}>
+                              <TplIcon legs={templates[n]} />
+                            </span>
+                            <span className="min-w-0">{n}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {!groups.length && <div className="py-3 text-center text-[11px] text-term-dim">Loading templates…</div>}
+                </div>
+              )}
+              {open === "pos" && (
+                <div className="flex flex-col gap-1.5 px-2 pb-2 pt-1.5">
+                  {broker?.authed && !isViewer() && (
+                    <button
+                      className="w-full rounded border border-up/60 bg-up/10 px-2 py-1.5 text-xs font-semibold text-up hover:bg-up/20"
+                      onClick={() => {
+                        loadFromBroker();
+                        setSrcTab(null);
+                      }}
+                      title="Load your live Flattrade option positions into the builder so you can hedge / cap the running loss"
+                    >
+                      ⚡ Live positions ({symbol})
+                    </button>
+                  )}
+                  {!isViewer() && (
+                    <button
+                      className="btn w-full py-1.5 text-[11.5px]"
+                      onClick={() => {
+                        loadFromPaper();
+                        setSrcTab(null);
+                      }}
+                    >
+                      Paper positions
+                    </button>
+                  )}
+                  <div className="text-[10.5px] text-term-dim">
+                    Loaded legs are marked 🔒 held: they count in the payoff but Execute skips them — add a hedge and send only that.
+                  </div>
+                </div>
+              )}
+              {open === "saved" && !isViewer() && (
+                <div className="flex flex-col gap-1.5 px-2 pb-2 pt-1.5">
+                  <div className="flex gap-1">
+                    <input
+                      value={saveName}
+                      onChange={(e) => setSaveName(e.target.value)}
+                      placeholder="Save these legs as…"
+                      className="min-w-0 flex-1 rounded border border-term-border bg-term-bg px-2 py-1 text-2xs outline-none focus:border-term-accent"
+                    />
+                    <button className="btn text-2xs" onClick={doSave} disabled={!legs.length}>
+                      Save
+                    </button>
+                  </div>
+                  <div className="max-h-[220px] overflow-y-auto">
+                    {saved.map((sv) => (
+                      <div key={sv.id} className="flex items-center gap-1.5 border-b border-term-border/50 px-1 py-1 text-2xs">
+                        <span className="num min-w-0 flex-1 truncate">
+                          {sv.name} <span className="text-term-dim">· {sv.symbol}</span>
+                        </span>
+                        <button
+                          onClick={() => {
+                            loadSaved(sv);
+                            setSrcTab(null);
+                          }}
+                          className="shrink-0 rounded border border-term-dim/70 px-1.5 py-0.5 font-semibold text-term-accent hover:bg-term-accent/15"
+                        >
+                          Load
+                        </button>
+                        <button
+                          onClick={() => {
+                            loadSaved(sv);
+                            setSrcTab(null);
+                            setPanel("backtest");
+                          }}
+                          className="shrink-0 rounded border border-term-dim/70 px-1.5 py-0.5 text-term-dim hover:text-term-text"
+                        >
+                          Backtest
+                        </button>
+                        <button
+                          onClick={() => delSaved(sv.id)}
+                          className="shrink-0 rounded border border-term-dim/70 px-1.5 py-0.5 text-term-dim hover:border-down hover:text-down"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    {!saved.length && <div className="py-2 text-center text-[11px] text-term-dim">Nothing saved yet.</div>}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        <div className="flex flex-col gap-2 border-b border-term-border p-2 sm:hidden">
           <SelectMenu
             value=""
             options={[
@@ -1359,13 +1553,169 @@ export function StrategyBuilder() {
               No legs yet — load a template or add one below.
             </div>
           )}
+          {legs.length > 0 && (
+            <div className="hidden overflow-hidden rounded-md border border-term-border bg-term-panel/40 sm:block">
+              <table className="w-full border-collapse text-[11.5px]">
+                <thead className="bg-term-panel text-[9.5px] uppercase tracking-wide text-term-dim">
+                  <tr>
+                    <th className="w-6 py-1 font-medium" title="🔒 held = already open: in the payoff, skipped on Execute" />
+                    <th className="px-1 py-1 text-left font-medium">B/S</th>
+                    <th className="px-1 py-1 text-left font-medium">Strike</th>
+                    <th className="px-1 py-1 text-left font-medium">Type</th>
+                    <th className="px-1 py-1 text-center font-medium">Lots</th>
+                    <th className="px-1 py-1 text-right font-medium">Price</th>
+                    <th className="px-1 py-1 text-right font-medium">LTP</th>
+                    <th className="w-5 py-1" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {legs.map((leg, i) => {
+                    const lr = legRows[i];
+                    // market LTP from the chain (this symbol / expiry); the model price only as a fallback
+                    const row = leg.optionType !== "FUT" && chain?.expiry === expiry ? chain?.rows.find((r) => r.strike === leg.strike) : undefined;
+                    const mkt = row ? (leg.optionType === "CE" ? row.call.ltp : row.put.ltp) : 0;
+                    // no chain row: the server's entry IS the market LTP when no price was typed
+                    const srvLtp = leg.price == null ? analysis?.legs[i]?.entry : undefined;
+                    const ltp = mkt > 0 ? mkt : srvLtp != null && srvLtp > 0 ? srvLtp : lr?.ltp ?? null;
+                    return (
+                      <tr
+                        key={i}
+                        className={`border-t border-term-border/60 ${leg.held ? "bg-amber-500/[0.07]" : "hover:bg-term-panel/70"}`}
+                      >
+                        <td className="py-1 text-center">
+                          <button
+                            onClick={() => setLeg(i, { held: !leg.held })}
+                            title={
+                              leg.held
+                                ? `Held position (${executeHeld ? "will be sent on Execute" : "in payoff, skipped on Execute"}) — tap to include it in Execute`
+                                : "Tap to mark as an already-open position (skipped on Execute)"
+                            }
+                            className={`text-[12px] leading-none ${leg.held ? "text-amber-400" : "opacity-35 hover:opacity-100"}`}
+                          >
+                            {leg.held ? "🔒" : "🔓"}
+                          </button>
+                        </td>
+                        <td className="px-1 py-1">
+                          <button
+                            onClick={() => setLeg(i, { side: leg.side === "BUY" ? "SELL" : "BUY" })}
+                            title="tap to switch Buy / Sell"
+                            className={`w-6 rounded py-0.5 text-center text-[11px] font-bold ${
+                              leg.side === "BUY" ? "bg-up/20 text-up" : "bg-down/20 text-down"
+                            }`}
+                          >
+                            {leg.side === "BUY" ? "B" : "S"}
+                          </button>
+                        </td>
+                        <td className="px-0.5 py-1">
+                          {leg.optionType !== "FUT" ? (
+                            <StrikeStepper
+                              compact
+                              value={leg.strike}
+                              strikes={strikes.includes(leg.strike) ? strikes : [...strikes, leg.strike].sort((a, b) => a - b)}
+                              atm={atm}
+                              onChange={(k) => setLeg(i, { strike: k })}
+                            />
+                          ) : (
+                            <span className="px-1 text-term-dim">{expiry ?? ""}</span>
+                          )}
+                        </td>
+                        <td className="px-1 py-1">
+                          <button
+                            onClick={() =>
+                              setLeg(i, {
+                                optionType: leg.optionType === "CE" ? "PE" : leg.optionType === "PE" ? "FUT" : "CE",
+                              })
+                            }
+                            title="tap to switch CE / PE / FUT"
+                            className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${
+                              leg.optionType === "CE"
+                                ? "bg-up/15 text-up"
+                                : leg.optionType === "PE"
+                                ? "bg-down/15 text-down"
+                                : "bg-term-border text-term-dim"
+                            }`}
+                          >
+                            {leg.optionType}
+                          </button>
+                        </td>
+                        <td className="px-1 py-1">
+                          <div className="flex items-center justify-center">
+                            <button
+                              className="h-5 w-4 text-term-dim hover:text-term-text"
+                              onClick={() => setLeg(i, { lots: Math.max(1, leg.lots - 1) })}
+                              aria-label="One lot less"
+                            >
+                              −
+                            </button>
+                            <span className="num min-w-[22px] text-center text-term-text" title={mult > 1 ? `× ${mult} = ${leg.lots * mult} lots` : undefined}>
+                              {leg.lots}
+                              {mult > 1 && <span className="text-[9.5px] text-term-accent">×{mult}</span>}
+                            </span>
+                            <button
+                              className="h-5 w-4 text-term-dim hover:text-term-text"
+                              onClick={() => setLeg(i, { lots: leg.lots + 1 })}
+                              aria-label="One lot more"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-1 py-1 text-right">
+                          <span className="inline-flex items-center gap-0.5">
+                            {leg.price != null && (
+                              <button onClick={() => setLeg(i, { price: null })} title="use live LTP" className="text-term-dim hover:text-term-text">
+                                ↺
+                              </button>
+                            )}
+                            <PriceInput
+                              value={leg.price}
+                              placeholder={analysis?.legs[i] ? nf(analysis.legs[i].entry) : "LTP"}
+                              onChange={(v) => setLeg(i, { price: v })}
+                              className="num w-[62px] rounded border border-term-border bg-term-bg px-1 py-0.5 text-right text-term-text outline-none focus:border-term-accent"
+                            />
+                          </span>
+                        </td>
+                        <td className="num px-1 py-1 text-right text-term-dim" title={analysis?.legs[i] ? `IV ${nf(analysis.legs[i].iv, 1)}%` : undefined}>
+                          {ltp != null ? nf(ltp, 2) : "–"}
+                        </td>
+                        <td className="py-1 text-center">
+                          <button onClick={() => removeLeg(i)} className="text-term-dim hover:text-down" title="Remove leg" aria-label="Remove leg">
+                            ×
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <div className="flex flex-wrap items-center gap-1 border-t border-term-border bg-term-panel/70 px-2 py-1 text-[10.5px] text-term-dim">
+                <span>Multiplier</span>
+                {[1, 2, 3, 5, 10].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setMult(n)}
+                    className={`rounded border px-1.5 py-0 ${
+                      mult === n ? "border-term-accent bg-term-accent/20 text-term-text" : "border-term-border text-term-dim hover:text-term-text"
+                    }`}
+                  >
+                    ×{n}
+                  </button>
+                ))}
+                {![1, 2, 3, 5, 10].includes(mult) && <span className="num text-term-accent">×{mult}</span>}
+                <span className="ml-auto">
+                  {heldCount > 0 && <span className="text-amber-400">{heldCount} held · </span>}
+                  {legs.length} leg{legs.length === 1 ? "" : "s"}
+                </span>
+              </div>
+            </div>
+          )}
           {legs.map((leg, i) => {
             const lr = legRows[i];
             const atNow = tDays === 0 && !ivShift && analysis != null && Math.round(tgtPrice) === Math.round(analysis.spot);
             return (
             <div
               key={i}
-              className={`rounded-md border border-l-[3px] border-term-border p-2 text-2xs ${
+              className={`rounded-md border border-l-[3px] border-term-border p-2 text-2xs sm:hidden ${
                 leg.side === "BUY" ? "border-l-up" : "border-l-down"
               } ${leg.held ? "bg-amber-500/[0.07]" : "bg-term-panel/70"}`}
             >
@@ -1619,6 +1969,56 @@ export function StrategyBuilder() {
             </div>
           )}
         </div>
+
+        {/* ---- Sensibull-style strategy summary (laptop / unfolded; the folded phone has its own tiles) ---- */}
+        {analysis && legs.length > 0 && (
+          <div className="hidden border-t border-term-border p-2 sm:block">
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-term-border bg-term-border text-[11.5px]">
+              {(
+                [
+                  ["Prob. of profit", analysis.pop != null ? `${nf(analysis.pop, 0)}%` : "–", "text-term-text", "chance the position is in profit at expiry"],
+                  [
+                    heldCount > 0 ? "P&L now · live" : "P&L now",
+                    currentPnl != null ? pnlTxt(currentPnl) : "–",
+                    currentPnl != null ? pnlCls(currentPnl) : "text-term-text",
+                    undefined,
+                  ],
+                  ["Max profit", analysis.maxProfitUnbounded ? "Unlimited" : pnlTxt(analysis.maxProfit + manualPnl), "text-up", undefined],
+                  ["Max loss", analysis.maxLossUnbounded ? "Unlimited" : pnlTxt(analysis.maxLoss + manualPnl), "text-down", undefined],
+                  ["Max RR ratio", analysis.rr != null ? `1 : ${nf(analysis.rr, 2)}` : "–", "text-term-text", "max loss : max profit"],
+                  [
+                    analysis.netPremiumType === "CREDIT" ? "Net credit" : "Net debit",
+                    `₹${nf(Math.abs(analysis.netPremium), 0)}`,
+                    analysis.netPremiumType === "CREDIT" ? "text-up" : "text-down",
+                    undefined,
+                  ],
+                  [
+                    "Margin",
+                    analysis.margin.estimate >= 1e5 ? `${nf(analysis.margin.estimate / 1e5, 2)} L` : `₹${nf(analysis.margin.estimate, 0)}`,
+                    "text-term-text",
+                    analysis.margin.basis ? `estimate · ${analysis.margin.basis}` : "estimate",
+                  ],
+                  ["Theta / day", pnlTxt(analysis.greeks.theta), pnlCls(analysis.greeks.theta), "what a day of time decay adds or costs"],
+                ] as [string, string, string, string | undefined][]
+              ).map(([k, v, c, t]) => (
+                <div key={k} className="flex min-w-0 items-baseline justify-between gap-2 bg-term-panel2 px-2.5 py-1.5" title={t}>
+                  <span className="truncate text-term-dim">{k}</span>
+                  <span className={`num shrink-0 font-semibold ${c}`}>{v}</span>
+                </div>
+              ))}
+              <div className="col-span-2 flex items-baseline justify-between gap-2 bg-term-panel2 px-2.5 py-1.5">
+                <span className="text-term-dim">Breakevens</span>
+                <span className="num font-semibold text-term-text">
+                  {analysis.breakevens.length
+                    ? analysis.breakevens
+                        .map((b) => `${nf(b, 0)} (${b >= analysis.spot ? "+" : ""}${nf(((b - analysis.spot) / analysis.spot) * 100, 1)}%)`)
+                        .join("  ·  ")
+                    : "–"}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ---- hedge finder ---- */}
         {legs.length > 0 && (
@@ -2041,6 +2441,7 @@ export function StrategyBuilder() {
           </div>
 
           </Fold>
+          <div className="sm:hidden">
           <Fold id="saved" title="Saved strategies" badge={saved.length ? String(saved.length) : undefined}>
             <div className="flex flex-col gap-1.5">
           <div className="flex gap-1">
@@ -2087,6 +2488,7 @@ export function StrategyBuilder() {
           ))}
             </div>
           </Fold>
+          </div>
         </div>
         )}
       </div>
@@ -2097,7 +2499,7 @@ export function StrategyBuilder() {
       <div className="flex flex-col lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-term-border">
         {/* strategy name + the numbers that matter, on every tab (laptop / unfolded; the folded phone has its own) */}
         {analysis && (
-          <div className="hidden shrink-0 border-b border-term-border bg-term-panel px-3 pb-2 pt-2.5 sm:block">
+          <div className="hidden shrink-0 border-b border-term-border bg-term-panel px-3 py-2 sm:block">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
               <span className="text-[14px] font-semibold text-term-text">
                 {stratName || `${legs.length} leg${legs.length === 1 ? "" : "s"}`}
@@ -2112,52 +2514,13 @@ export function StrategyBuilder() {
                 {busy && " · updating…"}
               </span>
             </div>
-            <div className="mt-2 grid grid-cols-4 gap-1.5 2xl:grid-cols-8">
-              {(
-                [
-                  [
-                    heldCount > 0 ? "P&L now · live" : "P&L now",
-                    currentPnl != null ? pnlTxt(currentPnl) : "–",
-                    currentPnl != null ? pnlCls(currentPnl) : "text-term-text",
-                  ],
-                  [
-                    "Max profit",
-                    analysis.maxProfitUnbounded ? "Unlimited" : pnlTxt(analysis.maxProfit + manualPnl),
-                    "text-up",
-                  ],
-                  ["Max loss", analysis.maxLossUnbounded ? "Unlimited" : pnlTxt(analysis.maxLoss + manualPnl), "text-down"],
-                  ["POP", analysis.pop != null ? `${nf(analysis.pop, 0)}%` : "–", "text-term-text"],
-                  ["Breakevens", analysis.breakevens.map((b) => nf(b, 0)).join(" · ") || "–", "text-term-text"],
-                  [
-                    analysis.netPremiumType === "CREDIT" ? "Credit" : "Debit",
-                    `₹${nf(Math.abs(analysis.netPremium), 0)}`,
-                    analysis.netPremiumType === "CREDIT" ? "text-up" : "text-down",
-                  ],
-                  [
-                    "Margin",
-                    analysis.margin.estimate >= 1e5
-                      ? `${nf(analysis.margin.estimate / 1e5, 2)} L`
-                      : `₹${nf(analysis.margin.estimate, 0)}`,
-                    "text-term-text",
-                  ],
-                  ["Theta / day", pnlTxt(analysis.greeks.theta), pnlCls(analysis.greeks.theta)],
-                ] as [string, string, string][]
-              ).map(([k, v, c]) => (
-                <div key={k} className="min-w-0 rounded-md border border-term-border bg-term-panel2/70 px-2 py-1.5">
-                  <div className="truncate text-[9.5px] font-semibold uppercase tracking-wide text-term-dim">{k}</div>
-                  <div className={`num truncate font-bold ${k === "Breakevens" ? "text-[12.5px]" : "text-[14px]"} ${c}`} title={v}>
-                    {v}
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
         )}
         {/* one tab bar (was two rows: Payoff / Strategy chart / Greek charts / Backtest + Stats / Chart / ...) */}
         {(() => {
           const active = panel === "payoff" ? (payoffTab === "stats" ? "chart" : payoffTab) : panel;
           const TABS: [string, string, boolean][] = [
-            ["chart", "Payoff", true],
+            ["chart", "Payoff graph", true],
             ["table", "P&L table", false],
             ["legs", "Legs", false],
             ["greeks", "Greeks", false],
@@ -2736,100 +3099,43 @@ export function StrategyBuilder() {
         </div>
 
         {analysis && (
-          <div className="m-2 mt-0 rounded border border-term-border bg-term-bg/20 p-3 text-[10px]">
-            {/* on the P&L table (laptop / unfolded) Time + IV shift sit in the table's own header instead */}
-            <div className={payoffTab === "table" ? "sm:hidden" : ""}>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="font-semibold uppercase tracking-wide text-term-dim">
-                Time to expiry
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={dte}
-                step={1}
-                value={Math.min(tDays, dte)}
-                onChange={(e) => setTDays(Number(e.target.value))}
-                className="h-1 flex-1 min-w-[140px] cursor-pointer accent-amber-500"
-              />
-              <span className="num w-[188px] shrink-0 text-right text-term-text">
-                {tDays === 0 ? (
-                  <>now · T+0 · {leftLbl(0)}</>
-                ) : tDays >= dte ? (
-                  <>expiry day · 0d left</>
-                ) : (
-                  <>
-                    T+{tDays}d · {tDateLbl} · {leftLbl(tDays)}
-                  </>
-                )}
-              </span>
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-1">
-              <span className="text-term-dim">Day</span>
-              {dayChips.map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setTDays(d)}
-                  title={
-                    d === 0
-                      ? "today (T+0)"
-                      : `${new Date(Date.now() + d * 86400000).toLocaleDateString("en-IN", {
-                          day: "2-digit",
-                          month: "short",
-                        })} · ${leftLbl(d)}`
-                  }
-                  className={`chipbtn num ${tDays === d ? "border-transparent bg-amber-500 text-black" : ""}`}
-                >
-                  {d === 0 ? "Now" : d === dte ? "Exp" : `+${d}`}
+          <div className="m-2 mt-0 grid gap-x-6 gap-y-3 rounded-lg border border-term-border bg-term-panel/60 p-3 text-[10.5px] sm:grid-cols-2 xl:grid-cols-3">
+            {/* target price -- drives Legs P&L, Greeks and the T+n column */}
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="font-semibold uppercase tracking-wide text-term-dim">{symbol} target</span>
+                <button onClick={() => setTPrice(Math.round(analysis.spot))} className="text-term-accent hover:underline">
+                  reset
                 </button>
-              ))}
-            </div>
-            {/* what-if IV shift — applied to every leg's IV for the T+n curve/table/greeks */}
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-term-border/50 pt-1.5">
-              <span className="font-semibold uppercase tracking-wide text-term-dim">IV shift</span>
-              <input
-                type="range"
-                min={-15}
-                max={15}
-                step={1}
-                value={ivShift}
-                onChange={(e) => setIvShift(Number(e.target.value))}
-                className="h-1 flex-1 min-w-[140px] cursor-pointer accent-fuchsia-500"
-              />
-              <span className="num w-[188px] shrink-0 text-right text-term-text">
-                {ivShift === 0 ? (
-                  "unchanged"
-                ) : (
-                  <span className={ivShift > 0 ? "text-up" : "text-down"}>
-                    {ivShift > 0 ? "+" : ""}
-                    {ivShift}% IV
-                  </span>
-                )}
-              </span>
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-1">
-              <span className="text-term-dim">IV</span>
-              {IV_SHIFT_CHIPS.map((v) => (
+              </div>
+              <div className="mt-1 flex items-center gap-1">
                 <button
-                  key={v}
-                  onClick={() => setIvShift(v)}
-                  title={v === 0 ? "current IV" : `IV ${v > 0 ? "+" : ""}${v} points (e.g. 12% -> ${12 + v}%)`}
-                  className={`chipbtn num ${ivShift === v ? "border-transparent bg-fuchsia-500 text-black" : ""}`}
+                  className="btn px-2 py-0.5 text-[13px]"
+                  onClick={() => setTPrice(Math.round(tgtPrice - (chain?.strikeStep || 50)))}
+                  aria-label="Target lower"
                 >
-                  {v === 0 ? "0" : `${v > 0 ? "+" : ""}${v}%`}
+                  −
                 </button>
-              ))}
-            </div>
-            </div>
-            {/* target price — drives Legs P&L, Greeks and the T+n column */}
-            <div
-              className={`flex flex-wrap items-center gap-x-3 gap-y-1 ${
-                payoffTab === "table" ? "sm:mt-0 sm:border-t-0 sm:pt-0" : ""
-              } mt-1.5 border-t border-term-border/50 pt-1.5`}
-            >
-              <span className="font-semibold uppercase tracking-wide text-term-dim">
-                {symbol} target
-              </span>
+                <div className="num flex-1 rounded border border-term-border bg-term-bg px-2 py-1 text-center text-[13px] font-semibold text-term-text">
+                  {nf(tgtPrice, 0)}{" "}
+                  {(() => {
+                    const pc = ((tgtPrice - analysis.spot) / analysis.spot) * 100;
+                    const z = Math.abs(pc) < 0.05;
+                    return (
+                      <span className={`text-[11px] ${z ? "text-term-dim" : pc > 0 ? "text-up" : "text-down"}`}>
+                        ({z ? "at spot" : `${pc > 0 ? "+" : ""}${nf(pc, 1)}%`})
+                      </span>
+                    );
+                  })()}
+                </div>
+                <button
+                  className="btn px-2 py-0.5 text-[13px]"
+                  onClick={() => setTPrice(Math.round(tgtPrice + (chain?.strikeStep || 50)))}
+                  aria-label="Target higher"
+                >
+                  +
+                </button>
+              </div>
               <input
                 type="range"
                 min={Math.round(analysis.spot * 0.85)}
@@ -2837,21 +3143,85 @@ export function StrategyBuilder() {
                 step={chain?.strikeStep || 50}
                 value={Math.round(tgtPrice)}
                 onChange={(e) => setTPrice(Number(e.target.value))}
-                className="h-1 flex-1 min-w-[140px] cursor-pointer accent-sky-500"
+                className="mt-2 h-1 w-full cursor-pointer accent-sky-500"
+                aria-label="Target price"
               />
-              <span className="num w-[188px] shrink-0 text-right text-term-text">
-                {nf(tgtPrice, 0)}{" "}
-                <span className={tgtPrice >= analysis.spot ? "text-up" : "text-down"}>
-                  ({tgtPrice >= analysis.spot ? "+" : ""}
-                  {nf(((tgtPrice - analysis.spot) / analysis.spot) * 100, 1)}%)
+            </div>
+            {/* target date (on the P&L table, laptop / unfolded: in the table's own header) */}
+            <div className={payoffTab === "table" ? "sm:hidden" : ""}>
+              <div className="flex items-center justify-between">
+                <span className="font-semibold uppercase tracking-wide text-term-dim">Target date</span>
+                <span className="num text-term-text">
+                  {tDays === 0 ? <>now · {leftLbl(0)}</> : tDays >= dte ? <>expiry day</> : <>T+{tDays}d · {tDateLbl} · {leftLbl(tDays)}</>}
                 </span>
-              </span>
-              <button
-                onClick={() => setTPrice(Math.round(analysis.spot))}
-                className="chipbtn"
-              >
-                reset
-              </button>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={dte}
+                step={1}
+                value={Math.min(tDays, dte)}
+                onChange={(e) => setTDays(Number(e.target.value))}
+                className="mt-2.5 h-1 w-full cursor-pointer accent-amber-500"
+                aria-label="Target date"
+              />
+              <div className="mt-2 flex flex-wrap items-center gap-1">
+                {dayChips.map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => setTDays(d)}
+                    title={
+                      d === 0
+                        ? "today (T+0)"
+                        : `${new Date(Date.now() + d * 86400000).toLocaleDateString("en-IN", {
+                            day: "2-digit",
+                            month: "short",
+                          })} · ${leftLbl(d)}`
+                    }
+                    className={`chipbtn num ${tDays === d ? "border-transparent bg-amber-500 text-black" : ""}`}
+                  >
+                    {d === 0 ? "Now" : d === dte ? "Exp" : `+${d}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* what-if IV shift -- applied to every leg's IV for the T+n curve / table / greeks */}
+            <div className={payoffTab === "table" ? "sm:hidden" : ""}>
+              <div className="flex items-center justify-between">
+                <span className="font-semibold uppercase tracking-wide text-term-dim">IV change</span>
+                <span className="num">
+                  {ivShift === 0 ? (
+                    <span className="text-term-text">unchanged</span>
+                  ) : (
+                    <span className={ivShift > 0 ? "text-up" : "text-down"}>
+                      {ivShift > 0 ? "+" : ""}
+                      {ivShift}% IV
+                    </span>
+                  )}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={-15}
+                max={15}
+                step={1}
+                value={ivShift}
+                onChange={(e) => setIvShift(Number(e.target.value))}
+                className="mt-2.5 h-1 w-full cursor-pointer accent-fuchsia-500"
+                aria-label="IV change"
+              />
+              <div className="mt-2 flex flex-wrap items-center gap-1">
+                {IV_SHIFT_CHIPS.map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setIvShift(v)}
+                    title={v === 0 ? "current IV" : `IV ${v > 0 ? "+" : ""}${v} points (e.g. 12% -> ${12 + v}%)`}
+                    className={`chipbtn num ${ivShift === v ? "border-transparent bg-fuchsia-500 text-black" : ""}`}
+                  >
+                    {v === 0 ? "0" : `${v > 0 ? "+" : ""}${v}`}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}
