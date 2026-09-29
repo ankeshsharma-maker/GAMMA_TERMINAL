@@ -179,36 +179,21 @@ def _cum_strike_flip(rows: list[dict], spot: float, atm: float) -> float | None:
     return atm if rows else None
 
 
-def _gamma_flip(
-    rows: list[dict], spot: float, atm: float, t: float | None = None, q: float = DIVIDEND_YIELD
+def gamma_flip_from_legs(
+    legs: list[tuple[float, float, float]], spot: float, t: float, q: float = DIVIDEND_YIELD
 ) -> float | None:
-    """The gamma flip the way SpotGamma / NiftyTrader and most GEX tools define it: the SPOT
-    level at which the dealers' total gamma exposure changes sign. Move the spot across a
-    +/-6% grid, re-price every option's gamma AT that spot (its own IV, the same time to
-    expiry), sum  call gamma*OI - put gamma*OI  (dealers long the calls, short the puts they
-    sold the public), and find where that total crosses zero -- the crossing nearest spot.
-    Above it dealers are long gamma (they damp moves), below it short gamma (they chase them).
-
-    Until 2026-09-29 this was the strike where the CUMULATIVE per-strike (put - call) gamma*OI
-    crossed zero, which is a different number: on 29-Sep SENSEX it gave 73,964 while this
-    definition (and NiftyTrader) gave ~72,750. That old reading is kept as the fallback when the
-    total never changes sign inside the grid (one-sided OI), or when no time / IV is known."""
-    if not rows:
+    """The standard gamma flip (SpotGamma / NiftyTrader): the SPOT level at which the dealers' total
+    gamma exposure changes sign. `legs` = (strike, signed OI, sigma) with calls +OI and puts -OI
+    (dealers long the calls, short the puts they sold the public), sigma as a fraction. Move the spot
+    across a +/-6% grid (0.25% steps), re-price every leg's gamma AT that spot with its own sigma and the
+    same time to expiry `t` (years), sum, and bisect each sign change to ~1 pt; return the crossing
+    nearest `spot`, or None when the total never changes sign / there is nothing to price.
+    Shared by the live chain (_gamma_flip) and the historical dashboards (upstox_data /
+    nse_bhavcopy), so every place agrees on the definition. Above the flip dealers are long gamma
+    (they damp moves), below it short gamma (they chase them)."""
+    legs = [(k, w, sg) for k, w, sg in legs if w and sg and sg > 0 and k > 0]
+    if not legs or not t or t <= 0 or not spot:
         return None
-    if not t or t <= 0 or not spot:
-        return _cum_strike_flip(rows, spot, atm)
-    legs: list[tuple[float, float, float]] = []  # (strike, +/-OI, sigma): +call / -put
-    for r in rows:
-        k = r["strike"]
-        for side, sgn in (("call", 1.0), ("put", -1.0)):
-            leg = r[side]
-            # NSE's published IV first (what NiftyTrader & co. use: on 29-Sep SENSEX it put the flip
-            # at 72,728 vs their 72,737; our own mid-price IV gave 72,549), ours when NSE has none
-            sig = (leg.get("iv") or leg.get("ivCalc") or 0) / 100.0
-            if leg["oi"] and sig > 0:
-                legs.append((k, sgn * leg["oi"], sig))
-    if not legs:
-        return _cum_strike_flip(rows, spot, atm)
     sq_t = math.sqrt(t)
     carry = RISK_FREE_RATE - q
     disc_q = math.exp(-q * t)
@@ -219,14 +204,13 @@ def _gamma_flip(
             st = sig * sq_t
             d1 = (math.log(sp / k) + (carry + 0.5 * sig * sig) * t) / st
             tot += w * disc_q * math.exp(-0.5 * d1 * d1) / (sp * st)
-        return tot * sp * sp  # dollar-gamma scaling; the sign (all that matters here) is unchanged
+        return tot * sp * sp  # dollar-gamma scaling; only the sign matters here
 
     grid = [spot * (1 + (i - 24) * 0.0025) for i in range(49)]  # -6% .. +6% in 0.25% steps
     vals = [(g, total(g)) for g in grid]
     crossings: list[float] = []
     for (s0, v0), (s1, v1) in zip(vals, vals[1:]):
         if v0 == 0 or (v0 < 0) != (v1 < 0):
-            # the grid only brackets it; bisect to ~1 pt (gamma isn't linear across 0.25%)
             lo_s, hi_s, v_lo = s0, s1, v0
             for _ in range(16):
                 mid = (lo_s + hi_s) / 2
@@ -237,8 +221,34 @@ def _gamma_flip(
                     hi_s = mid
             crossings.append((lo_s + hi_s) / 2)
     if not crossings:
-        return _cum_strike_flip(rows, spot, atm)
+        return None
     return round(min(crossings, key=lambda x: abs(x - spot)), 2)
+
+
+def _gamma_flip(
+    rows: list[dict], spot: float, atm: float, t: float | None = None, q: float = DIVIDEND_YIELD
+) -> float | None:
+    """The live chain's gamma flip (standard definition, see gamma_flip_from_legs), from the rows'
+    NSE-published IV (ours when NSE has none). Until 2026-09-29 this was the strike where the CUMULATIVE
+    per-strike (put - call) gamma*OI crossed zero -- a different number (SENSEX that day: 73,964 vs
+    NiftyTrader's 72,737); that reading stays as the fallback when the total never changes sign
+    (one-sided OI) or no time to expiry is known."""
+    if not rows:
+        return None
+    if not t or t <= 0 or not spot:
+        return _cum_strike_flip(rows, spot, atm)
+    legs: list[tuple[float, float, float]] = []
+    for r in rows:
+        k = r["strike"]
+        for side, sgn in (("call", 1.0), ("put", -1.0)):
+            leg = r[side]
+            # NSE's published IV first (what NiftyTrader & co. use; our own mid-price IV moved the
+            # 29-Sep SENSEX flip by ~180 pts), ours when NSE has none
+            sig = (leg.get("iv") or leg.get("ivCalc") or 0) / 100.0
+            if leg["oi"] and sig > 0:
+                legs.append((k, sgn * leg["oi"], sig))
+    flip = gamma_flip_from_legs(legs, spot, t, q)
+    return flip if flip is not None else _cum_strike_flip(rows, spot, atm)
 
 
 def build_chain(

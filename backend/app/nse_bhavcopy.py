@@ -32,7 +32,7 @@ from . import nse_client
 from .config import DATA_DIR, DIVIDEND_YIELD, RISK_FREE_RATE, STRIKE_WINDOW
 from .greeks import greeks as bs_greeks
 from .greeks import implied_vol
-from .processing import IST, _MIN_T, year_fraction
+from .processing import IST, _MIN_T, gamma_flip_from_legs, year_fraction
 
 _STEP = {"NIFTY": 50, "BANKNIFTY": 100, "FINNIFTY": 50, "MIDCPNIFTY": 25, "NIFTYNXT50": 50}
 
@@ -143,11 +143,21 @@ def _compute_day(symbol: str, rows: list[dict], d: date) -> dict | None:
             atm_ce_delta, atm_ce_gamma = g_ce["delta"], g_ce["gamma"]
             atm_pe_delta, atm_pe_gamma = g_pe["delta"], g_pe["gamma"]
 
-    gamma_flip = atm
-    for (k0, v0), (k1, v1) in zip(pts, pts[1:]):
-        if (v0 <= 0 <= v1 or v0 >= 0 >= v1) and v0 != v1:
-            gamma_flip = round(k0 + (-v0) / (v1 - v0) * (k1 - k0), 2)
-            break
+    # the standard definition (spot where total dealer gamma changes sign), shared with the live
+    # chain (processing.gamma_flip_from_legs); the old cumulative-by-strike crossing is the fallback
+    legs_for_flip = []
+    for k in window:
+        for side, sgn in (("CE", 1.0), ("PE", -1.0)):
+            oi = by_strike[k].get(side, {}).get("oi", 0.0)
+            if oi:
+                legs_for_flip.append((k, sgn * oi, iv.get((k, side)) or _fallback_iv(k, side)))
+    gamma_flip = gamma_flip_from_legs(legs_for_flip, spot, t, DIVIDEND_YIELD)
+    if gamma_flip is None:
+        gamma_flip = atm
+        for (k0, v0), (k1, v1) in zip(pts, pts[1:]):
+            if (v0 <= 0 <= v1 or v0 >= 0 >= v1) and v0 != v1:
+                gamma_flip = round(k0 + (-v0) / (v1 - v0) * (k1 - k0), 2)
+                break
 
     return {
         "date": ds, "spot": round(spot, 2), "netGex": round(net_gex, 2), "gammaFlip": gamma_flip,

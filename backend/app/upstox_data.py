@@ -285,7 +285,7 @@ def _compute_greeks_series(
     from .config import DIVIDEND_YIELD, RISK_FREE_RATE, STRIKE_WINDOW
     from .greeks import greeks as bs_greeks
     from .greeks import implied_vol
-    from .processing import IST, _MIN_T, year_fraction
+    from .processing import IST, _MIN_T, gamma_flip_from_legs, year_fraction
 
     out: list[dict] = []
     for d in sorted(per_date):
@@ -348,10 +348,23 @@ def _compute_greeks_series(
             cum += g_pe["gamma"] * pe_oi - g_ce["gamma"] * ce_oi
             pts.append((k, cum))
 
-        for (k0, v0), (k1, v1) in zip(pts, pts[1:]):
-            if (v0 <= 0 <= v1 or v0 >= 0 >= v1) and v0 != v1:
-                gamma_flip = round(k0 + (-v0) / (v1 - v0) * (k1 - k0), 2)
-                break
+        # the standard definition (spot where total dealer gamma changes sign, re-priced at each
+        # spot) -- the same function the live chain uses (processing.gamma_flip_from_legs); the old
+        # cumulative-by-strike crossing is only the fallback when the total never changes sign
+        legs_for_flip = []
+        for k in window:
+            for side, sgn in (("CE", 1.0), ("PE", -1.0)):
+                oi = pd[k].get(side, {}).get("oi", 0.0)
+                if oi:
+                    legs_for_flip.append((k, sgn * oi, iv.get((k, side)) or _fallback_iv(k, side)))
+        sweep = gamma_flip_from_legs(legs_for_flip, spot, t, DIVIDEND_YIELD)
+        if sweep is not None:
+            gamma_flip = sweep
+        else:
+            for (k0, v0), (k1, v1) in zip(pts, pts[1:]):
+                if (v0 <= 0 <= v1 or v0 >= 0 >= v1) and v0 != v1:
+                    gamma_flip = round(k0 + (-v0) / (v1 - v0) * (k1 - k0), 2)
+                    break
 
         out.append({
             "date": d,
