@@ -2090,7 +2090,7 @@ export function StrategyBuilder() {
       <div className="flex flex-col lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-term-border">
         {/* strategy name + the numbers that matter, on every tab (laptop / unfolded; the folded phone has its own) */}
         {analysis && (
-          <div className="hidden border-b border-term-border bg-term-panel px-3 pb-2 pt-2.5 sm:block">
+          <div className="hidden shrink-0 border-b border-term-border bg-term-panel px-3 pb-2 pt-2.5 sm:block">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
               <span className="text-[14px] font-semibold text-term-text">
                 {stratName || `${legs.length} leg${legs.length === 1 ? "" : "s"}`}
@@ -2105,7 +2105,7 @@ export function StrategyBuilder() {
                 {busy && " · updating…"}
               </span>
             </div>
-            <div className="mt-2 grid grid-cols-4 gap-1.5 lg:grid-cols-8">
+            <div className="mt-2 grid grid-cols-4 gap-1.5 2xl:grid-cols-8">
               {(
                 [
                   [
@@ -2175,7 +2175,7 @@ export function StrategyBuilder() {
             backtest: "Replay these legs against past daily data",
           };
           return (
-            <div className="flex items-end gap-0.5 overflow-x-auto border-b border-term-border bg-term-panel px-2 pt-1 [scrollbar-width:none]">
+            <div className="flex shrink-0 items-end gap-0.5 overflow-x-auto border-b border-term-border bg-term-panel px-2 pt-1 [scrollbar-width:none]">
               {TABS.map(([k, l, phone]) => (
                 <button
                   key={k}
