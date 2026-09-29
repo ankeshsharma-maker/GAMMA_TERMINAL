@@ -72,9 +72,140 @@ const rupee = (v: number) => `${v >= 0 ? "+" : "−"}₹${nf(Math.abs(v), 0)}`;
 
 function Stat({ label, value, cls = "", title }: { label: string; value: string; cls?: string; title?: string }) {
   return (
-    <div className="flex min-w-[76px] flex-col rounded border border-term-border px-2 py-1" title={title}>
-      <span className="text-[9px] uppercase tracking-wide text-term-dim">{label}</span>
-      <span className={`num text-xs font-semibold ${cls}`}>{value}</span>
+    <div
+      className="flex min-w-[110px] flex-1 flex-col rounded-md border border-term-border bg-term-panel2/70 px-2.5 py-1.5"
+      title={title}
+    >
+      <span className="truncate text-[9.5px] font-semibold uppercase tracking-wide text-term-dim">{label}</span>
+      <span className={`num text-[15px] font-bold ${cls || "text-term-text"}`}>{value}</span>
+    </div>
+  );
+}
+
+/** a small label over a control group */
+function Ctl({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[9px] font-semibold uppercase tracking-wider text-term-dim">{label}</span>
+      <div className="flex items-center gap-1.5">{children}</div>
+    </div>
+  );
+}
+
+const GREEK_COLOR: Record<string, string> = { delta: "#38bdf8", theta: "#22c55e", vega: "#e879f9", gamma: "#f59e0b" };
+
+/** One Greek through the day, in its own little chart (Greek charts = 4 of these, 2 x 2). */
+function MiniGreek({
+  meta,
+  times,
+  net,
+  legs,
+  legNames,
+  showLegs,
+  day0,
+}: {
+  meta: (typeof GREEKS)[number];
+  times: number[];
+  net: (number | null)[];
+  legs: (number | null)[][];
+  legNames: string[];
+  showLegs: boolean;
+  day0: number;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const cRef = useRef<{ chart: IChartApi; net: ISeriesApi<"Baseline">; legs: ISeriesApi<"Line">[] } | null>(null);
+  const color = GREEK_COLOR[meta.key] ?? NET;
+  useEffect(() => {
+    if (!ref.current) return;
+    const chart = createChart(ref.current, {
+      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#7a8699", fontSize: 10 },
+      grid: { vertLines: { visible: false }, horzLines: { color: "#141c27" } },
+      crosshair: { mode: CrosshairMode.Magnet },
+      localization: IST_LOCALIZATION,
+      rightPriceScale: { borderColor: "#1e2733" },
+      timeScale: { borderColor: "#1e2733", timeVisible: true, secondsVisible: false, tickMarkFormatter: istTickFormatter },
+      handleScroll: false,
+      handleScale: false,
+      autoSize: true,
+    });
+    const netS = chart.addBaselineSeries({
+      baseValue: { type: "price", price: 0 },
+      topLineColor: color,
+      topFillColor1: "rgba(34,197,94,0.22)",
+      topFillColor2: "rgba(34,197,94,0.02)",
+      bottomLineColor: color,
+      bottomFillColor1: "rgba(239,68,68,0.02)",
+      bottomFillColor2: "rgba(239,68,68,0.22)",
+      lineWidth: 2,
+      priceFormat: { type: "price", precision: meta.prec, minMove: 1 / 10 ** meta.prec },
+    });
+    const legS = LEG_COLORS.slice(0, MAX_LEG_LINES).map((c) =>
+      chart.addLineSeries({
+        color: c,
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        priceFormat: { type: "price", precision: meta.prec, minMove: 1 / 10 ** meta.prec },
+      })
+    );
+    cRef.current = { chart, net: netS, legs: legS };
+    return () => {
+      chart.remove();
+      cRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    const c = cRef.current;
+    if (!c) return;
+    const pts = (vals: (number | null)[]) => {
+      const out: { time: UTCTimestamp; value: number }[] = [];
+      for (let i = 0; i < times.length; i++) if (vals[i] != null) out.push({ time: times[i] as UTCTimestamp, value: vals[i] as number });
+      return out;
+    };
+    c.net.setData(pts(net));
+    c.legs.forEach((ls, j) => ls.setData(showLegs && legs[j] ? pts(legs[j]) : []));
+    c.chart.timeScale().fitContent();
+  }, [times, net, legs, showLegs]);
+  let cur: number | null = null;
+  for (let i = net.length - 1; i >= 0; i--)
+    if (net[i] != null) {
+      cur = net[i];
+      break;
+    }
+  const start = net[day0];
+  const d = cur != null && start != null ? cur - start : null;
+  return (
+    <div className="flex flex-col rounded-lg border border-term-border bg-term-panel2/50">
+      <div className="flex items-baseline justify-between gap-2 px-2.5 pt-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-term-dim">
+          <span style={{ color }}>{meta.sym}</span> {meta.name}
+          {meta.unit && <span className="font-normal normal-case"> · {meta.unit}</span>}
+        </span>
+        <span className="num text-[15px] font-bold text-term-text">
+          {cur != null ? nf(cur, meta.prec) : "–"}
+          {d != null && (
+            <span className={`ml-1.5 text-[10.5px] font-medium ${signColor(d)}`}>
+              {d >= 0 ? "+" : ""}
+              {nf(d, meta.prec)} today
+            </span>
+          )}
+        </span>
+      </div>
+      <div className="px-2.5 text-[10px] text-term-dim">{meta.hint}</div>
+      <div className="relative h-[190px]">
+        <div ref={ref} className="absolute inset-0" />
+      </div>
+      {showLegs && legNames.length > 0 && (
+        <div className="flex flex-wrap gap-x-2 px-2.5 pb-1.5 text-[9.5px] text-term-dim">
+          {legNames.map((l, j) => (
+            <span key={j} className="inline-flex items-center gap-1">
+              <span className="inline-block h-0.5 w-2.5" style={{ background: LEG_COLORS[j] }} />
+              {l}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -335,6 +466,7 @@ export function StrategyChart({
       }
     };
     dropLine("entry", S.cand);
+    dropLine("entry", S.pnl);
     dropLine("zero", S.net);
     clearAll();
     idxRef.current = new Map();
@@ -399,10 +531,31 @@ export function StrategyChart({
           ]);
       } else {
         S.pnl.setData(T.map((time, i) => ({ time, value: derived.pnl[i] })));
+        // the latest session's best and worst P&L, marked on the line
+        let hiI = derived.day0;
+        let loI = derived.day0;
+        for (let i = derived.day0; i < derived.n; i++) {
+          if (derived.pnl[i] > derived.pnl[hiI]) hiI = i;
+          if (derived.pnl[i] < derived.pnl[loI]) loI = i;
+        }
+        const mk: Parameters<typeof S.pnl.setMarkers>[0] = [];
         if (derived.markerTime != null)
-          S.pnl.setMarkers([
-            { time: derived.markerTime as UTCTimestamp, position: "belowBar", color: "#eab308", shape: "arrowUp", text: "Entry" },
-          ]);
+          mk.push({ time: derived.markerTime as UTCTimestamp, position: "belowBar", color: "#eab308", shape: "arrowUp", text: "Entry" });
+        if (hiI !== loI) {
+          // dots only: a text label at the chart's edge gets cut off; the values are in the tiles above
+          mk.push({ time: T[hiI], position: "aboveBar", color: "#22c55e", shape: "circle", text: "" });
+          mk.push({ time: T[loI], position: "belowBar", color: "#ef4444", shape: "circle", text: "" });
+        }
+        mk.sort((a, b) => (a.time as number) - (b.time as number));
+        S.pnl.setMarkers(mk);
+        lineRef.current.entry = S.pnl.createPriceLine({
+          price: 0,
+          color: "#eab308",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: false,
+          title: "Entry",
+        });
       }
     } else if (data.greeks) {
       const g = data.greeks;
@@ -494,34 +647,39 @@ export function StrategyChart({
 
   return (
     <div className="flex flex-col gap-2 p-2 lg:min-h-0 lg:flex-1">
-      {/* controls */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-2xs">
-        <div className="seg" title="Candle size">
-          {INTERVALS.map(([v, l]) => (
-            <button key={v} className={interval === v ? "on" : ""} onClick={() => setIntervalS(v)}>
-              {l}
-            </button>
-          ))}
-        </div>
-        <div className="seg" title="How many trading sessions to show">
-          {DAYS.map(([v, l]) => (
-            <button key={v} className={days === v ? "on" : ""} onClick={() => setDays(v)}>
-              {l}
-            </button>
-          ))}
-        </div>
+      {/* controls, in labelled groups */}
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-2 rounded-lg border border-term-border bg-term-panel2/40 px-3 py-2 text-2xs">
+        <Ctl label="Candle">
+          <div className="seg" title="Candle size">
+            {INTERVALS.map(([v, l]) => (
+              <button key={v} className={interval === v ? "on" : ""} onClick={() => setIntervalS(v)}>
+                {l}
+              </button>
+            ))}
+          </div>
+        </Ctl>
+        <Ctl label="Range">
+          <div className="seg" title="How many trading sessions to show">
+            {DAYS.map(([v, l]) => (
+              <button key={v} className={days === v ? "on" : ""} onClick={() => setDays(v)}>
+                {l}
+              </button>
+            ))}
+          </div>
+        </Ctl>
         {mode === "premium" && (
           <>
-            <div className="seg" title="What to plot">
-              <button className={view === "premium" ? "on" : ""} onClick={() => setView("premium")}>
-                Premium
-              </button>
-              <button className={view === "pnl" ? "on" : ""} onClick={() => setView("pnl")}>
-                P&amp;L ₹
-              </button>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-term-dim">Entry</span>
+            <Ctl label="Plot">
+              <div className="seg" title="What to plot">
+                <button className={view === "premium" ? "on" : ""} onClick={() => setView("premium")}>
+                  Premium
+                </button>
+                <button className={view === "pnl" ? "on" : ""} onClick={() => setView("pnl")}>
+                  P&amp;L ₹
+                </button>
+              </div>
+            </Ctl>
+            <Ctl label="Entry from">
               <div className="seg">
                 <button
                   className={`disabled:cursor-not-allowed disabled:opacity-40 ${entryMode === "position" ? "on" : ""}`}
@@ -550,13 +708,15 @@ export function StrategyChart({
                   Click bar
                 </button>
               </div>
-            </div>
+            </Ctl>
           </>
         )}
-        <div className="flex items-center gap-1.5">
-          <button className={`chipbtn ${showSpot ? "on" : ""}`} onClick={() => setShowSpot((v) => !v)}>
-            Spot
-          </button>
+        <Ctl label="Show">
+          {mode === "premium" && (
+            <button className={`chipbtn ${showSpot ? "on" : ""}`} onClick={() => setShowSpot((v) => !v)}>
+              Spot
+            </button>
+          )}
           {(mode === "greeks" || view === "premium") && (
             <button
               className={`chipbtn ${showLegs ? "on" : ""}`}
@@ -566,8 +726,8 @@ export function StrategyChart({
               Legs
             </button>
           )}
-        </div>
-        <span className="ml-auto text-term-dim">
+        </Ctl>
+        <span className="ml-auto self-center text-[10px] text-term-dim">
           {data
             ? `${data.sessions.length} session${data.sessions.length > 1 ? "s" : ""} · ${data.source.join(" + ")}`
             : ""}
@@ -600,49 +760,69 @@ export function StrategyChart({
             value={pnlNow != null ? rupee(pnlNow) : "–"}
             cls={signColor(pnlNow)}
           />
+          {view === "pnl" && (
+            <Stat
+              label="Day best / worst"
+              value={(() => {
+                const seg = derived.pnl.slice(derived.day0);
+                return seg.length ? `${rupee(Math.max(...seg))} / ${rupee(Math.min(...seg))}` : "–";
+              })()}
+              title="The latest session's highest and lowest P&L (green / red dots on the line)"
+            />
+          )}
           <Stat label="Spot" value={spotNow != null ? nf(spotNow, 1) : "–"} />
         </div>
       )}
       {data && derived && mode === "greeks" && data.greeks && (
-        <div className="flex flex-wrap gap-1.5">
-          {GREEKS.map((g) => {
-            const arr = data.greeks!.net[g.key];
-            const cur = arr[at];
-            const start = arr[derived.day0];
-            const d = cur != null && start != null ? cur - start : null;
-            const on = greek === g.key;
+        <>
+          {(() => {
+            const iv = data.greeks.net.iv;
+            let cur: number | null = null;
+            for (let i = iv.length - 1; i >= 0; i--)
+              if (iv[i] != null) {
+                cur = iv[i];
+                break;
+              }
+            const st = iv[derived.day0];
+            const d = cur != null && st != null ? cur - st : null;
             return (
-              <button
-                key={g.key}
-                onClick={() => setGreek(g.key)}
-                title={`${g.name} — ${g.hint}`}
-                className={`flex min-w-[92px] flex-col rounded border px-2 py-1 text-left transition-colors ${
-                  on
-                    ? "border-term-accent bg-term-accent text-white"
-                    : "border-term-dim/70 bg-term-bg/40 text-term-dim hover:text-term-text"
-                }`}
-              >
-                <span className="text-[9px] uppercase tracking-wide opacity-80">
-                  {g.sym} {g.name}
-                  {g.unit ? ` · ${g.unit}` : ""}
-                </span>
-                <span className="num text-xs font-semibold">
-                  {cur != null ? nf(cur, g.prec) : "–"}
+              <div className="flex flex-wrap items-baseline gap-x-3 text-[11px] text-term-dim">
+                <span>
+                  σ IV (vega-weighted) <span className="num text-[13px] font-semibold text-term-text">{cur != null ? `${nf(cur, 2)}%` : "–"}</span>
                   {d != null && (
-                    <span className={`ml-1.5 text-[10px] font-normal ${on ? "text-white/80" : signColor(d)}`}>
+                    <span className={`num ml-1 ${signColor(d)}`}>
                       {d >= 0 ? "+" : ""}
-                      {nf(d, g.prec)}
+                      {nf(d, 2)} today
                     </span>
                   )}
                 </span>
-              </button>
+                <span>Each chart: net of all legs; green above zero, red below.</span>
+              </div>
             );
-          })}
-        </div>
+          })()}
+          <div className="grid gap-2 md:grid-cols-2">
+            {GREEKS.filter((g) => g.key !== "iv").map((g) => (
+              <MiniGreek
+                key={g.key}
+                meta={g}
+                times={data.times}
+                net={data.greeks!.net[g.key]}
+                legs={data.greeks!.legs.slice(0, MAX_LEG_LINES).map((l) => l[g.key])}
+                legNames={legLines.map(legLabel)}
+                showLegs={showLegs}
+                day0={derived.day0}
+              />
+            ))}
+          </div>
+        </>
       )}
 
-      {/* chart */}
-      <div className="relative min-h-[340px] rounded border border-term-border bg-term-bg/20 lg:min-h-[300px] lg:flex-1">
+      {/* chart (the Greek charts view draws its own four) */}
+      <div
+        className={`relative rounded-lg border border-term-border bg-term-bg/20 ${
+          mode === "greeks" ? (data && data.greeks ? "hidden" : "min-h-[200px]") : "min-h-[420px] lg:min-h-[440px] lg:flex-1"
+        }`}
+      >
         <div ref={wrapRef} className="absolute inset-0" />
 
         {data && derived && (

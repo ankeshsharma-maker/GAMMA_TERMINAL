@@ -28,6 +28,60 @@ import { VSplit, clamp, readNum } from "./VSplit";
 const IV_SHIFT_CHIPS = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5];
 const BUILDER_W_LS = "layout.builderW";
 
+/** A Builder section that folds away (Hedge finder, Bracket, Schedule, Saved); remembers open / closed. */
+function Fold({
+  id,
+  title,
+  titleCls = "",
+  badge,
+  defaultOpen = false,
+  children,
+}: {
+  id: string;
+  title: string;
+  titleCls?: string;
+  badge?: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const key = `sb.fold.${id}`;
+  const [open, setOpen] = useState(() => {
+    try {
+      const v = localStorage.getItem(key);
+      return v == null ? defaultOpen : v === "1";
+    } catch {
+      return defaultOpen;
+    }
+  });
+  const toggle = () =>
+    setOpen((o) => {
+      try {
+        localStorage.setItem(key, o ? "0" : "1");
+      } catch {
+        /* ignore */
+      }
+      return !o;
+    });
+  return (
+    <div className="border-t border-term-border">
+      <button
+        onClick={toggle}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-term-dim hover:bg-term-bg/40 hover:text-term-text"
+      >
+        <span className={`inline-block w-2.5 transition-transform ${open ? "rotate-90" : ""}`}>▸</span>
+        <span className={titleCls}>{title}</span>
+        {badge && (
+          <span className="ml-auto rounded bg-term-accent/15 px-1.5 py-0.5 text-[10px] normal-case tracking-normal text-term-accent">
+            {badge}
+          </span>
+        )}
+      </button>
+      {open && <div className="px-2 pb-2.5">{children}</div>}
+    </div>
+  );
+}
+
 /** compact labelled number input for the hedge finder's advanced targets */
 function AdvNum({
   label,
@@ -313,6 +367,8 @@ export function StrategyBuilder() {
   const [gMulQty, setGMulQty] = useState(true); // greeks × number of lots
   const [manualPnl, setManualPnl] = useState(0); // booked / manual P&L offset added to every P&L
   const [manualStr, setManualStr] = useState("");
+  // what the loaded strategy is called (template / saved name / "Live positions"), for the header
+  const [stratName, setStratName] = useState("");
   const [ivSeries, setIvSeries] = useState<number[]>([]);
   // "time to expiry" payoff: days from today (0 = now / T+0, dte = expiry)
   const [tDays, setTDays] = useState(0);
@@ -592,6 +648,7 @@ export function StrategyBuilder() {
 
   const loadTemplate = (name: string) => {
     if (name && templates[name]) {
+      setStratName(name);
       setFromBroker(false);
       setAddingLeg(false);
       update(templates[name].map((l) => ({ ...l })));
@@ -601,6 +658,7 @@ export function StrategyBuilder() {
   const loadFromPaper = () =>
     api.strategyFromPaper().then(
       (d) => {
+        setStratName("Paper positions");
         setFromBroker(false);
         setExecuteHeld(false);
         selectSymbol(d.symbol, true);
@@ -615,6 +673,7 @@ export function StrategyBuilder() {
   const loadFromBroker = () =>
     api.strategyFromBroker(symbol).then(
       (d) => {
+        setStratName("Live positions");
         setFromBroker(true);
         setExecuteHeld(false);
         selectSymbol(d.symbol, true);
@@ -641,7 +700,10 @@ export function StrategyBuilder() {
       });
   };
 
-  const loadSaved = (s: SavedStrategy) => update(s.legs.map((l) => ({ ...l })));
+  const loadSaved = (s: SavedStrategy) => {
+    setStratName(s.name);
+    update(s.legs.map((l) => ({ ...l })));
+  };
   const delSaved = (id: string) =>
     api.deleteStrategy(id).then((d) => setSaved(d.strategies));
 
@@ -999,59 +1061,78 @@ export function StrategyBuilder() {
     }`;
 
   // ---- Legs P&L tab: per-leg P&L at the (target price, target date) ----
+  const legMax = Math.max(1, ...legRows.map((r) => Math.abs(r.tgtPnl)), Math.abs(manualPnl));
   const legsEl = analysis && (
-    <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3">
-      <div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-term-dim">
-        Legs P&amp;L @ {nf(tgtPrice, 0)} · {tLegLabel}
+    <div className="m-2 space-y-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 px-1">
+        <span className="text-[13px] font-semibold text-term-text">
+          Legs{" "}
+          <span className="font-normal text-term-dim">
+            · P&amp;L at {nf(tgtPrice, 0)} · {tLegLabel}
+          </span>
+        </span>
+        <span className="text-[12px] text-term-dim">
+          Total{" "}
+          <span className={`num text-[15px] font-bold ${pnlCls(legTot + manualPnl)}`}>{pnlTxt(legTot + manualPnl)}</span>
+        </span>
       </div>
-      <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
-        <thead className="text-[10px] uppercase text-term-dim">
-          <tr>
-            <th className="px-2 py-1 text-left font-medium">Instrument</th>
-            <th className="px-2 py-1 text-right font-medium">Target P&amp;L</th>
-            <th className="px-2 py-1 text-right font-medium">Target price</th>
-            <th className="px-2 py-1 text-right font-medium">Entry</th>
-            <th className="px-2 py-1 text-right font-medium">LTP (now)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {legRows.map((r, i) => (
-            <tr key={i}>
-              <td className="num border-b border-r border-term-border/50 px-2 py-1">{r.label}</td>
-              <td className={gCell(r.tgtPnl, 0)}>{pnlTxt(r.tgtPnl)}</td>
-              <td className="num border-b border-r border-term-border/50 px-2 py-1 text-right text-term-text">
-                {nf(r.tgtPx, 2)}
-              </td>
-              <td className="num border-b border-r border-term-border/50 px-2 py-1 text-right text-term-dim">
-                {nf(r.entry, 2)}
-              </td>
-              <td className="num border-b border-r border-term-border/50 px-2 py-1 text-right text-term-dim">
-                {nf(r.ltp, 2)}
-              </td>
-            </tr>
-          ))}
-          {manualPnl !== 0 && (
-            <tr>
-              <td className="border-b border-r border-term-border/50 px-2 py-1 text-term-dim">
-                Manual P&amp;L
-              </td>
-              <td className={gCell(manualPnl, 0)}>{pnlTxt(manualPnl)}</td>
-              <td className="border-b border-r border-term-border/50 px-2 py-1" />
-              <td className="border-b border-r border-term-border/50 px-2 py-1" />
-              <td className="border-b border-r border-term-border/50 px-2 py-1" />
-            </tr>
-          )}
-          <tr className="bg-term-panel2 font-semibold">
-            <td className="border-b border-r border-term-border/50 px-2 py-1">Total (projected)</td>
-            <td className={gCell(legTot + manualPnl, 0)}>{pnlTxt(legTot + manualPnl)}</td>
-            <td className="border-b border-r border-term-border/50 px-2 py-1" />
-            <td className="border-b border-r border-term-border/50 px-2 py-1" />
-            <td className="border-b border-r border-term-border/50 px-2 py-1" />
-          </tr>
-        </tbody>
-      </table>
-      <p className="mt-1 text-[9px] text-term-dim">
-        Target P&amp;L / price = Black-Scholes at the target price &amp; date sliders. LTP = theoretical now.
+      <div className="grid gap-2 md:grid-cols-2">
+        {legRows.map((r, i) => {
+          const buy = r.leg.side === "BUY";
+          return (
+            <div
+              key={i}
+              className={`rounded-lg border border-l-[3px] border-term-border bg-term-panel2/60 p-2.5 ${buy ? "border-l-up" : "border-l-down"}`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${buy ? "bg-up/20 text-up" : "bg-down/20 text-down"}`}>
+                    {r.leg.side}
+                  </span>
+                  <span className="num truncate text-[13px] font-semibold text-term-text">
+                    {r.leg.optionType === "FUT" ? "FUT" : `${sk(r.leg.strike)} ${r.leg.optionType}`}
+                  </span>
+                  <span className="shrink-0 text-[11px] text-term-dim">
+                    × {r.leg.lots} lot{r.leg.lots === 1 ? "" : "s"}
+                  </span>
+                </span>
+                <span className={`num shrink-0 text-[15px] font-bold ${pnlCls(r.tgtPnl)}`}>{pnlTxt(r.tgtPnl)}</span>
+              </div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded bg-term-border/60">
+                <div
+                  className={`h-full ${r.tgtPnl >= 0 ? "bg-up" : "bg-down"}`}
+                  style={{ width: `${Math.min(100, (Math.abs(r.tgtPnl) / legMax) * 100)}%` }}
+                />
+              </div>
+              <div className="mt-1.5 grid grid-cols-3 gap-1 text-[11px]">
+                {(
+                  [
+                    ["Entry", r.entry],
+                    ["LTP now", r.ltp],
+                    ["At target", r.tgtPx],
+                  ] as [string, number][]
+                ).map(([k, v]) => (
+                  <div key={k}>
+                    <div className="text-[9.5px] uppercase tracking-wide text-term-dim">{k}</div>
+                    <div className="num text-term-text">{nf(v, 2)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        {manualPnl !== 0 && (
+          <div className="rounded-lg border border-l-[3px] border-term-border border-l-amber-500 bg-term-panel2/60 p-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] font-semibold text-term-text">Manual P&amp;L</span>
+              <span className={`num text-[15px] font-bold ${pnlCls(manualPnl)}`}>{pnlTxt(manualPnl)}</span>
+            </div>
+            <div className="mt-1 text-[11px] text-term-dim">booked / adjustments, from the Builder</div>
+          </div>
+        )}
+      </div>
+      <p className="px-1 text-[10px] text-term-dim">
+        At target = Black-Scholes at the target price and date (the what-if controls below). LTP now = theoretical now.
       </p>
     </div>
   );
@@ -1078,6 +1159,57 @@ export function StrategyBuilder() {
           </button>
         </div>
       </div>
+      {(() => {
+        const inRs = gMulLot && gMulQty; // the tiles speak in rupees only for the whole position
+        const lot = analysis.lotSize || 1;
+        const d = greekTot.delta, th = greekTot.theta, v = greekTot.vega, ga = greekTot.gamma;
+        const words = {
+          delta: !inRs
+            ? "per unit"
+            : Math.abs(d) < lot * 0.1
+            ? "nearly neutral to small moves"
+            : d > 0
+            ? `gains ≈ ₹${nf(d, 0)} per 1-pt rise`
+            : `gains ≈ ₹${nf(-d, 0)} per 1-pt fall`,
+          theta: !inRs ? "per unit" : th >= 0 ? `you earn ≈ ₹${nf(th, 0)} a day if price stays` : `time costs ≈ ₹${nf(-th, 0)} a day`,
+          vega: !inRs
+            ? "per unit"
+            : v <= 0
+            ? `loses ≈ ₹${nf(-v, 0)} if IV rises 1 pt, gains if it falls`
+            : `gains ≈ ₹${nf(v, 0)} if IV rises 1 pt`,
+          gamma: ga < 0 ? "short gamma: big moves hurt, delta turns against you" : "long gamma: big moves help you",
+        };
+        const tile = (k: string, val: number, dp: number, w: string) => (
+          <div key={k} className="rounded-lg border border-term-border bg-term-panel2/60 px-2.5 py-2">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-term-dim">{k}</div>
+            <div className={`num text-[17px] font-bold ${signColor(val)}`}>{num2(val, dp)}</div>
+            <div className="text-[10.5px] leading-snug text-term-dim">{w}</div>
+          </div>
+        );
+        return (
+          <>
+            <div className="mb-2 grid grid-cols-2 gap-1.5 lg:grid-cols-4">
+              {tile("Δ Delta", d, 1, words.delta)}
+              {tile("Θ Theta / day", th, 0, words.theta)}
+              {tile("V Vega", v, 0, words.vega)}
+              {tile("Γ Gamma", ga, 4, words.gamma)}
+            </div>
+            <div className="mb-2 flex flex-wrap gap-x-4 gap-y-0.5 px-0.5 text-[11px] text-term-dim">
+              <span>
+                Time value{" "}
+                <span className={`num ${posVal ? signColor(posVal.timeValue) : ""}`}>{posVal ? `₹${nf(posVal.timeValue, 0)}` : "–"}</span>
+              </span>
+              <span>
+                Intrinsic{" "}
+                <span className={`num ${posVal ? signColor(posVal.intrinsic) : ""}`}>{posVal ? `₹${nf(posVal.intrinsic, 0)}` : "–"}</span>
+              </span>
+              <span>
+                R : R <span className="num text-term-text">{analysis.rr != null ? `1:${nf(analysis.rr, 2)}` : "–"}</span>
+              </span>
+            </div>
+          </>
+        );
+      })()}
       <table className="block w-full overflow-x-auto whitespace-nowrap border-separate border-spacing-0 border border-term-border text-2xs [&_td:last-child]:border-r-0 [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_th:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border">
         <thead className="text-[10px] uppercase text-term-dim">
           <tr>
@@ -1160,6 +1292,7 @@ export function StrategyBuilder() {
               className="btn flex-1 text-2xs"
               onClick={() => {
                 setFromBroker(false);
+                setStratName("");
                 update([]);
               }}
             >
@@ -1200,18 +1333,34 @@ export function StrategyBuilder() {
           </div>
         </div>
 
-        <div className="flex flex-col">
+        <div className="flex flex-col gap-1.5 p-2">
+          <div className="flex items-baseline justify-between px-0.5 text-[11px]">
+            <span className="font-semibold uppercase tracking-wide text-term-dim">
+              Legs{legs.length ? ` (${legs.length})` : ""}
+            </span>
+            {analysis && legs.length > 0 && (
+              <span className="text-term-dim">
+                net {analysis.netPremiumType === "CREDIT" ? "credit" : "debit"}{" "}
+                <span className={`num font-semibold ${analysis.netPremiumType === "CREDIT" ? "text-up" : "text-down"}`}>
+                  ₹{nf(Math.abs(analysis.netPremium), 0)}
+                </span>
+              </span>
+            )}
+          </div>
           {legs.length === 0 && (
-            <div className="px-2 py-3 text-center text-2xs text-term-dim">
-              No legs yet — load a template or build one below.
+            <div className="rounded-md border border-dashed border-term-border px-2 py-4 text-center text-2xs text-term-dim">
+              No legs yet — load a template or add one below.
             </div>
           )}
-          {legs.map((leg, i) => (
+          {legs.map((leg, i) => {
+            const lr = legRows[i];
+            const atNow = tDays === 0 && !ivShift && analysis != null && Math.round(tgtPrice) === Math.round(analysis.spot);
+            return (
             <div
               key={i}
-              className={`border-b border-term-border/50 p-2 text-2xs ${
-                leg.held ? "bg-amber-500/[0.07]" : ""
-              }`}
+              className={`rounded-md border border-l-[3px] border-term-border p-2 text-2xs ${
+                leg.side === "BUY" ? "border-l-up" : "border-l-down"
+              } ${leg.held ? "bg-amber-500/[0.07]" : "bg-term-panel/70"}`}
             >
               <div className="flex items-center gap-1">
                 <button
@@ -1303,6 +1452,18 @@ export function StrategyBuilder() {
                   <span className="num text-term-dim">IV {nf(analysis.legs[i].iv, 1)}</span>
                 )}
               </div>
+              {lr && (
+                <div className="mt-1.5 flex items-center justify-between border-t border-term-border/40 pt-1 text-[10.5px]">
+                  <span className="text-term-dim">
+                    now <span className="num text-term-text">{nf(lr.ltp, 2)}</span>
+                    <span className="ml-1.5">entry {nf(lr.entry, 2)}</span>
+                  </span>
+                  <span className="text-term-dim">
+                    {atNow ? "P&L now" : "P&L @ target"}{" "}
+                    <span className={`num font-semibold ${pnlCls(lr.tgtPnl)}`}>{pnlTxt(lr.tgtPnl)}</span>
+                  </span>
+                </div>
+              )}
               {leg.held && (
                 <div className="mt-1 text-[9px] text-amber-400/80">
                   held position ·{" "}
@@ -1310,7 +1471,8 @@ export function StrategyBuilder() {
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* ---- manual P&L: booked / adjustment P&L added to every figure (moved here from under the payoff) ---- */}
@@ -1453,11 +1615,13 @@ export function StrategyBuilder() {
 
         {/* ---- hedge finder ---- */}
         {legs.length > 0 && (
-          <div className="border-t border-term-border p-2">
-            <div className="mb-1 flex items-center gap-1 text-2xs">
-              <span className="font-semibold text-amber-400">🛡 Hedge finder</span>
-              <span className="text-term-dim">— cap the running loss at</span>
-            </div>
+          <Fold
+            id="hedge"
+            title="🛡 Hedge finder"
+            titleCls="text-amber-400"
+            badge={hedge ? `${hedge.suggestions.length} idea${hedge.suggestions.length === 1 ? "" : "s"}` : deltaHedge ? "1 idea" : undefined}
+          >
+            <div className="mb-1 text-2xs text-term-dim">Cap the running loss at</div>
             <div className="flex items-center gap-1">
               <span className="text-2xs text-term-dim">₹</span>
               <input
@@ -1657,7 +1821,7 @@ export function StrategyBuilder() {
                 ))}
               </div>
             )}
-          </div>
+          </Fold>
         )}
 
         {isViewer() ? (
@@ -1675,13 +1839,20 @@ export function StrategyBuilder() {
             </div>
           </div>
         ) : (
-        <div className="flex flex-col gap-2 border-t border-term-border p-2 lg:mt-auto">
+        <div className="flex flex-col lg:mt-auto">
           {fromBroker && orderMode !== "live" && (
+            <div className="px-2 pt-2">
             <div className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-2xs text-amber-400">
               ⚠ These are your live positions, but order mode is PAPER — switch to LIVE
               (header) before executing or this hedge won't touch your real position.
             </div>
+            </div>
           )}
+          <Fold
+            id="bracket"
+            title="Bracket · paper SL / target"
+            badge={parseFloat(slVal) > 0 || parseFloat(tgtVal) > 0 ? "set" : undefined}
+          >
           {/* paper bracket: auto-square each fresh leg on SL / target */}
           <div
             className="flex flex-wrap items-center gap-1.5 text-2xs text-term-dim"
@@ -1723,6 +1894,8 @@ export function StrategyBuilder() {
                 : "₹ split across legs by qty"}
             </span>
           </div>
+          </Fold>
+          <div className="flex flex-col gap-2 border-t border-term-border p-2">
           {heldCount > 0 && (
             <label
               className="flex items-center gap-1.5 text-2xs text-amber-400"
@@ -1764,12 +1937,19 @@ export function StrategyBuilder() {
             )}
           </button>
 
+          </div>
+          <Fold
+            id="sched"
+            title="⏰ Schedule run"
+            badge={(() => {
+              const n = schedules.filter((x) => x.status === "armed" || x.status === "entered").length;
+              return n ? `${n} active` : undefined;
+            })()}
+          >
           {/* scheduled run */}
           <div className="rounded border border-term-border bg-term-bg/40 p-2 text-2xs">
             <div className="mb-1 flex items-center justify-between">
-              <span className="font-semibold uppercase tracking-wide text-term-dim">
-                ⏰ Schedule run
-              </span>
+              <span className="text-term-dim">Place the legs at a set time</span>
               <div className="seg">
                 {(["paper", "live"] as const).map((m) => (
                   <button
@@ -1853,6 +2033,9 @@ export function StrategyBuilder() {
               ))}
           </div>
 
+          </Fold>
+          <Fold id="saved" title="Saved strategies" badge={saved.length ? String(saved.length) : undefined}>
+            <div className="flex flex-col gap-1.5">
           <div className="flex gap-1">
             <input
               value={saveName}
@@ -1895,6 +2078,8 @@ export function StrategyBuilder() {
               </button>
             </div>
           ))}
+            </div>
+          </Fold>
         </div>
         )}
       </div>
@@ -1903,62 +2088,111 @@ export function StrategyBuilder() {
 
       {/* ---- payoff / backtest ---- */}
       <div className="flex flex-col lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-term-border">
-        <div className="flex flex-wrap items-center gap-1 border-b border-term-border bg-term-panel2 px-2 py-1.5 text-2xs">
-          {(
-            [
-              ["payoff", "Payoff"],
-              ["schart", "Strategy chart"],
-              ["sgreeks", "Greek charts"],
-              ["backtest", "⏱ Backtest"],
-            ] as const
-          ).map(([k, label]) => (
-            <button
-              key={k}
-              onClick={() => setPanel(k)}
-              className={`rounded border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide shadow-sm transition-colors ${
-                panel === k
-                  ? "border-term-accent bg-term-accent text-white"
-                  : "border-term-dim/70 bg-term-bg/40 text-term-dim hover:text-term-text"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-          <span className="ml-2 hidden text-term-dim lg:inline">
-            {panel === "payoff"
-              ? "Payoff at expiry, T+0, and any day in between"
-              : panel === "schart"
-              ? "The legs' combined premium (or P&L) through the day"
-              : panel === "sgreeks"
-              ? "Net and per-leg Greeks through the day"
-              : "Replay these legs against Upstox daily history"}
-          </span>
-          {panel === "payoff" && (
-            <div className="ml-auto hidden flex-wrap gap-1 sm:flex">
+        {/* strategy name + the numbers that matter, on every tab (laptop / unfolded; the folded phone has its own) */}
+        {analysis && (
+          <div className="hidden border-b border-term-border bg-term-panel px-3 pb-2 pt-2.5 sm:block">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+              <span className="text-[14px] font-semibold text-term-text">
+                {stratName || `${legs.length} leg${legs.length === 1 ? "" : "s"}`}
+                <span className="font-normal text-term-dim">
+                  {" "}
+                  · {analysis.symbol} {analysis.expiry}
+                </span>
+              </span>
+              <span className="text-[11px] text-term-dim">
+                spot <span className="num text-amber-300">{nf(analysis.spot, 2)}</span> · {leftLbl(0)} · ATM IV{" "}
+                {chain?.atmIV ? `${nf(chain.atmIV, 1)}%` : "–"} <span className={ivReg.cls}>({ivReg.label})</span>
+                {busy && " · updating…"}
+              </span>
+            </div>
+            <div className="mt-2 grid grid-cols-4 gap-1.5 lg:grid-cols-8">
               {(
                 [
-                  ["stats", "Stats"],
-                  ["chart", "Chart"],
-                  ["table", "P&L table"],
-                  ["legs", "Legs P&L"],
-                  ["greeks", "Greeks"],
-                ] as const
-              ).map(([k, label]) => (
-                <button
-                  key={k}
-                  onClick={() => setPayoffTab(k)}
-                  className={`rounded border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide shadow-sm transition-colors ${
-                    payoffTab === k
-                      ? "border-term-accent bg-term-accent text-white"
-                      : "border-term-dim/70 bg-term-bg/40 text-term-dim hover:text-term-text"
-                  }`}
-                >
-                  {label}
-                </button>
+                  [
+                    heldCount > 0 ? "P&L now · live" : "P&L now",
+                    currentPnl != null ? pnlTxt(currentPnl) : "–",
+                    currentPnl != null ? pnlCls(currentPnl) : "text-term-text",
+                  ],
+                  [
+                    "Max profit",
+                    analysis.maxProfitUnbounded ? "Unlimited" : pnlTxt(analysis.maxProfit + manualPnl),
+                    "text-up",
+                  ],
+                  ["Max loss", analysis.maxLossUnbounded ? "Unlimited" : pnlTxt(analysis.maxLoss + manualPnl), "text-down"],
+                  ["POP", analysis.pop != null ? `${nf(analysis.pop, 0)}%` : "–", "text-term-text"],
+                  ["Breakevens", analysis.breakevens.map((b) => nf(b, 0)).join(" · ") || "–", "text-term-text"],
+                  [
+                    analysis.netPremiumType === "CREDIT" ? "Credit" : "Debit",
+                    `₹${nf(Math.abs(analysis.netPremium), 0)}`,
+                    analysis.netPremiumType === "CREDIT" ? "text-up" : "text-down",
+                  ],
+                  [
+                    "Margin",
+                    analysis.margin.estimate >= 1e5
+                      ? `${nf(analysis.margin.estimate / 1e5, 2)} L`
+                      : `₹${nf(analysis.margin.estimate, 0)}`,
+                    "text-term-text",
+                  ],
+                  ["Theta / day", pnlTxt(analysis.greeks.theta), pnlCls(analysis.greeks.theta)],
+                ] as [string, string, string][]
+              ).map(([k, v, c]) => (
+                <div key={k} className="min-w-0 rounded-md border border-term-border bg-term-panel2/70 px-2 py-1.5">
+                  <div className="truncate text-[9.5px] font-semibold uppercase tracking-wide text-term-dim">{k}</div>
+                  <div className={`num truncate font-bold ${k === "Breakevens" ? "text-[12.5px]" : "text-[14px]"} ${c}`} title={v}>
+                    {v}
+                  </div>
+                </div>
               ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
+        {/* one tab bar (was two rows: Payoff / Strategy chart / Greek charts / Backtest + Stats / Chart / ...) */}
+        {(() => {
+          const active = panel === "payoff" ? (payoffTab === "stats" ? "chart" : payoffTab) : panel;
+          const TABS: [string, string, boolean][] = [
+            ["chart", "Payoff", true],
+            ["table", "P&L table", false],
+            ["legs", "Legs", false],
+            ["greeks", "Greeks", false],
+            ["schart", "Strategy chart", true],
+            ["sgreeks", "Greek charts", true],
+            ["backtest", "Backtest", true],
+          ];
+          const pick = (k: string) => {
+            if (k === "schart" || k === "sgreeks" || k === "backtest") setPanel(k);
+            else {
+              setPanel("payoff");
+              setPayoffTab(k as "chart" | "table" | "legs" | "greeks");
+            }
+          };
+          const hint: Record<string, string> = {
+            chart: "Payoff at expiry, today and any day in between",
+            table: "P&L at each price — today, by day or by hour",
+            legs: "Each leg's P&L at the target price and date",
+            greeks: "What moves your P&L: price, time, volatility",
+            schart: "The legs' combined premium (or P&L) through the day",
+            sgreeks: "Net and per-leg Greeks through the day",
+            backtest: "Replay these legs against past daily data",
+          };
+          return (
+            <div className="flex items-end gap-0.5 overflow-x-auto border-b border-term-border bg-term-panel px-2 pt-1 [scrollbar-width:none]">
+              {TABS.map(([k, l, phone]) => (
+                <button
+                  key={k}
+                  onClick={() => pick(k)}
+                  className={`${phone ? "" : "hidden sm:block"} shrink-0 border-b-2 px-3 py-2 text-[12px] font-semibold transition-colors ${
+                    active === k
+                      ? "border-term-accent text-term-accent"
+                      : "border-transparent text-term-dim hover:text-term-text"
+                  }`}
+                >
+                  {l}
+                </button>
+              ))}
+              <span className="ml-auto hidden shrink-0 self-center pl-3 text-[10.5px] text-term-dim xl:inline">{hint[active]}</span>
+            </div>
+          );
+        })()}
 
         {panel === "backtest" ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -2190,99 +2424,8 @@ export function StrategyBuilder() {
         )}
 
         <div className="hidden sm:contents">
-        {payoffTab === "stats" ? (
-          <div className="m-2 rounded border border-term-border bg-term-bg/20 p-3">
-            {analysis && (
-              <div className="overflow-x-auto">
-                <table className="grid-table text-xs">
-                  <tbody>
-                    <tr className="border-b border-term-border/60">
-                      <StatCol
-                        label="Net Premium"
-                        value={`₹${nf(Math.abs(analysis.netPremium), 0)}`}
-                        cls={analysis.netPremiumType === "CREDIT" ? "text-up" : "text-down"}
-                      />
-                      <StatCol
-                        label={heldCount > 0 ? "Current P&L (live)" : "Current P&L"}
-                        value={currentPnl != null ? `${currentPnl >= 0 ? "+" : ""}₹${nf(currentPnl, 0)}` : "–"}
-                        cls={currentPnl != null ? signColor(currentPnl) : ""}
-                        title="P&L right now at the current spot -- refreshes every 8s while a held (running) leg is in the mix"
-                      />
-                      <StatCol
-                        label="Total Profit (max)"
-                        value={
-                          analysis.maxProfitUnbounded
-                            ? "Unlimited"
-                            : `₹${nf(analysis.maxProfit + manualPnl, 0)}`
-                        }
-                        cls="text-up"
-                      />
-                      <StatCol
-                        label="Total Loss (max)"
-                        value={
-                          analysis.maxLossUnbounded
-                            ? "Unlimited"
-                            : `₹${nf(analysis.maxLoss + manualPnl, 0)}`
-                        }
-                        cls="text-down"
-                      />
-                      <StatCol
-                        label="Breakeven"
-                        value={analysis.breakevens.map((b) => nf(b, 0)).join(" · ") || "–"}
-                        title={
-                          analysis.breakevens
-                            .map(
-                              (b) =>
-                                `${nf(b, 0)} (${b >= analysis.spot ? "+" : ""}${nf(
-                                  ((b - analysis.spot) / analysis.spot) * 100,
-                                  1
-                                )}% from spot)`
-                            )
-                            .join(" · ") || undefined
-                        }
-                      />
-                      <StatCol label="POP" value={analysis.pop != null ? `${nf(analysis.pop, 1)}%` : "–"} />
-                      <StatCol label="R : R" value={analysis.rr != null ? `1:${nf(analysis.rr, 2)}` : "–"} />
-                      <StatCol label="Margin est." value={`~₹${nf(analysis.margin.estimate, 0)}`} />
-                      <StatCol label="Spot" value={nf(analysis.spot, 1)} />
-                    </tr>
-                    <tr>
-                      <StatCol
-                        label="Δ Delta"
-                        value={nf(analysis.greeks.delta, 1)}
-                        cls={signColor(analysis.greeks.delta)}
-                      />
-                      <StatCol label="Γ Gamma" value={nf(analysis.greeks.gamma, 3)} />
-                      <StatCol
-                        label="Θ Theta / day"
-                        value={nf(analysis.greeks.theta, 0)}
-                        cls={signColor(analysis.greeks.theta)}
-                      />
-                      <StatCol
-                        label="V Vega"
-                        value={nf(analysis.greeks.vega, 0)}
-                        cls={signColor(analysis.greeks.vega)}
-                      />
-                      <StatCol
-                        label="Time value"
-                        value={posVal ? `₹${nf(posVal.timeValue, 0)}` : "–"}
-                        cls={posVal ? signColor(posVal.timeValue) : ""}
-                      />
-                      <StatCol
-                        label="Intrinsic value"
-                        value={posVal ? `₹${nf(posVal.intrinsic, 0)}` : "–"}
-                        cls={posVal ? signColor(posVal.intrinsic) : ""}
-                      />
-                      <StatCol label="Legs" value={legs.length} />
-                      <StatCol label="" value={busy ? "updating…" : ""} cls="text-term-dim" />
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        ) : payoffTab === "chart" ? (
-          <div className="relative m-2 flex h-[420px] flex-col rounded border border-term-border bg-term-bg/20 p-3 lg:h-auto lg:min-h-[360px] lg:flex-1">
+        {payoffTab === "chart" || payoffTab === "stats" ? (
+          <div className="relative m-2 flex h-[480px] flex-col rounded-lg border border-term-border bg-term-bg/20 p-3 lg:h-auto lg:min-h-[460px] lg:flex-1">
             {analysis && (
               <PayoffChart
                 x={analysis.x}
