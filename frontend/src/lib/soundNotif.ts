@@ -80,3 +80,26 @@ export function playOrderSound(side: "BUY" | "SELL") {
     console.debug("Sound notification unavailable:", e);
   }
 }
+
+/** A low double buzz for a rejected order: unmistakably not the buy / sell chime. */
+export function playRejectSound() {
+  if (!getSoundEnabled()) return;
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const now = ctx.currentTime;
+    [0, 0.28].forEach((at) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(220, now + at);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0.18, now + at);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + at + 0.22);
+      osc.start(now + at);
+      osc.stop(now + at + 0.24);
+    });
+  } catch (e) {
+    console.debug("Sound notification unavailable:", e);
+  }
+}

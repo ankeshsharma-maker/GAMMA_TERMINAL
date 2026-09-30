@@ -496,6 +496,8 @@ export const useStore = create<State>((set, get) => ({
           set({ watch: msg.data });
         } else if (msg.type === "scan") {
           set({ scan: msg.data });
+        } else if (msg.type === "order-rejected") {
+          window.dispatchEvent(new CustomEvent("gt-order-rejected", { detail: msg.data }));
         } else if (msg.type === "alerts") {
           set({ alerts: msg.data });
         } else if (msg.type === "unusual") {

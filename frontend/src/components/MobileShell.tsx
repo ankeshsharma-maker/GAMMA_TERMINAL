@@ -210,6 +210,7 @@ import { OWNER_ONLY_VIEWS, viewFor } from "../lib/navGroups";
 import { Settings } from "./Settings";
 import { NotificationPanel } from "./NotificationPanel";
 import { OrderConfirm } from "./OrderConfirm";
+import { OrderRejectedToast } from "./OrderRejectedToast";
 import { Watchlist } from "./Watchlist";
 import { Positions } from "./Positions";
 import { OptionChain } from "./OptionChain";
@@ -812,6 +813,7 @@ export function MobileShell() {
       )}
 
       <OrderConfirm />
+      <OrderRejectedToast />
     </div>
   );
 }

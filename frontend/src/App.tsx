@@ -25,6 +25,7 @@ import { ScalpCharts } from "./components/ScalpCharts";
 import { AutoBotView } from "./components/AutoBot";
 import { Funds } from "./components/Funds";
 import { OrderConfirm } from "./components/OrderConfirm";
+import { OrderRejectedToast } from "./components/OrderRejectedToast";
 import { NotificationPanel } from "./components/NotificationPanel";
 import { MobileShell } from "./components/MobileShell";
 import { LoginGate } from "./components/LoginGate";
@@ -233,6 +234,7 @@ function DesktopShell() {
         )}
       </div>
       <OrderConfirm />
+      <OrderRejectedToast />
     </div>
   );
 }
