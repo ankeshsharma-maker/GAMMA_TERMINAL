@@ -19,7 +19,7 @@ const matches = (r: ScanRow, s: Spec) =>
   (!s.hotOnly || (r.hotStrikes?.length ?? 0) > 0) &&
   (!s.bias || r.bias === s.bias);
 
-const PRESETS: [string, string, Spec][] = [
+export const PRESETS: [string, string, Spec][] = [
   [
     "Building + hot strike",
     "Same trigger as the 'starting to build' alert: the score is climbing fast AND a near-ATM strike has an outsized OI move",
@@ -31,7 +31,7 @@ const PRESETS: [string, string, Spec][] = [
   ["Score ≥ 60", "Already at the warning level", { scoreMin: 60 }],
 ];
 
-const specKey = (s: Spec) =>
+export const specKey = (s: Spec) =>
   JSON.stringify(Object.entries(s).filter(([, v]) => v != null && v !== false).sort());
 
 // same 4-colour OI scheme as the OI Profile: call add red, call cut amber, put add green, put cut sky
@@ -155,7 +155,7 @@ export function Scanner({ spec, setSpec }: { spec: Spec; setSpec: (s: Spec) => v
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-1 border-b border-term-border bg-term-panel2 px-3 py-1 text-2xs">
+      <div className="hidden flex-wrap items-center gap-1 border-b border-term-border bg-term-panel2 px-3 py-1 text-2xs sm:flex">
         <span className="text-term-dim">Presets:</span>
         {PRESETS.map(([name, hint, p]) => (
           <button

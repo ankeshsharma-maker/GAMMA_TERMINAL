@@ -262,10 +262,17 @@ select:focus-visible {
     @apply flex items-stretch justify-between gap-0.5 border-b border-term-accent/25 px-1 py-1;
   }
   .chrome-tabs > button {
-    @apply flex-1 rounded-md px-1 py-1 text-center text-2xs font-semibold text-term-dim transition-colors hover:text-term-text;
+    @apply flex-1 whitespace-nowrap rounded-md px-1 py-1 text-center text-2xs font-semibold text-term-dim transition-colors hover:text-term-text;
   }
   .chrome-tabs > button.on {
     @apply bg-term-panel text-term-text shadow-sm ring-1 ring-term-accent/50;
+  }
+  /* the main group strip: the open tab is a solid accent fill */
+  .chrome-tabs.strong > button {
+    @apply rounded-md py-2 text-sm;
+  }
+  .chrome-tabs.strong > button.on {
+    @apply bg-term-accent text-white ring-0;
   }
   .card {
     @apply rounded-xl border border-term-border bg-term-panel p-3;

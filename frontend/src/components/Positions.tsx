@@ -173,13 +173,13 @@ function LivePositionsPane() {
 }
 
 /** Paper mode: this session's paper positions only; Live mode: the Flattrade book only */
-export function Positions() {
+export function Positions({ embedded = false }: { embedded?: boolean } = {}) {
   const orderMode = useStore((s) => s.orderMode);
   if (!isViewer() && orderMode === "live") return <LivePositionsPane />;
-  return <PaperPositionsPane />;
+  return <PaperPositionsPane embedded={embedded} />;
 }
 
-function PaperPositionsPane() {
+function PaperPositionsPane({ embedded = false }: { embedded?: boolean }) {
   const { paper, closePosition } = useStore();
 
   return (
@@ -203,10 +203,12 @@ function PaperPositionsPane() {
         </div>
       )}
 
-      <div className="flex items-center gap-2 border-b border-term-border px-3 py-1.5 text-2xs font-semibold uppercase tracking-wide">
-        <span className="rounded bg-term-accent px-1.5 py-0.5 text-[10px] text-white">PAPER</span>
-        <span className="text-term-dim">Simulated positions</span>
-      </div>
+      {!embedded && (
+        <div className="flex items-center gap-2 border-b border-term-border px-3 py-1.5 text-2xs font-semibold uppercase tracking-wide">
+          <span className="rounded bg-term-accent px-1.5 py-0.5 text-[10px] text-white">PAPER</span>
+          <span className="text-term-dim">Simulated positions</span>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto">
         {(!paper || paper.positions.length === 0) && (
           <div className="p-4 text-center text-2xs text-term-dim">

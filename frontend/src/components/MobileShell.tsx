@@ -287,38 +287,34 @@ function FiveTabs({
   view: View;
   setView: (v: View) => void;
 }) {
+  // the shared header block: the five groups as one tab strip (the open one filled), the group's own
+  // views as a second, scrolling row of pills -- both inside one accent-tinted frame
   return (
-    <nav className="shrink-0 border-b border-term-border bg-term-panel2">
-      <div className="grid gap-1 px-1.5 py-1.5" style={{ gridTemplateColumns: `repeat(${groups.length}, minmax(0, 1fr))` }}>
-        {groups.map(({ g }) => (
-          <button
-            key={g}
-            onClick={() => onGroup(g)}
-            className={`min-h-[40px] truncate rounded-md border px-1 py-2 text-[14px] font-semibold ${
-              g === group
-                ? "border-term-accent bg-term-accent text-white"
-                : "border-term-dim/70 bg-term-border/40 text-term-dim active:bg-term-border"
-            }`}
-          >
-            {GROUP_NAME[g]}
-          </button>
-        ))}
-      </div>
-      {tabs.length > 1 && (
-        <div className="no-scrollbar flex gap-1 overflow-x-auto px-1.5 pb-1.5">
-          {tabs.map((t) => (
-            <button
-              key={t.v}
-              onClick={() => setView(t.v)}
-              className={`min-h-[32px] shrink-0 grow whitespace-nowrap rounded-full border px-3 py-1 text-[12.5px] font-semibold ${
-                view === t.v ? "border-term-accent bg-term-accent/15 text-term-accent" : "border-term-border text-term-dim"
-              }`}
-            >
-              {t.label}
+    <nav className="shrink-0 border-b border-term-border bg-term-panel2 px-1.5 py-1.5">
+      <div className="chrome">
+        <div className="chrome-tabs strong" style={{ borderBottomWidth: tabs.length > 1 ? undefined : 0 }}>
+          {groups.map(({ g }) => (
+            <button key={g} onClick={() => onGroup(g)} className={`min-h-[38px] truncate text-[14px] ${g === group ? "on" : ""}`}>
+              {GROUP_NAME[g]}
             </button>
           ))}
         </div>
-      )}
+        {tabs.length > 1 && (
+          <div className="chrome-row gap-1">
+            {tabs.map((t) => (
+              <button
+                key={t.v}
+                onClick={() => setView(t.v)}
+                className={`min-h-[30px] shrink-0 grow whitespace-nowrap rounded-full border px-3 py-1 text-[12.5px] font-semibold ${
+                  view === t.v ? "border-term-accent bg-term-accent/25 text-term-text" : "border-term-accent/30 text-term-dim"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </nav>
   );
 }

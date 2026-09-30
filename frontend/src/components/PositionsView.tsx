@@ -16,6 +16,7 @@ import { ShortGuard, guardText } from "./ShortGuard";
 import { Positions as PaperPositions } from "./Positions";
 import { MarginHint } from "./MarginHint";
 import { LotsPicker } from "./LotsPicker";
+import { Chrome, ChromeRow, ChromeTabs } from "./Chrome";
 import type { ShortGuardLeg } from "../types";
 import { Capacitor } from "@capacitor/core";
 
@@ -1282,50 +1283,29 @@ export function OrdersTab() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Open | Executed, underlined like the broker app */}
-      <div className="flex shrink-0 items-stretch border-b border-term-border bg-term-panel">
-        {(
-          [
-            ["open", "Pending", openCards.length],
-            ["done", "Executed", doneCards.length],
-          ] as const
-        ).map(([k, label, count]) => (
-          <button
-            key={k}
-            onClick={() => setTab(k)}
-            className={`relative flex flex-1 items-center justify-center gap-2 py-2.5 text-[15px] ${
-              tab === k ? "text-term-accent" : "text-term-text hover:text-term-accent"
-            }`}
-          >
-            {label}
-            {count > 0 && (
-              <span className="flex h-6 min-w-[24px] items-center justify-center rounded-full bg-term-accent px-1.5 text-[13px] tabular-nums text-white">
-                {count}
-              </span>
-            )}
-            {tab === k && <span className="absolute inset-x-0 bottom-0 h-[3px] bg-term-accent" />}
-          </button>
-        ))}
+      {/* Pending | Executed in the shared header block, with the book (Paper / Live) beside it */}
+      <div className="shrink-0 px-2 py-1.5">
+        <Chrome>
+          <ChromeTabs<"open" | "done">
+            main={[
+              { key: "open", label: "Pending", badge: openCards.length || undefined },
+              { key: "done", label: "Executed", badge: doneCards.length || undefined },
+            ]}
+            value={tab}
+            onChange={setTab}
+          />
+          <ChromeRow>
+            <span className={`shrink-0 rounded px-2 py-0.5 text-[11px] font-bold text-white ${src === "live" ? "bg-down" : "bg-term-accent"}`}>
+              {src === "live" ? "LIVE" : "PAPER"}
+            </span>
+            <span className="text-term-dim">
+              {src === "live" ? (broker?.authed ? "Flattrade order book" : "Flattrade not connected") : "paper orders this session"}
+            </span>
+          </ChromeRow>
+        </Chrome>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto bg-term-bg p-2 md:p-3">
-        <div className="flex items-center gap-2 px-1 text-[11px] text-term-dim">
-          <span
-            className={`rounded px-2 py-0.5 text-[11px] font-bold tracking-wide ${
-              src === "live" ? "bg-down text-white" : "bg-term-accent text-white"
-            }`}
-          >
-            {src === "live" ? "LIVE" : "PAPER"}
-          </span>
-          <span className="truncate">
-            {src === "live"
-              ? broker?.authed
-                ? "Flattrade"
-                : "Flattrade not connected — orders GammaTerminal sent"
-              : "paper orders this session"}
-          </span>
-        </div>
-
         {shown.length === 0 && (
           <div className="rounded-lg bg-term-panel px-3 py-6 text-center text-xs text-term-dim">
             {tab === "open" ? "No open orders." : "No executed orders today."}
@@ -1519,30 +1499,26 @@ export function PositionsView({ initialTab }: { initialTab?: Tab } = {}) {
   const count = paperMode ? paperCount : liveCount;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* broker-app tabs: Positions (n) | Holdings | … with an underline */}
-      <div className="flex shrink-0 border-b border-term-border bg-term-panel">
-        {tabs.map(([k, label]) => (
-          <button
-            key={k}
-            onClick={() => setTab(k)}
-            className={`relative flex flex-1 items-center justify-center gap-2 py-2.5 text-[15px] ${
-              tab === k ? "text-term-accent" : "text-term-text hover:text-term-accent"
-            }`}
-          >
-            {label}
-            {k === "broker" && count > 0 && (
-              <span className="tabular-nums flex h-6 min-w-[24px] items-center justify-center rounded-full bg-term-accent px-1.5 text-[13px] text-white">
-                {count}
-              </span>
-            )}
-            {tab === k && <span className="absolute inset-x-0 bottom-0 h-[3px] bg-term-accent" />}
-          </button>
-        ))}
+      {/* the shared header block: the views, and which book you are looking at (Paper / Live) */}
+      <div className="shrink-0 px-2 py-1.5">
+        <Chrome>
+          <ChromeTabs<Tab>
+            main={tabs.map(([k, label]) => ({ key: k, label, badge: k === "broker" && count > 0 ? count : undefined }))}
+            value={tab}
+            onChange={setTab}
+          />
+          <ChromeRow>
+            <span className={`shrink-0 rounded px-2 py-0.5 text-[11px] font-bold text-white ${paperMode ? "bg-term-accent" : "bg-down"}`}>
+              {paperMode ? "PAPER" : "LIVE"}
+            </span>
+            <span className="text-term-dim">{paperMode ? "simulated positions — no real orders" : "Flattrade positions — orders are real"}</span>
+          </ChromeRow>
+        </Chrome>
       </div>
       {tab === "broker" &&
         (paperMode ? (
           <div className="min-h-0 flex-1 overflow-hidden">
-            <PaperPositions />
+            <PaperPositions embedded />
           </div>
         ) : (
           <BrokerTab onCount={setCount} />

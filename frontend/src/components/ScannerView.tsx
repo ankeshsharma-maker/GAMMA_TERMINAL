@@ -5,7 +5,9 @@ import { HistoricalScan } from "./HistoricalScan";
 import { IndicatorScan } from "./IndicatorScan";
 import { Movers, type Timeframe } from "./Movers";
 import { Num } from "./Screener";
-import { type Spec } from "./Scanner";
+import { type Spec, PRESETS, specKey } from "./Scanner";
+import { useIsMobile } from "../lib/useIsMobile";
+import { Chrome, ChromeRow, ChromeTabs } from "./Chrome";
 
 type Tab = "blast" | "movers" | "screener" | "history" | "indicators";
 
@@ -25,6 +27,9 @@ export function ScannerView() {
   const [tab, setTab] = useState<Tab>("blast");
   const [spec, setSpec] = useState<Spec>(loadSpec);
   const [moversTf, setMoversTf] = useState<Timeframe>("today");
+  const isMobile = useIsMobile();
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const activeFilters = Object.values(spec).filter((v) => v !== undefined && v !== false).length;
   const patch = (p: Partial<Spec>) => {
     const next = { ...spec, ...p };
     setSpec(next);
@@ -33,7 +38,90 @@ export function ScannerView() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs">
+      {isMobile && (
+        <div className="px-2 pt-1.5">
+          <Chrome>
+            <ChromeTabs<Tab>
+              main={[
+                { key: "blast", label: "Blast" },
+                { key: "movers", label: "Movers" },
+                { key: "screener", label: "Screener" },
+              ]}
+              more={[
+                { key: "history", label: "History scan", short: "History" },
+                { key: "indicators", label: "Indicators" },
+              ]}
+              value={tab}
+              onChange={setTab}
+            />
+            {tab === "blast" && (
+              <>
+                <ChromeRow>
+                  <button
+                    type="button"
+                    onClick={() => setFiltersOpen((o) => !o)}
+                    className={`pick ${filtersOpen ? "!bg-term-accent/25" : ""}`}
+                  >
+                    Filters{activeFilters > 0 ? ` · ${activeFilters}` : ""} {filtersOpen ? "▴" : "▾"}
+                  </button>
+                  {PRESETS.map(([name, hint, p]) => (
+                    <button
+                      key={name}
+                      title={hint}
+                      type="button"
+                      onClick={() => setSpec(p)}
+                      className={`shrink-0 rounded-full border px-2.5 py-0.5 text-2xs font-semibold ${
+                        specKey(spec) === specKey(p) ? "border-term-accent bg-term-accent/25 text-term-text" : "border-term-accent/30 text-term-dim"
+                      }`}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </ChromeRow>
+                {filtersOpen && (
+                  <div className="flex flex-wrap items-center gap-2 border-t border-term-accent/25 px-2 py-2 text-2xs">
+                    <Num label="Score≥" value={spec.scoreMin} onChange={(v) => patch({ scoreMin: v })} />
+                    <Num label="DTE≤" value={spec.dteMax} onChange={(v) => patch({ dteMax: v })} />
+                    <Chip on={spec.building} onClick={() => patch({ building: spec.building ? undefined : true })}>Building</Chip>
+                    <Chip on={spec.hotOnly} onClick={() => patch({ hotOnly: spec.hotOnly ? undefined : true })}>Hot OI</Chip>
+                    {(["UP", "DOWN"] as const).map((b) => (
+                      <Chip key={b} on={spec.bias === b} onClick={() => patch({ bias: spec.bias === b ? undefined : b })}>
+                        {b === "UP" ? "↑ Up" : "↓ Down"}
+                      </Chip>
+                    ))}
+                    <button onClick={() => setSpec({})} className="btn px-2 py-0.5 text-2xs">Reset</button>
+                  </div>
+                )}
+              </>
+            )}
+            {tab === "movers" && (
+              <ChromeRow>
+                {(["today", "yesterday", "7d", "compare"] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setMoversTf(v)}
+                    className={`shrink-0 rounded-full border px-3 py-0.5 text-2xs font-semibold ${
+                      moversTf === v ? "border-term-accent bg-term-accent/25 text-term-text" : "border-term-accent/30 text-term-dim"
+                    }`}
+                  >
+                    {v === "today" ? "Today" : v === "yesterday" ? "Yesterday" : v === "7d" ? "7 Day" : "Compare"}
+                  </button>
+                ))}
+              </ChromeRow>
+            )}
+            {tab !== "blast" && tab !== "movers" && (
+              <ChromeRow>
+                <span className="text-term-dim">
+                  {tab === "screener" ? "IV rank, PCR, straddle and OI build-up across F&O" : tab === "history" ? "OI state as of a past date" : "RSI, EMA and MACD as of a date"}
+                </span>
+              </ChromeRow>
+            )}
+          </Chrome>
+        </div>
+      )}
+
+      <div className={`${isMobile ? "hidden" : "flex"} flex-wrap items-center gap-x-1 gap-y-1.5 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs`}>
         {(
           [
             ["blast", "Gamma Blast"],
