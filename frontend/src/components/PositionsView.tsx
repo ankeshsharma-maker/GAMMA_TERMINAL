@@ -336,7 +336,7 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
       )}
 
       {/* position cards -- the broker app's layout; tap one for its actions */}
-      <div className="grid gap-2 lg:grid-cols-2 2xl:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {withPnl.map(({ r, today, day, key }, i) => {
           const qty = n(r.netqty) ?? 0;
           const isBusy = busy.has(r.tsym);
@@ -1312,7 +1312,7 @@ export function OrdersTab() {
           </div>
         )}
 
-        <div className="grid gap-2 lg:grid-cols-2 2xl:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {shown.map((c) => {
             // Modify / Cancel on every open order (was hidden until the card was tapped)
             const expanded = c.open && !!c.book?.norenordno;

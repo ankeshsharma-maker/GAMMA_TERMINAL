@@ -24,6 +24,7 @@ import { LineChart } from "./LineChart";
 import { RuleBacktest } from "./RuleBacktest";
 import { isViewer } from "../lib/auth";
 import { SelectMenu } from "./SelectMenu";
+import { Chrome, ChromeRow, ChromeTabs } from "./Chrome";
 
 /* ------------------------------------------------------------------ */
 /* condition catalogue                                                 */
@@ -3317,36 +3318,27 @@ export function AutoBotView() {
         </div>
       )}
 
-      {/* tabs */}
-      <div className="flex flex-wrap items-center gap-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs">
-        {(
-          [
-            ["rules", "Rules"],
-            ["performance", "Performance"],
-            ["backtest", "⏱ Backtest"],
-          ] as const
-        ).map(([k, label]) => (
-          <button
-            key={k}
-            onClick={() => setTab(k)}
-            className={`rounded border px-2.5 py-1 font-semibold ${
-              tab === k
-                ? "border-term-accent bg-term-accent text-white"
-                : "border-term-dim/70 text-term-dim hover:bg-term-border"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-        <span className={`ml-2 text-term-dim ${tab === "rules" ? "" : "hidden md:inline"}`}>
-          {tab === "backtest"
-            ? "Replay a rule's indicator / OI conditions against Upstox daily history"
-            : tab === "performance"
-            ? "How the rules have actually done, net of charges"
-            : `${rules.length} rule${rules.length === 1 ? "" : "s"}`}
-        </span>
-
-        <div className="ml-auto flex items-center gap-2">
+      {/* tabs: the shared header block (views, then the count and the New rule / KILL buttons) */}
+      <div className="px-2 py-1.5">
+        <Chrome>
+          <ChromeTabs<"rules" | "performance" | "backtest">
+            main={[
+              { key: "rules", label: "Rules" },
+              { key: "performance", label: "Performance" },
+              { key: "backtest", label: "⏱ Backtest" },
+            ]}
+            value={tab}
+            onChange={setTab}
+          />
+          <ChromeRow>
+            <span className="text-term-dim">
+              {tab === "backtest"
+                ? "Replay a rule's conditions against daily history"
+                : tab === "performance"
+                ? "How the rules have done, net of charges"
+                : `${rules.length} rule${rules.length === 1 ? "" : "s"}`}
+            </span>
+            <div className="ml-auto flex items-center gap-2">
           <button
             className="rounded bg-up px-3 py-1 text-xs font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_1px_3px_rgba(0,0,0,0.45)] hover:brightness-110 disabled:opacity-40"
             onClick={() => {
@@ -3366,7 +3358,9 @@ export function AutoBotView() {
           >
             KILL
           </button>
-        </div>
+            </div>
+          </ChromeRow>
+        </Chrome>
       </div>
 
       {tab === "performance" && <AutoPerformance />}

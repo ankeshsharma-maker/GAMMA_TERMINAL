@@ -80,8 +80,8 @@ export function SelectMenu<T extends string | number>({
         title={title}
         className={`flex items-center gap-1 rounded border px-2 py-0.5 text-2xs font-semibold ${
           open
-            ? "border-term-accent/50 bg-term-accent/15 text-term-text"
-            : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
+            ? "border-term-accent bg-term-accent/20 text-term-text"
+            : "border-term-accent/50 bg-term-bg/40 text-term-text hover:bg-term-accent/15"
         }`}
       >
         <span className="truncate" style={{ maxWidth: width }}>

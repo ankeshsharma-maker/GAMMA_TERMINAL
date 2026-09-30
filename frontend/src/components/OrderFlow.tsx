@@ -255,7 +255,7 @@ export function OrderFlowView() {
       : null;
 
   const toolbar = (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
+    <div className="toolbar-chrome">
       <span className="font-semibold uppercase tracking-wide">Order Flow</span>
       <select
         value={symbol}

@@ -152,7 +152,7 @@ export function OIInsights({ chain, symbol, expiry }: { chain: Chain; symbol: st
   const G = "border-b border-r border-term-dim/50";
 
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col gap-3 overflow-y-auto p-2 md:max-w-xl md:p-3">
+    <div className="mx-auto flex w-full max-w-md flex-col gap-3 overflow-y-auto p-2 sm:grid sm:max-w-none sm:grid-cols-2 sm:items-start md:p-3">
       {/* A ---------------------------------------------------- */}
       <div className={card}>
         <div className="mb-2 flex items-baseline justify-between">

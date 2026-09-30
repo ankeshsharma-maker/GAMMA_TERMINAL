@@ -125,10 +125,10 @@ select:focus-visible {
     @apply border-b border-r border-term-border/60 last:border-r-0;
   }
   .seg {
-    @apply flex overflow-hidden rounded border border-term-dim/70 text-2xs;
+    @apply flex overflow-hidden rounded border border-term-accent/40 text-2xs;
   }
   .seg > button {
-    @apply px-2.5 py-1 border-r border-term-dim/40 last:border-r-0 text-term-dim transition-colors;
+    @apply px-2.5 py-1 border-r border-term-accent/25 last:border-r-0 text-term-dim transition-colors;
   }
   /* hand-rolled segmented control whose buttons carry their own padding/colours:
      a clearly visible outline plus a divider between segments */
@@ -273,6 +273,10 @@ select:focus-visible {
   }
   .chrome-tabs.strong > button.on {
     @apply bg-term-accent text-white ring-0;
+  }
+  /* a screen's own toolbar (pickers, filters, refresh) drawn as the header block */
+  .toolbar-chrome {
+    @apply mx-2 my-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-lg border border-term-accent/40 bg-term-accent/10 px-2.5 py-1.5 text-2xs text-term-text;
   }
   .card {
     @apply rounded-xl border border-term-border bg-term-panel p-3;

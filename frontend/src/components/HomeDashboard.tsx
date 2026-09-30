@@ -297,12 +297,14 @@ export function HomeDashboard() {
           {/* phone: the index switch is the top row, above the spot + market read (asked 28-Sep);
               laptop: all three already share one row */}
           <div className="order-first col-span-2 flex items-center sm:order-none sm:shrink-0">
-            <div className="seg text-[11px]">
-              {[...new Set([...QUICK, symbol])].map((s) => (
-                <button key={s} onClick={() => selectSymbol(s, true)} className={s === symbol ? "on" : ""}>
-                  {s}
-                </button>
-              ))}
+            <div className="chrome w-full sm:w-auto">
+              <div className="chrome-tabs !border-b-0">
+                {[...new Set([...QUICK, symbol])].map((s) => (
+                  <button key={s} onClick={() => selectSymbol(s, true)} className={s === symbol ? "on" : ""}>
+                    {s}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -317,7 +319,7 @@ export function HomeDashboard() {
         </div>
       </div>
 
-      <div className="grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-3">
         {/* price action */}
         <Card title="Trend direction · price action" go="chart" right={trend && <Chip tone={OVERALL[trend.overall].tone}>{OVERALL[trend.overall].word}</Chip>}>
           {trend ? (

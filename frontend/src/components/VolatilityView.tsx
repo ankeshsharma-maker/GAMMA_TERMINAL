@@ -235,7 +235,7 @@ export function VolatilityView() {
   const cone20 = rv?.cone?.["20"];
 
   const toolbar = (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
+    <div className="toolbar-chrome">
       <span className="font-semibold uppercase tracking-wide">Volatility</span>
       <ClassFilter />
       <SelectMenu

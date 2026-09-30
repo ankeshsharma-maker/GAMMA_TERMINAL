@@ -151,7 +151,7 @@ export function FlowView() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-2 text-2xs">
+      <div className="toolbar-chrome">
         <span className="text-sm font-semibold">{symbol} Option Flow</span>
         <SelectMenu
           value={symbol}
