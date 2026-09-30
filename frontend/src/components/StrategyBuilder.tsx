@@ -2538,7 +2538,7 @@ export function StrategyBuilder() {
       <div className="flex flex-col lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-term-border">
         {/* strategy name + the numbers that matter, on every tab (laptop / unfolded; the folded phone has its own) */}
         {analysis && (
-          <div className="hidden shrink-0 border-b border-term-border bg-term-panel px-3 py-2 sm:block">
+          <div className="mx-2 mt-1.5 hidden shrink-0 rounded-xl border border-term-accent/40 bg-term-accent/10 px-3 py-2 sm:block">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
               <span className="text-[15px] font-semibold text-term-text">
                 {stratName || `${legs.length} leg${legs.length === 1 ? "" : "s"}`}
@@ -2585,7 +2585,7 @@ export function StrategyBuilder() {
             backtest: "Replay these legs against past daily data",
           };
           return (
-            <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-term-border bg-term-panel px-2 py-1.5 [scrollbar-width:none]">
+            <div className="mx-2 my-1.5 flex shrink-0 items-center gap-1.5 overflow-x-auto rounded-xl border border-term-accent/40 bg-term-accent/10 px-2 py-1.5 [scrollbar-width:none]">
               {/* tab BUTTONS, the app's own sub-nav look (GroupSubNav: Scalp / Build / Positions ...) */}
               {TABS.map(([k, l, phone]) => (
                 <button

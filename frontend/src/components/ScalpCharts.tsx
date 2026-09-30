@@ -167,7 +167,7 @@ export function ScalpCharts({ mode = "scalp" }: { mode?: "scalp" | "chart" } = {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-term-panel2">
-      <div className="flex flex-wrap items-center gap-2 border-b border-term-border px-3 py-1 text-2xs text-term-dim">
+      <div className="toolbar-chrome">
         <span className="font-semibold uppercase tracking-wide">{isChart ? "Charts" : "Scalp charts"}</span>
         <span>Layout</span>
         <div className="seg">

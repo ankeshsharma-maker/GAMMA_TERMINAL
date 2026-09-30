@@ -44,7 +44,7 @@ function Card({
   sub?: string;
 }) {
   return (
-    <div className="rounded-lg border border-term-border bg-term-panel p-4">
+    <div className="card p-4">
       <div className="text-[11px] uppercase tracking-wide text-term-dim">{label}</div>
       <div className={`num mt-1 text-2xl font-semibold ${tone}`}>{value}</div>
       {sub && <div className="mt-0.5 text-2xs text-term-dim">{sub}</div>}
@@ -100,7 +100,7 @@ export function Funds() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto p-4">
-      <div className="mb-3 flex items-center gap-3">
+      <div className="chrome mb-3 flex items-center gap-3 px-3 py-2">
         <h2 className="text-base font-semibold">Funds &amp; Margin</h2>
         <span
           className={`rounded px-1.5 py-0.5 text-2xs ${
