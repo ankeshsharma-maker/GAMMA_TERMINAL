@@ -212,7 +212,7 @@ function DesktopShell() {
           {view === "scalper" && <ScalpCharts />}
           {view === "builder" && <StrategyBuilder />}
           {view === "positions" && (isViewer() ? <Positions /> : <PositionsView />)}
-          {view === "orders" && (isViewer() ? <OrdersTab /> : <PositionsView initialTab="orders" />)}
+          {view === "orders" && <OrdersTab />}
           {view === "auto" && <AutoBotView />}
           {view === "funds" && <Funds />}
           {view === "journal" && <TradeJournal />}

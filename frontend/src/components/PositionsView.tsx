@@ -1476,11 +1476,10 @@ export function PositionsView({ initialTab }: { initialTab?: Tab } = {}) {
   const orderMode = useStore((s) => s.orderMode);
   const paperCount = useStore((s) => s.paper?.positions.length ?? 0);
   const paperMode = isViewer() || orderMode !== "live";
-  // the mobile app has a dedicated Orders bottom-tab, so drop the sub-tab here
-  const tabs = TABS.filter(([k]) => !(isMobile && k === "orders") && !(paperMode && k === "holdings"));
-  const [tabWanted, setTab] = useState<Tab>(
-    initialTab && (initialTab !== "orders" || !isMobile) ? initialTab : "broker"
-  );
+  // Orders has its own entry everywhere (top nav on desktop, bottom tab on the phone), so it is
+  // not repeated as a sub-tab here
+  const tabs = TABS.filter(([k]) => k !== "orders" && !(paperMode && k === "holdings"));
+  const [tabWanted, setTab] = useState<Tab>(initialTab && initialTab !== "orders" ? initialTab : "broker");
   const tab: Tab = tabs.some(([k]) => k === tabWanted) ? tabWanted : "broker";
   const [liveCount, setCount] = useState(0);
   const count = paperMode ? paperCount : liveCount;
@@ -1515,7 +1514,6 @@ export function PositionsView({ initialTab }: { initialTab?: Tab } = {}) {
           <BrokerTab onCount={setCount} />
         ))}
       {tab === "holdings" && <HoldingsTab />}
-      {tab === "orders" && <OrdersTab />}
       {tab === "advanced" && <AdvancedTab paperMode={paperMode} />}
     </div>
   );
