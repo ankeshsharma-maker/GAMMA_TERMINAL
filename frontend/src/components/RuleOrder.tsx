@@ -46,6 +46,15 @@ export function RuleOrder({
   const [trail, setTrail] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // the strike (and any rule being drafted) belongs to one symbol: reset it in the same
+  // render the symbol changes, so NIFTY's strike never sits on a SENSEX order
+  const [kSym, setKSym] = useState(symbol);
+  if (kSym !== symbol) {
+    setKSym(symbol);
+    setK(strike || atm || 0);
+    setTrig("");
+  }
+
   // adopt the panel's strike only until the user picks one here
   useEffect(() => {
     if (!k && (strike || atm)) setK(strike || atm || 0);

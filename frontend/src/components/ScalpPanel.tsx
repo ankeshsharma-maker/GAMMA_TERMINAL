@@ -34,9 +34,17 @@ export function ScalpPanel() {
   const strikes = useMemo(() => chain?.rows.map((r) => r.strike) ?? [], [chain]);
   const step = strikes.length > 1 ? Math.abs(strikes[1] - strikes[0]) : 0;
   const [pick, setPick] = useState<number>(0);
+  // a strike belongs to one symbol: drop it in the same render the symbol changes, so
+  // NIFTY's strike is never shown / traded on SENSEX while the new chain loads
+  const [pickSym, setPickSym] = useState(symbol);
+  if (pickSym !== symbol) {
+    setPickSym(symbol);
+    setPick(0);
+  }
   useEffect(() => {
     if (atm) setPick(atm);
   }, [atm, symbol, expiry]);
+  useEffect(() => setSideHint(null), [symbol]);
   const offset = atm && step ? Math.round((pick - atm) / step) : 0;
   const fire = (ot: "CE" | "PE", side: "BUY" | "SELL") => {
     if (expiry && pick) quickTradeAt(symbol, expiry, pick, ot, side, scalpLots);
