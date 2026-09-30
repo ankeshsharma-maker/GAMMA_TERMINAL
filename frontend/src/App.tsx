@@ -17,7 +17,6 @@ import { OrderFlowView } from "./components/OrderFlow";
 import { TrendingOI } from "./components/TrendingOI";
 import { VolatilityView } from "./components/VolatilityView";
 import { TradeJournal } from "./components/TradeJournal";
-import { Chart } from "./components/Chart";
 import { StrategyBuilder } from "./components/StrategyBuilder";
 import { PositionsView, OrdersTab } from "./components/PositionsView";
 import { HomeDashboard } from "./components/HomeDashboard";
@@ -209,7 +208,7 @@ function DesktopShell() {
           {view === "volume" && <VolumeScreener />}
           {view === "stockscan" && <StockScan />}
           {view === "positional" && <PositionalScan />}
-          {view === "chart" && <Chart />}
+          {view === "chart" && <ScalpCharts mode="chart" />}
           {view === "scalper" && <ScalpCharts />}
           {view === "builder" && <StrategyBuilder />}
           {view === "positions" && (isViewer() ? <Positions /> : <PositionsView />)}

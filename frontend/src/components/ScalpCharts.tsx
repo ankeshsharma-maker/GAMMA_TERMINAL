@@ -35,10 +35,30 @@ const mkPane = (sym: string, tf: number): Pane => ({
   ind: { ...MINI_IND_DEFAULT },
 });
 
-/** Scalper view chart area: 1 full chart, or 2 / 3 MiniChart panes — each with
- *  its own symbol, timeframe, instrument (spot / ATM straddle / a strike's
- *  CE|PE) and EMA/VWAP overlays. */
-export function ScalpCharts() {
+type Dir = "stack" | "side" | "grid";
+
+const lsGet = (k: string): string | null => {
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+};
+const lsSet = (k: string, v: string) => {
+  try {
+    localStorage.setItem(k, v);
+  } catch {
+    /* ignore */
+  }
+};
+
+/** Chart area: 1 full chart, or 2 / 3 MiniChart panes — each with its own symbol,
+ *  timeframe, instrument (spot / ATM straddle / a strike's CE|PE) and EMA/VWAP
+ *  overlays. mode "scalp" (Scalper view): up to 3 panes stacked. mode "chart"
+ *  (Chart view): up to 4 panes, stacked (one above the other), side by side, or a
+ *  2x2 grid for 4; the layout is remembered. */
+export function ScalpCharts({ mode = "scalp" }: { mode?: "scalp" | "chart" } = {}) {
+  const isChart = mode === "chart";
   const storeSym = useStore((s) => s.symbol);
   const selectSymbol = useStore((s) => s.selectSymbol);
   const chain = useStore((s) => s.chain);
@@ -46,7 +66,24 @@ export function ScalpCharts() {
   const symClassOk = useStore((s) => s.symClassOk);
   const symClass = useStore((s) => s.symClass);
 
-  const [layout, setLayout] = useState<1 | 2 | 3>(1);
+  const [layout, setLayoutRaw] = useState<1 | 2 | 3 | 4>(() => {
+    const n = isChart ? Number(lsGet("chart.split.n")) : 1;
+    return n >= 1 && n <= 4 ? (n as 1 | 2 | 3 | 4) : 1;
+  });
+  const [dirRaw, setDirRaw] = useState<Dir>(() => {
+    const d = lsGet("chart.split.dir");
+    return d === "side" || d === "grid" ? d : "stack";
+  });
+  const setLayout = (n: 1 | 2 | 3 | 4) => {
+    setLayoutRaw(n);
+    if (isChart) lsSet("chart.split.n", String(n));
+  };
+  const setDir = (d: Dir) => {
+    setDirRaw(d);
+    if (isChart) lsSet("chart.split.dir", d);
+  };
+  // the 2x2 grid only exists for 4 panes
+  const dir: Dir = !isChart ? "stack" : dirRaw === "grid" && layout !== 4 ? "stack" : dirRaw;
   const [paneBars, setPaneBars] = useState(() => {
     try {
       return localStorage.getItem("scalp.paneBars") !== "0";
@@ -103,6 +140,7 @@ export function ScalpCharts() {
     mkPane(storeSym, 300),
     mkPane(storeSym, 300),
     mkPane(storeSym, 300),
+    mkPane(storeSym, 300),
   ]);
 
   const prevSym = useRef(storeSym);
@@ -124,15 +162,30 @@ export function ScalpCharts() {
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-term-panel2">
       <div className="flex flex-wrap items-center gap-2 border-b border-term-border px-3 py-1 text-2xs text-term-dim">
-        <span className="font-semibold uppercase tracking-wide">Scalp charts</span>
+        <span className="font-semibold uppercase tracking-wide">{isChart ? "Charts" : "Scalp charts"}</span>
         <span>Layout</span>
         <div className="seg">
-          {([1, 2, 3] as const).map((n) => (
+          {(isChart ? ([1, 2, 3, 4] as const) : ([1, 2, 3] as const)).map((n) => (
             <button key={n} onClick={() => setLayout(n)} className={layout === n ? "on" : ""}>
-              {n === 1 ? "Single" : n === 2 ? "Split ×2" : "Split ×3"}
+              {n === 1 ? "Single" : `Split ×${n}`}
             </button>
           ))}
         </div>
+        {isChart && layout > 1 && (
+          <div className="seg" title="How the charts are arranged">
+            <button onClick={() => setDir("stack")} className={dir === "stack" ? "on" : ""} title="One above the other">
+              ☰ Stacked
+            </button>
+            <button onClick={() => setDir("side")} className={dir === "side" ? "on" : ""} title="Side by side">
+              ▥ Side by side
+            </button>
+            {layout === 4 && (
+              <button onClick={() => setDir("grid")} className={dir === "grid" ? "on" : ""} title="2 × 2 grid">
+                ⊞ Grid
+              </button>
+            )}
+          </div>
+        )}
         {layout > 1 && (
           <button
             className="btn px-2 py-0.5"
@@ -178,9 +231,20 @@ export function ScalpCharts() {
       {layout === 1 ? (
         <Chart />
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col divide-y divide-term-border">
+        <div
+          className={
+            dir === "grid"
+              ? "grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-px bg-term-border"
+              : dir === "side"
+                ? "flex min-h-0 flex-1 flex-row divide-x divide-term-border"
+                : "flex min-h-0 flex-1 flex-col divide-y divide-term-border"
+          }
+        >
           {panes.slice(0, layout).map((p, i) => (
-            <div key={i} className="relative flex min-h-0 flex-1 flex-col">
+            <div
+              key={i}
+              className={`relative flex min-h-0 min-w-0 flex-1 flex-col ${dir === "grid" ? "bg-term-panel2" : ""}`}
+            >
               <div
                 className="flex flex-wrap items-center gap-1.5 border-b border-term-border/60 px-2 py-1 text-[10px]"
                 style={paneBars ? undefined : { display: "none" }}
