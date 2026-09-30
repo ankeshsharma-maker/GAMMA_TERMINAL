@@ -228,7 +228,7 @@ const Cell = ({ className = "", children }: { className?: string; children: Reac
   <span className={`whitespace-nowrap px-1 py-0.5 ${className}`}>{children}</span>
 );
 
-export function TrendCompass({ symbol }: { symbol: string }) {
+export function TrendCompass({ symbol, inline = false }: { symbol: string; inline?: boolean }) {
   const t = useTrend(symbol);
   const tone = !t
     ? "text-term-dim"
@@ -241,7 +241,11 @@ export function TrendCompass({ symbol }: { symbol: string }) {
     // one row, always: nowrap + sideways scroll on very narrow screens rather
     // than wrapping into a second line that eats chart height
     <div
-      className="no-scrollbar flex items-center overflow-x-auto border-b border-term-border bg-term-panel px-1 py-1 text-[10px]"
+      className={
+        inline
+          ? "no-scrollbar flex min-w-0 items-center overflow-x-auto text-[10px]"
+          : "no-scrollbar flex items-center overflow-x-auto border-b border-term-border bg-term-panel px-1 py-1 text-[10px]"
+      }
       title="Trend compass — EMA 9/21 (first arrow), Supertrend (second) and price-action structure (third: higher highs + higher lows = up, lower highs + lower lows = down) and ADX (fourth: +DI vs -DI once ADX is 20+) on 5m, 15m and 1h candles, plus the option-flow direction. Confirms a trend once it's under way; it lags at turning points and does not predict them."
     >
       <div className="num flex shrink-0 divide-x divide-term-border/70 overflow-hidden rounded border border-term-border/70">

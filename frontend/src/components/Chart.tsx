@@ -295,7 +295,7 @@ const MTF_OSC = new Set(["rsi", "macd", "macdsig"]);
  *  open on a week / a fortnight (about 65 / 75 bars). The range menu still overrides it until the timeframe changes. */
 const defaultRangeDays = (intervalS: number): number => (intervalS >= 3600 ? 15 : intervalS >= 1800 ? 7 : 1);
 
-export function Chart() {
+export function Chart({ hideTrend = false }: { hideTrend?: boolean } = {}) {
   const symbol = useStore((s) => s.symbol);
   const chain = useStore((s) => s.chain);
   // subscribe to just the charted symbol's tick — not the whole liveSpots map,
@@ -1784,7 +1784,7 @@ export function Chart() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <TrendCompass symbol={symbol} />
+      {!hideTrend && <TrendCompass symbol={symbol} />}
       {!barOpen && (
         <div className="flex items-center gap-1 self-start rounded-br border-b border-r border-term-border bg-term-panel2 px-1.5 py-0.5 text-2xs">
           <button

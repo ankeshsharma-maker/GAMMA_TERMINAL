@@ -226,16 +226,13 @@ export function ScalpCharts({ mode = "scalp" }: { mode?: "scalp" | "chart" } = {
             {paneTime ? "🕒 time" : "🕒 time off"}
           </button>
         )}
-        <span className="ml-auto">
-          {layout === 1 ? "full chart with indicators & split" : "each pane: symbol · TF · derivative · EMA/VWAP"}
-        </span>
+        <TrendCompass symbol={storeSym} inline />
       </div>
 
-      {/* single layout: <Chart /> carries its own compass row */}
-      {layout > 1 && <TrendCompass symbol={storeSym} />}
+      {/* the trend pill lives in the header row above (Chart tab and Scalper), so no strip of its own here */}
 
       {layout === 1 ? (
-        <Chart />
+        <Chart hideTrend />
       ) : (
         <div
           className={
