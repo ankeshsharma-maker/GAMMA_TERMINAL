@@ -104,6 +104,16 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
   const [openKey, setOpenKey] = useState<string | null>(null);
   // press and hold a card (~0.7 s): the Flattrade-style BUY / SELL sheet for that contract
   const [sheet, setSheet] = useState<{ r: any; avg: number; pnl: number } | null>(null);
+  // unfolded Fold (640-900 px): list left, the selected position's detail right
+  const isMobile = useIsMobile();
+  const [wide, setWide] = useState(() => window.innerWidth >= 640);
+  useEffect(() => {
+    const f = () => setWide(window.innerWidth >= 640);
+    window.addEventListener("resize", f);
+    return () => window.removeEventListener("resize", f);
+  }, []);
+  const twoPane = isMobile && wide;
+  const [paneKey, setPaneKey] = useState<string | null>(null);
   const pressT = useRef<number | null>(null);
   const pressFired = useRef(false);
   const pressXY = useRef<[number, number] | null>(null);
@@ -344,7 +354,8 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
       )}
 
       {/* position cards -- the broker app's layout; tap one for its actions */}
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+      <div className={twoPane ? "grid min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] items-start gap-3" : ""}>
+      <div className={twoPane ? "grid gap-2" : "grid gap-2 sm:grid-cols-2 xl:grid-cols-3"}>
         {withPnl.map(({ r, today, day, key }, i) => {
           const qty = n(r.netqty) ?? 0;
           const isBusy = busy.has(r.tsym);
@@ -389,12 +400,13 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
                   pressFired.current = false; // the hold opened the sheet; don't also toggle the card
                   return;
                 }
+                if (twoPane) return setPaneKey(key); // unfolded: the detail pane on the right
                 if (APP) return setSheet({ r, avg, pnl }); // the app: a tap opens the sheet, like Flattrade
                 setOpenKey(open ? null : key);
               }}
               title="Tap for actions · press and hold to BUY / SELL"
               className={`cursor-pointer select-none rounded-lg bg-term-panel px-4 py-2.5 ${
-                sel ? "ring-1 ring-term-accent" : ""
+                sel || (twoPane && (paneKey ?? withPnl[0]?.key) === key) ? "ring-1 ring-term-accent" : ""
               }`}
             >
               <div className={`flex items-baseline justify-between gap-2 ${FS.line}`}>
@@ -532,6 +544,65 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
             </div>
           );
         })}
+      </div>
+      {twoPane && (() => {
+        const w = withPnl.find((x) => x.key === (paneKey ?? withPnl[0]?.key)) ?? withPnl[0];
+        if (!w) return <div />;
+        const r = w.r;
+        const qty = n(r.netqty) ?? 0;
+        const avg = qty ? n(r.netavgprc) ?? n(r.daybuyavgprc) ?? n(r.daysellavgprc) ?? 0 : 0;
+        const lp = n(r.lp);
+        const pnl = mode === "mtm" ? w.today : w.day;
+        const g = qty < 0 ? guard[String(r.tsym ?? "")] : undefined;
+        const gt = g && g.level >= 1 ? guardText(g) : null;
+        const lots = Math.floor(Math.abs(qty) / (Number(r.ls) || 1));
+        const cell = (k: string, v: ReactNode) => (
+          <div className="flex items-baseline justify-between border-b border-term-border/50 py-1.5 text-[13px]">
+            <span className="text-term-dim">{k}</span>
+            <span className="tabular-nums text-term-text">{v}</span>
+          </div>
+        );
+        return (
+          <div className="sticky top-0 rounded-xl border border-term-border bg-term-panel p-3">
+            <div className="text-[15px] font-semibold text-term-text">{r.dname ?? r.tsym}</div>
+            <div className="mb-2 text-[12px] text-term-dim">
+              {qty < 0 ? "SHORT" : qty > 0 ? "LONG" : "CLOSED"} {Math.abs(qty)} ({lots} lots) · {r.exch ?? "NFO"}
+            </div>
+            <div className={`tabular-nums mb-2 text-[22px] font-semibold ${signColor(pnl)}`}>{nf(pnl, 2)}</div>
+            {cell("Avg price", avg ? avg.toFixed(2) : "–")}
+            {cell("LTP", lp != null ? lp.toFixed(2) : "–")}
+            {cell("Realised", <span className={signColor(n(r.rpnl))}>{nf(n(r.rpnl) ?? 0, 2)}</span>)}
+            {gt && g && (
+              <div className={`mt-2 rounded-md px-2.5 py-1.5 text-[12px] ${g.level >= 2 ? "bg-down/15 text-down" : "bg-amber-500/15 text-amber-400"}`}>
+                <b>{g.level >= 2 ? "DANGER" : "WARNING"}</b> · {gt.where}
+                {gt.next && <> · {gt.next}</>}
+              </div>
+            )}
+            {!!qty && (
+              <div className="mt-2">
+                <LegBracketBadge r={r} bracket={findBracket(r, legRules)} onChanged={loadLegRules} />
+              </div>
+            )}
+            <div className="mt-3 flex gap-2">
+              {!!qty && (
+                <button
+                  disabled={busy.has(r.tsym)}
+                  onClick={() => squareOff(r)}
+                  className="min-h-[40px] flex-1 rounded-lg border border-down/60 bg-down/10 text-[13px] font-bold text-down disabled:opacity-40"
+                >
+                  Exit
+                </button>
+              )}
+              <button
+                onClick={() => setSheet({ r, avg, pnl })}
+                className="min-h-[40px] flex-1 rounded-lg border border-term-accent/60 bg-term-accent/15 text-[13px] font-bold text-term-text"
+              >
+                Buy / Sell…
+              </button>
+            </div>
+          </div>
+        );
+      })()}
       </div>
       {sheet && (
         <PositionSheet
@@ -1173,6 +1244,19 @@ const plainReject = (raw: string): string => {
   return `Not enough margin: short by ${inr(m[1])}${m[2] ? ` (available ${inr(m[2])})` : ""}`;
 };
 
+/** Margin rejection -> how many lots would have fit: lots x available / (available + short). */
+const fitLots = (c: OrderCard): { fit: number; lots: number; needed: number; available: number } | null => {
+  const m = /margin\s*shortfall\s*:?\s*INR\s*([\d,.]+).*?available\s*:?\s*INR\s*([\d,.]+)/i.exec(c.reason || "");
+  if (!m) return null;
+  const short = parseFloat(m[1].replace(/,/g, ""));
+  const available = parseFloat(m[2].replace(/,/g, ""));
+  const ls = Math.max(1, Number(c.book?.ls) || 1);
+  const lots = c.lots ?? (c.qty ? Math.round(c.qty / ls) : 0);
+  if (!lots || !(available > 0)) return null;
+  const needed = available + short;
+  return { fit: Math.max(0, Math.floor((lots * available) / needed)), lots, needed, available };
+};
+
 const norenMs = (t?: string): number => {
   const m = /^(\d{2}):(\d{2}):(\d{2})\s+(\d{2})-(\d{2})-(\d{4})/.exec(t || "");
   return m ? new Date(+m[6], +m[5] - 1, +m[4], +m[1], +m[2], +m[3]).getTime() : 0;
@@ -1196,6 +1280,15 @@ export function OrdersTab() {
   // tap an executed live order: its details + Repeat Order (the broker app's order sheet)
   const [detail, setDetail] = useState<OrderCard | null>(null);
   const [retry, setRetry] = useState<OrderCard | null>(null); // a rejected order: straight to its repeat sheet
+  const isMobileO = useIsMobile();
+  const [wideO, setWideO] = useState(() => window.innerWidth >= 640);
+  useEffect(() => {
+    const f = () => setWideO(window.innerWidth >= 640);
+    window.addEventListener("resize", f);
+    return () => window.removeEventListener("resize", f);
+  }, []);
+  const twoPane = isMobileO && wideO; // unfolded Fold: orders left, the selected order right
+  const [paneOrder, setPaneOrder] = useState<string | null>(null);
   // each contract's LTP, from the live positions (the order book carries none)
   const [ltpOf, setLtpOf] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -1350,7 +1443,8 @@ export function OrdersTab() {
           </div>
         )}
 
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        <div className={twoPane ? "grid min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] items-start gap-3" : ""}>
+        <div className={twoPane ? "grid gap-2" : "grid gap-2 sm:grid-cols-2 xl:grid-cols-3"}>
           {shown.map((c) => {
             // Modify / Cancel on every open order (was hidden until the card was tapped)
             const expanded = c.open && !!c.book?.norenordno;
@@ -1359,7 +1453,7 @@ export function OrdersTab() {
             return (
               <div
                 key={c.key}
-                onClick={tappable ? () => setDetail(c) : undefined}
+                onClick={tappable ? () => (twoPane ? setPaneOrder(c.key) : setDetail(c)) : undefined}
                 title={tappable ? "Tap for the order's details · Repeat Order" : undefined}
                 className={`rounded-lg px-4 py-2.5 ${
                   rejected ? "border border-down/60 bg-down/10" : "bg-term-panel"
@@ -1407,6 +1501,14 @@ export function OrdersTab() {
                 {c.reason && (
                   <div className="mt-1 text-[12px] font-semibold leading-snug text-down">{rejected ? `⛔ ${plainReject(c.reason)}` : c.reason}</div>
                 )}
+                {rejected && (() => {
+                  const f = fitLots(c);
+                  return f ? (
+                    <div className="mt-0.5 text-[11px] text-term-dim">
+                      {f.lots} lots needs ₹{Math.round(f.needed).toLocaleString("en-IN")} · you had ₹{Math.round(f.available).toLocaleString("en-IN")} free
+                    </div>
+                  ) : null;
+                })()}
                 {rejected && c.book?.tsym && (
                   <button
                     type="button"
@@ -1416,7 +1518,10 @@ export function OrdersTab() {
                     }}
                     className="mt-2 w-full rounded-lg border border-down/70 bg-down/20 py-2 text-[13px] font-bold text-term-text active:bg-down/40"
                   >
-                    Retry — the sheet shows how many lots fit your margin
+                    {(() => {
+                      const f = fitLots(c);
+                      return f && f.fit > 0 ? `Retry with ${f.fit} lot${f.fit === 1 ? "" : "s"} (fits margin)` : "Retry";
+                    })()}
                   </button>
                 )}
                 {expanded && (
@@ -1428,6 +1533,11 @@ export function OrdersTab() {
             );
           })}
         </div>
+        {twoPane && (() => {
+          const sel = shown.find((c) => c.key === paneOrder) ?? shown.find((c) => !c.open) ?? shown[0];
+          return sel ? <OrderDetailSheet c={sel} inline onClose={() => setPaneOrder(null)} /> : <div />;
+        })()}
+        </div>
       </div>
       {detail && <OrderDetailSheet c={detail} onClose={() => setDetail(null)} />}
       {retry && <OrderDetailSheet c={retry} startRepeat onClose={() => setRetry(null)} />}
@@ -1437,7 +1547,7 @@ export function OrdersTab() {
 
 /** An executed order's sheet (the broker app's): what filled, at what, its IDs -- and Repeat Order,
  *  which opens the BUY / SELL sheet with this order's side, lots and price type filled in. */
-function OrderDetailSheet({ c, onClose, startRepeat = false }: { c: OrderCard; onClose: () => void; startRepeat?: boolean }) {
+function OrderDetailSheet({ c, onClose, startRepeat = false, inline = false }: { c: OrderCard; onClose: () => void; startRepeat?: boolean; inline?: boolean }) {
   const o = c.book || {};
   const [repeat, setRepeat] = useState(startRepeat);
   const ls = Number(o.ls) || 1;
@@ -1451,7 +1561,7 @@ function OrderDetailSheet({ c, onClose, startRepeat = false }: { c: OrderCard; o
         onClose={onClose}
         init={{
           side: c.side,
-          lots: Math.max(1, Math.round((c.qty ?? ls) / ls)),
+          lots: startRepeat && fitLots(c)?.fit ? fitLots(c)!.fit : Math.max(1, Math.round((c.qty ?? ls) / ls)),
           type: mkt ? "MKT" : "LMT",
           price: mkt ? null : Number(o.prc) || null,
         }}
@@ -1464,13 +1574,22 @@ function OrderDetailSheet({ c, onClose, startRepeat = false }: { c: OrderCard; o
       <span className="truncate text-right tabular-nums text-term-text">{v}</span>
     </div>
   );
-  return (
-    <div className="fixed inset-0 z-[55] flex items-end justify-center bg-black/60 sm:items-center" onClick={onClose}>
-      <div
-        className="w-full max-w-md rounded-t-xl border border-term-border bg-term-panel p-3 shadow-2xl sm:rounded-xl"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
-        onClick={(e) => e.stopPropagation()}
-      >
+  const frame = (body: ReactNode) =>
+    inline ? (
+      <div className="sticky top-0 rounded-xl border border-term-border bg-term-panel p-3">{body}</div>
+    ) : (
+      <div className="fixed inset-0 z-[55] flex items-end justify-center bg-black/60 sm:items-center" onClick={onClose}>
+        <div
+          className="w-full max-w-md rounded-t-xl border border-term-border bg-term-panel p-3 shadow-2xl sm:rounded-xl"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {body}
+        </div>
+      </div>
+    );
+  return frame(
+    <>
         <div className="truncate text-[15px] font-semibold text-term-text">{c.name}</div>
         <div className="mt-1 flex items-center gap-2 text-[12px]">
           <span className="text-term-accent">{c.exch}</span>
@@ -1512,8 +1631,7 @@ function OrderDetailSheet({ c, onClose, startRepeat = false }: { c: OrderCard; o
           {o.norenordno && row("Order ID", o.norenordno)}
           {c.reason && row("Reason", <span className="text-down">{c.reason}</span>)}
         </div>
-      </div>
-    </div>
+    </>
   );
 }
 

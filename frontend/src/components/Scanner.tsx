@@ -226,6 +226,7 @@ export function Scanner({ spec, setSpec }: { spec: Spec; setSpec: (s: Spec) => v
             <col style={{ width: "13%" }} />
             <col style={{ width: "10%" }} />
             <col />
+            <col className="hidden min-[400px]:table-column" style={{ width: "11%" }} />
           </colgroup>
           <thead className="sticky top-0 z-10 bg-term-panel text-[9px] uppercase text-term-dim">
             <tr>
@@ -235,12 +236,13 @@ export function Scanner({ spec, setSpec }: { spec: Spec; setSpec: (s: Spec) => v
               <th className={cth}>Bias</th>
               <th className={cth}>DTE</th>
               <th className={`${cth} text-left`}>Hot strike</th>
+              <th className={`${cth} hidden min-[400px]:table-cell`}>PCR</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="border border-term-border px-3 py-8 text-center text-term-dim">
+                <td colSpan={7} className="border border-term-border px-3 py-8 text-center text-term-dim">
                   {all.length === 0 ? "warming up — the scanner needs a few polls of history…" : "No watchlist symbol matches right now."}
                   {filtered && all.length > 0 && (
                     <div className="mt-2">
@@ -317,10 +319,11 @@ export function Scanner({ spec, setSpec }: { spec: Spec; setSpec: (s: Spec) => v
                         <span className="text-term-dim">—</span>
                       )}
                     </td>
+                    <td className={`${ctd} num hidden text-center min-[400px]:table-cell`}>{nf(r.pcr, 2)}</td>
                   </tr>
                   {open && (
                     <tr className="sm:hidden">
-                      <td colSpan={6} className="border-b border-term-border bg-term-panel2/60 px-2 py-2">
+                      <td colSpan={7} className="border-b border-term-border bg-term-panel2/60 px-2 py-2">
                         {detail(r)}
                       </td>
                     </tr>
