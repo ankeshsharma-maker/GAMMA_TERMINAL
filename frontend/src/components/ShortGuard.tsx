@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { useStore } from "../store";
+import { isViewer } from "../lib/auth";
 import { nf, sk } from "../lib/format";
 import type { ShortGuardLeg } from "../types";
 
@@ -7,7 +9,11 @@ import type { ShortGuardLeg } from "../types";
  *  (the backend also alerts once per level), and the roll back to ~0.20 delta
  *  priced at the live quotes. Renders nothing when there are no short options. */
 export function ShortGuard() {
-  const [legs, setLegs] = useState<ShortGuardLeg[]>([]);
+  // only the side picked with the header's Paper / Live switch
+  const orderMode = useStore((s) => s.orderMode);
+  const side: "live" | "paper" = !isViewer() && orderMode === "live" ? "live" : "paper";
+  const [allLegs, setLegs] = useState<ShortGuardLeg[]>([]);
+  const legs = allLegs.filter((l) => l.src === side);
   const [levels, setLevels] = useState<number[]>([0.3, 0.4]);
   useEffect(() => {
     let alive = true;

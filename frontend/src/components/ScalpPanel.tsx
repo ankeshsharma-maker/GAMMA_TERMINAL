@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
+import { isViewer } from "../lib/auth";
 import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
 import { useIsMobile } from "../lib/useIsMobile";
@@ -21,8 +22,14 @@ export function ScalpPanel() {
     setScalpLots,
     quickTrade,
     quickTradeAt,
+    orderMode,
+    paper,
+    closePosition,
   } = useStore();
   const broker = useStore((s) => s.broker);
+  // Paper / Live is the header switch: paper shows only paper positions (and Exit closes the
+  // paper position); live shows only the Flattrade book (Exit sends a real order)
+  const paperMode = isViewer() || orderMode !== "live";
   const isMobile = useIsMobile();
   const { mark } = useLiveMtm();
 
@@ -81,8 +88,9 @@ export function ScalpPanel() {
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const loadRef = useRef<() => void>(() => {});
   useEffect(() => {
-    if (!broker?.authed) {
+    if (paperMode || !broker?.authed) {
       setBrokerRows([]);
+      setFeedErr(null);
       return;
     }
     let alive = true;
@@ -100,18 +108,37 @@ export function ScalpPanel() {
       window.clearInterval(t);
       window.removeEventListener("gt-resume", load);
     };
-  }, [broker?.authed]);
+  }, [broker?.authed, paperMode]);
+
+  // paper positions in the broker row shape, so the same table / totals serve both modes
+  const paperRows = useMemo(
+    () =>
+      (paper?.positions ?? []).map((p: any) => ({
+        tsym: p.id,
+        _paperId: p.id,
+        dname: `${p.symbol} ${p.strike} ${p.optionType}`,
+        symname: p.symbol,
+        netqty: p.qty,
+        netavgprc: p.avgPrice,
+        lp: p.ltp,
+        urmtom: p.pnl,
+        rpnl: 0,
+        ls: p.lotSize,
+      })),
+    [paper?.positions]
+  );
+  const rowsNow = paperMode ? paperRows : brokerRows;
 
   const mtmOf = (r: any) => mark(r) ?? n(r.urmtom) ?? n(r.mtm) ?? 0;
   const rpnlOf = (r: any) => n(r.rpnl) ?? 0;
-  const open = brokerRows.filter((r) => (n(r.netqty) ?? 0) !== 0 || rpnlOf(r) !== 0);
+  const open = rowsNow.filter((r) => (n(r.netqty) ?? 0) !== 0 || rpnlOf(r) !== 0);
   const sameSym = (r: any) =>
     String(r.symname ?? "").toUpperCase() === symbol.toUpperCase() ||
     String(r.tsym ?? "").toUpperCase().startsWith(symbol.toUpperCase());
   const myRows = open.filter(sameSym);
 
   const totMtm = open.reduce((s, r) => s + mtmOf(r), 0);
-  const totRpnl = open.reduce((s, r) => s + rpnlOf(r), 0);
+  const totRpnl = paperMode ? paper?.realized ?? 0 : open.reduce((s, r) => s + rpnlOf(r), 0);
   const totToday = totMtm + totRpnl;
   const symMtm = myRows.reduce((s, r) => s + mtmOf(r), 0);
   const symRpnl = myRows.reduce((s, r) => s + rpnlOf(r), 0);
@@ -135,6 +162,10 @@ export function ScalpPanel() {
   const squareOff = (r: any) => {
     const qty = n(r.netqty) ?? 0;
     if (!qty) return;
+    if (paperMode) {
+      closePosition(r._paperId);
+      return;
+    }
     if (!window.confirm(`Square off ${r.tsym} — real MARKET order for ${Math.abs(qty)} qty. Continue?`))
       return;
     withBusy(String(r.tsym), () =>
@@ -144,6 +175,10 @@ export function ScalpPanel() {
   const squareOffSym = () => {
     const targets = myOpen;
     if (!targets.length) return;
+    if (paperMode) {
+      targets.forEach((r) => closePosition(r._paperId));
+      return;
+    }
     if (
       !window.confirm(
         `Square off all ${targets.length} open ${symbol} position(s) — ${targets.length} real MARKET order(s) now. Continue?`
@@ -187,8 +222,15 @@ export function ScalpPanel() {
 
   return (
     <div className={`flex flex-col bg-term-panel2 ${isMobile ? "" : "h-full overflow-y-auto"}`}>
-      {/* live P&L straight from the broker position book */}
+      {/* live P&L straight from the broker position book (paper: this session's paper positions) */}
       <div className="flex items-end gap-4 border-b border-term-border bg-term-panel px-3 py-1.5">
+        <span
+          className={`self-center rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white ${
+            paperMode ? "bg-term-accent" : "bg-down"
+          }`}
+        >
+          {paperMode ? "PAPER" : "LIVE"}
+        </span>
         <div className="flex flex-col leading-tight">
           <span className="text-[9px] uppercase tracking-wide text-term-dim">
             MTM ({open.length})
@@ -199,7 +241,7 @@ export function ScalpPanel() {
           <span className="text-[9px] uppercase tracking-wide text-term-dim">P&amp;L</span>
           <span className={`num text-sm font-bold ${signColor(totToday)}`}>₹{nf(totToday, 0)}</span>
         </div>
-        {broker?.authed && (
+        {(paperMode || broker?.authed) && (
           <div className="flex flex-col leading-tight">
             <span className="text-[9px] uppercase tracking-wide text-term-dim">Realised</span>
             <span className={`num text-sm font-bold ${signColor(totRpnl)}`}>₹{nf(totRpnl, 0)}</span>
@@ -359,20 +401,20 @@ export function ScalpPanel() {
       </div>
 
       <div className={`p-2 ${isMobile ? "overflow-x-auto" : "min-h-0 flex-1 overflow-auto"}`}>
-        {!broker?.authed && (
+        {!paperMode && !broker?.authed && (
           <div className="p-4 text-center text-2xs text-term-dim">
             Connect Flattrade (header) to see the live broker P&amp;L feed.
           </div>
         )}
-        {broker?.authed && feedErr && (
+        {!paperMode && broker?.authed && feedErr && (
           <div className="p-4 text-center text-2xs text-down">{feedErr}</div>
         )}
-        {broker?.authed && !feedErr && myRows.length === 0 && (
+        {(paperMode || broker?.authed) && !feedErr && myRows.length === 0 && (
           <div className="p-4 text-center text-2xs text-term-dim">
-            No {symbol} positions at the broker today.
+            {paperMode ? `No ${symbol} paper positions.` : `No ${symbol} positions at the broker today.`}
           </div>
         )}
-        {broker?.authed && !feedErr && myRows.length > 0 && (
+        {(paperMode || broker?.authed) && !feedErr && myRows.length > 0 && (
           <table className="w-full min-w-[480px] border-separate border-spacing-0 overflow-hidden rounded border border-term-border text-2xs [&_td]:border-b [&_td]:border-r [&_td]:border-term-border/60 [&_td]:px-1.5 [&_td]:py-1 [&_td:last-child]:border-r-0 [&_th]:border-b [&_th]:border-r [&_th]:border-term-border [&_th]:px-1.5 [&_th]:py-1 [&_th:last-child]:border-r-0 [&_tr:last-child_td]:border-b-0">
             <thead className="sticky top-0 z-10 bg-term-panel2 text-[9px] uppercase tracking-wide text-term-dim">
               <tr>

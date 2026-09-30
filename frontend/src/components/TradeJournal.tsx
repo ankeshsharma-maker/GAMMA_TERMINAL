@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
+import { useStore } from "../store";
+import { isViewer } from "../lib/auth";
 import { nf, sk, hhmm, signColor } from "../lib/format";
 import type { JournalReview, JournalStats, JournalTrade } from "../types";
 
@@ -91,7 +93,6 @@ function DayBars({ days }: { days: { date: string; pnl: number; trades: number }
 }
 
 type Mode = "all" | "paper" | "live";
-const MODE_LS = "journal.mode";
 
 const istDay = (ts: number) =>
   new Date(ts * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); // YYYY-MM-DD
@@ -221,23 +222,10 @@ export function TradeJournal() {
   const [symbolFilter, setSymbolFilter] = useState("");
   const [syncNote, setSyncNote] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
-  const [mode, setModeState] = useState<Mode>(() => {
-    try {
-      const v = localStorage.getItem(MODE_LS);
-      return v === "paper" || v === "live" ? v : "all";
-    } catch {
-      return "all";
-    }
-  });
-  const setMode = (m: Mode) => {
-    setModeState(m);
-    setSymbolFilter("");
-    try {
-      localStorage.setItem(MODE_LS, m);
-    } catch {
-      /* private mode */
-    }
-  };
+  // Paper / Live is the header toggle: the journal shows only that side (viewers: paper)
+  const orderMode = useStore((s) => s.orderMode);
+  const mode: Mode = isViewer() || orderMode !== "live" ? "paper" : "live";
+  useEffect(() => setSymbolFilter(""), [mode]);
 
   const load = async () => {
     setBusy(true);
@@ -267,7 +255,7 @@ export function TradeJournal() {
   }, []);
 
   const trades = useMemo(
-    () => (allTrades ?? []).filter((t) => mode === "all" || t.mode === mode),
+    () => (allTrades ?? []).filter((t) => t.mode === mode),
     [allTrades, mode]
   );
   const stats = useMemo(() => (allTrades ? computeStats(trades) : null), [allTrades, trades]);
@@ -285,20 +273,16 @@ export function TradeJournal() {
     <div className="flex min-h-0 flex-1 flex-col overflow-auto p-4">
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <h2 className="text-base font-semibold">Trade Journal</h2>
-        <div className="seg" title="Show paper trades, live Flattrade trades, or both — every figure below follows it">
-          {(
-            [
-              ["all", "All"],
-              ["paper", "Paper"],
-              ["live", "Live"],
-            ] as const
-          ).map(([m, label]) => (
-            <button key={m} onClick={() => setMode(m)} className={mode === m ? "on" : ""}>
-              {label} <span className="num opacity-70">{counts[m]}</span>
-            </button>
-          ))}
-        </div>
+        <span
+          className={`rounded px-2 py-0.5 text-2xs font-bold tracking-wide text-white ${
+            mode === "live" ? "bg-down" : "bg-term-accent"
+          }`}
+          title="Follows the Paper / Live switch in the header"
+        >
+          {mode === "live" ? "LIVE" : "PAPER"} <span className="num opacity-80">{counts[mode]}</span>
+        </span>
         {syncNote && <span className="text-2xs text-term-dim">{syncNote}</span>}
+        {mode === "live" && (
         <button
           onClick={syncLive}
           title="Copy today's Flattrade order book into the journal now (it also syncs by itself every 5 min while connected)"
@@ -306,6 +290,7 @@ export function TradeJournal() {
         >
           ⟳ Sync live
         </button>
+        )}
         <button
           onClick={load}
           disabled={busy}
@@ -315,7 +300,7 @@ export function TradeJournal() {
         </button>
       </div>
 
-      {mode !== "paper" && <DayReview refresh={refresh} />}
+      {mode === "live" && <DayReview refresh={refresh} />}
 
       {busy && !stats ? (
         <div className="p-6 text-center text-sm text-term-dim">Loading…</div>

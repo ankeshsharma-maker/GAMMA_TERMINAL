@@ -12,6 +12,7 @@ import { ScenarioGrid } from "./ScenarioGrid";
 import { PortfolioSummary } from "./PortfolioSummary";
 import { AutoSquareOff } from "./AutoSquareOff";
 import { ShortGuard, guardText } from "./ShortGuard";
+import { Positions as PaperPositions } from "./Positions";
 import type { ShortGuardLeg } from "../types";
 import { Capacitor } from "@capacitor/core";
 
@@ -1116,9 +1117,8 @@ export function OrdersTab() {
   const broker = useStore((s) => s.broker);
   const paper = useStore((s) => s.paper);
   const orderMode = useStore((s) => s.orderMode);
-  const [src, setSrc] = useState<"live" | "paper">(orderMode === "live" ? "live" : "paper");
-  // the order mode arrives after the first render -- follow it
-  useEffect(() => setSrc(orderMode === "live" ? "live" : "paper"), [orderMode]);
+  // Paper / Live is the header toggle's job: this tab shows only that side (viewers: paper)
+  const src: "live" | "paper" = isViewer() || orderMode !== "live" ? "paper" : "live";
   const [book, setBook] = useState<any[]>([]);
   const [liveLog, setLiveLog] = useState<any[]>([]);
   const [tab, setTab] = useState<"open" | "done">("open");
@@ -1130,6 +1130,7 @@ export function OrdersTab() {
   useEffect(() => {
     let alive = true;
     const load = () => {
+      if (src !== "live") return;
       api.liveOrderLog().then((d) => alive && setLiveLog(d.orders || []), () => {});
       if (broker?.authed) api.brokerOrders().then((d) => alive && setBook(d.orders || []), () => {});
       if (broker?.authed)
@@ -1150,7 +1151,7 @@ export function OrdersTab() {
       alive = false;
       clearInterval(t);
     };
-  }, [broker?.authed]);
+  }, [broker?.authed, src]);
 
   const tsMs = (raw: any): number => {
     const x = Number(raw);
@@ -1275,13 +1276,13 @@ export function OrdersTab() {
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto bg-term-bg p-2 md:p-3">
         <div className="flex items-center gap-2 px-1 text-[11px] text-term-dim">
-          <div className="seg text-[11px]">
-            {(isViewer() ? (["paper"] as const) : (["live", "paper"] as const)).map((s) => (
-              <button key={s} onClick={() => setSrc(s)} className={src === s ? "on" : ""}>
-                {s === "live" ? "Live" : "Paper"}
-              </button>
-            ))}
-          </div>
+          <span
+            className={`rounded px-2 py-0.5 text-[11px] font-bold tracking-wide ${
+              src === "live" ? "bg-down text-white" : "bg-term-accent text-white"
+            }`}
+          >
+            {src === "live" ? "LIVE" : "PAPER"}
+          </span>
           <span className="truncate">
             {src === "live"
               ? broker?.authed
@@ -1447,11 +1448,11 @@ function OrderDetailSheet({ c, onClose }: { c: OrderCard; onClose: () => void })
 }
 
 /** everything beyond the broker app's plain position list, in one place */
-function AdvancedTab() {
+function AdvancedTab({ paperMode }: { paperMode: boolean }) {
   const broker = useStore((s) => s.broker);
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      {broker?.authed && (
+      {!paperMode && broker?.authed && (
         <div className="flex items-center gap-2 border-b border-term-border bg-term-panel px-3 py-2">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-term-dim">
             Profit guard · auto square-off
@@ -1470,12 +1471,19 @@ function AdvancedTab() {
 
 export function PositionsView({ initialTab }: { initialTab?: Tab } = {}) {
   const isMobile = useIsMobile();
+  // Paper / Live is the header toggle: in Paper only paper data shows (no broker holdings,
+  // no broker positions or Profit guard), in Live only the Flattrade side
+  const orderMode = useStore((s) => s.orderMode);
+  const paperCount = useStore((s) => s.paper?.positions.length ?? 0);
+  const paperMode = isViewer() || orderMode !== "live";
   // the mobile app has a dedicated Orders bottom-tab, so drop the sub-tab here
-  const tabs = isMobile ? TABS.filter(([k]) => k !== "orders") : TABS;
-  const [tab, setTab] = useState<Tab>(
+  const tabs = TABS.filter(([k]) => !(isMobile && k === "orders") && !(paperMode && k === "holdings"));
+  const [tabWanted, setTab] = useState<Tab>(
     initialTab && (initialTab !== "orders" || !isMobile) ? initialTab : "broker"
   );
-  const [count, setCount] = useState(0);
+  const tab: Tab = tabs.some(([k]) => k === tabWanted) ? tabWanted : "broker";
+  const [liveCount, setCount] = useState(0);
+  const count = paperMode ? paperCount : liveCount;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* broker-app tabs: Positions (n) | Holdings | … with an underline */}
@@ -1498,10 +1506,17 @@ export function PositionsView({ initialTab }: { initialTab?: Tab } = {}) {
           </button>
         ))}
       </div>
-      {tab === "broker" && <BrokerTab onCount={setCount} />}
+      {tab === "broker" &&
+        (paperMode ? (
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <PaperPositions />
+          </div>
+        ) : (
+          <BrokerTab onCount={setCount} />
+        ))}
       {tab === "holdings" && <HoldingsTab />}
       {tab === "orders" && <OrdersTab />}
-      {tab === "advanced" && <AdvancedTab />}
+      {tab === "advanced" && <AdvancedTab paperMode={paperMode} />}
     </div>
   );
 }

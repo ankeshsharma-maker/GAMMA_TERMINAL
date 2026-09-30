@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { nf, signColor, sk } from "../lib/format";
 import { StopEditor } from "./StopEditor";
 import { isViewer } from "../lib/auth";
+import { useLiveMtm } from "../lib/useLiveMtm";
 
 function PnlTile({ label, value }: { label: string; value: number }) {
   return (
@@ -22,7 +23,7 @@ function LiveOrderLog() {
   const broker = useStore((s) => s.broker);
   const [orders, setOrders] = useState<any[]>([]);
   useEffect(() => {
-    if (orderMode !== "live" && !broker?.authed) return;
+    if (orderMode !== "live") return;
     let alive = true;
     const load = () =>
       api.liveOrderLog().then((d) => alive && setOrders(d.orders), () => {});
@@ -83,7 +84,102 @@ function LiveOrderLog() {
   );
 }
 
+const numOf = (v: unknown): number => {
+  const x = Number(v);
+  return Number.isFinite(x) ? x : 0;
+};
+
+/** Live mode: the Flattrade book only (read-only here; square off / manage in the Positions tab) */
+function LivePositionsPane() {
+  const broker = useStore((s) => s.broker);
+  const { mark } = useLiveMtm();
+  const [rows, setRows] = useState<any[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (!broker?.authed) {
+      setRows([]);
+      return;
+    }
+    let alive = true;
+    const load = () =>
+      api.brokerPositions().then(
+        (d) => alive && (setRows(d.positions || []), setErr(null)),
+        (e) => alive && setErr(String(e?.message || e))
+      );
+    load();
+    const t = setInterval(load, 5000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [broker?.authed]);
+
+  const mtmOf = (r: any) => mark(r) ?? numOf(r.urmtom ?? r.mtm);
+  const open = rows.filter((r) => numOf(r.netqty) !== 0 || numOf(r.rpnl) !== 0);
+  const mtm = open.reduce((a, r) => a + mtmOf(r), 0);
+  const rpnl = open.reduce((a, r) => a + numOf(r.rpnl), 0);
+
+  return (
+    <div className="flex h-full flex-col bg-term-panel2">
+      <div className="grid grid-cols-2 gap-px border-b border-term-border bg-term-border">
+        <PnlTile label="MTM" value={mtm} />
+        <PnlTile label="Today's P&L" value={mtm + rpnl} />
+      </div>
+      <div className="flex items-center gap-2 border-b border-term-border px-3 py-1.5 text-2xs font-semibold uppercase tracking-wide">
+        <span className="rounded bg-down px-1.5 py-0.5 text-[10px] text-white">LIVE</span>
+        <span className="text-term-dim">Flattrade positions</span>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {!broker?.authed && (
+          <div className="p-4 text-center text-2xs text-term-dim">Connect Flattrade (header) to see live positions.</div>
+        )}
+        {broker?.authed && err && <div className="p-4 text-center text-2xs text-down">{err}</div>}
+        {broker?.authed && !err && open.length === 0 && (
+          <div className="p-4 text-center text-2xs text-term-dim">No open live positions today.</div>
+        )}
+        {broker?.authed && !err && open.length > 0 && (
+          <table className="grid-table text-[10px]">
+            <thead className="sticky top-0 bg-term-panel2 text-term-dim">
+              <tr>
+                <th className="px-2 py-1 text-left font-medium">Contract</th>
+                <th className="px-2 py-1 text-right font-medium">LTP</th>
+                <th className="px-2 py-1 text-right font-medium">MTM</th>
+              </tr>
+            </thead>
+            <tbody>
+              {open.map((r, i) => {
+                const qty = numOf(r.netqty);
+                const lot = numOf(r.ls ?? r.lotsize);
+                return (
+                  <tr key={String(r.tsym ?? i)} className="border-b border-term-border/50 align-top">
+                    <td className="px-2 py-1.5">
+                      <div className="font-medium">{r.dname ?? r.tsym}</div>
+                      <div className="num text-term-dim">
+                        {qty === 0 ? "flat" : `${qty > 0 ? "LONG" : "SHORT"} ${lot ? Math.abs(qty / lot) : Math.abs(qty)}${lot ? "L" : ""}`}
+                      </div>
+                    </td>
+                    <td className="num px-2 py-1.5 text-right">{nf(numOf(r.lp))}</td>
+                    <td className={`num px-2 py-1.5 text-right ${signColor(mtmOf(r))}`}>{nf(mtmOf(r), 0)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <LiveOrderLog />
+    </div>
+  );
+}
+
+/** Paper mode: this session's paper positions only; Live mode: the Flattrade book only */
 export function Positions() {
+  const orderMode = useStore((s) => s.orderMode);
+  if (!isViewer() && orderMode === "live") return <LivePositionsPane />;
+  return <PaperPositionsPane />;
+}
+
+function PaperPositionsPane() {
   const { paper, closePosition } = useStore();
 
   return (
@@ -107,8 +203,9 @@ export function Positions() {
         </div>
       )}
 
-      <div className="border-b border-term-border px-3 py-1.5 text-2xs font-semibold uppercase tracking-wide text-term-dim">
-        Paper Positions
+      <div className="flex items-center gap-2 border-b border-term-border px-3 py-1.5 text-2xs font-semibold uppercase tracking-wide">
+        <span className="rounded bg-term-accent px-1.5 py-0.5 text-[10px] text-white">PAPER</span>
+        <span className="text-term-dim">Simulated positions</span>
       </div>
       <div className="flex-1 overflow-y-auto">
         {(!paper || paper.positions.length === 0) && (
@@ -157,8 +254,6 @@ export function Positions() {
           </table>
         )}
       </div>
-
-      <LiveOrderLog />
     </div>
   );
 }

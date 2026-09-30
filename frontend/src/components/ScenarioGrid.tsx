@@ -47,7 +47,8 @@ const legName = (p: ScenarioPosition) =>
 
 export function ScenarioGrid() {
   const orderMode = useStore((s) => s.orderMode);
-  const [source, setSource] = useState<Source>(orderMode === "live" ? "broker" : "paper");
+  // the header's Paper / Live switch decides which positions are stress-tested
+  const source: Source = orderMode === "live" ? "broker" : "paper";
   const [days, setDays] = useState(0);
   const [showTotal, setShowTotal] = useState(false);
   const [data, setData] = useState<ScenarioData | null>(null);
@@ -114,19 +115,13 @@ export function ScenarioGrid() {
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs">
       <div className="flex items-center gap-1.5">
         <span className="text-term-dim">Positions</span>
-        <div className="seg">
-          {(
-            [
-              ["paper", "Paper"],
-              ["broker", "Live"],
-              ["all", "Both"],
-            ] as const
-          ).map(([k, l]) => (
-            <button key={k} className={source === k ? "on" : ""} onClick={() => setSource(k)}>
-              {l}
-            </button>
-          ))}
-        </div>
+        <span
+          className={`rounded px-2 py-0.5 text-[10px] font-bold tracking-wide text-white ${
+            source === "broker" ? "bg-down" : "bg-term-accent"
+          }`}
+        >
+          {source === "broker" ? "LIVE" : "PAPER"}
+        </span>
       </div>
       <div className="flex items-center gap-1.5">
         <span className="text-term-dim">After</span>
