@@ -153,9 +153,47 @@ export function Scanner({ spec, setSpec }: { spec: Spec; setSpec: (s: Spec) => v
   const cth = "border-b border-r border-term-border px-1 py-1.5 text-center font-medium";
   const ctd = "border-b border-r border-term-border/60 px-1 py-1.5 align-middle";
 
+  const detail = (r: (typeof rows)[number]) => (
+    <>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="mb-0.5 text-[9px] uppercase text-term-dim">Sub-scores</div>
+          <CompBars c={r.components} />
+        </div>
+        {(r.hotStrikes?.length ?? 0) > 1 && (
+          <div className="min-w-0">
+            <div className="mb-0.5 text-[9px] uppercase text-term-dim">Hot OI strikes (~15m)</div>
+            <HotCell hs={r.hotStrikes} />
+          </div>
+        )}
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-x-3 text-[11px]">
+        {(
+          [
+            ["Spot", nf(r.spot, 0), ""],
+            ["5m Δ%", nf(r.move5mPct, 2), signColor(r.move5mPct)],
+            ["ATM IV", nf(r.atmIV, 1), ""],
+            ["IV Δ5m", nf(r.ivChg5m, 1), signColor(r.ivChg5m)],
+            ["Straddle Δ5m%", nf(r.straddlePct5m, 0), signColor(r.straddlePct5m)],
+            ["Net GEX", compact(r.netGex), signColor(r.netGex)],
+            ["PCR", nf(r.pcr, 2), ""],
+            ["|Spot − max pain|", `${nf(r.mpDistPct, 2)}%`, ""],
+          ] as [string, string, string][]
+        ).map(([k, v, c]) => (
+          <div key={k} className="flex items-baseline justify-between border-b border-term-border/40 py-1">
+            <span className="text-term-dim">{k}</span>
+            <span className={`num ${c || "text-term-text"}`}>{v}</span>
+          </div>
+        ))}
+      </div>
+      {r.reasons[0] && <div className="mt-1.5 text-[10.5px] leading-snug text-term-dim">{r.reasons[0]}</div>}
+                      </>
+  );
+  const selected = rows.find((r) => r.symbol === openRow) ?? rows[0];
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="hidden flex-wrap items-center gap-1 border-b border-term-border bg-term-panel2 px-3 py-1 text-2xs sm:flex">
+      <div className="hidden flex-wrap items-center gap-1 border-b border-term-border bg-term-panel2 px-3 py-1 text-2xs lg:flex">
         <span className="text-term-dim">Presets:</span>
         {PRESETS.map(([name, hint, p]) => (
           <button
@@ -178,7 +216,8 @@ export function Scanner({ spec, setSpec }: { spec: Spec; setSpec: (s: Spec) => v
 
       {/* folded phone (Galaxy Z Fold6 cover screen, ~370 px): the 6 columns that matter fit the width;
           the other 10 fold open under a row when it's tapped. sm+ (unfolded / laptop): the full table */}
-      <div className="min-h-0 flex-1 overflow-y-auto p-1.5 sm:hidden">
+      <div className="flex min-h-0 flex-1 lg:hidden">
+      <div className="min-h-0 flex-1 overflow-y-auto p-1.5 sm:w-[46%] sm:flex-none">
         <table className="grid-table w-full table-fixed text-[11px]">
           <colgroup>
             <col style={{ width: "24%" }} />
@@ -280,40 +319,9 @@ export function Scanner({ spec, setSpec }: { spec: Spec; setSpec: (s: Spec) => v
                     </td>
                   </tr>
                   {open && (
-                    <tr>
+                    <tr className="sm:hidden">
                       <td colSpan={6} className="border-b border-term-border bg-term-panel2/60 px-2 py-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="mb-0.5 text-[9px] uppercase text-term-dim">Sub-scores</div>
-                            <CompBars c={r.components} />
-                          </div>
-                          {(r.hotStrikes?.length ?? 0) > 1 && (
-                            <div className="min-w-0">
-                              <div className="mb-0.5 text-[9px] uppercase text-term-dim">Hot OI strikes (~15m)</div>
-                              <HotCell hs={r.hotStrikes} />
-                            </div>
-                          )}
-                        </div>
-                        <div className="mt-2 grid grid-cols-2 gap-x-3 text-[11px]">
-                          {(
-                            [
-                              ["Spot", nf(r.spot, 0), ""],
-                              ["5m Δ%", nf(r.move5mPct, 2), signColor(r.move5mPct)],
-                              ["ATM IV", nf(r.atmIV, 1), ""],
-                              ["IV Δ5m", nf(r.ivChg5m, 1), signColor(r.ivChg5m)],
-                              ["Straddle Δ5m%", nf(r.straddlePct5m, 0), signColor(r.straddlePct5m)],
-                              ["Net GEX", compact(r.netGex), signColor(r.netGex)],
-                              ["PCR", nf(r.pcr, 2), ""],
-                              ["|Spot − max pain|", `${nf(r.mpDistPct, 2)}%`, ""],
-                            ] as [string, string, string][]
-                          ).map(([k, v, c]) => (
-                            <div key={k} className="flex items-baseline justify-between border-b border-term-border/40 py-1">
-                              <span className="text-term-dim">{k}</span>
-                              <span className={`num ${c || "text-term-text"}`}>{v}</span>
-                            </div>
-                          ))}
-                        </div>
-                        {r.reasons[0] && <div className="mt-1.5 text-[10.5px] leading-snug text-term-dim">{r.reasons[0]}</div>}
+                        {detail(r)}
                       </td>
                     </tr>
                   )}
@@ -323,8 +331,24 @@ export function Scanner({ spec, setSpec }: { spec: Spec; setSpec: (s: Spec) => v
           </tbody>
         </table>
       </div>
+      <div className="hidden min-h-0 flex-1 overflow-y-auto border-l border-term-border bg-term-panel2/60 p-3 sm:block">
+        {selected ? (
+          <>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[14px] font-bold text-term-text">{selected.symbol}</span>
+              <button onClick={() => openScrip(selected.symbol)} className="btn px-2 py-1 text-2xs">
+                Open chart + OI + chain ›
+              </button>
+            </div>
+            {detail(selected)}
+          </>
+        ) : (
+          <div className="text-term-dim">Nothing to show yet.</div>
+        )}
+      </div>
+    </div>
 
-      <div className="hidden min-h-0 flex-1 overflow-auto p-2 sm:block">
+      <div className="hidden min-h-0 flex-1 overflow-auto p-2 lg:block">
       <table className="grid-table text-xs">
         <thead className="sticky top-0 z-10 bg-term-panel text-[10px] uppercase text-term-dim">
           <tr>

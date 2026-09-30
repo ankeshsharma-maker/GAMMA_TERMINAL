@@ -918,3 +918,5 @@ export const useStore = create<State>((set, get) => ({
     set({ paper: await api.clearStop(position_id) });
   },
 }));
+
+if (import.meta.env.DEV) (window as any).__store = useStore; // dev-only: lets previews inject demo data
