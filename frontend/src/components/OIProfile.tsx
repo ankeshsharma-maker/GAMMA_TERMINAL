@@ -4,6 +4,7 @@ import { api, type OiWallPt } from "../lib/api";
 import { bucketStart, istTime } from "../lib/istTime";
 import { compact, nf, oiCr, oiSigned, sk } from "../lib/format";
 import { PcrChart } from "./PcrChart";
+import { OIInsights } from "./OIInsights";
 import { SelectMenu } from "./SelectMenu";
 import { useIsMobile } from "../lib/useIsMobile";
 import { scoreOI } from "../lib/oiVerdict";
@@ -183,36 +184,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const [tools, setTools] = useState(false); // mobile: show the extra control rows
   const [gear, setGear] = useState(false); // web: the ⚙ settings menu (Strikes ±, View, Zoom)
   const [metric, setMetric] = useState<Metric>("combined");
-  const [layout, setLayout] = useState<"chart" | "ladder" | "walls" | "pcr" | "gex" | "dex">("chart");
-  // Table / Ladder open centred on the spot line (with All strikes they'd
-  // start at the lowest strike) -- re-centred a few times over ~1.5 s while
-  // the page settles (a single scroll on the first render could land at the
-  // top on a phone, the list still growing), and again on a symbol / expiry
-  // change. Any touch, wheel or key stops it, so it never fights a manual
-  // scroll, and the 5 s refreshes don't re-run it.
-  const spotRef = useRef<HTMLDivElement>(null);
-  const tableSpotRef = useRef<HTMLTableRowElement>(null);
-  const chainReady = !!chain && chain.rows.length > 0;
-  useEffect(() => {
-    if (layout !== "ladder" || !chainReady) return;
-    let stop = false;
-    const target = () => tableSpotRef.current;
-    const go = () => {
-      if (!stop) target()?.scrollIntoView({ block: "center" });
-    };
-    const halt = () => {
-      stop = true;
-    };
-    const evs = ["touchstart", "wheel", "keydown"] as const;
-    evs.forEach((e) => document.addEventListener(e, halt, { passive: true }));
-    const timers = [0, 150, 400, 900, 1600].map((ms) => window.setTimeout(go, ms));
-    return () => {
-      stop = true;
-      timers.forEach((t) => window.clearTimeout(t));
-      evs.forEach((e) => document.removeEventListener(e, halt));
-    };
-  }, [layout, symbol, expiry, chainReady]);
-
+  const [layout, setLayout] = useState<"chart" | "insights" | "walls" | "pcr" | "gex" | "dex">("chart");
   // "Go to" chips: centre a strike and flash its row
   const jumpBoxRef = useRef<HTMLDivElement>(null);
   const [flash, setFlash] = useState<number | null>(null);
@@ -807,9 +779,6 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     </div>
   );
 
-  // ---- OI ladder: per strike, a solid OI bar and a separate thin ΔOI bar on
-  // each side, figures outside the bars, a legend and a spot line. (It used to
-  // paint the green/red ΔOI "cap" over OI bars that are themselves red/green.)
   const tfName = tf === 0 ? "since open" : `last ${tf}m`;
   const signedK = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${compact(Math.abs(v))}`;
   // index of the first strike above spot: the spot line goes just before it
@@ -833,13 +802,8 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       return;
     }
     const box = jumpBoxRef.current;
-    const el =
-      layout === "chart"
-        ? box?.querySelector<HTMLElement>(`[data-strike="${k === "spot" ? chain.atmStrike : k}"]`)
-        : k === "spot"
-        ? tableSpotRef.current
-        : box?.querySelector<HTMLElement>(`[data-strike="${k}"]`);
-    el?.scrollIntoView(layout === "chart" ? { block: "nearest", inline: "center" } : { block: "center" });
+    const el = box?.querySelector<HTMLElement>(`[data-strike="${k === "spot" ? chain.atmStrike : k}"]`);
+    el?.scrollIntoView({ block: "nearest", inline: "center" });
     if (k !== "spot") {
       setFlash(k);
       window.clearTimeout(flashT.current);
@@ -875,97 +839,6 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       )}
     </div>
   );
-  const spotLine = (
-    <div ref={spotRef} className="flex items-center gap-2 px-3 py-0.5 text-[10px] font-semibold text-term-accent">
-      <span className="h-px flex-1 bg-term-accent/60" />
-      spot {nf(spot, 1)}
-      <span className="h-px flex-1 bg-term-accent/60" />
-    </div>
-  );
-  const strikeCell = (r: ChainRow) => {
-    const isRes = r.strike === stats.resistance;
-    const isFloor = r.strike === stats.floor;
-    return (
-      <div
-        className={`flex items-center justify-center gap-1 px-2 text-[13px] tabular-nums ${
-          isRes ? "font-bold text-down" : isFloor ? "font-bold text-up" : r.strike === chain?.atmStrike ? "font-bold text-term-accent" : "text-term-text"
-        }`}
-      >
-        {sk(r.strike)}
-        {isRes && <span className="rounded bg-down/15 px-1 text-[9px]">R</span>}
-        {isFloor && <span className="rounded bg-up/15 px-1 text-[9px]">S</span>}
-      </div>
-    );
-  };
-
-  const hbar = (pct: number, col: string, label: string, side: "call" | "put", thin: boolean, tone?: string) => (
-    <div className={`flex w-full items-center gap-1.5 ${side === "put" ? "flex-row-reverse" : ""}`}>
-      <span
-        className={`w-12 shrink-0 tabular-nums leading-tight ${side === "call" ? "text-right" : "text-left"} ${
-          thin ? "text-[10px]" : "text-[11px] font-semibold"
-        } ${tone ?? "text-term-text"}`}
-      >
-        {label}
-      </span>
-      <div className={`relative flex-1 ${thin ? "h-1" : "h-2.5"}`}>
-        <span
-          className={`absolute top-0 h-full ${side === "call" ? "right-0 rounded-l" : "left-0 rounded-r"}`}
-          style={{ width: `${Math.min(100, pct)}%`, background: col }}
-        />
-      </div>
-    </div>
-  );
-  // crores on both sides (compact() mixed K and L: 7.0K calls beside 13.24L puts);
-  // 3 decimals when the biggest strike is under 1 Cr
-  const ldp = stats.maxOI < 1e7 ? 3 : 2;
-  // OI in Lakh under 1 Cr, Crore from there (lib/format oiCr)
-  void ldp;
-  const lk = (v: number) => oiCr(v);
-  const slk = (v: number) => oiSigned(v);
-  const ladderEl = (
-    <div ref={jumpBoxRef} className={isMobile ? "" : "min-h-0 flex-1 overflow-y-auto"}>
-      {/* ONE sticky row: jump chips + legend (was three rows) */}
-      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-term-border bg-term-panel2 px-3 py-1">
-        <div className="min-w-0 flex-1">{jumpBar}</div>
-        <div className="flex items-center gap-x-2 text-[10px] text-term-dim">
-          <span className="flex items-center gap-1"><Sw c={CALL_OI} /> call</span>
-          <span className="flex items-center gap-1"><Sw c={PUT_OI} /> put</span>
-          <span className="flex items-center gap-1"><Sw c={OI_ADD} /> added</span>
-          <span className="flex items-center gap-1"><Sw c={OI_CUT} /> cut · {tf === 0 ? "day" : `${tf}m`}</span>
-          <span>· L / Cr</span>
-        </div>
-      </div>
-      <div className={isMobile ? "" : "mx-auto max-w-3xl"}>
-      {rows.map((r, i) => {
-        const cChg = dCE(r);
-        const pChg = dPE(r);
-        return (
-          <Fragment key={r.strike}>
-            {i === spotRow && spotLine}
-            <div
-              data-strike={r.strike}
-              className={`grid grid-cols-[1fr_auto_1fr] items-center border-b border-term-border/50 py-0.5 transition-colors ${
-                flash === r.strike ? "bg-term-accent/25" : r.strike === chain?.atmStrike ? "bg-term-accent/[0.06]" : ""
-              }`}
-            >
-              <div className="flex flex-col gap-0.5 pl-2">
-                {hbar((r.call.oi / stats.maxOI) * 100, CALL_OI, lk(r.call.oi), "call", false)}
-                {hbar((Math.abs(cChg) / flow.maxChg) * 100, cChg >= 0 ? OI_ADD : OI_CUT, slk(cChg), "call", true, cChg >= 0 ? "text-up" : "text-down")}
-              </div>
-              {strikeCell(r)}
-              <div className="flex flex-col gap-0.5 pr-2">
-                {hbar((r.put.oi / stats.maxOI) * 100, PUT_OI, lk(r.put.oi), "put", false)}
-                {hbar((Math.abs(pChg) / flow.maxChg) * 100, pChg >= 0 ? OI_ADD : OI_CUT, slk(pChg), "put", true, pChg >= 0 ? "text-up" : "text-down")}
-              </div>
-            </div>
-          </Fragment>
-        );
-      })}
-      {spotRow === -1 && rows.length > 0 && spotLine}
-      </div>
-    </div>
-  );
-
   // ---- the strike TABLE: every strike as a bordered grid row, OI in lakhs
   // with a bar inside the OI cell (call bars grow toward the strike from the
   // left, put bars from the right), change over the chosen window, R / S on
@@ -983,115 +856,6 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
     "sticky top-0 z-10 border-b border-r border-t border-term-dim/50 bg-term-panel2 px-1.5 py-1 text-[10px] font-medium uppercase tracking-wide text-term-dim";
   const GTD = "border-b border-r border-term-dim/50 px-1.5 py-1";
   const WTH = GTH.replace("sticky top-0 z-10 ", ""); // headers of the small tables: not sticky
-  const tableSpot = (
-    <tr ref={tableSpotRef}>
-      <td colSpan={5} className="border-b border-r border-term-dim/50 bg-term-accent/10 px-2 py-0.5 text-center text-[10px] font-semibold text-term-accent">
-        ▶ spot {nf(spot, 1)}
-      </td>
-    </tr>
-  );
-  const tableEl = (
-    <div ref={jumpBoxRef} className={isMobile ? "px-2 py-2" : "min-h-0 flex-1 overflow-y-auto px-3 pb-2"}>
-      <table className={`${GRID} mx-auto max-w-3xl`}>
-        <thead className="sticky top-0 z-10">
-          <tr>
-            <th colSpan={5} className="rounded-t-lg border-b border-r border-t border-term-dim/50 bg-term-panel2 px-1.5 py-1 text-left font-normal">
-              {jumpBar}
-            </th>
-          </tr>
-          <tr>
-            <th className={`${WTH} text-right`}>Call OI</th>
-            <th className={`${WTH} text-right`}>Chg</th>
-            <th className={`${WTH} text-center`}>Strike</th>
-            <th className={`${WTH} text-left`}>Chg</th>
-            <th className={`${WTH} text-left`}>Put OI</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => {
-            const cChg = dCE(r);
-            const pChg = dPE(r);
-            const isRes = r.strike === stats.resistance;
-            const isFloor = r.strike === stats.floor;
-            const cPct = Math.min(100, (r.call.oi / stats.maxOI) * 100);
-            const pPct = Math.min(100, (r.put.oi / stats.maxOI) * 100);
-            return (
-              <Fragment key={r.strike}>
-                {i === spotRow && tableSpot}
-                <tr
-                  data-strike={r.strike}
-                  className={
-                    flash === r.strike
-                      ? "[&>td]:bg-term-accent/25"
-                      : r.strike === chain?.atmStrike
-                      ? "[&>td]:bg-term-accent/[0.07]"
-                      : ""
-                  }
-                >
-                  <td
-                    className={`${GTD} text-right ${isRes ? "font-bold text-down" : "text-term-text"}`}
-                    style={{ backgroundImage: `linear-gradient(to left, ${CALL_OI}70 ${cPct}%, transparent ${cPct}%)` }}
-                  >
-                    {L1(r.call.oi)}
-                  </td>
-                  <td className={`${GTD} text-right ${tone(cChg, "text-down", "text-up")}`}>{S1(cChg)}</td>
-                  <td
-                    className={`${GTD} whitespace-nowrap text-center font-semibold ${
-                      isRes ? "text-down" : isFloor ? "text-up" : "text-term-text"
-                    }`}
-                  >
-                    {sk(r.strike)}
-                    {isRes && <span className="ml-1 rounded bg-down/15 px-1 text-[9px]">R</span>}
-                    {isFloor && <span className="ml-1 rounded bg-up/15 px-1 text-[9px]">S</span>}
-                  </td>
-                  <td className={`${GTD} text-left ${tone(pChg, "text-up", "text-down")}`}>{S1(pChg)}</td>
-                  <td
-                    className={`${GTD} text-left ${isFloor ? "font-bold text-up" : "text-term-text"}`}
-                    style={{ backgroundImage: `linear-gradient(to right, ${PUT_OI}70 ${pPct}%, transparent ${pPct}%)` }}
-                  >
-                    {L1(r.put.oi)}
-                  </td>
-                </tr>
-              </Fragment>
-            );
-          })}
-          {spotRow === -1 && rows.length > 0 && tableSpot}
-          {/* totals -- in the table itself (the separate totals strip above is
-              hidden in this view, so the rows get that height back) */}
-          <tr className="font-semibold [&>td]:bg-term-border/50">
-            <td className={`${GTD} text-right text-term-text`}>{L1(oiTotals.ce)}</td>
-            <td className={`${GTD} text-right ${tone(flow.ceAdd + flow.ceCut, "text-down", "text-up")}`}>
-              {S1(flow.ceAdd + flow.ceCut)}
-            </td>
-            <td className={`${GTD} text-center text-term-text`}>Total · net</td>
-            <td className={`${GTD} text-left ${tone(flow.peAdd + flow.peCut, "text-up", "text-down")}`}>
-              {S1(flow.peAdd + flow.peCut)}
-            </td>
-            <td className={`${GTD} text-left text-term-text`}>{L1(oiTotals.pe)}</td>
-          </tr>
-          <tr className="[&>td]:bg-term-border/30">
-            <td className={GTD} />
-            <td className={`${GTD} text-right ${tone(flow.ceAdd, "text-down", "text-up")}`}>{S1(flow.ceAdd)}</td>
-            <td className={`${GTD} text-center text-term-dim`}>Added</td>
-            <td className={`${GTD} text-left ${tone(flow.peAdd, "text-up", "text-down")}`}>{S1(flow.peAdd)}</td>
-            <td className={GTD} />
-          </tr>
-          <tr className="[&>td]:bg-term-border/30">
-            <td className={`${GTD} rounded-bl-lg`} />
-            <td className={`${GTD} text-right ${tone(flow.ceCut, "text-down", "text-up")}`}>{S1(flow.ceCut)}</td>
-            <td className={`${GTD} text-center text-term-dim`}>Cut</td>
-            <td className={`${GTD} text-left ${tone(flow.peCut, "text-up", "text-down")}`}>{S1(flow.peCut)}</td>
-            <td className={`${GTD} rounded-br-lg`} />
-          </tr>
-        </tbody>
-      </table>
-      <div className="mx-auto mt-1.5 max-w-3xl text-[10px] leading-snug text-term-dim">
-        OI in crores · strikes: {count === 0 ? "all" : `ATM ±${count}`} · Chg = {tfName} · bar = OI vs the biggest strike shown · R / S = most call / put OI · PCR{" "}
-        {chain?.pcr != null ? nf(chain.pcr, 2) : "–"} (whole chain)
-      </div>
-    </div>
-  );
-
   // ---- the WALLS view: where the biggest call strike (resistance) and put
   // strike (support) sat through today, as a step chart + the moves table ----
   const wallsEl = (() => {
@@ -1899,7 +1663,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
         onChange={setTf}
         title="ΔOI window: OI change over this time"
       />
-      {/* kept to a few characters: a longer note wrapped the Chart / Ladder row onto a new line */}
+      {/* kept to a few characters: a longer note wrapped the layout row onto a new line */}
       {tf > 0 && marketOpenNow() && winCov < tf - 0.5 && (
         <span
           className="whitespace-nowrap text-amber-400"
@@ -2040,7 +1804,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
               {(
                 [
                   ["chart", "Chart"],
-                  ["ladder", "Ladder"],
+                  ["insights", "Insights"],
                   ["walls", "Walls"],
                   ["gex", "Weekly Gex"],
                   ["dex", "Dealer Exp"],
@@ -2119,7 +1883,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
             {(
               [
                 ["chart", "Chart"],
-                ["ladder", "Ladder"],
+                ["insights", "Insights"],
                 ["walls", "Walls"],
                 ["gex", "Weekly Gex"],
                 ["dex", "Dealer Exp"],
@@ -2174,15 +1938,15 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       {/* OI totals (phone: behind ⚙; web Chart: on the right, above the chart) */}
       <div
         className={`border-b border-term-border bg-term-panel px-3 py-1.5 ${
-          (isMobile && !tools) || layout === "ladder" || (layout === "chart" && !isMobile) ? "hidden" : ""
+          (isMobile && !tools) || (layout === "chart" && !isMobile) ? "hidden" : ""
         }`}
       >
         {totalsTable}
       </div>
 
       {/* overall OI verdict (phone: the summary row shows the bias; reasons behind ⚙) */}
-      {/* not in the Ladder / Table: they need the height (the bias is in the phone summary row and on Home) */}
-      {verdict && (!isMobile || tools) && layout !== "ladder" && (
+      {/* not in the Insights tables: they need the height (the bias is in the phone summary row and on Home) */}
+      {verdict && (!isMobile || tools) && (
         <div
           className={`flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b px-3 py-1 text-[10px] ${
             verdict.bias === "BULLISH"
@@ -2240,8 +2004,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           )}
         </div>
       )}
-      {/* the Ladder is the bordered strike table on every screen (the bar ladder is no longer shown) */}
-      {layout === "ladder" && tableEl}
+      {layout === "insights" && chain && <OIInsights chain={chain} symbol={symbol} expiry={expiry} />}
       {layout === "walls" && wallsEl}
       {layout === "pcr" && <PcrChart symbol={symbol} isMobile={isMobile} />}
       {layout === "gex" && gexEl}
