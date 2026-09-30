@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -46,15 +47,62 @@ def _age_s(norentm: str | None) -> float | None:
         return None
 
 
+def _inr(v: float) -> str:
+    """₹ with Indian digit grouping (1,23,456)."""
+    n = int(round(v))
+    s = str(abs(n))
+    if len(s) > 3:
+        head, tail = s[:-3], s[-3:]
+        parts = []
+        while len(head) > 2:
+            parts.insert(0, head[-2:])
+            head = head[:-2]
+        if head:
+            parts.insert(0, head)
+        s = ",".join(parts + [tail])
+    return ("-" if n < 0 else "") + "₹" + s
+
+
+_MARGIN_RE = re.compile(r"margin\s*shortfall\s*:?\s*INR\s*([\d,]+(?:\.\d+)?)(?:.*?available\s*:?\s*INR\s*([\d,]+(?:\.\d+)?))?", re.I)
+_PLAIN = (
+    (re.compile(r"freeze", re.I), "The quantity is above the exchange's freeze limit — send it in smaller orders"),
+    (re.compile(r"price\s*(out\s*of\s*)?(band|range)|circuit|dpr|price is out", re.I), "The price is outside the allowed range for this contract"),
+    (re.compile(r"insufficient|no\s+funds|fund", re.I), "Not enough funds in the account"),
+    (re.compile(r"not\s*(allowed|permitted|tradable)|blocked|ban", re.I), "This contract is not allowed to be traded right now"),
+    (re.compile(r"lot\s*size|multiple\s*of\s*lot", re.I), "The quantity is not a whole number of lots"),
+    (re.compile(r"market\s*(is\s*)?closed|not\s*in\s*session|after\s*market", re.I), "The market is closed for this order"),
+)
+
+
+def plain_reason(raw: str | None) -> str:
+    """Flattrade's rejection text ("RED:Margin Shortfall:INR 5089.84 Available:INR 993181.66 for C-XX [..]")
+    in words: how much margin is missing, or what the rule was."""
+    text = str(raw or "").strip()
+    if not text:
+        return "no reason given by the broker"
+    m = _MARGIN_RE.search(text)
+    if m:
+        short = float(m.group(1).replace(",", ""))
+        out = f"Not enough margin: short by {_inr(short)}"
+        if m.group(2):
+            out += f" (available {_inr(float(m.group(2).replace(',', '')))})"
+        return out
+    for rx, words in _PLAIN:
+        if rx.search(text):
+            return f"{words} ({text[:80]})"
+    return text
+
+
 def _describe(o: dict) -> tuple[str, str]:
     side = "BUY" if str(o.get("trantype")) == "B" else "SELL"
     name = str(o.get("dname") or o.get("tsym") or "order").strip()
     qty = o.get("qty")
     prc = o.get("prc")
     px = "MKT" if "MKT" in str(o.get("prctyp") or "").upper() else (f"@ {prc}" if prc not in (None, "", "0", "0.00") else "")
-    reason = str(o.get("rejreason") or "").strip() or "no reason given by the broker"
-    text = f"Order REJECTED: {side} {qty} {name} {px}".replace("  ", " ").strip() + f" - {reason}"
-    return text, reason
+    raw = str(o.get("rejreason") or "").strip()
+    reason = plain_reason(raw)
+    text = f"Order REJECTED: {side} {qty} {name} {px}".replace("  ", " ").strip() + f" — {reason}"
+    return text, raw or reason
 
 
 async def check_once() -> list[dict]:
@@ -85,6 +133,11 @@ async def check_once() -> list[dict]:
 
     for o in fresh:
         text, reason = _describe(o)
+        log.warning(
+            "ORDER REJECTED id=%s %s %s qty=%s at %s | broker said: %s",
+            o.get("norenordno"), "BUY" if str(o.get("trantype")) == "B" else "SELL",
+            o.get("dname") or o.get("tsym"), o.get("qty"), o.get("norentm"), o.get("rejreason") or "-",
+        )
         sym = str(o.get("tsym") or "")
         underlying = "".join(ch for ch in sym.split(" ")[0] if ch.isalpha()) if sym else ""
         now = time.time()
