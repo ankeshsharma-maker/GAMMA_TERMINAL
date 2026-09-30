@@ -5,13 +5,13 @@
 /* terminal palette — space-separated RGB channels so Tailwind's `/opacity`
    modifiers keep working. Settings (lib/theme.ts) overrides these on :root. */
 :root {
-  --term-bg: 15 20 29;
-  --term-panel: 27 36 49;
-  --term-panel2: 21 29 41;
-  --term-border: 38 48 63;
-  --term-text: 200 211 224;
-  --term-dim: 122 134 153;
-  --term-accent: 59 130 246;
+  --term-bg: 12 17 26;
+  --term-panel: 28 39 55;
+  --term-panel2: 19 27 39;
+  --term-border: 66 80 102;
+  --term-text: 232 238 246;
+  --term-dim: 160 174 194;
+  --term-accent: 16 185 129;
 }
 
 html,
@@ -69,7 +69,7 @@ button:focus-visible,
 [role="button"]:focus-visible,
 a:focus-visible,
 select:focus-visible {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid rgb(var(--term-accent));
   outline-offset: 1px;
 }
 
@@ -83,14 +83,14 @@ select:focus-visible {
   height: 9px;
 }
 ::-webkit-scrollbar-track {
-  background: #151d29;
+  background: rgb(var(--term-panel2));
 }
 ::-webkit-scrollbar-thumb {
-  background: #263140;
+  background: rgb(var(--term-border));
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #33425a;
+  background: rgb(var(--term-dim) / 0.7);
 }
 /* still scrollable by swipe, but no 9px bar eating the height of a one-row strip */
 .no-scrollbar {
@@ -232,4 +232,45 @@ select:focus-visible {
 /* phone Chart tab: only the controls marked .chart-keep show until "⋯ More" */
 .chart-bar[data-compact="1"] > :not(.chart-keep) {
   display: none !important;
+}
+
+/* brighter up / down TEXT on the dark surfaces (fills keep the stronger green / red) */
+@layer utilities {
+  .text-up {
+    color: #4ade80;
+  }
+  .text-down {
+    color: #f87171;
+  }
+}
+
+/* the header block used on every screen: an accent-tinted frame holding rows of pickers, tabs and a status line */
+@layer components {
+  .chrome {
+    @apply overflow-hidden rounded-lg border border-term-accent/40 bg-term-accent/10;
+  }
+  .chrome-row {
+    @apply no-scrollbar flex min-h-[34px] items-center gap-1.5 overflow-x-auto whitespace-nowrap border-b border-term-accent/25 px-2 py-1 text-2xs text-term-text;
+  }
+  .chrome-row:last-child {
+    @apply border-b-0;
+  }
+  .pick {
+    @apply flex shrink-0 items-center gap-1 rounded border border-term-accent/50 bg-term-bg/40 px-2 py-0.5 text-2xs font-semibold text-term-text;
+  }
+  .chrome-tabs {
+    @apply flex items-stretch justify-between gap-0.5 border-b border-term-accent/25 px-1 py-1;
+  }
+  .chrome-tabs > button {
+    @apply flex-1 rounded-md px-1 py-1 text-center text-2xs font-semibold text-term-dim transition-colors hover:text-term-text;
+  }
+  .chrome-tabs > button.on {
+    @apply bg-term-panel text-term-text shadow-sm ring-1 ring-term-accent/50;
+  }
+  .card {
+    @apply rounded-xl border border-term-border bg-term-panel p-3;
+  }
+  .tile {
+    @apply rounded-lg border border-term-border bg-term-panel px-2 py-1.5;
+  }
 }

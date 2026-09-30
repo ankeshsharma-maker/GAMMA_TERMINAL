@@ -33,14 +33,14 @@ export const GROUNDS: {
   panel2: string;
   border: string;
 }[] = [
-  { id: "charcoal", label: "Charcoal", bg: "15 20 29", panel: "27 36 49", panel2: "21 29 41", border: "38 48 63" },
-  { id: "black", label: "Black", bg: "8 11 17", panel: "21 28 40", panel2: "14 21 32", border: "26 35 49" },
-  { id: "slate", label: "Slate", bg: "20 27 39", panel: "31 41 56", panel2: "26 34 48", border: "45 57 76" },
-  { id: "navy", label: "Navy", bg: "12 19 36", panel: "23 33 58", panel2: "17 26 47", border: "36 49 82" },
-  { id: "ink", label: "Ink", bg: "17 17 24", panel: "31 31 42", panel2: "23 23 33", border: "44 44 58" },
-  { id: "graphite", label: "Graphite", bg: "22 24 27", panel: "36 39 44", panel2: "29 31 36", border: "52 56 63" },
-  { id: "forest", label: "Forest", bg: "12 22 19", panel: "22 36 32", panel2: "17 29 25", border: "34 52 46" },
-  { id: "plum", label: "Plum", bg: "22 16 28", panel: "38 29 47", panel2: "29 22 37", border: "54 42 66" },
+  { id: "charcoal", label: "Charcoal", bg: "12 17 26", panel: "28 39 55", panel2: "19 27 39", border: "66 80 102" },
+  { id: "black", label: "Black", bg: "6 9 14", panel: "22 31 45", panel2: "13 20 31", border: "55 68 88" },
+  { id: "slate", label: "Slate", bg: "17 24 36", panel: "34 46 64", panel2: "25 34 50", border: "74 89 112" },
+  { id: "navy", label: "Navy", bg: "10 16 32", panel: "26 38 66", panel2: "16 25 46", border: "62 80 118" },
+  { id: "ink", label: "Ink", bg: "14 14 21", panel: "34 34 48", panel2: "22 22 32", border: "72 72 92" },
+  { id: "graphite", label: "Graphite", bg: "18 20 23", panel: "40 43 50", panel2: "28 30 35", border: "80 85 95" },
+  { id: "forest", label: "Forest", bg: "10 19 16", panel: "26 42 37", panel2: "16 28 24", border: "58 84 74" },
+  { id: "plum", label: "Plum", bg: "18 13 24", panel: "42 32 54", panel2: "28 21 36", border: "84 66 102" },
 ];
 
 const A_KEY = "gt.accent";
@@ -81,7 +81,7 @@ const get = (k: string) => {
 };
 
 export const getAccent = (): Accent =>
-  (ACCENTS.find((a) => a.id === get(A_KEY))?.id ?? "blue") as Accent;
+  (ACCENTS.find((a) => a.id === get(A_KEY))?.id ?? "emerald") as Accent;
 export const getGround = (): Ground =>
   (GROUNDS.find((g) => g.id === get(G_KEY))?.id ?? "charcoal") as Ground;
 
