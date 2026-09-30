@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useStore } from "../store";
 import { isViewer } from "../lib/auth";
 import { api } from "../lib/api";
@@ -7,6 +7,7 @@ import { ExpiryTabs } from "./ExpiryTabs";
 import { compact, oiCr, nf, signColor, sk } from "../lib/format";
 import type { ChainRow, Leg, UnusualKind } from "../types";
 import { OrderTicket } from "./OrderTicket";
+import { useIsMobile } from "../lib/useIsMobile";
 
 type TabKey = "ltp" | "oi" | "greeks";
 const TABS: { key: TabKey; label: string }[] = [
@@ -283,6 +284,17 @@ const COLS: Record<TabKey, Col[]> = {
   greeks: [deltaCol, gammaCol, thetaCol, vegaCol, ivCol],
 };
 
+/** Phone (Fold6 folded ~370 px): only two figures a side + STRIKE, so the whole chain fits with no sideways
+ *  scroll; the rest of a strike's figures (activity, Θ, V, IV, volume ...) fold open under the row on tap.
+ *  Array order = calls left -> right, the last entry sits against STRIKE (puts mirror it). */
+const MOBILE_KEYS: Record<TabKey, string[]> = {
+  ltp: ["chgpct", "ltp"],
+  oi: ["chgoi", "oi"],
+  greeks: ["gamma", "delta"],
+};
+const MOBILE_LABEL: Record<string, string> = { chgpct: "Chg %", ltp: "LTP", chgoi: "Δ OI", oi: "OI", gamma: "Γ Gamma", delta: "Δ Delta" };
+const ALL_COLS: Col[] = [...COLS.ltp, ...COLS.oi, ...COLS.greeks];
+
 /** classify one option leg's activity from its price change + OI change,
  *  coloured by *market sentiment*:
  *    Call buying / Put writing → bullish (green)
@@ -328,6 +340,8 @@ function ActivityCell({
 export function OptionChain({ paneNav, expiryRow = false }: { paneNav?: ReactNode; expiryRow?: boolean } = {}) {
   const { chain, chainError } = useStore();
   const [tab, setTab] = useState<TabKey>("ltp");
+  const isMobile = useIsMobile();
+  const [openStrike, setOpenStrike] = useState<number | null>(null); // phone: the strike whose details are open
   const [count, setCount] = useState<number>(0); // strikes each side of ATM; 0 = All
   // ΔOI window in minutes; 0 = day (since open) -- remembered on the device
   const [oiTf, setOiTfState] = useState<number>(() => {
@@ -602,6 +616,79 @@ export function OptionChain({ paneNav, expiryRow = false }: { paneNav?: ReactNod
       hotPE,
     };
     const hotRow = tab === "greeks" && (hotCE || hotPE);
+    if (isMobile) {
+      const mcols = MOBILE_KEYS[tab]
+        .map((k) => ALL_COLS.find((x) => x.key === k)!)
+        .filter(Boolean);
+      const isOpen = openStrike === row.strike;
+      const fact = (label: string, v: ReactNode) => (
+        <div className="flex items-baseline justify-between gap-1 border-b border-term-border/40 py-0.5">
+          <span className="text-term-dim">{label}</span>
+          <span className="num text-term-text">{v}</span>
+        </div>
+      );
+      const side = (leg: Leg, ot: "CE" | "PE") => (
+        <div className="min-w-0">
+          <div className={`mb-1 text-[10px] font-bold uppercase tracking-wide ${ot === "CE" ? "text-up" : "text-down"}`}>
+            {ot === "CE" ? "Call" : "Put"} {sk(row.strike)}
+          </div>
+          <ActivityCell leg={leg} ot={ot} onTicket={() => setTicket({ strike: row.strike, ot, ltp: leg.ltp })} />
+          <div className="mt-1">
+            {fact("OI", compact(leg.oi))}
+            {fact("Δ OI", <span className={signColor(leg.oiChg)}>{compact(leg.oiChg)}</span>)}
+            {fact("Volume", compact(leg.volume))}
+            {fact("IV", nf(leg.ivCalc ?? leg.iv, 1))}
+            {fact("Δ Delta", nf(leg.delta, 3))}
+            {fact("Γ Gamma", leg.gamma.toFixed(4))}
+            {fact("Θ Theta", nf(leg.theta, 2))}
+            {fact("V Vega", nf(leg.vega, 2))}
+            {fact("Bid", nf(leg.bid))}
+            {fact("Ask", nf(leg.ask))}
+          </div>
+        </div>
+      );
+      return (
+        <Fragment key={row.strike}>
+          <tr
+            ref={isATM ? atmRef : undefined}
+            onClick={() => setOpenStrike(isOpen ? null : row.strike)}
+            className={`cursor-pointer active:bg-term-panel/60 ${
+              isATM ? "bg-term-accent/20 font-semibold text-term-text outline outline-2 -outline-offset-2 outline-term-accent" : ""
+            } ${hotRow ? "bg-amber-500/10" : ""}`}
+          >
+            {mcols.map((col) => (
+              <td key={"c" + col.key} className={`relative cell border-l-0 text-right text-[12px] text-term-dim ${cbg}`}>
+                {col.render(c, "l", ctx)}
+              </td>
+            ))}
+            <td
+              className={`num border-x-2 px-1.5 text-center text-[12px] font-semibold ${
+                isATM ? "border-term-accent bg-term-accent text-white" : "border-term-border bg-term-bg text-term-text"
+              }`}
+            >
+              <span className="text-[8px] opacity-60">{isOpen ? "▾ " : "▸ "}</span>
+              {sk(row.strike)}
+              {row.parityStale && row.parityDev != null && <sup className="ml-0.5 font-bold text-amber-400">≠</sup>}
+            </td>
+            {[...mcols].reverse().map((col) => (
+              <td key={"p" + col.key} className={`relative cell text-left text-[12px] text-term-dim ${pbg}`}>
+                {col.render(p, "r", ctx)}
+              </td>
+            ))}
+          </tr>
+          {isOpen && (
+            <tr>
+              <td colSpan={mcols.length * 2 + 1} className="border-b border-r border-term-border/60 bg-term-panel px-2 py-2">
+                <div className="grid grid-cols-2 gap-x-4 text-[11px]">
+                  {side(c, "CE")}
+                  {side(p, "PE")}
+                </div>
+              </td>
+            </tr>
+          )}
+        </Fragment>
+      );
+    }
     return (
       <tr
         key={row.strike}
@@ -818,6 +905,36 @@ export function OptionChain({ paneNav, expiryRow = false }: { paneNav?: ReactNod
       )}
 
       <div className="min-h-0 flex-1 overflow-auto">
+        {isMobile ? (
+          <table className="oc-grid">
+            <thead className="sticky top-0 z-10 bg-term-panel text-term-dim">
+              <tr>
+                <th colSpan={MOBILE_KEYS[tab].length} className="border-b-2 border-up/50 bg-up/15 py-1 text-center text-[11px] font-bold uppercase tracking-wider text-up">
+                  Calls <span className="num text-[9px] font-semibold normal-case text-up/80">{oiCr(chain.totals.ceOI)}</span>
+                </th>
+                <th className="border-x-2 border-term-border bg-term-bg" />
+                <th colSpan={MOBILE_KEYS[tab].length} className="border-b-2 border-down/50 bg-down/15 py-1 text-center text-[11px] font-bold uppercase tracking-wider text-down">
+                  Puts <span className="num text-[9px] font-semibold normal-case text-down/80">{oiCr(chain.totals.peOI)}</span>
+                </th>
+              </tr>
+              <tr>
+                {cols.length > 0 &&
+                  MOBILE_KEYS[tab].map((k) => (
+                    <th key={"hc" + k} className="text-right">
+                      {MOBILE_LABEL[k] ?? k}
+                    </th>
+                  ))}
+                <th className="border-x-2 border-term-border bg-term-bg text-center font-semibold text-term-text">STRIKE</th>
+                {[...MOBILE_KEYS[tab]].reverse().map((k) => (
+                  <th key={"hp" + k} className="text-left">
+                    {MOBILE_LABEL[k] ?? k}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>{visibleRows.map(renderRow)}</tbody>
+          </table>
+        ) : (
         <table className="oc-grid">
           <thead className="sticky top-0 z-10 bg-term-panel text-term-dim">
             <tr>
@@ -861,6 +978,7 @@ export function OptionChain({ paneNav, expiryRow = false }: { paneNav?: ReactNod
           </thead>
           <tbody>{visibleRows.map(renderRow)}</tbody>
         </table>
+        )}
       </div>
 
       {ticket && (
