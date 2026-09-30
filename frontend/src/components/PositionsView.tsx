@@ -1169,7 +1169,7 @@ export function OrdersTab() {
   const src: "live" | "paper" = isViewer() || orderMode !== "live" ? "paper" : "live";
   const [book, setBook] = useState<any[]>([]);
   const [liveLog, setLiveLog] = useState<any[]>([]);
-  const [tab, setTab] = useState<"open" | "done">("open");
+  const [tab, setTab] = useState<"open" | "done" | "rej">("open");
   const [openKey, setOpenKey] = useState<string | null>(null);
   // tap an executed live order: its details + Repeat Order (the broker app's order sheet)
   const [detail, setDetail] = useState<OrderCard | null>(null);
@@ -1292,18 +1292,20 @@ export function OrdersTab() {
   }
   cards.sort((a, b) => b.ms - a.ms);
   const openCards = cards.filter((c) => c.open);
-  const doneCards = cards.filter((c) => !c.open);
-  const shown = tab === "open" ? openCards : doneCards;
+  const rejCards = cards.filter((c) => !c.open && /reject/i.test(c.status));
+  const doneCards = cards.filter((c) => !c.open && !/reject/i.test(c.status));
+  const shown = tab === "open" ? openCards : tab === "rej" ? rejCards : doneCards;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Pending | Executed in the shared header block, with the book (Paper / Live) beside it */}
       <div className="shrink-0 px-2 py-1.5">
         <Chrome>
-          <ChromeTabs<"open" | "done">
+          <ChromeTabs<"open" | "done" | "rej">
             main={[
               { key: "open", label: "Pending", badge: openCards.length || undefined },
               { key: "done", label: "Executed", badge: doneCards.length || undefined },
+              { key: "rej", label: "Rejected", badge: rejCards.length || undefined },
             ]}
             value={tab}
             onChange={setTab}
@@ -1322,7 +1324,7 @@ export function OrdersTab() {
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto bg-term-bg p-2 md:p-3">
         {shown.length === 0 && (
           <div className="rounded-lg bg-term-panel px-3 py-6 text-center text-xs text-term-dim">
-            {tab === "open" ? "No open orders." : "No executed orders today."}
+            {tab === "open" ? "No open orders." : tab === "rej" ? "No rejected orders today." : "No executed orders today."}
           </div>
         )}
 

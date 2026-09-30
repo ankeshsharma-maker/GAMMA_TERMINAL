@@ -209,12 +209,12 @@ export function ScalpPanel() {
   }) => (
     <button
       onClick={() => fire(ot, side)}
-      className={`flex items-baseline justify-center gap-1.5 rounded py-1 font-bold leading-none transition-colors ${cls} ${
+      className={`flex min-h-[52px] flex-col items-center justify-center gap-0.5 rounded-xl py-2 font-bold leading-none transition-colors ${cls} ${
         sideHint === ot ? "ring-2 ring-term-accent" : ""
       }`}
     >
-      <span className="text-[11px]">{label}</span>
-      <span className="text-[8px] font-normal opacity-70">
+      <span className="text-[14px]">{label}</span>
+      <span className="text-[10px] font-normal opacity-80">
         {pick ? `${nf(pick, 0)} ${ot}` : ot}×{scalpLots}
       </span>
     </button>
@@ -223,7 +223,8 @@ export function ScalpPanel() {
   return (
     <div className={`flex flex-col bg-term-panel2 ${isMobile ? "" : "h-full overflow-y-auto"}`}>
       {/* live P&L straight from the broker position book (paper: this session's paper positions) */}
-      <div className="flex items-end gap-4 border-b border-term-border bg-term-panel px-3 py-1.5">
+      <div className="chrome mx-2 mt-1.5">
+      <div className="flex items-end gap-4 border-b border-term-accent/25 px-3 py-1.5">
         <span
           className={`self-center rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white ${
             paperMode ? "bg-term-accent" : "bg-down"
@@ -260,7 +261,7 @@ export function ScalpPanel() {
         </button>
       </div>
 
-      <div className="flex items-center gap-2 border-b border-term-border px-3 py-2 text-2xs">
+      <div className="flex items-center gap-2 border-b border-term-accent/25 px-3 py-2 text-2xs">
         <span className="text-term-dim">Lots</span>
         <button className="btn px-2 py-0.5" onClick={() => setScalpLots(scalpLots - 1)}>
           −
@@ -284,7 +285,7 @@ export function ScalpPanel() {
 
       {/* one-tap ATM / OTM shortcuts */}
       {atm && step ? (
-        <div className="flex items-center gap-1 border-b border-term-border px-3 py-1.5">
+        <div className="flex items-center gap-1 border-b border-term-accent/25 px-3 py-1.5">
           <span className="mr-0.5 text-[10px] uppercase tracking-wide text-term-dim">Quick</span>
           {QCHIPS.map(([lbl, n, ot]) => {
             const strike = n === 0 ? atm : ot === "CE" ? atm + n * step : atm - n * step;
@@ -358,8 +359,9 @@ export function ScalpPanel() {
           <span className="text-term-dim">chain loading — trades use ATM</span>
         )}
       </div>
+      </div>
 
-      <div className="grid grid-cols-2 gap-1.5 px-2 py-1.5">
+      <div className="grid grid-cols-2 gap-2 px-2 py-2">
         <BigBtn label="BUY CALL" ot="CE" side="BUY" cls="border border-up/50 bg-up/20 text-up hover:bg-up/30" />
         <BigBtn label="BUY PUT" ot="PE" side="BUY" cls="border border-down/70 bg-down/20 text-down hover:bg-down/30" />
         <BigBtn

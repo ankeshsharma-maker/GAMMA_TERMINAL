@@ -526,9 +526,7 @@ function MobileBody({ view: want }: { view: View }) {
       // an inner flex-1 that collapsed to nothing on a phone.
       return (
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <div className="flex min-h-[46vh] shrink-0 flex-col border-b border-term-border">
-            <ScalpCharts />
-          </div>
+          <ScalpChartFold />
           <div className="shrink-0">
             <ScalpPanel />
           </div>
@@ -560,6 +558,29 @@ function MobileBody({ view: want }: { view: View }) {
     default:
       return null;
   }
+}
+
+
+/** Scalp: the charts sit behind one button so the trade buttons are on the first screen. */
+function ScalpChartFold() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="shrink-0 border-b border-term-border">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="mx-2 mt-1.5 flex w-[calc(100%-16px)] items-center justify-between rounded-lg border border-term-accent/40 bg-term-accent/10 px-3 py-2 text-[13px] font-semibold text-term-text"
+      >
+        <span>📈 Mini chart</span>
+        <span className="text-term-dim">{open ? "▴ hide" : "▾ show"}</span>
+      </button>
+      {open && (
+        <div className="mt-1.5 flex min-h-[46vh] flex-col">
+          <ScalpCharts />
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function MobileShell() {
