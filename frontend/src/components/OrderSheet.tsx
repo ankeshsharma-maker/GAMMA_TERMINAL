@@ -6,6 +6,7 @@ import { isViewer } from "../lib/auth";
 import type { WatchQuote } from "../types";
 import { api } from "../lib/api";
 import { MarginHint } from "./MarginHint";
+import { LotsPicker } from "./LotsPicker";
 
 /** Flattrade-style order sheet for a watchlist contract (option / future):
  *  BUY / SELL, lots, NRML / MIS, Market / Limit, and an optional SL / Target
@@ -143,14 +144,10 @@ export function OrderSheet({
           <button onClick={() => setSide("SELL")} className={sideBtn(!buy, "down")}>SELL</button>
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-3">
+        <div className="mt-3 space-y-3">
           <div>
-            <div className="mb-1 text-[10px] uppercase tracking-wide text-term-dim">Lots · qty {lots * lotSize}</div>
-            <div className="flex items-center gap-1">
-              <button onClick={() => setLots((n) => Math.max(1, n - 1))} className="rounded border border-term-border px-3 py-1.5 text-term-text">−</button>
-              <span className="num flex-1 text-center text-[14px] font-semibold text-term-text">{lots}</span>
-              <button onClick={() => setLots((n) => Math.min(500, n + 1))} className="rounded border border-term-border px-3 py-1.5 text-term-text">+</button>
-            </div>
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-term-dim">Lots · qty {lots * lotSize} — type it, tap a preset, or hold + / −</div>
+            <LotsPicker lots={lots} setLots={setLots} chips={[["1", 1], ["2", 2], ["5", 5], ["10", 10], ["20", 20]]} />
           </div>
           <div>
             <div className="mb-1 text-[10px] uppercase tracking-wide text-term-dim">Product</div>

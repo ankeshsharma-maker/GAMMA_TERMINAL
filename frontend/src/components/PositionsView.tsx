@@ -6,6 +6,7 @@ import { nf, signColor, sk } from "../lib/format";
 import { StopEditor } from "./StopEditor";
 import { useLiveMtm } from "../lib/useLiveMtm";
 import { isViewer } from "../lib/auth";
+import { getDefaultLots } from "../lib/prefs";
 import { useIsMobile } from "../lib/useIsMobile";
 import { LegBracketBadge, findBracket, type LegRule } from "./LegBracketBadge";
 import { ScenarioGrid } from "./ScenarioGrid";
@@ -14,6 +15,7 @@ import { AutoSquareOff } from "./AutoSquareOff";
 import { ShortGuard, guardText } from "./ShortGuard";
 import { Positions as PaperPositions } from "./Positions";
 import { MarginHint } from "./MarginHint";
+import { LotsPicker } from "./LotsPicker";
 import type { ShortGuardLeg } from "../types";
 import { Capacitor } from "@capacitor/core";
 
@@ -583,11 +585,15 @@ function PositionSheet({
   const name = r.dname || r.tsym;
   const legPrd: "NRML" | "MIS" = r.prd === "I" || r.s_prdt_ali === "MIS" ? "MIS" : "NRML";
   const closeSide: "BUY" | "SELL" = net > 0 ? "SELL" : "BUY";
-  const [side, setSide] = useState<"BUY" | "SELL">(init?.side ?? (net ? closeSide : "BUY"));
-  const [lots, setLots] = useState(init?.lots ?? Math.max(1, Math.floor(heldLots / 2) || 1));
+  // opens on the position's OWN side (a short opens on SELL, a long on BUY); the Exit buttons and Repeat Order
+  // pass their own side. BUY / SELL below is one tap away, and the line under it says which one exits.
+  const ownSide: "BUY" | "SELL" = net < 0 ? "SELL" : "BUY";
+  const [side, setSide] = useState<"BUY" | "SELL">(init?.side ?? ownSide);
+  const addingAtStart = !!net && (init?.side ?? ownSide) !== closeSide;
+  const [lots, setLots] = useState(init?.lots ?? (addingAtStart ? getDefaultLots() : Math.max(1, Math.floor(heldLots / 2) || 1)));
   const [product, setProduct] = useState<"NRML" | "MIS">(legPrd);
   // booking part of a position is usually "at my price"; adding / a new order starts at market
-  const [type, setType] = useState<"LMT" | "MKT">(init?.type ?? (net ? "LMT" : "MKT"));
+  const [type, setType] = useState<"LMT" | "MKT">(init?.type ?? (net && !addingAtStart ? "LMT" : "MKT"));
   const [limit, setLimit] = useState(init?.price ? init.price.toFixed(2) : lp != null ? lp.toFixed(2) : "");
   const [sl, setSl] = useState("");
   const [target, setTarget] = useState("");
@@ -701,30 +707,37 @@ function PositionSheet({
           <button onClick={() => setSide("BUY")} className={sideBtn(buy, "up")}>BUY</button>
           <button onClick={() => setSide("SELL")} className={sideBtn(!buy, "down")}>SELL</button>
         </div>
+        {!!net && (
+          <div className="mt-1.5 text-center text-[11px] text-term-dim">
+            You are <b className={net < 0 ? "text-down" : "text-up"}>{net < 0 ? "SHORT" : "LONG"} {heldLots} lot{heldLots === 1 ? "" : "s"}</b>
+            {" — "}
+            {reduces ? (
+              <span className="text-term-text">this {side} EXITS it</span>
+            ) : (
+              <span className="text-amber-400">this {side} ADDS to it</span>
+            )}
+          </div>
+        )}
 
-        <div className="mt-3 grid grid-cols-2 gap-3">
+        <div className="mt-3 space-y-3">
           <div>
             <div className="mb-1 text-[10px] uppercase tracking-wide text-term-dim">
               Lots · qty {qty}
               {heldLots > 0 && <span className="normal-case"> · you hold {heldLots}</span>}
             </div>
-            <div className="flex items-center gap-1">
-              <button onClick={() => setLots((n) => Math.max(1, n - 1))} className="rounded border border-term-border px-3 py-1.5 text-term-text">−</button>
-              <span className="num flex-1 text-center text-[14px] font-semibold text-term-text">{lots}</span>
-              <button onClick={() => setLots((n) => Math.min(500, n + 1))} className="rounded border border-term-border px-3 py-1.5 text-term-text">+</button>
-            </div>
-            {reduces && heldLots > 1 && (
-              <div className="mt-1 flex gap-1">
-                {[
-                  ["½", Math.max(1, Math.floor(heldLots / 2))],
-                  ["All", heldLots],
-                ].map(([l, v]) => (
-                  <button key={String(l)} onClick={() => setLots(Number(v))} className="chipbtn text-[11px]">
-                    {l}
-                  </button>
-                ))}
-              </div>
-            )}
+            <LotsPicker
+              lots={lots}
+              setLots={setLots}
+              chips={
+                reduces && heldLots > 1
+                  ? [
+                      ["½", Math.max(1, Math.floor(heldLots / 2))],
+                      ["All", heldLots],
+                      ...([1, 2, 5, 10] as const).filter((v) => v < heldLots).map((v) => [String(v), v] as const),
+                    ]
+                  : [["1", 1], ["2", 2], ["5", 5], ["10", 10], ["20", 20]]
+              }
+            />
           </div>
           <div>
             <div className="mb-1 text-[10px] uppercase tracking-wide text-term-dim">Product</div>
