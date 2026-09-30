@@ -291,6 +291,14 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
         </div>
       </div>
 
+      {anyOpen && (
+        <div className="px-1 text-[12px] text-term-dim">
+          {withPnl.filter((w) => (n(w.r.netqty) ?? 0) !== 0).length} open ·{" "}
+          {withPnl.filter((w) => (n(w.r.netqty) ?? 0) < 0).length} short · {withPnl.filter((w) => (n(w.r.netqty) ?? 0) > 0).length} long
+          {Object.keys(guard).length > 0 && <> · guard watching {Object.keys(guard).length}</>}
+        </div>
+      )}
+
       {/* Buy / Sell / Net value */}
       <div className="grid grid-cols-3 rounded-lg bg-term-panel px-4 py-2.5">
         {(
@@ -477,6 +485,20 @@ function BrokerTab({ onCount }: { onCount?: (n: number) => void }) {
               {!!qty && !APP && (
                 <div className="mt-1.5 flex" onClick={(e) => e.stopPropagation()}>
                   <LegBracketBadge r={r} bracket={findBracket(r, legRules)} onChanged={loadLegRules} />
+                </div>
+              )}
+              {/* phone: the two things you reach for on a card, without opening the sheet */}
+              {!!qty && APP && (
+                <div className="mt-2 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  <LegBracketBadge r={r} bracket={findBracket(r, legRules)} onChanged={loadLegRules} />
+                  <button
+                    disabled={isBusy}
+                    onClick={() => squareOff(r)}
+                    className="ml-auto min-h-[36px] rounded-lg border border-down/60 bg-down/10 px-4 text-[13px] font-bold text-down active:bg-down/30 disabled:opacity-40"
+                    title="Flatten this position with an opposite-side MARKET order"
+                  >
+                    {isBusy ? "…" : "Exit"}
+                  </button>
                 </div>
               )}
               {open && !APP && (

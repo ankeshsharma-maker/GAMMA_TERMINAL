@@ -125,11 +125,18 @@ export function Funds() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {live && funds?.connected && (
+        <div className="mb-3 flex items-center gap-2 px-1 text-[12px] text-term-dim">
+          <span className="h-2 w-2 rounded-full bg-up" /> Flattrade connected · session today
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 [&>*:first-child]:col-span-2 sm:[&>*:first-child]:col-span-1">
         <Card
           label="Available margin"
           value={rupee(available)}
           tone={available != null && available < 0 ? "text-down" : "text-up"}
+          sub={used != null && available != null ? `used ${rupee(used)} of ${rupee(available + used)}` : undefined}
         />
         <Card
           label="Used margin"
