@@ -648,6 +648,17 @@ function PositionSheet({
     }
   };
 
+  // BUY / SELL toggle: big, and the side that is off keeps its own colour (tinted) so both read clearly
+  const sideBtn = (on: boolean, tone: "up" | "down") =>
+    `flex-1 rounded-md border-2 py-2.5 text-[15px] font-bold tracking-wide transition-colors ${
+      tone === "up"
+        ? on
+          ? "border-up bg-up text-white shadow-md ring-2 ring-up/40"
+          : "border-up/60 bg-up/10 text-up hover:bg-up/20"
+        : on
+        ? "border-down bg-down text-white shadow-md ring-2 ring-down/40"
+        : "border-down/60 bg-down/10 text-down hover:bg-down/20"
+    }`;
   const seg = (on: boolean, tone = "accent") =>
     `flex-1 rounded border py-1.5 text-[12px] font-semibold ${
       on
@@ -686,8 +697,8 @@ function PositionSheet({
         </div>
 
         <div className="mt-3 flex gap-2">
-          <button onClick={() => setSide("BUY")} className={seg(buy, "up")}>BUY</button>
-          <button onClick={() => setSide("SELL")} className={seg(!buy, "down")}>SELL</button>
+          <button onClick={() => setSide("BUY")} className={sideBtn(buy, "up")}>BUY</button>
+          <button onClick={() => setSide("SELL")} className={sideBtn(!buy, "down")}>SELL</button>
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-3">
