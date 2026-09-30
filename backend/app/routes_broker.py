@@ -412,6 +412,34 @@ def _num(v) -> float:
         return 0.0
 
 
+async def _margin_for_tsym(b, d: dict) -> dict:
+    """The same broker margin check for a contract known only by its Noren tsym (the Positions sheet):
+    body {tsym, exch?, side, lots, price}."""
+    from .brokers.flattrade import is_bse_index, parse_noren_tsym
+    from .processing import lot_size
+
+    parsed = parse_noren_tsym(str(d["tsym"])) or {}
+    if not parsed.get("symbol"):
+        return {"ok": False, "reason": f"not a recognised option symbol: {d['tsym']}"}
+    try:
+        lots = max(1, int(d.get("lots") or 1))
+    except (TypeError, ValueError):
+        lots = 1
+    exch = d.get("exch") or ("BFO" if is_bse_index(parsed["symbol"]) else "NFO")
+    px = _num(d.get("price")) or 0.05
+    order = b.build_order_payload(
+        exch=exch, tsym=str(d["tsym"]), qty=lots * int(lot_size(parsed["symbol"]) or 1),
+        side=str(d.get("side") or "BUY").upper(), order_type="LMT", price=round(px, 2), product="M",
+    )
+    try:
+        out = await b.basket_margin([order])
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "reason": f"broker margin check failed: {exc}"}
+    need = _num(out.get("marginusedtrade")) or _num(out.get("marginused"))
+    return {"ok": True, "margin": round(need, 2), "accountMarginAfter": _num(out.get("marginused")) or None,
+            "remarks": out.get("remarks"), "raw": out}
+
+
 @router.post("/margin")
 async def basket_margin(body: dict):
     """Flattrade's own margin for an order before it is sent (GetBasketMargin --
@@ -424,6 +452,8 @@ async def basket_margin(body: dict):
     b = get_broker()
     if not (b.configured and b.authed):
         return {"ok": False, "reason": "Flattrade not connected"}
+    if body.get("tsym"):
+        return await _margin_for_tsym(b, body)
     symbol = str(body.get("symbol") or "").upper()
     legs = body.get("legs") or []
     if not symbol or not legs:

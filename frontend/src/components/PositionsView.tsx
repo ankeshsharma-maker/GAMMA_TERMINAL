@@ -13,6 +13,7 @@ import { PortfolioSummary } from "./PortfolioSummary";
 import { AutoSquareOff } from "./AutoSquareOff";
 import { ShortGuard, guardText } from "./ShortGuard";
 import { Positions as PaperPositions } from "./Positions";
+import { MarginHint } from "./MarginHint";
 import type { ShortGuardLeg } from "../types";
 import { Capacitor } from "@capacitor/core";
 
@@ -807,6 +808,15 @@ function PositionSheet({
             {row("Avg price", avg ? avg.toFixed(2) : "–")}
             {row("P&L", <span className={signColor(pnl)}>{nf(pnl, 2)}</span>)}
           </div>
+        )}
+
+        {!reduces && (
+          <MarginHint
+            lots={lots}
+            onSetLots={setLots}
+            deps={[r.tsym, side, px]}
+            fetcher={(n) => api.brokerMarginTsym({ tsym: String(r.tsym), exch: r.exch, side, lots: n, price: px || undefined })}
+          />
         )}
 
         {err && <div className="mt-2 text-[12px] text-down">{err}</div>}

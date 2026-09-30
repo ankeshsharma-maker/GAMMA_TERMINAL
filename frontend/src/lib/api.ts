@@ -675,6 +675,12 @@ export const api = {
       "/api/broker/margin",
       { method: "POST", body: JSON.stringify(body) }
     ),
+  /** Flattrade's margin for one contract known by its tsym (the Positions sheet); nothing is placed */
+  brokerMarginTsym: (body: { tsym: string; exch?: string; side: "BUY" | "SELL"; lots: number; price?: number }) =>
+    j<{ ok: boolean; margin?: number; reason?: string }>("/api/broker/margin", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   marginEstimate: (legs: { side: "BUY" | "SELL"; strike: number; lots: number; price: number }[], lotSize: number) =>
     j<{ estimated: number }>("/api/margin-estimate", {
       method: "POST",

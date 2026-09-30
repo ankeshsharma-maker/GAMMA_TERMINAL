@@ -4,6 +4,8 @@ import { nf, sk } from "../lib/format";
 import { getDefaultLots, getDefaultProduct } from "../lib/prefs";
 import { isViewer } from "../lib/auth";
 import type { WatchQuote } from "../types";
+import { api } from "../lib/api";
+import { MarginHint } from "./MarginHint";
 
 /** Flattrade-style order sheet for a watchlist contract (option / future):
  *  BUY / SELL, lots, NRML / MIS, Market / Limit, and an optional SL / Target
@@ -214,6 +216,21 @@ export function OrderSheet({
           Optional. Attached to this leg once it fills; the server exits at market when one is hit (works with the app closed).
           With both an SL and a trailing SL, the tighter one applies.
         </div>
+
+        {w.kind !== "future" && (
+          <MarginHint
+            lots={lots}
+            onSetLots={setLots}
+            deps={[w.symbol, w.expiry, w.strike, w.optionType, side, px]}
+            fetcher={(n) =>
+              api.brokerMargin({
+                symbol: w.symbol,
+                expiry: w.expiry ?? "",
+                legs: [{ strike: w.strike ?? 0, optionType: w.optionType as "CE" | "PE", side, lots: n, price: px }],
+              })
+            }
+          />
+        )}
 
         {err && <div className="mt-2 text-[12px] text-down">{err}</div>}
 
