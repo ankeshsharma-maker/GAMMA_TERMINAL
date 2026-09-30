@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { Chart } from "./Chart";
 import { MiniChart, MINI_IND_DEFAULT, type MiniInd } from "./MiniChart";
 import { SelectMenu } from "./SelectMenu";
+import { MultiSelectMenu } from "./MultiSelectMenu";
 import { TrendCompass } from "./TrendCompass";
 
 const TF: [string, number][] = [
@@ -290,13 +291,14 @@ export function ScalpCharts({ mode = "scalp" }: { mode?: "scalp" | "chart" } = {
                     </button>
                   ))}
                 </div>
-                <div className="seg">
-                  {IND_KEYS.map(([k, l]) => (
-                    <button key={k} onClick={() => toggleInd(i, k)} className={p.ind[k] ? "on" : ""}>
-                      {l}
-                    </button>
-                  ))}
-                </div>
+                <MultiSelectMenu
+                  label="Indicators"
+                  options={IND_KEYS.map(([k, l]) => [k, l] as const)}
+                  active={p.ind}
+                  onToggle={(k) => toggleInd(i, k)}
+                  title="EMA / VWAP / Bollinger / Supertrend / Pivots / RSI on this pane"
+                  width={150}
+                />
               </div>
               <div className="min-h-0 flex-1">
                 <MiniChart
