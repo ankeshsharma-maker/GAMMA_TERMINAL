@@ -79,6 +79,8 @@ export function MiniChart({
   const lineRef = useRef<Record<string, ISeriesApi<"Line">>>({});
   const pvtRef = useRef<IPriceLine[]>([]);
   const [bars, setBars] = useState(0);
+  // which symbol / instrument / timeframe the visible window was last set for
+  const viewKeyRef = useRef("");
   const [rsiVal, setRsiVal] = useState<number | null>(null);
 
   useEffect(() => {
@@ -218,7 +220,16 @@ export function MiniChart({
             }
           }
 
-          chartRef.current.timeScale().fitContent();
+          // The answer carries days of history: fitting all of it into a small pane shrinks the
+          // candles to slivers. Frame the latest bars for the pane's width when the chart
+          // changes, and leave a zoom / scroll the user made alone on the 15 s refresh.
+          const vk = `${symbol}|${instrument}|${intervalS}`;
+          if (viewKeyRef.current !== vk && cs.length) {
+            viewKeyRef.current = vk;
+            const w = wrapRef.current?.clientWidth ?? 600;
+            const show = Math.max(30, Math.min(cs.length, Math.floor(w / 8)));
+            chartRef.current.timeScale().setVisibleLogicalRange({ from: cs.length - show, to: cs.length + 3 });
+          }
         })
         .catch(() => {});
     load();
