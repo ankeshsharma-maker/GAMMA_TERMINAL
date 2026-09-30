@@ -111,10 +111,10 @@ export function OrderSheet({
   return (
     <div className="fixed inset-0 z-[55] flex items-end justify-center bg-black/60 sm:items-center" onClick={onClose}>
       <div
-        className="w-full max-w-md rounded-t-xl border border-term-border bg-term-panel p-3 shadow-2xl sm:rounded-xl"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
+        className="flex max-h-[92dvh] w-full max-w-md flex-col rounded-t-xl border border-term-border bg-term-panel shadow-2xl sm:rounded-xl"
         onClick={(e) => e.stopPropagation()}
       >
+       <div className="min-h-0 flex-1 overflow-y-auto p-3 pb-1">
         {/* contract + price */}
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
@@ -213,6 +213,10 @@ export function OrderSheet({
           Optional. Attached to this leg once it fills; the server exits at market when one is hit (works with the app closed).
           With both an SL and a trailing SL, the tighter one applies.
         </div>
+       </div>
+
+       {/* always visible: margin check, error, confirm */}
+       <div className="max-h-[45dvh] overflow-y-auto border-t border-term-border px-3 pt-1" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}>
 
         {w.kind !== "future" && (
           <MarginHint
@@ -245,6 +249,7 @@ export function OrderSheet({
             ✕ Remove from watchlist
           </button>
         )}
+       </div>
       </div>
     </div>
   );

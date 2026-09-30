@@ -688,10 +688,10 @@ function PositionSheet({
   return (
     <div className="fixed inset-0 z-[55] flex items-end justify-center bg-black/60 sm:items-center" onClick={onClose}>
       <div
-        className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-xl border border-term-border bg-term-panel p-3 shadow-2xl sm:rounded-xl"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
+        className="flex max-h-[92dvh] w-full max-w-md flex-col rounded-t-xl border border-term-border bg-term-panel shadow-2xl sm:rounded-xl"
         onClick={(e) => e.stopPropagation()}
       >
+       <div className="min-h-0 flex-1 overflow-y-auto p-3 pb-1">
         {/* contract + price */}
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
@@ -824,6 +824,10 @@ function PositionSheet({
           </div>
         )}
 
+       </div>
+
+       {/* always visible: margin check, error, confirm */}
+       <div className="max-h-[45dvh] overflow-y-auto border-t border-term-border px-3 pt-1" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}>
         {!reduces && (
           <MarginHint
             lots={lots}
@@ -845,6 +849,7 @@ function PositionSheet({
           <span className="ml-1.5 text-[11px] font-normal opacity-90">· review next</span>
         </button>
         {extras}
+       </div>
       </div>
     </div>
   );
@@ -1138,6 +1143,14 @@ const expShort = (e?: string) => {
 };
 
 /** "15:20:13 22-09-2026" (Noren norentm) -> epoch ms */
+/** Flattrade's rejection text in words: "RED:Margin Shortfall:INR 5089.84 Available:INR 993181.66 ..." */
+const plainReject = (raw: string): string => {
+  const m = /margin\s*shortfall\s*:?\s*INR\s*([\d,.]+)(?:.*?available\s*:?\s*INR\s*([\d,.]+))?/i.exec(raw);
+  if (!m) return raw;
+  const inr = (x: string) => "₹" + Math.round(parseFloat(x.replace(/,/g, ""))).toLocaleString("en-IN");
+  return `Not enough margin: short by ${inr(m[1])}${m[2] ? ` (available ${inr(m[2])})` : ""}`;
+};
+
 const norenMs = (t?: string): number => {
   const m = /^(\d{2}):(\d{2}):(\d{2})\s+(\d{2})-(\d{2})-(\d{4})/.exec(t || "");
   return m ? new Date(+m[6], +m[5] - 1, +m[4], +m[1], +m[2], +m[3]).getTime() : 0;
@@ -1160,6 +1173,7 @@ export function OrdersTab() {
   const [openKey, setOpenKey] = useState<string | null>(null);
   // tap an executed live order: its details + Repeat Order (the broker app's order sheet)
   const [detail, setDetail] = useState<OrderCard | null>(null);
+  const [retry, setRetry] = useState<OrderCard | null>(null); // a rejected order: straight to its repeat sheet
   // each contract's LTP, from the live positions (the order book carries none)
   const [ltpOf, setLtpOf] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -1317,12 +1331,15 @@ export function OrdersTab() {
             // Modify / Cancel on every open order (was hidden until the card was tapped)
             const expanded = c.open && !!c.book?.norenordno;
             const tappable = !c.open && !!c.book?.tsym;
+            const rejected = /reject/i.test(c.status);
             return (
               <div
                 key={c.key}
                 onClick={tappable ? () => setDetail(c) : undefined}
                 title={tappable ? "Tap for the order's details · Repeat Order" : undefined}
-                className={`rounded-lg bg-term-panel px-4 py-2.5 ${tappable ? "cursor-pointer active:bg-term-panel2" : ""}`}
+                className={`rounded-lg px-4 py-2.5 ${
+                  rejected ? "border border-down/60 bg-down/10" : "bg-term-panel"
+                } ${tappable ? "cursor-pointer active:bg-term-panel2" : ""}`}
               >
                 {/* the broker app's order card: [BUY] Qty. 40/40 · time [STATUS] / contract · price / exch prd type · LTP */}
                 <div className="flex items-center justify-between gap-2 text-[12px]">
@@ -1363,7 +1380,21 @@ export function OrdersTab() {
                     <span className="whitespace-nowrap tabular-nums">LTP {ltpOf[c.book.tsym].toFixed(2)}</span>
                   )}
                 </div>
-                {c.reason && <div className="mt-1 text-[12px] leading-snug text-down/90">{c.reason}</div>}
+                {c.reason && (
+                  <div className="mt-1 text-[12px] font-semibold leading-snug text-down">{rejected ? `⛔ ${plainReject(c.reason)}` : c.reason}</div>
+                )}
+                {rejected && c.book?.tsym && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRetry(c);
+                    }}
+                    className="mt-2 w-full rounded-lg border border-down/70 bg-down/20 py-2 text-[13px] font-bold text-term-text active:bg-down/40"
+                  >
+                    Retry — the sheet shows how many lots fit your margin
+                  </button>
+                )}
                 {expanded && (
                   <div className="mt-2 flex border-t border-term-border/60 pt-2">
                     <OrderRowActions order={c.book} />
@@ -1375,15 +1406,16 @@ export function OrdersTab() {
         </div>
       </div>
       {detail && <OrderDetailSheet c={detail} onClose={() => setDetail(null)} />}
+      {retry && <OrderDetailSheet c={retry} startRepeat onClose={() => setRetry(null)} />}
     </div>
   );
 }
 
 /** An executed order's sheet (the broker app's): what filled, at what, its IDs -- and Repeat Order,
  *  which opens the BUY / SELL sheet with this order's side, lots and price type filled in. */
-function OrderDetailSheet({ c, onClose }: { c: OrderCard; onClose: () => void }) {
+function OrderDetailSheet({ c, onClose, startRepeat = false }: { c: OrderCard; onClose: () => void; startRepeat?: boolean }) {
   const o = c.book || {};
-  const [repeat, setRepeat] = useState(false);
+  const [repeat, setRepeat] = useState(startRepeat);
   const ls = Number(o.ls) || 1;
   const mkt = /MKT/i.test(o.prctyp || "");
   if (repeat) {
