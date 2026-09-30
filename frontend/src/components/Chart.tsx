@@ -23,7 +23,7 @@ import { detectChartPatterns, type ChartEvent } from "../lib/chartPatterns";
 import { AutoPatternsPrimitive } from "../lib/autoPatternsPrimitive";
 import { detectSmc } from "../lib/smc";
 import { SmcAlertsPanel } from "./SmcAlertsPanel";
-import { TrendCompass } from "./TrendCompass";
+import { TrendCompass, TrendPill } from "./TrendCompass";
 import { useIsMobile } from "../lib/useIsMobile";
 import {
   bollinger,
@@ -1784,7 +1784,7 @@ export function Chart({ hideTrend = false }: { hideTrend?: boolean } = {}) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {!hideTrend && <TrendCompass symbol={symbol} />}
+      {!hideTrend && !phone && <TrendCompass symbol={symbol} />}
       {!barOpen && (
         <div className="flex items-center gap-1 self-start rounded-br border-b border-r border-term-border bg-term-panel2 px-1.5 py-0.5 text-2xs">
           <button
@@ -2708,6 +2708,7 @@ export function Chart({ hideTrend = false }: { hideTrend?: boolean } = {}) {
 
       <div className={`relative min-h-[220px] ${split ? "flex-[3]" : "flex-1"}`}>
         <div ref={wrapRef} className="absolute inset-0" />
+        {!hideTrend && phone && <TrendPill symbol={symbol} />}
         {(!data || noCandles) && (
           <div
             className={`absolute inset-0 z-20 flex items-center justify-center p-4 ${

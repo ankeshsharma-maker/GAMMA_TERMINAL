@@ -228,6 +228,49 @@ const Cell = ({ className = "", children }: { className?: string; children: Reac
   <span className={`whitespace-nowrap px-1 py-0.5 ${className}`}>{children}</span>
 );
 
+/** The phone's compact read: one pill (overall + votes), tap to unfold the per-timeframe arrows. */
+export function TrendPill({ symbol }: { symbol: string }) {
+  const t = useTrend(symbol);
+  const [open, setOpen] = useState(false);
+  const tone = !t
+    ? "border-term-border text-term-dim"
+    : isUp(t.overall)
+    ? "border-up/70 text-up"
+    : isDown(t.overall)
+    ? "border-down/70 text-down"
+    : "border-term-border text-term-text";
+  return (
+    <div className="pointer-events-auto absolute left-1.5 top-1.5 z-30 max-w-[calc(100%-56px)]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`num rounded-full border bg-term-bg/85 px-2.5 py-1 text-[11px] font-bold backdrop-blur ${tone}`}
+      >
+        {t ? `${LABEL[t.overall]} · ${t.up}↑ ${t.down}↓` : "trend…"} {open ? "▴" : "▾"}
+      </button>
+      {open && t && (
+        <div className="num mt-1 flex flex-wrap gap-x-3 gap-y-1 rounded-lg border border-term-border bg-term-panel/95 px-2.5 py-1.5 text-[11px]">
+          {t.tfs.map((f) => (
+            <span key={f.label}>
+              <span className="text-term-dim">{f.label} </span>
+              {arrow(f.ema)}
+              {arrow(f.st)}
+              {arrow(f.pa?.dir ?? null)}
+              {arrow(f.adx?.dir ?? null)}
+            </span>
+          ))}
+          {t.flow && (
+            <span>
+              <span className="text-term-dim">Flow </span>
+              {arrow(t.flow)}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TrendCompass({ symbol, inline = false }: { symbol: string; inline?: boolean }) {
   const t = useTrend(symbol);
   const tone = !t
