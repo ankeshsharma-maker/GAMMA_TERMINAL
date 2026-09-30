@@ -436,7 +436,10 @@ export function PcrChart({ symbol, isMobile }: { symbol: string; isMobile: boole
         )}
       </div>
 
-      <div className="space-y-1 px-1 text-[10px] leading-snug text-term-dim">
+      {/* the long "how to read" note is folded away: one tap opens it */}
+      <details className="group px-1 text-[11px] text-term-dim">
+        <summary className="cursor-pointer select-none py-1 font-semibold text-term-text">ⓘ How to read this chart</summary>
+      <div className="space-y-1 pb-1 text-[10px] leading-snug text-term-dim">
         <div>
           <span style={{ color: SPOT }}>━</span> {symbol} price (right axis) · <span className="text-emerald-400">━</span> PCR above 1 (more puts) ·{" "}
           <span className="text-red-400">━</span> PCR below 1 (more calls) · shading: 1.3 and 0.7 mark the extremes. Change-in-OI PCR (lower panel) = put OI
@@ -452,6 +455,7 @@ export function PcrChart({ symbol, isMobile }: { symbol: string; isMobile: boole
           </div>
         )}
       </div>
+      </details>
     </div>
   );
 }

@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { RangePresets } from "./RangePresets";
 import { useStore } from "../store";
 import { api } from "../lib/api";
 import { crores, oiCr, nf } from "../lib/format";
+import { useIsMobile } from "../lib/useIsMobile";
+import { OIPhoneHeader, type OiView } from "./OIPhoneHeader";
 
 type Row = {
   date: string;
@@ -29,7 +31,9 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
  *  PCR, max-pain and the day-over-day OI state. Data from Upstox
  *  (/api/upstox/history-chain); needs Upstox connected (index or F&O stock). */
 /** `paneNav`: the OI Profile / Option Chain / History switch, riding this toolbar on the web */
-export function OIHistory({ paneNav }: { paneNav?: ReactNode } = {}) {
+export function OIHistory({ paneNav, onGoto }: { paneNav?: ReactNode; onGoto?: (v: OiView) => void } = {}) {
+  const isMobile = useIsMobile();
+  const [openDate, setOpenDate] = useState<string | null>(null);
   const symbol = useStore((s) => s.symbol);
   const chain = useStore((s) => s.chain);
   const expiry = useStore((s) => s.expiry) ?? chain?.expiry ?? "";
@@ -184,6 +188,43 @@ export function OIHistory({ paneNav }: { paneNav?: ReactNode } = {}) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {isMobile && onGoto ? (
+        <div className="px-2 pt-1.5">
+          <OIPhoneHeader active="history" onView={(v) => v !== "history" && onGoto(v)}>
+        <label className="flex items-center gap-1">
+          from
+          <input
+            type="date"
+            style={{ colorScheme: "dark" }}
+            value={from}
+            max={to}
+            onChange={(e) => setFrom(e.target.value)}
+            className="rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text"
+          />
+        </label>
+        <label className="flex items-center gap-1">
+          to
+          <input
+            type="date"
+            style={{ colorScheme: "dark" }}
+            value={to}
+            min={from}
+            max={iso(new Date())}
+            onChange={(e) => setTo(e.target.value)}
+            className="rounded border border-term-border bg-term-bg px-1 py-0.5 text-term-text"
+          />
+        </label>
+        <RangePresets set={(f, t) => (setFrom(f), setTo(t))} active={from} />
+        <button
+          onClick={load}
+          disabled={busy}
+          className="rounded bg-term-accent px-2 py-0.5 font-semibold text-white disabled:opacity-40"
+        >
+          {busy ? "loading…" : "Load"}
+        </button>
+          </OIPhoneHeader>
+        </div>
+      ) : (
       <div className="flex flex-wrap items-center gap-2 border-b border-term-border bg-term-panel2 px-3 py-1.5 text-2xs text-term-dim">
         {!paneNav && <span className="hidden font-semibold uppercase tracking-wide sm:inline">OI History</span>}
         <span className="num font-semibold text-term-text">{symbol}</span>
@@ -227,6 +268,7 @@ export function OIHistory({ paneNav }: { paneNav?: ReactNode } = {}) {
           <span className="text-sky-400">─</span> Spot
         </span>
       </div>
+      )}
 
       {err && <div className="border-b border-term-border px-3 py-1.5 text-2xs text-down">{err}</div>}
       {emptyMsg && (
@@ -273,7 +315,56 @@ export function OIHistory({ paneNav }: { paneNav?: ReactNode } = {}) {
         )}
       </div>
 
-      {rows.length > 0 && (
+      {rows.length > 0 && isMobile && (
+        <div className="min-h-0 flex-1 overflow-auto p-2">
+          <table className="grid-table text-[12px]">
+            <thead className="sticky top-0 bg-term-panel2 text-[10px] uppercase text-term-dim">
+              <tr>
+                {["Date", "Spot", "PCR", "Δ OI", "State"].map((h, i) => (
+                  <th key={h} className={`px-1.5 py-1 font-medium ${i === 0 || i === 4 ? "text-left" : "text-right"}`}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[...rows].reverse().map((r) => {
+                const open = openDate === r.date;
+                return (
+                  <Fragment key={r.date}>
+                    <tr onClick={() => setOpenDate(open ? null : r.date)} className={`cursor-pointer ${open ? "bg-term-panel2" : ""}`}>
+                      <td className="num px-1.5 py-1.5 text-term-dim">
+                        <span className="text-[9px] opacity-60">{open ? "▾ " : "▸ "}</span>
+                        {r.date.slice(5)}
+                      </td>
+                      <td className="num px-1.5 py-1.5 text-right">{nf(r.spot ?? 0, 0)}</td>
+                      <td className="num px-1.5 py-1.5 text-right">{r.pcr != null ? nf(r.pcr, 2) : "–"}</td>
+                      <td className={`num px-1.5 py-1.5 text-right ${(r.dOI ?? 0) >= 0 ? "text-up" : "text-down"}`}>
+                        {r.dOI != null ? `${r.dOI >= 0 ? "+" : "−"}${oiCr(Math.abs(r.dOI))}` : "–"}
+                      </td>
+                      <td className={`px-1.5 py-1.5 font-semibold ${STATE_CLS[r.state ?? ""] ?? "text-term-dim"}`}>{r.state ? r.state.split(" ").map((w) => w[0] + w.slice(1).toLowerCase()).join(" ") : "–"}</td>
+                    </tr>
+                    {open && (
+                      <tr>
+                        <td colSpan={5} className="bg-term-panel px-2 py-2 text-[12px] text-term-dim">
+                          Call OI <b className="text-down">{crores(r.ceOI)}</b> · Put OI <b className="text-up">{crores(r.peOI)}</b> · Max pain{" "}
+                          <b className="text-term-text">{r.maxPain != null ? nf(r.maxPain, 0) : "–"}</b> · Δ spot{" "}
+                          <b className={(r.dSpot ?? 0) >= 0 ? "text-up" : "text-down"}>
+                            {r.dSpot != null ? `${r.dSpot >= 0 ? "+" : ""}${nf(r.dSpot, 0)}` : "–"}
+                          </b>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+          <div className="mt-1.5 text-center text-[11px] text-term-dim">Tap a day for Call OI, Put OI, max pain and the spot move</div>
+        </div>
+      )}
+
+      {rows.length > 0 && !isMobile && (
         <div className="min-h-0 flex-1 overflow-auto border-t border-term-border">
           <table className="grid-table text-2xs">
             <thead className="sticky top-0 bg-term-panel text-[10px] uppercase text-term-dim">

@@ -8,6 +8,7 @@ import { compact, oiCr, nf, signColor, sk } from "../lib/format";
 import type { ChainRow, Leg, UnusualKind } from "../types";
 import { OrderTicket } from "./OrderTicket";
 import { useIsMobile } from "../lib/useIsMobile";
+import { OIPhoneHeader, type OiView } from "./OIPhoneHeader";
 
 type TabKey = "ltp" | "oi" | "greeks";
 const TABS: { key: TabKey; label: string }[] = [
@@ -337,7 +338,11 @@ function ActivityCell({
 }
 
 /** `expiryRow`: render the symbol / expiry row on top, carrying the ΔOI window */
-export function OptionChain({ paneNav, expiryRow = false }: { paneNav?: ReactNode; expiryRow?: boolean } = {}) {
+export function OptionChain({
+  paneNav,
+  expiryRow = false,
+  onGoto,
+}: { paneNav?: ReactNode; expiryRow?: boolean; onGoto?: (v: OiView) => void } = {}) {
   const { chain, chainError } = useStore();
   const [tab, setTab] = useState<TabKey>("ltp");
   const isMobile = useIsMobile();
@@ -891,6 +896,14 @@ export function OptionChain({ paneNav, expiryRow = false }: { paneNav?: ReactNod
     <div className="flex min-h-0 flex-1 flex-col">
       {/* web: the view switch AND the chain's own controls (LTP / OI / Greeks, ⚙, Fwd) ride the top row,
           next to the symbol and expiry -- one row instead of two. Phone: they keep their own row. */}
+      {isMobile && expiryRow && onGoto ? (
+        <div className="px-2 pt-1.5">
+          <OIPhoneHeader active="chain" onView={(v) => v !== "chain" && onGoto(v)} tf={tfControl}>
+            {chainControls}
+          </OIPhoneHeader>
+        </div>
+      ) : (
+        <>
       {expiryRow && (
         <ExpiryTabs
           extra={tfControl}
@@ -902,6 +915,9 @@ export function OptionChain({ paneNav, expiryRow = false }: { paneNav?: ReactNod
           {!expiryRow && (paneNav ?? <span className="hidden font-semibold uppercase tracking-wide sm:inline">Option Chain</span>)}
           {chainControls}
         </div>
+      )}
+
+        </>
       )}
 
       <div className="min-h-0 flex-1 overflow-auto">

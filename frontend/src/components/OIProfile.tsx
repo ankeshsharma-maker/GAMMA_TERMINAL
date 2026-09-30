@@ -5,6 +5,7 @@ import { bucketStart, istTime } from "../lib/istTime";
 import { compact, nf, oiCr, oiSigned, sk } from "../lib/format";
 import { PcrChart } from "./PcrChart";
 import { OIInsights } from "./OIInsights";
+import { OIPhoneHeader, type OiView } from "./OIPhoneHeader";
 import { SelectMenu } from "./SelectMenu";
 import { useIsMobile } from "../lib/useIsMobile";
 import { scoreOI } from "../lib/oiVerdict";
@@ -170,7 +171,11 @@ function marketOpenNow(): boolean {
   return ist.getDay() >= 1 && ist.getDay() <= 5 && m >= 9 * 60 + 15 && m <= 15 * 60 + 30;
 }
 
-export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
+export function OIProfile({
+  paneNav,
+  onGoto,
+  layoutReq,
+}: { paneNav?: ReactNode; onGoto?: (v: OiView) => void; layoutReq?: OiView } = {}) {
   const chain = useStore((s) => s.chain);
   const chainError = useStore((s) => s.chainError);
   const symbol = useStore((s) => s.symbol);
@@ -184,7 +189,9 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const [tools, setTools] = useState(false); // mobile: show the extra control rows
   const [gear, setGear] = useState(false); // web: the ⚙ settings menu (Strikes ±, View, Zoom)
   const [metric, setMetric] = useState<Metric>("combined");
-  const [layout, setLayout] = useState<"chart" | "insights" | "walls" | "pcr" | "gex" | "dex">("chart");
+  const [layout, setLayout] = useState<"chart" | "insights" | "walls" | "pcr" | "gex" | "dex">(
+    layoutReq && layoutReq !== "chain" && layoutReq !== "history" ? layoutReq : "chart"
+  );
   // "Go to" chips: centre a strike and flash its row
   const jumpBoxRef = useRef<HTMLDivElement>(null);
   const [flash, setFlash] = useState<number | null>(null);
@@ -223,7 +230,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   const [intraDay, setIntraDay] = useState<string | null>(null);
   const [intraDays, setIntraDays] = useState<string[]>([]);
   const [intraShown, setIntraShown] = useState<{ day: string | null; live: boolean }>({ day: null, live: false });
-  const [count, setCount] = useState(0); // strikes each side of ATM; 0 = All
+  const [count, setCount] = useState(isMobile ? 9 : 0); // strikes each side of ATM; 0 = All (phone: 9 fit the width)
   const [symChoices, setSymChoices] = useState<string[]>([]);
   const [zoom, setZoom] = useState(1);
   // ΔOI window in minutes, 0 = the full day (since yesterday's close). Remembered
@@ -267,8 +274,11 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   };
 
   const AREA = Math.round(240 * zoom);
-  const COLW = Math.round(40 * zoom);
-  const BARW = Math.max(5, Math.round(14 * zoom));
+  // phone: with a strike window (default +-9) the columns are sized to FIT the screen, so the whole
+  // window is visible with no sideways scroll; "All" (or the web) keeps the scrolling 40 px columns
+  const fitCols = isMobile && count > 0 ? 2 * count + 1 : 0;
+  const COLW = fitCols ? Math.max(13, Math.min(40, Math.floor((window.innerWidth - 96) / fitCols))) : Math.round(40 * zoom);
+  const BARW = fitCols ? Math.max(5, Math.floor(COLW / 2) - 1) : Math.max(5, Math.round(14 * zoom));
 
   useEffect(() => {
     api.symbols().then(
@@ -1771,76 +1781,30 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
             a one-line summary; everything else waits behind ⚙ so the chart /
             ladder starts high up */}
         {isMobile && (
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-2">
-              <SelectMenu
-                value={symbol}
-                options={symOptions.map((s) => [s, s] as [string, string])}
-                onChange={(v) => selectSymbol(v, true)}
-                title="Underlying (list filtered by the All / Indices / Stocks toggle)"
-                width={150}
-              />
-              {chain.expiries.length > 0 && (
-                <SelectMenu
-                  value={expiry}
-                  options={chain.expiries.map((e) => [e, e] as [string, string])}
-                  onChange={selectExpiry}
-                  title="Expiry"
-                  width={130}
-                />
-              )}
-              {tfControl}
-              <button
-                onClick={() => setTools((t) => !t)}
-                className={`ml-auto rounded border px-2 py-0.5 ${
-                  tools ? "border-term-accent text-term-accent" : "border-term-dim/70 text-term-dim"
+          <OIPhoneHeader
+            active={layout as OiView}
+            onView={(v) => (v === "chain" || v === "history" ? onGoto?.(v) : setLayout(v))}
+            tf={tfControl}
+            gearOn={tools}
+            onGear={() => setTools((t) => !t)}
+          >
+            {verdict && (
+              <span
+                className={`shrink-0 rounded px-1.5 py-0.5 font-bold ${
+                  verdict.bias === "BULLISH" ? "bg-up text-white" : verdict.bias === "BEARISH" ? "bg-down text-white" : "bg-term-border text-term-dim"
                 }`}
-                title="Filters, strike / ΔOI controls, OI totals and the trend's reasons"
               >
-                ⚙ {tools ? "▴" : "▾"}
-              </button>
-            </div>
-            <div className="seg no-scrollbar max-w-full self-start overflow-x-auto">
-              {(
-                [
-                  ["chart", "Chart"],
-                  ["insights", "Insights"],
-                  ["walls", "Walls"],
-                  ["gex", "Weekly Gex"],
-                  ["dex", "Dealer Exp"],
-                  ["pcr", "PCR"],
-                ] as const
-              ).map(([v, l]) => (
-                <button key={v} onClick={() => setLayout(v)} className={`whitespace-nowrap ${layout === v ? "on" : ""}`}>
-                  {l}
-                </button>
-              ))}
-            </div>
-            <div className="no-scrollbar flex items-center gap-2 overflow-x-auto whitespace-nowrap text-[10px] tabular-nums">
-              {verdict && (
-                <span
-                  className={`rounded px-1.5 py-0.5 font-bold ${
-                    verdict.bias === "BULLISH"
-                      ? "bg-up text-white"
-                      : verdict.bias === "BEARISH"
-                      ? "bg-down text-white"
-                      : "bg-term-border text-term-dim"
-                  }`}
-                >
-                  {verdict.bias}
-                </span>
-              )}
-              <span>
-                PCR <span className="text-term-text">{nf(chain.pcr, 2)}</span>
+                {verdict.bias}
               </span>
-              <span>
-                Spot <span className="text-term-text">{nf(spot, 1)}</span>
-              </span>
-              <span>
-                Max Pain <span className="text-term-text">{nf(chain.maxPain, 0)}</span>
-              </span>
-            </div>
-          </div>
+            )}
+            <span className="shrink-0">
+              PCR <b className="font-semibold text-term-text">{nf(chain.pcr, 2)}</b>
+            </span>
+            <span className="shrink-0">
+              MP <b className="font-semibold text-term-text">{nf(chain.maxPain, 0)}</b>
+            </span>
+            {layout === "chart" && <span className="min-w-0 flex-1">{jumpBar}</span>}
+          </OIPhoneHeader>
         )}
 
         {/* row 1 — always visible: symbol / expiry / view switch / readout
@@ -1978,7 +1942,6 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       )}
 
       {/* Go to: the walls can be 15-20 columns off screen from ATM (web: in the right column) */}
-      {layout === "chart" && isMobile && <div className="border-b border-term-border/60 px-3 py-1">{jumpBar}</div>}
       {layout === "chart" && (
         <div className={`flex ${isMobile ? "flex-col-reverse" : "min-h-0 flex-1 flex-row"}`}>
           {donutEl && (

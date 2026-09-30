@@ -4,6 +4,7 @@ import { useIsMobile } from "../lib/useIsMobile";
 import { OIProfile } from "./OIProfile";
 import { OIHistory } from "./OIHistory";
 import { OptionChain } from "./OptionChain";
+import type { OiView } from "./OIPhoneHeader";
 
 /**
  * One-scrip view: OI-profile graph, the full option chain, or the historical
@@ -15,6 +16,13 @@ export function ScripView() {
   const chain = useStore((s) => s.chain);
   const isMobile = useIsMobile();
   const [pane, setPane] = useState<"oi" | "chain" | "history">("oi");
+  const [layoutReq, setLayoutReq] = useState<OiView>("chart");
+  // the phone's shared header: Chart / Insights / Walls / GEX ... live inside OIProfile, Chain and History are panes
+  const goto = (v: OiView) => {
+    if (v === "chain" || v === "history") return setPane(v);
+    setLayoutReq(v);
+    setPane("oi");
+  };
 
   const paneSeg = (
     <div className="seg">
@@ -34,7 +42,7 @@ export function ScripView() {
   // toolbar row (one row saved). Keep the standalone bar for History, on
   // mobile, and while the chain is still loading (those panes show only a
   // spinner then, no toolbar to ride on).
-  const showOwnBar = isMobile || !chain;
+  const showOwnBar = !isMobile && !chain; // the phone's views carry their own header (OIPhoneHeader)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -49,17 +57,17 @@ export function ScripView() {
 
       {pane === "oi" && (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <OIProfile paneNav={isMobile ? undefined : paneSeg} />
+          <OIProfile paneNav={isMobile ? undefined : paneSeg} onGoto={goto} layoutReq={layoutReq} />
         </div>
       )}
       {pane === "chain" && (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <OptionChain expiryRow paneNav={isMobile ? undefined : paneSeg} />
+          <OptionChain expiryRow paneNav={isMobile ? undefined : paneSeg} onGoto={goto} />
         </div>
       )}
       {pane === "history" && (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <OIHistory paneNav={isMobile ? undefined : paneSeg} />
+          <OIHistory paneNav={isMobile ? undefined : paneSeg} onGoto={goto} />
         </div>
       )}
     </div>
