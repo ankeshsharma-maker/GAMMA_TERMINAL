@@ -196,7 +196,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
   useEffect(() => {
     if (layout !== "ladder" || !chainReady) return;
     let stop = false;
-    const target = () => spotRef.current;
+    const target = () => tableSpotRef.current;
     const go = () => {
       if (!stop) target()?.scrollIntoView({ block: "center" });
     };
@@ -837,7 +837,7 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
       layout === "chart"
         ? box?.querySelector<HTMLElement>(`[data-strike="${k === "spot" ? chain.atmStrike : k}"]`)
         : k === "spot"
-        ? spotRef.current
+        ? tableSpotRef.current
         : box?.querySelector<HTMLElement>(`[data-strike="${k}"]`);
     el?.scrollIntoView(layout === "chart" ? { block: "nearest", inline: "center" } : { block: "center" });
     if (k !== "spot") {
@@ -2240,7 +2240,8 @@ export function OIProfile({ paneNav }: { paneNav?: ReactNode } = {}) {
           )}
         </div>
       )}
-      {layout === "ladder" && ladderEl}
+      {/* the Ladder is the bordered strike table on every screen (the bar ladder is no longer shown) */}
+      {layout === "ladder" && tableEl}
       {layout === "walls" && wallsEl}
       {layout === "pcr" && <PcrChart symbol={symbol} isMobile={isMobile} />}
       {layout === "gex" && gexEl}
