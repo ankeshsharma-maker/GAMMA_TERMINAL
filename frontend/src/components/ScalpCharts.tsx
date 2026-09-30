@@ -25,6 +25,11 @@ const IND_KEYS: [keyof MiniInd, string][] = [
   ["supertrend", "Supertrend"],
   ["pivots", "Pivots"],
   ["rsi", "RSI"],
+  ["sma20", "SMA20"],
+  ["vol", "Volume"],
+  ["macd", "MACD"],
+  ["fibpivot", "Fib pivots"],
+  ["gammaflip", "Gamma flip"],
 ];
 
 type Pane = { sym: string; tf: number; instr: string; ind: MiniInd };

@@ -8,11 +8,14 @@ import {
   type IPriceLine,
 } from "lightweight-charts";
 import { api } from "../lib/api";
+import { computeGammaFlip } from "../lib/gammaFlip";
 import {
   ema,
   vwap,
   bollinger,
   rsi,
+  sma,
+  macd,
   supertrend,
   pivots,
   type Candle,
@@ -39,6 +42,11 @@ export type MiniInd = {
   supertrend: boolean;
   pivots: boolean;
   rsi: boolean;
+  sma20: boolean;
+  vol: boolean;
+  macd: boolean;
+  fibpivot: boolean;
+  gammaflip: boolean;
 };
 export const MINI_IND_DEFAULT: MiniInd = {
   ema9: true,
@@ -49,6 +57,11 @@ export const MINI_IND_DEFAULT: MiniInd = {
   supertrend: false,
   pivots: false,
   rsi: false,
+  sma20: false,
+  vol: true,
+  macd: false,
+  fibpivot: false,
+  gammaflip: false,
 };
 
 /** A no-frills candlestick pane with a few overlay indicators. Used by the
@@ -78,6 +91,9 @@ export function MiniChart({
   const serRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lineRef = useRef<Record<string, ISeriesApi<"Line">>>({});
   const pvtRef = useRef<IPriceLine[]>([]);
+  const volRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const macdHistRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const gfLineRef = useRef<IPriceLine | null>(null);
   const [bars, setBars] = useState(0);
   // which symbol / instrument / timeframe the visible window was last set for
   const viewKeyRef = useRef("");
@@ -132,7 +148,23 @@ export function MiniChart({
       bbL: line("#64748b"),
       st: line("#14b8a6", 2),
       rsi: line("#c084fc", 1, { priceScaleId: "rsi", lastValueVisible: true }),
+      sma20: line("#22d3ee"),
+      macd: line("#38bdf8", 1, { priceScaleId: "macd" }),
+      macdSig: line("#f97316", 1, { priceScaleId: "macd" }),
     };
+    volRef.current = chart.addHistogramSeries({
+      priceScaleId: "vol",
+      priceLineVisible: false,
+      lastValueVisible: false,
+      base: 0,
+    });
+    macdHistRef.current = chart.addHistogramSeries({
+      priceScaleId: "macd",
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+    chart.priceScale("vol").applyOptions({ visible: false, scaleMargins: { top: 0.8, bottom: 0 } });
+    chart.priceScale("macd").applyOptions({ scaleMargins: { top: 0.74, bottom: 0 }, visible: false });
     chart.priceScale("rsi").applyOptions({
       scaleMargins: { top: 0.74, bottom: 0 },
       visible: false,
@@ -149,6 +181,9 @@ export function MiniChart({
       serRef.current = null;
       lineRef.current = {};
       pvtRef.current = [];
+      volRef.current = null;
+      macdHistRef.current = null;
+      gfLineRef.current = null;
     };
   }, []);
 
@@ -179,15 +214,58 @@ export function MiniChart({
           put("bbL", bb.lower, on.boll);
 
           put("st", supertrend(cs, 10, 3), on.supertrend);
+          put("sma20", sma(cs, 20), on.sma20);
 
-          // RSI sub-pane — reserve bottom space on the price scale when shown
-          chartRef.current.priceScale("right").applyOptions({
-            scaleMargins: { top: 0.06, bottom: on.rsi ? 0.3 : 0.06 },
+          // volume, faint behind the lower part of the candles (as on the full chart)
+          const showVol = on.vol && !!(d as any).hasVolume;
+          volRef.current?.applyOptions({ visible: showVol });
+          volRef.current?.setData(
+            showVol
+              ? (cs.map((k) => ({
+                  time: k.time,
+                  value: k.volume ?? 0,
+                  color: k.close >= k.open ? "#16a34a44" : "#dc262644",
+                })) as any)
+              : []
+          );
+
+          // MACD (12, 26, 9)
+          const mc = on.macd ? macd(cs) : { macd: [], signal: [], hist: [] };
+          put("macd", mc.macd, on.macd);
+          put("macdSig", mc.signal, on.macd);
+          macdHistRef.current?.applyOptions({ visible: on.macd });
+          macdHistRef.current?.setData(
+            (on.macd
+              ? mc.hist.map((h) => ({ time: h.time, value: h.value, color: h.value >= 0 ? "#16a34a99" : "#dc262699" }))
+              : []) as any
+          );
+
+          // lower panes (RSI, MACD) share the bottom of the chart; volume sits behind the candles
+          const nSub = (on.rsi ? 1 : 0) + (on.macd ? 1 : 0);
+          const band = nSub === 1 ? 0.22 : 0.17;
+          const gap = 0.03;
+          const reserve = nSub === 0 ? 0.06 : nSub * band + (nSub - 1) * gap + 0.05;
+          const ch = chartRef.current;
+          ch.priceScale("right").applyOptions({ scaleMargins: { top: 0.06, bottom: reserve } });
+          ch.priceScale("vol").applyOptions({
+            visible: false,
+            scaleMargins: { top: Math.max(0.3, 1 - reserve - 0.16), bottom: reserve },
           });
-          chartRef.current.priceScale("rsi").applyOptions({
-            scaleMargins: { top: 0.74, bottom: 0 },
-            visible: on.rsi,
-          });
+          let slot = 0;
+          const place = (id: string, shown: boolean) => {
+            if (!shown) {
+              ch.priceScale(id).applyOptions({ visible: false });
+              return;
+            }
+            const bottom = 0.02 + (nSub - 1 - slot) * (band + gap);
+            slot += 1;
+            ch.priceScale(id).applyOptions({
+              scaleMargins: { top: 1 - bottom - band, bottom },
+              visible: true,
+            });
+          };
+          place("rsi", on.rsi);
+          place("macd", on.macd);
           const rp = rsi(cs, 14);
           put("rsi", rp, on.rsi);
           setRsiVal(on.rsi && rp.length ? rp[rp.length - 1].value : null);
@@ -195,8 +273,13 @@ export function MiniChart({
           // previous-session pivots as horizontal price lines
           for (const pl of pvtRef.current) serRef.current.removePriceLine(pl);
           pvtRef.current = [];
-          if (on.pivots) {
-            const p = pivots(cs);
+          const pivotSets: [boolean, boolean][] = [
+            [on.pivots, false],
+            [on.fibpivot, true],
+          ];
+          for (const [wanted, fib] of pivotSets) {
+            if (!wanted) continue;
+            const p = pivots(cs, fib);
             if (p) {
               const rows: [string, number, string, LineStyle][] = [
                 ["R3", p.r3, "#f87171", LineStyle.Dotted],
@@ -207,15 +290,17 @@ export function MiniChart({
                 ["S2", p.s2, "#4ade80", LineStyle.Dashed],
                 ["S3", p.s3, "#4ade80", LineStyle.Dotted],
               ];
-              pvtRef.current = rows.map(([title, price, color, lineStyle]) =>
-                serRef.current!.createPriceLine({
-                  price: Number(price.toFixed(2)),
-                  color,
-                  lineWidth: 1,
-                  lineStyle,
-                  axisLabelVisible: true,
-                  title,
-                })
+              pvtRef.current.push(
+                ...rows.map(([title, price, color, lineStyle]) =>
+                  serRef.current!.createPriceLine({
+                    price: Number(price.toFixed(2)),
+                    color,
+                    lineWidth: 1,
+                    lineStyle,
+                    axisLabelVisible: true,
+                    title: fib ? "f" + title : title,
+                  })
+                )
               );
             }
           }
@@ -250,8 +335,55 @@ export function MiniChart({
     on.boll,
     on.supertrend,
     on.pivots,
+    on.fibpivot,
     on.rsi,
+    on.sma20,
+    on.vol,
+    on.macd,
   ]);
+
+  // gamma flip: today's live level from the symbol's own chain (any symbol, not just the open one)
+  useEffect(() => {
+    let alive = true;
+    const clear = () => {
+      if (gfLineRef.current && serRef.current) {
+        try {
+          serRef.current.removePriceLine(gfLineRef.current);
+        } catch {
+          /* chart rebuilt */
+        }
+      }
+      gfLineRef.current = null;
+    };
+    clear();
+    if (!on.gammaflip || instrument) return clear;
+    const load = () =>
+      api.chain(symbol).then(
+        (c) => {
+          if (!alive || !serRef.current) return;
+          const lvl =
+            c.gammaFlip ?? (c.rows?.length ? computeGammaFlip(c.rows, c.liveSpot?.ltp ?? c.spot)?.strike : null) ?? null;
+          clear();
+          if (lvl != null)
+            gfLineRef.current = serRef.current.createPriceLine({
+              price: Number(lvl.toFixed(2)),
+              color: "#e879f9",
+              lineWidth: 1,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: "gamma flip",
+            });
+        },
+        () => {}
+      );
+    load();
+    const t = setInterval(load, 60000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+      clear();
+    };
+  }, [symbol, instrument, on.gammaflip]);
 
   useEffect(() => {
     chartRef.current?.timeScale().applyOptions({ visible: !hideTime });
