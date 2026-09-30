@@ -5,7 +5,9 @@ import { HistoricalScan } from "./HistoricalScan";
 import { IndicatorScan } from "./IndicatorScan";
 import { Movers, type Timeframe } from "./Movers";
 import { Num } from "./Screener";
-import { type Spec, PRESETS, specKey } from "./Scanner";
+import { type Spec, PRESETS, specKey, matches } from "./Scanner";
+import { SelectMenu } from "./SelectMenu";
+import { useStore } from "../store";
 import { useIsMobile } from "../lib/useIsMobile";
 import { Chrome, ChromeRow, ChromeTabs } from "./Chrome";
 
@@ -29,6 +31,9 @@ export function ScannerView() {
   const [moversTf, setMoversTf] = useState<Timeframe>("today");
   const isMobile = useIsMobile();
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const scanRows = useStore((s) => s.scan);
+  const allCount = scanRows.length;
+  const matchCount = scanRows.filter((r) => matches(r, spec)).length;
   const activeFilters = Object.values(spec).filter((v) => v !== undefined && v !== false).length;
   const patch = (p: Partial<Spec>) => {
     const next = { ...spec, ...p };
@@ -64,19 +69,22 @@ export function ScannerView() {
                   >
                     Filters{activeFilters > 0 ? ` · ${activeFilters}` : ""} {filtersOpen ? "▴" : "▾"}
                   </button>
-                  {PRESETS.map(([name, hint, p]) => (
-                    <button
-                      key={name}
-                      title={hint}
-                      type="button"
-                      onClick={() => setSpec(p)}
-                      className={`shrink-0 rounded-full border px-2.5 py-0.5 text-2xs font-semibold ${
-                        specKey(spec) === specKey(p) ? "border-term-accent bg-term-accent/25 text-term-text" : "border-term-accent/30 text-term-dim"
-                      }`}
-                    >
-                      {name}
-                    </button>
-                  ))}
+                  <span className="pick border-0 bg-transparent p-0">
+                    <SelectMenu
+                      value={PRESETS.find(([, , p]) => specKey(spec) === specKey(p))?.[0] ?? "Presets"}
+                      options={[["Presets", "Presets"] as [string, string], ...PRESETS.map(([n]) => [n, n] as [string, string])]}
+                      onChange={(v) => setSpec(PRESETS.find(([n]) => n === v)?.[2] ?? {})}
+                      title="Ready-made filters"
+                      width={190}
+                    />
+                  </span>
+                </ChromeRow>
+                <ChromeRow>
+                  <span className="text-term-dim">
+                    {matchCount} of {allCount} symbols match
+                    {spec.scoreMin != null ? ` · score ≥ ${spec.scoreMin}` : ""}
+                    {spec.dteMax != null ? ` · DTE ≤ ${spec.dteMax}` : ""}
+                  </span>
                 </ChromeRow>
                 {filtersOpen && (
                   <div className="flex flex-wrap items-center gap-2 border-t border-term-accent/25 px-2 py-2 text-2xs">

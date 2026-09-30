@@ -12,7 +12,7 @@ export type Spec = {
   bias?: "UP" | "DOWN";
 };
 
-const matches = (r: ScanRow, s: Spec) =>
+export const matches = (r: ScanRow, s: Spec) =>
   (s.scoreMin == null || r.score >= s.scoreMin) &&
   (s.dteMax == null || r.dte <= s.dteMax) &&
   (!s.building || r.building === true) &&
