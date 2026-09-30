@@ -87,6 +87,14 @@ already use):
     # Classic use: spot crosses above the previous 5m candle's high (breakout).
     # AutoBot.snapshot() exposes the live reference + spot as rule["_live"]
     # for the first prev_candle condition in a rule's active (entry/exit) list.
+    {"kind":"range_breakout","lookback":20,"maxRangeAtr":4,"dir":"up"|"down","op":"breaks"|"sweep","volMult":0}
+    # SMC-style range play on the rule's own entryTf candles. The RANGE is the high / low of the last
+    # `lookback` closed candles BEFORE the newest closed one, and only counts as a consolidation when it is
+    # no taller than maxRangeAtr x ATR(14) (0 = any range). op "breaks": the newest closed candle CLOSES beyond
+    # the range high (dir up) / low (dir down) -- a breakout. op "sweep": the newest closed
+    # candle takes out the range edge with its wick but CLOSES back inside (a liquidity grab / fake-out):
+    # dir up = swept the LOW and reclaimed it (bullish), dir down = swept the HIGH and rejected (bearish).
+    # volMult > 0 also asks the candle's option volume to be >= volMult x the recent average.
     {"kind":"gap","aCandle":"current"|"previous","aField":"open"|"high"|"low"|"close",
      "op":">"|"<","bCandle":"current"|"previous","bField":"open"|"high"|"low"|"close"}
     # Compares one candle's O/H/L/C against another's. "current" = this
@@ -938,6 +946,32 @@ class _Ctx:
         ratio = cur_range / avg_range
         return ratio >= mult if c.get("mode", "wide") == "wide" else ratio <= 1.0 / mult
 
+    def _range_breakout(self, c) -> bool:
+        """SMC range play: a close through the edge of a tight consolidation (`breaks`), or a wick past it
+        that closes back inside (`sweep`), judged on the newest CLOSED candle so it fires once, on that
+        candle. See the condition docs at the top of this file."""
+        n = max(3, int(c.get("lookback", 20) or 20))
+        cs = self._closed()
+        if len(cs) < n + 1:
+            return False
+        rng, last = cs[-1 - n : -1], cs[-1]
+        hi = max(x["h"] for x in rng)
+        lo = min(x["l"] for x in rng)
+        if hi <= lo:
+            return False
+        max_atr = float(c.get("maxRangeAtr", 4) or 0)
+        if max_atr > 0:
+            atr = self._atr_series(14)
+            if not atr or atr[-1] <= 0 or (hi - lo) > max_atr * atr[-1]:
+                return False  # not a consolidation: the "range" is too tall to be one
+        buf = (hi - lo) * float(c.get("bufferPct", 0) or 0) / 100.0
+        up = c.get("dir", "up") == "up"
+        if str(c.get("op", "breaks")) == "sweep":
+            ok = (last["l"] < lo - buf and last["c"] > lo) if up else (last["h"] > hi + buf and last["c"] < hi)
+        else:
+            ok = last["c"] > hi + buf if up else last["c"] < lo - buf
+        return ok and self._vol_ok(float(c.get("volMult", 0) or 0))
+
     def _candle(self, c) -> bool:
         """Single / two-candle candlestick pattern on the current timeframe."""
         cs = self.candles
@@ -1218,7 +1252,7 @@ class _Ctx:
         "theta_level": _theta_level, "vega_level": _vega_level, "blast_score": _blast_score,
         "iv_rank": _iv_rank,
         "candle": _candle, "atr": _atr, "adx": _adx, "prev_candle": _prev_candle, "gap": _gap,
-        "candle_streak": _candle_streak, "candle_range": _candle_range,
+        "candle_streak": _candle_streak, "candle_range": _candle_range, "range_breakout": _range_breakout,
         "time_of_day": _time_of_day, "day_of_week": _day_of_week,
     }
 

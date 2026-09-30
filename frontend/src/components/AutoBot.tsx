@@ -392,6 +392,31 @@ const COND_DEFS: Record<
     help: () =>
       "Compares the CURRENT candle's high-low range to the average range of the N candles before it — \"wide\" catches a breakout candle, \"narrow\" catches a squeeze. Different from ATR, which smooths over many bars instead of singling out how today's candle compares to its own recent past.",
   },
+  range_breakout: {
+    label: "Range breakout / sweep (SMC)",
+    group: "trend",
+    fields: [
+      { key: "lookback", label: "range = last N candles", type: "num", def: 20 },
+      {
+        key: "maxRangeAtr",
+        label: "tight ≤ × ATR",
+        type: "num",
+        def: 4,
+        hint: "The range only counts as a consolidation when its height is at most this many ATRs (0 = any range).",
+      },
+      { key: "dir", label: "dir", type: "sel", def: "up", opts: ["up", "down"] },
+      { key: "op", label: "when", type: "sel", def: "breaks", opts: ["breaks", "sweep"] },
+      {
+        key: "volMult",
+        label: "volume ≥ ×",
+        type: "num",
+        def: 0,
+        hint: "Optional: the candle's option volume must be at least this many times the recent average (0 = ignore volume).",
+      },
+    ],
+    help: () =>
+      "Smart-money range play on this rule's candles. The range is the high-low of the last N closed candles. \"breaks\": a candle CLOSES beyond the range high (up) or low (down) for the first time — a breakout. \"sweep\": a candle pokes past the edge with its wick but closes back inside — a liquidity grab / fake-out (up = swept the low and reclaimed it, down = swept the high and was rejected).",
+  },
   atr: {
     label: "ATR (volatility)",
     group: "trend",
@@ -1014,6 +1039,28 @@ const SIMPLE_SIGNALS: SimpleSignal[] = [
     confirmTitle: (d) => `price is ${d === "up" ? "above the first 15 minutes' high" : "below the first 15 minutes' low"}`,
   },
   {
+    key: "range",
+    title: (d) => `Price breaks out of a tight range (${d === "up" ? "above its high" : "below its low"}, on strong volume)`,
+    tf: 300,
+    build: (d) => ({
+      entry: [{ kind: "range_breakout", lookback: 20, maxRangeAtr: 4, dir: d, op: "breaks", volMult: 1.5 }],
+      exit: [],
+    }),
+    confirm: (d) => [{ kind: "prev_candle", lookback: 20, field: d === "up" ? "high" : "low", op: d === "up" ? ">" : "<" }],
+    confirmTitle: (d) => `price is ${d === "up" ? "above the last 20 candles' high" : "below the last 20 candles' low"}`,
+  },
+  {
+    key: "sweep",
+    title: (d) => `Liquidity sweep: price grabs the range ${d === "up" ? "low" : "high"} and closes back inside`,
+    tf: 300,
+    build: (d) => ({
+      entry: [{ kind: "range_breakout", lookback: 20, maxRangeAtr: 4, dir: d, op: "sweep", volMult: 0 }],
+      exit: [],
+    }),
+    confirm: (d) => [{ kind: "market_structure", op: d === "up" ? "bullish" : "bearish" }],
+    confirmTitle: (d) => `the trend is ${d} (market structure)`,
+  },
+  {
     key: "adx",
     title: (d) => `A strong trend starts (ADX rises above 25, ${d === "up" ? "buyers" : "sellers"} in control)`,
     tf: 900,
@@ -1071,6 +1118,41 @@ function SimpleRuleEditor({
     setSigs((cur) => (cur.includes(k) ? (cur.length > 1 ? cur.filter((x) => x !== k) : cur) : [...cur, k]));
   const [risk, setRisk] = useState<Risk>("normal");
   const [lots, setLots] = useState(1);
+  // which strike: one that moves with the market (ATM / OTM / ITM) or a real strike from the symbol's chain
+  const [strike, setStrike] = useState("ATM");
+  const [strikeList, setStrikeList] = useState<{ atm: number; step: number; ks: number[] }>({ atm: 0, step: 50, ks: [] });
+  useEffect(() => {
+    setStrike("ATM");
+    let alive = true;
+    api.chain(symbol).then(
+      (ch) => {
+        if (!alive) return;
+        const step = ch.strikeStep || 50;
+        setStrikeList({
+          atm: ch.atmStrike,
+          step,
+          ks: ch.rows.map((x) => x.strike).filter((k) => !ch.atmStrike || Math.abs(k - ch.atmStrike) <= 20 * step),
+        });
+      },
+      () => alive && setStrikeList({ atm: 0, step: 50, ks: [] })
+    );
+    return () => {
+      alive = false;
+    };
+  }, [symbol]);
+  const strikeOpts: [string, string][] = [
+    ["ATM (moves with the market)", "ATM"],
+    ["1 strike OTM", "OTM1"],
+    ["2 strikes OTM", "OTM2"],
+    ["1 strike ITM", "ITM1"],
+    ["2 strikes ITM", "ITM2"],
+    ...strikeList.ks.map((k) => [`${k}${k === strikeList.atm ? "  · ATM now" : ""}`, `K${k}`] as [string, string]),
+  ];
+  const strikeWords = strike.startsWith("K")
+    ? `${strike.slice(1)}`
+    : strike === "ATM"
+    ? "ATM"
+    : `${strike.slice(-1)}-strike ${strike.startsWith("OTM") ? "OTM" : "ITM"}`;
   // how to play the view: buy the option that gains, or sell the one that loses
   const [how, setHow] = useState<"buy" | "sell">("buy");
   const sell = how === "sell";
@@ -1094,7 +1176,7 @@ function SimpleRuleEditor({
     ...blankRule(symbol),
     ...presets[risk].patch,
     name: `${symbol} · ${S.title(dir).split(" (")[0]}${picks.length > 1 ? ` + ${picks.length - 1} confirm` : ""} → ${how} ${ot}`,
-    instrument: `ATM_${ot}`,
+    instrument: `${strike}_${ot}`,
     side: sell ? "SELL" : "BUY",
     lots,
     entryTf: S.tf,
@@ -1112,7 +1194,15 @@ function SimpleRuleEditor({
       <SimpleQ n={1} q="What to trade?">
         <div className="flex flex-wrap items-center gap-2 text-[12px]">
           <SelectMenu value={symbol} options={symbols.map((x) => [x, x] as [string, string])} onChange={setSymbol} title="Index or stock" width={130} />
-          <span className="text-term-dim">its ATM option ·</span>
+          <span className="text-term-dim">its</span>
+          <SelectMenu
+            value={strike}
+            options={strikeOpts}
+            onChange={setStrike}
+            title="Strike: one that moves with the market (ATM / OTM / ITM), or a fixed strike from the chain"
+            width={190}
+          />
+          <span className="text-term-dim">option ·</span>
           <label className="flex items-center gap-1 text-term-dim">
             lots
             <input
@@ -1197,7 +1287,7 @@ function SimpleRuleEditor({
       </SimpleQ>
       <div className="rounded border border-term-border bg-term-bg/40 px-2.5 py-2 text-[11px] leading-snug text-term-dim">
         <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide">In plain words</span>
-        On <span className="text-term-text">{symbol}</span> {tfLabel(S.tf)} candles, {how} the ATM{" "}
+        On <span className="text-term-text">{symbol}</span> {tfLabel(S.tf)} candles, {how} the {strikeWords}{" "}
         <span className={dir === "up" ? "text-up" : "text-down"}>{ot === "CE" ? "Call" : "Put"}</span> when{" "}
         <span className="text-term-text">{words.enter}</span> · exit on <span className="text-term-text">{words.exit}</span> ·{" "}
         <span className="text-term-text">paper</span> (no real orders)
@@ -3570,6 +3660,13 @@ function describe(c: AutoCondition): string {
       return `last ${g("count")} candles all ${g("dir")}`;
     case "candle_range":
       return `candle range ${g("mode")} ≥${g("mult")}× last ${g("bars")}`;
+    case "range_breakout": {
+      const up = g("dir") !== "down";
+      const vol = Number(g("volMult")) > 0 ? ` on ${g("volMult")}× volume` : "";
+      return g("op") === "sweep"
+        ? `price sweeps the ${up ? "low" : "high"} of the last ${g("lookback")}-candle range and closes back inside${vol}`
+        : `price closes ${up ? "above the high" : "below the low"} of the last ${g("lookback")}-candle range${vol}`;
+    }
     case "time_of_day": {
       const f = g("from") || "09:15";
       const t = g("to") || "15:30";
