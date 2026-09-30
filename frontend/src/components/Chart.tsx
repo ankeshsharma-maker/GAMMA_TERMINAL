@@ -1107,6 +1107,9 @@ export function Chart() {
       (c.barS as ISeriesApi<"Bar">).setData(priceCandles as any);
       (c.lineS as ISeriesApi<"Line">).setData(asLine as any);
       (c.areaS as ISeriesApi<"Area">).setData(asLine as any);
+      // force the right-axis to rescale to the new symbol immediately — without
+      // this the old symbol's price range lingers on the axis until user interaction
+      chartRef.current.priceScale("right").applyOptions({ autoScale: true });
     }
     prevPriceRef.current = { key: pkey, candles: priceCandles };
     (c.candle as any).applyOptions({ visible: ctype === "candle" || ctype === "heikin" });
@@ -1740,71 +1743,36 @@ export function Chart() {
     const chart = chartRef.current;
     const cs = s.current.candle as ISeriesApi<"Candlestick"> | undefined;
     if (!chart || !cs) return;
-    if (gfRef.current) {
-      cs.removePriceLine(gfRef.current);
-      gfRef.current = null;
+
+    // always clear previous price line and any residual step-series
+    if (gfRef.current) { cs.removePriceLine(gfRef.current); gfRef.current = null; }
+    if (gfSerRef.current) {
+      try { gfSerRef.current.chart.removeSeries(gfSerRef.current.ser); } catch { /* chart rebuilt */ }
+      gfSerRef.current = null;
     }
-    const drop = () => {
-      if (gfSerRef.current) {
-        try {
-          gfSerRef.current.chart.removeSeries(gfSerRef.current.ser);
-        } catch {
-          /* chart rebuilt */
-        }
-        gfSerRef.current = null;
-      }
-    };
-    if (gfSerRef.current && gfSerRef.current.chart !== chart) gfSerRef.current = null; // chart rebuilt
-    if (!eff.gammaFlip || isOption) return drop();
-    const flip = chain?.gammaFlip ?? (chain?.rows.length ? computeGammaFlip(chain.rows, chain.liveSpot?.ltp ?? chain.spot)?.strike : null) ?? null;
-    // each bar's daily flip: intraday / daily -> that bar's IST date; weekly / monthly -> the last
-    // trading day inside the bar. The latest session takes the live chain's value.
-    const dates = [...gfDaily.keys()].sort();
-    const lastDate = candles.length ? istDay(candles[candles.length - 1].time as number) : "";
-    const wide = intervalS >= 604800;
-    const pts: { time: any; value: number }[] = [];
-    candles.forEach((c, i) => {
-      const d0 = istDay(c.time as number);
-      let v: number | undefined;
-      if (d0 === lastDate && flip != null) v = flip;
-      else if (!wide) v = gfDaily.get(d0);
-      else {
-        const d1 = i + 1 < candles.length ? istDay(candles[i + 1].time as number) : "9999-99-99";
-        for (let j = dates.length - 1; j >= 0; j--)
-          if (dates[j] >= d0 && dates[j] < d1) {
-            v = gfDaily.get(dates[j]);
-            break;
-          }
-      }
-      if (v != null) pts.push({ time: c.time as any, value: Number(v.toFixed(2)) });
+
+    if (!eff.gammaFlip || isOption) return;
+
+    // always use today's live daily gamma flip — same level on every timeframe
+    const liveFlip = chain?.gammaFlip ??
+      (chain?.rows.length ? computeGammaFlip(chain.rows, chain.liveSpot?.ltp ?? chain.spot)?.strike : null) ??
+      null;
+    // fallback: most recent historical entry (covers chart load before chain arrives)
+    const latestDaily = gfDaily.size
+      ? [...gfDaily.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1))[0][1]
+      : null;
+    const level = liveFlip ?? latestDaily;
+    if (level == null) return;
+
+    gfRef.current = cs.createPriceLine({
+      price: Number(level.toFixed(2)),
+      color: "#e879f9",
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: "γ-flip",
     });
-    if (!pts.length) return drop();
-    // just the one level (the daily series hasn't arrived yet): a reference line across the chart
-    if (pts.length < 2 && flip != null)
-      gfRef.current = cs.createPriceLine({
-        price: Number(flip.toFixed(2)),
-        color: "#e879f9",
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: false,
-        title: "",
-      });
-    if (!gfSerRef.current)
-      gfSerRef.current = {
-        chart,
-        ser: chart.addLineSeries({
-        color: "#e879f9",
-        lineWidth: 2,
-        lineStyle: LineStyle.Dashed,
-        lineType: 1, // steps: the flip holds until the next reading
-        priceLineVisible: false,
-        lastValueVisible: true,
-        crosshairMarkerVisible: false,
-        title: "γ-flip",
-        }),
-      };
-    gfSerRef.current.ser.setData(pts);
-  }, [eff.gammaFlip, isOption, chain?.rows, chain?.gammaFlip, gfDaily, candles, intervalS, data]);
+  }, [eff.gammaFlip, isOption, chain?.gammaFlip, chain?.rows, gfDaily]);
 
   // what the on-canvas loading / error / empty message calls this chart
   const chartLabel = isOption
