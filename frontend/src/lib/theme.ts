@@ -5,11 +5,12 @@
 export type Accent =
   | "blue" | "sky" | "cyan" | "teal" | "emerald" | "green" | "lime"
   | "amber" | "orange" | "rose" | "pink" | "fuchsia" | "violet" | "indigo"
+  | "steel" | "dustyteal" | "sage" | "mutedgold" | "terracotta" | "dustyrose" | "mutedviolet" | "taupe" | "slateblue" | "sand"
   | "gold" | "coral" | "red" | "crimson" | "purple" | "mint" | "silver" | "brown";
 export type Ground =
   | "light" | "cream" | "sage" | "sky" | "mist" | "dusk" | "wine" | "olive" | "coffee" | "ocean" | "charcoal" | "black" | "slate" | "navy" | "ink" | "graphite" | "forest" | "plum";
 
-export const ACCENTS: { id: Accent; label: string; rgb: string }[] = [
+export const ACCENTS: { id: Accent; label: string; rgb: string; dark?: boolean }[] = [
   { id: "blue", label: "Blue", rgb: "59 130 246" },
   { id: "sky", label: "Sky", rgb: "14 165 233" },
   { id: "cyan", label: "Cyan", rgb: "6 182 212" },
@@ -24,6 +25,16 @@ export const ACCENTS: { id: Accent; label: string; rgb: string }[] = [
   { id: "fuchsia", label: "Fuchsia", rgb: "217 70 239" },
   { id: "violet", label: "Violet", rgb: "139 92 246" },
   { id: "indigo", label: "Indigo", rgb: "99 102 241" },
+  { id: "steel", label: "Steel blue", rgb: "111 143 176", dark: true },
+  { id: "dustyteal", label: "Dusty teal", rgb: "95 158 160", dark: true },
+  { id: "sage", label: "Sage", rgb: "143 169 136", dark: true },
+  { id: "mutedgold", label: "Muted gold", rgb: "200 169 97", dark: true },
+  { id: "terracotta", label: "Terracotta", rgb: "194 124 94", dark: true },
+  { id: "dustyrose", label: "Dusty rose", rgb: "185 128 140", dark: true },
+  { id: "mutedviolet", label: "Muted violet", rgb: "154 143 191", dark: true },
+  { id: "taupe", label: "Taupe", rgb: "168 159 145", dark: true },
+  { id: "slateblue", label: "Slate", rgb: "125 147 168", dark: true },
+  { id: "sand", label: "Sand", rgb: "181 164 120", dark: true },
   { id: "gold", label: "Gold", rgb: "234 179 8" },
   { id: "coral", label: "Coral", rgb: "251 113 85" },
   { id: "red", label: "Red", rgb: "239 68 68" },
@@ -113,6 +124,7 @@ export function applyTheme(accent = getAccent(), ground = getGround()): void {
   const a = ACCENTS.find((x) => x.id === accent) ?? ACCENTS[0];
   const g = GROUNDS.find((x) => x.id === ground) ?? GROUNDS[0];
   root.setProperty("--term-accent", a.rgb);
+  root.setProperty("--term-on-accent", a.dark ? "12 17 26" : "255 255 255");
   root.setProperty("--term-bg", g.bg);
   root.setProperty("--term-panel", g.panel);
   root.setProperty("--term-panel2", g.panel2);
