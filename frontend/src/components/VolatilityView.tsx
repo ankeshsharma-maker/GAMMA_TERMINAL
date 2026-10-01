@@ -7,6 +7,7 @@ import { LineChart, niceTicks, type LineSeries } from "./LineChart";
 import { SelectMenu } from "./SelectMenu";
 import { ClassFilter } from "./Header";
 import { VERDICT_STYLE, VolHeadline } from "./VolHeadline";
+import { RangeCheck } from "./RangeCheck";
 
 /** Volatility dashboard for the active underlying: the IV smile per expiry, the ATM
  *  term structure with skew, and implied vs realized volatility. One backend call
@@ -283,6 +284,8 @@ export function VolatilityView() {
       {toolbar}
 
       {data.summary && <SummaryCard s={data.summary} />}
+
+      <RangeCheck symbol={symbol} />
 
       <VolHeadline data={data} />
 

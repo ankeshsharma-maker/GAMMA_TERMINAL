@@ -185,6 +185,17 @@ async def volatility_view(
     return await volatility.build(chain["symbol"], chain, max_expiries=expiries)
 
 
+@router.get("/range-check/{symbol}")
+async def range_check_view(symbol: str):
+    """How often this index stayed inside a band around its open, for days like today (weekday + opening gap)."""
+    from . import range_check
+
+    try:
+        return await range_check.build(symbol)
+    except Exception as exc:  # noqa: BLE001
+        return {"symbol": symbol.upper(), "ok": False, "reason": f"unavailable: {exc}"}
+
+
 @router.post("/portfolio/scenario")
 async def portfolio_scenario_grid(body: ScenarioIn):
     """P&L of everything open under spot x IV x time shocks (paper, broker, or both)."""

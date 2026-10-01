@@ -220,6 +220,7 @@ export const api = {
 
   volumeScreener: (universe: "fo" | "all", pos = false) =>
     j<VolSnapshot>(`/api/volume-screener?universe=${universe}${pos ? "&pos=1" : ""}`),
+  rangeCheck: (symbol: string) => j<RangeCheckData>(`/api/range-check/${encodeURIComponent(symbol)}`),
   volumeScreenerConfigGet: () => j<VolSnapshot["cfg"]>("/api/volume-screener/config"),
   volumeScreenerConfig: (body: { alertLevel?: number; minValueCr?: number }) =>
     j<VolSnapshot["cfg"]>("/api/volume-screener/config", { method: "POST", body: JSON.stringify(body) }),
@@ -1109,4 +1110,27 @@ export interface BrokerBracket {
   action?: "squareoff" | "alert";
   /** the P&L level the guard acts at right now (the highest of every active stop) */
   stopLevel?: number | null;
+}
+
+
+export interface RangeStat {
+  pInside: number;
+  n: number;
+  overshoot: number;
+}
+export interface RangeCheckData {
+  symbol: string;
+  ok: boolean;
+  reason?: string;
+  weekday: string;
+  forDay: string;
+  gapPct: number | null;
+  gapKind: string | null;
+  bands: { band: number; all: RangeStat | null; weekday: RangeStat | null; gap: RangeStat | null; both: RangeStat | null }[];
+  verdict: "favourable" | "average" | "poor" | null;
+  verdictP: number | null;
+  avgRangePct: number;
+  worstCloseMovePct: number;
+  days: number;
+  from: string;
 }
