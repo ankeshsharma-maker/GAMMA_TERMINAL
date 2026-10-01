@@ -41,7 +41,7 @@ function TopIndices() {
   }, []);
   if (rows.length === 0) return null;
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+    <div className="flex min-w-0 flex-1 items-center gap-1">
       {rows.slice(0, 2).map((r) => {
         if (r.spot != null)
           lastRef.current[r.symbol] = { spot: r.spot, chgPct: r.chgPct, chgPts: r.chgPts ?? null };
@@ -54,18 +54,18 @@ function TopIndices() {
         return (
           <span
             key={r.symbol}
-            className="flex shrink-0 flex-col gap-0.5 rounded border border-term-border bg-term-bg/60 px-1.5 py-0.5"
+            className="flex h-[40px] flex-col justify-center gap-0.5 rounded-lg border border-term-border bg-term-bg/60 px-1.5 min-w-0 flex-1 basis-0"
           >
-            <span className="flex items-baseline gap-1">
-              <span className="text-[8px] font-semibold uppercase tracking-tight text-term-dim">
+            <span className="flex items-baseline justify-between gap-1">
+              <span className="text-[9px] font-semibold uppercase tracking-tight text-term-dim">
                 {r.symbol}
               </span>
-              <span className="num text-[11px] font-semibold leading-none">
+              <span className="num text-[12px] font-semibold leading-none">
                 {spot != null ? nf(spot, 0) : "–"}
               </span>
             </span>
             <span
-              className={`num whitespace-nowrap text-right text-[8px] leading-none ${
+              className={`num whitespace-nowrap text-right text-[9.5px] leading-none ${
                 chgPct == null && chgPts == null ? "invisible" : up ? "text-up" : "text-down"
               }`}
             >
@@ -95,16 +95,16 @@ function PcrChip() {
   const chg = chain.pcr - base;
   return (
     <span
-      className="flex shrink-0 flex-col gap-0.5 rounded border border-term-border bg-term-bg/60 px-1.5 py-0.5"
+      className="flex h-[40px] flex-col justify-center gap-0.5 rounded-lg border border-term-border bg-term-bg/60 px-1.5 w-[58px] shrink-0"
       title={`${chain.symbol} put/call OI ratio — ${chg === 0 ? "unchanged" : chg > 0 ? "rising" : "falling"} since this screen opened`}
     >
-      <span className="flex items-baseline gap-1">
-        <span className="text-[8px] font-semibold uppercase tracking-tight text-term-dim">PCR</span>
-        <span className={`num text-[11px] font-semibold leading-none ${chain.pcr >= 1 ? "text-up" : "text-down"}`}>
+      <span className="flex items-baseline justify-between gap-1">
+        <span className="text-[9px] font-semibold uppercase tracking-tight text-term-dim">PCR</span>
+        <span className={`num text-[12px] font-semibold leading-none ${chain.pcr >= 1 ? "text-up" : "text-down"}`}>
           {nf(chain.pcr, 2)}
         </span>
       </span>
-      <span className={`num whitespace-nowrap text-right text-[8px] leading-none ${chg === 0 ? "invisible" : chg > 0 ? "text-up" : "text-down"}`}>
+      <span className={`num whitespace-nowrap text-right text-[9.5px] leading-none ${chg === 0 ? "invisible" : chg > 0 ? "text-up" : "text-down"}`}>
         {chg >= 0 ? "▲" : "▼"}
         {nf(Math.abs(chg), 2)}
       </span>
@@ -695,7 +695,7 @@ export function MobileShell() {
                   setBrokerOpen(false);
                   setFull(true);
                 }}
-                className="shrink-0 rounded border border-term-dim/70 px-1.5 py-1 text-term-dim"
+                className="flex h-[40px] w-[34px] shrink-0 items-center justify-center rounded-lg border border-term-border text-term-dim"
                 title="Full screen — hide the bars (Back or the corner button brings them back)"
               >
                 <FullIcon />
@@ -703,8 +703,8 @@ export function MobileShell() {
             )}
             <button
               onClick={() => setBrokerOpen((o) => !o)}
-              className={`relative ml-auto shrink-0 rounded border px-1.5 py-1 text-[11px] ${
-                brokerOpen ? "border-term-accent text-term-accent" : "border-term-dim/70 text-term-dim"
+              className={`relative flex h-[40px] w-[34px] shrink-0 items-center justify-center rounded-lg border text-[14px] ${
+                brokerOpen ? "border-term-accent text-term-accent" : "border-term-border text-term-dim"
               }`}
               title={isViewer() ? "Alerts · settings" : "Broker · mode · alerts"}
             >
