@@ -185,6 +185,14 @@ async def volatility_view(
     return await volatility.build(chain["symbol"], chain, max_expiries=expiries)
 
 
+@router.get("/candle-store/status")
+def candle_store_status():
+    """What the own candle store holds (rows, date range, file size) per index."""
+    from . import candle_store
+
+    return candle_store.status()
+
+
 @router.get("/range-check/{symbol}")
 async def range_check_view(symbol: str):
     """How often this index stayed inside a band around its open, for days like today (weekday + opening gap)."""

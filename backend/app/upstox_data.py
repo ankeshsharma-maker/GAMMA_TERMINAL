@@ -927,6 +927,14 @@ async def fetch_underlying_candles(symbol: str, interval_s: int) -> list[dict]:
     """One fetch per (symbol, interval) at a time, and after a failed one (e.g. a 429) the last good
     candles are served for a short while instead of asking Upstox again for every chart refresh."""
     ck = (symbol.upper(), int(interval_s))
+    # the indices are served from our own stored candles + today's live ones (Flattrade), so a chart never waits on Upstox
+    try:
+        from . import candle_store
+
+        if ck[0] in candle_store.SYMBOLS and (stored := await candle_store.serve(ck[0], ck[1])):
+            return stored
+    except Exception as exc:  # noqa: BLE001
+        log.debug("candle store: %s", exc)
 
     def _stale():
         hit = _UC_CACHE.get(ck)
