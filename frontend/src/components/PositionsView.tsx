@@ -732,7 +732,8 @@ function PositionSheet({
         `Once filled: ${[s != null && `SL ${s}`, t != null && `target ${t}`, tr != null && `trail ${tr} pts`].filter(Boolean).join(" · ")} on the whole leg` +
           (net && prdNow === legPrd ? " (replaces any SL / target it has now)." : ".")
       );
-    if (!window.confirm(lines.join("\n"))) return;
+    // the slider is the confirmation; a native dialog only for the risky cases (marked with a warning sign)
+    if (lines.some((l) => l.startsWith("⚠")) && !window.confirm(lines.join("\n"))) return;
     setBusy(true);
     try {
       // units, not lots: the server checks they are whole lots of ITS lot size

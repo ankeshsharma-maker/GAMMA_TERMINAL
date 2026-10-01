@@ -76,6 +76,7 @@ export function OrderSheet({
         trail: tr,
         lotSize,
         ltp,
+        direct: true,
       });
       onClose();
     } catch (e: any) {

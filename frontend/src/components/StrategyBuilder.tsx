@@ -388,7 +388,6 @@ export function StrategyBuilder() {
   const [timeMode, setTimeMode] = useState<"basic" | "day" | "hour">("basic");
   const [hourDay, setHourDay] = useState(0); // which trading day the hour view shows
   const [phonePt, setPhonePt] = useState("now"); // phone: the point in time the middle column shows
-  const [phoneRows, setPhoneRows] = useState(3); // P&L table: rows each side of spot
   // width of the leg-editor column vs. the payoff/chart column, drag-resizable like the watchlist panel
   const [builderW, setBuilderW] = useState(() => readNum(BUILDER_W_LS, 520));
   useEffect(() => {
@@ -2740,8 +2739,9 @@ export function StrategyBuilder() {
                 (() => {
                   const all = levelRows;
                   const ai = Math.max(0, all.findIndex((r) => r.isATM));
-                  const rowsP = all.slice(Math.max(0, ai - phoneRows), ai + phoneRows + 1);
-                  const off = Math.max(0, ai - phoneRows); // rowsP[j] = all[off + j]
+                  // the strikes shown follow the Rows / Step chips below (the same settings as the laptop table)
+                  const rowsP = all;
+                  const off = 0; // rowsP[j] = all[j]
                   const selDay = tradeDays.find((d) => d.points.some((pt) => pt.key === phonePt));
                   return (
                     <>
@@ -2768,6 +2768,28 @@ export function StrategyBuilder() {
                           ))}
                         </div>
                       )}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-1 text-[10.5px]">
+                        <span className="flex items-center gap-1">
+                          <span className="text-term-dim">Rows</span>
+                          <span className="seg">
+                            {[3, 5, 10, 20, 0].map((n) => (
+                              <button key={n} onClick={() => setStrikeSpan(n)} className={strikeSpan === n ? "on" : ""}>
+                                {n === 0 ? "All" : `±${n}`}
+                              </button>
+                            ))}
+                          </span>
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="text-term-dim">Step</span>
+                          <span className="seg">
+                            {([["strikes", 0], ["50", 50], ["100", 100], ["200", 200]] as const).map(([l, v]) => (
+                              <button key={l} onClick={() => setTableInterval(v)} className={tableInterval === v ? "on" : ""}>
+                                {l}
+                              </button>
+                            ))}
+                          </span>
+                        </span>
+                      </div>
                       <div className="flex border-b border-term-border py-1 text-[10px] uppercase text-term-dim">
                         <span className="flex-1 text-center">{tableInterval > 0 ? "Target" : "Strike"}</span>
                         <span className="flex-1 text-center normal-case">{phoneCol ? phoneCol.label : "Now"}</span>
@@ -2789,12 +2811,6 @@ export function StrategyBuilder() {
                           <span className={`flex-1 text-center ${pnlCls(r.exp + manualPnl)}`}>{pnlTxt(r.exp + manualPnl)}</span>
                         </div>
                       ))}
-                      <button
-                        onClick={() => setPhoneRows((n) => (n > 3 ? 3 : 10))}
-                        className="mt-1 w-full py-1 text-center text-[11px] font-semibold text-term-accent"
-                      >
-                        {phoneRows > 3 ? "Fewer rows" : "More rows"}
-                      </button>
                     </>
                   );
                 })()

@@ -142,6 +142,8 @@ interface State {
     trail: number | null;
     lotSize: number;
     ltp: number | null;
+    /** the slider already confirmed it: send now, no second dialog */
+    direct?: boolean;
   }) => Promise<void>;
   confirmPending: () => Promise<void>;
   cancelPending: () => void;
@@ -395,6 +397,7 @@ export const useStore = create<State>((set, get) => ({
           trail: o.trail, lotSize: o.lotSize,
         },
       });
+      if (o.direct) await get().confirmPending();
       return;
     }
     set({ paper: await paperFill({ symbol: o.symbol, expiry: o.expiry, strike: o.strike, optionType: o.optionType, side: o.side, lots: o.lots }) });
