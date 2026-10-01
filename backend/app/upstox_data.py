@@ -29,6 +29,22 @@ _UC_STALE_MAX = 1800.0
 # Upstox answers 429 when the whole account is over its rate limit for a moment; one short pause
 # clears it far more often than not
 _UC_RETRY_DELAY = 1.5
+# after a failed fetch, serve the last good candles for this long instead of asking Upstox again
+_UC_BACKOFF = 20.0
+_UC_FAILED: dict[tuple, float] = {}
+_UC_LOCKS: dict[tuple, asyncio.Lock] = {}
+# set whenever Upstox answers 429: bulk background work (volume baselines) waits while it is on,
+# so charts keep the allowance
+_RL_UNTIL = 0.0
+
+
+def note_rate_limit(seconds: float = 30.0) -> None:
+    global _RL_UNTIL
+    _RL_UNTIL = max(_RL_UNTIL, _time.time() + seconds)
+
+
+def rate_limited() -> bool:
+    return _time.time() < _RL_UNTIL
 
 log = logging.getLogger("upstox_data")
 
@@ -879,6 +895,7 @@ async def _get_retry(ux, path: str) -> dict:
     except Exception as exc:  # noqa: BLE001
         if getattr(getattr(exc, "response", None), "status_code", None) != 429:
             raise
+        note_rate_limit()
         await asyncio.sleep(_UC_RETRY_DELAY)
         return await ux.get(path, v3=True)
 
@@ -907,6 +924,39 @@ def _day_bar(rows) -> dict | None:
 
 
 async def fetch_underlying_candles(symbol: str, interval_s: int) -> list[dict]:
+    """One fetch per (symbol, interval) at a time, and after a failed one (e.g. a 429) the last good
+    candles are served for a short while instead of asking Upstox again for every chart refresh."""
+    ck = (symbol.upper(), int(interval_s))
+
+    def _stale():
+        hit = _UC_CACHE.get(ck)
+        return hit[1] if hit and len(hit[1]) >= 40 and _time.time() - hit[0] < _UC_STALE_MAX else None
+
+    def _fresh():
+        hit = _UC_CACHE.get(ck)
+        return hit[1] if hit and len(hit[1]) >= 40 and _time.time() - hit[0] < _UC_TTL else None
+
+    if (f := _fresh()) is not None:
+        return f
+    if _time.time() - _UC_FAILED.get(ck, 0.0) < _UC_BACKOFF and (s := _stale()) is not None:
+        return s
+    lock = _UC_LOCKS.setdefault(ck, asyncio.Lock())
+    async with lock:  # the others wait for this one fetch and then find it in the cache
+        if (f := _fresh()) is not None:
+            return f
+        if _time.time() - _UC_FAILED.get(ck, 0.0) < _UC_BACKOFF and (s := _stale()) is not None:
+            return s  # the one in front of us just failed: don't ask Upstox again straight away
+        t0 = _time.time()
+        out = await _fetch_underlying_candles_raw(symbol, interval_s)
+        hit = _UC_CACHE.get(ck)
+        if hit and hit[0] >= t0:
+            _UC_FAILED.pop(ck, None)
+        else:
+            _UC_FAILED[ck] = _time.time()
+        return out
+
+
+async def _fetch_underlying_candles_raw(symbol: str, interval_s: int) -> list[dict]:
     """OHLCV candles for an index / F&O-stock underlying from Upstox v3
     historical-candle, shaped for charting.build_chart(). `interval_s` picks
     the unit: <=1h -> minutes/1 (~25d), <=6h -> minutes/30 (~120d),

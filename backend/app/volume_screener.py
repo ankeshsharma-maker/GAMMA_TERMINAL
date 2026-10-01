@@ -286,6 +286,9 @@ async def _baseline_one(ux, sym: str, today: date) -> bool:
         h = await ux.get(_hc(key, "days", 1, today.isoformat(), (today - timedelta(days=380)).isoformat()), v3=True)
     except Exception as exc:  # noqa: BLE001
         if getattr(getattr(exc, "response", None), "status_code", None) == 429:
+            from .upstox_data import note_rate_limit
+
+            note_rate_limit()
             return True
         return False
     cs = (h.get("data") or {}).get("candles") or []  # newest first: [ts, o, h, l, c, v, oi]
@@ -341,6 +344,10 @@ async def run_baseline(stop: asyncio.Event) -> None:
                 for sym in todo:
                     if stop.is_set() or (sym not in fo_set and time.time() >= _all_wanted_until):
                         break  # stopping, or nobody wants the all-NSE list any more
+                    from .upstox_data import rate_limited
+
+                    while rate_limited() and not stop.is_set():
+                        await asyncio.sleep(5)  # Upstox is refusing calls: let the charts have the allowance
                     throttled = await _baseline_one(ux, sym, today)
                     if not throttled and sym not in _base:
                         _nodata[sym] = time.time()  # no candles (new listing / suspended or a blip): retry in 30 min, not every minute
