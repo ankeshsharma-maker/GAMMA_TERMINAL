@@ -244,6 +244,15 @@ select:focus-visible {
   }
 }
 
+/* light ground: darker green / red / amber text so they read on white */
+@layer utilities {
+  [data-light] .text-up { color: #15803d; }
+  [data-light] .text-down { color: #dc2626; }
+  [data-light] .text-amber-400, [data-light] .text-amber-500 { color: #b45309; }
+  [data-light] .text-emerald-400, [data-light] .text-green-400 { color: #15803d; }
+  [data-light] .text-red-400, [data-light] .text-rose-400 { color: #dc2626; }
+}
+
 /* the header block used on every screen: an accent-tinted frame holding rows of pickers, tabs and a status line */
 @layer components {
   .chrome {

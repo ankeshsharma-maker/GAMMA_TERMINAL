@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { chartGrid, chartAxis } from "../lib/theme";
 import {
   createChart,
   ColorType,
@@ -677,12 +678,12 @@ export function Chart({ hideTrend = false }: { hideTrend?: boolean } = {}) {
     if (!wrapRef.current) return;
     const chart = createChart(wrapRef.current, {
       layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#7a8699" },
-      grid: { vertLines: { color: "#141c27" }, horzLines: { color: "#141c27" } },
+      grid: { vertLines: { color: chartGrid() }, horzLines: { color: chartGrid() } },
       crosshair: { mode: CrosshairMode.Normal },
       localization: IST_LOCALIZATION,
-      rightPriceScale: { borderColor: "#1e2733", scaleMargins: { top: 0.06, bottom: 0.28 } },
+      rightPriceScale: { borderColor: chartAxis(), scaleMargins: { top: 0.06, bottom: 0.28 } },
       timeScale: {
-        borderColor: "#1e2733",
+        borderColor: chartAxis(),
         timeVisible: true,
         secondsVisible: false,
         tickMarkFormatter: istTickFormatter,

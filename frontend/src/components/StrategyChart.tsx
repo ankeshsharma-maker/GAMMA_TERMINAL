@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { chartGrid } from "../lib/theme";
 import {
   createChart,
   ColorType,
@@ -119,7 +120,7 @@ function MiniGreek({
     if (!ref.current) return;
     const chart = createChart(ref.current, {
       layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#7a8699", fontSize: 10 },
-      grid: { vertLines: { visible: false }, horzLines: { color: "#141c27" } },
+      grid: { vertLines: { visible: false }, horzLines: { color: chartGrid() } },
       crosshair: { mode: CrosshairMode.Magnet },
       localization: IST_LOCALIZATION,
       rightPriceScale: { borderColor: "#1e2733" },
@@ -380,7 +381,7 @@ export function StrategyChart({
     if (!wrapRef.current) return;
     const chart = createChart(wrapRef.current, {
       layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#7a8699" },
-      grid: { vertLines: { color: "#141c27" }, horzLines: { color: "#141c27" } },
+      grid: { vertLines: { color: chartGrid() }, horzLines: { color: chartGrid() } },
       crosshair: { mode: CrosshairMode.Normal },
       localization: IST_LOCALIZATION,
       rightPriceScale: { borderColor: "#1e2733" },
