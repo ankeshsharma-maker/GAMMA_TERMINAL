@@ -6,6 +6,7 @@ import { isViewer } from "../lib/auth";
 import type { WatchQuote } from "../types";
 import { api } from "../lib/api";
 import { MarginHint } from "./MarginHint";
+import { SlideToConfirm } from "./SlideToConfirm";
 import { LotsPicker } from "./LotsPicker";
 
 /** Flattrade-style order sheet for a watchlist contract (option / future):
@@ -235,15 +236,11 @@ export function OrderSheet({
 
         {err && <div className="mt-2 text-[12px] text-down">{err}</div>}
 
-        <button
-          disabled={busy}
-          onClick={place}
-          className={`mt-3 w-full rounded-lg py-3 text-[14px] font-bold text-white disabled:opacity-50 ${buy ? "bg-up" : "bg-down"}`}
-        >
-          {busy ? "…" : `${side} ${lots} lot${lots === 1 ? "" : "s"}`}
+        <SlideToConfirm busy={busy} onConfirm={place} tone={buy ? "up" : "down"}>
+          {`Slide to ${side} ${lots} lot${lots === 1 ? "" : "s"}`}
           {px ? <span className="ml-1.5 text-[12px] font-normal opacity-90">≈ ₹{nf(value, 0)}</span> : null}
           {live && <span className="ml-1.5 text-[11px] font-normal opacity-90">· review next</span>}
-        </button>
+        </SlideToConfirm>
         {onRemove && (
           <button onClick={onRemove} className="mt-2 w-full py-1 text-center text-[12px] font-semibold text-down">
             ✕ Remove from watchlist

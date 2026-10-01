@@ -8,6 +8,7 @@ import { useLiveMtm } from "../lib/useLiveMtm";
 import { isViewer } from "../lib/auth";
 import { getDefaultLots } from "../lib/prefs";
 import { useIsMobile } from "../lib/useIsMobile";
+import { SlideToConfirm } from "./SlideToConfirm";
 import { LegBracketBadge, findBracket, type LegRule } from "./LegBracketBadge";
 import { ScenarioGrid } from "./ScenarioGrid";
 import { PortfolioSummary } from "./PortfolioSummary";
@@ -932,15 +933,11 @@ function PositionSheet({
 
         {err && <div className="mt-2 text-[12px] text-down">{err}</div>}
 
-        <button
-          disabled={busy}
-          onClick={place}
-          className={`mt-3 w-full rounded-lg py-3 text-[14px] font-bold text-white disabled:opacity-50 ${buy ? "bg-up" : "bg-down"}`}
-        >
-          {busy ? "…" : `${side} ${lots} lot${lots === 1 ? "" : "s"}${type === "LMT" && price ? ` @ ${price.toFixed(2)}` : ""}`}
+        <SlideToConfirm busy={busy} onConfirm={place} tone={buy ? "up" : "down"}>
+          {`Slide to ${side} ${lots} lot${lots === 1 ? "" : "s"}${type === "LMT" && price ? ` @ ${price.toFixed(2)}` : ""}`}
           {px ? <span className="ml-1.5 text-[12px] font-normal opacity-90">≈ ₹{nf(px * qty, 0)}</span> : null}
           <span className="ml-1.5 text-[11px] font-normal opacity-90">· review next</span>
-        </button>
+        </SlideToConfirm>
         {extras}
        </div>
       </div>
@@ -1181,13 +1178,9 @@ function ModifyOrderSheet({ order, onClose, onDone }: { order: any; onClose: () 
 
         {err && <div className="mt-2 text-[12px] text-down">{err}</div>}
 
-        <button
-          disabled={busy}
-          onClick={submit}
-          className="mt-3 w-full rounded-lg bg-term-accent py-3 text-[14px] font-bold text-white disabled:opacity-50"
-        >
-          {busy ? "…" : "Update order"}
-        </button>
+        <SlideToConfirm busy={busy} onConfirm={submit}>
+          Slide to update order
+        </SlideToConfirm>
       </div>
     </div>
   );
