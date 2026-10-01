@@ -37,7 +37,7 @@ export const GROUNDS: {
   dim?: string;
   light?: boolean;
 }[] = [
-  { id: "light", label: "Light", bg: "238 242 247", panel: "255 255 255", panel2: "246 248 251", border: "150 164 184", text: "15 23 42", dim: "71 85 105", light: true },
+  { id: "light", label: "Light", bg: "203 211 223", panel: "225 231 240", panel2: "212 220 231", border: "128 142 164", text: "20 30 48", dim: "62 76 98", light: true },
   { id: "mist", label: "Mist", bg: "36 50 71", panel: "58 77 106", panel2: "46 62 87", border: "118 139 174", text: "245 248 252", dim: "212 221 235" },
   { id: "dusk", label: "Dusk", bg: "24 33 47", panel: "42 55 76", panel2: "31 42 60", border: "92 110 140", text: "240 245 250", dim: "190 202 220" },
   { id: "charcoal", label: "Charcoal", bg: "12 17 26", panel: "28 39 55", panel2: "19 27 39", border: "66 80 102" },
@@ -130,5 +130,5 @@ export function setGround(id: Ground): void {
 
 /** chart grid / axis-border colours that read on the current background */
 export const isLightGround = (): boolean => document.documentElement.hasAttribute("data-light");
-export const chartGrid = (): string => (isLightGround() ? "#e3e8ef" : "#141c27");
-export const chartAxis = (): string => (isLightGround() ? "#cbd5e1" : "#1e2733");
+export const chartGrid = (): string => (isLightGround() ? "#c3ccda" : "#141c27");
+export const chartAxis = (): string => (isLightGround() ? "#aab5c7" : "#1e2733");
