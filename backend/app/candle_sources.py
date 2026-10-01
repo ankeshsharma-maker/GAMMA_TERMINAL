@@ -74,6 +74,10 @@ async def option_candles(
     return (candles or None), label
 
 
+# Flattrade carries SENSEX as BSE token 1 (quote + TPSeries both answer); used when Upstox is refusing calls
+_BSE_BROKER_TOKENS = {"SENSEX": ("BSE", "1")}
+
+
 async def underlying_candles(
     symbol: str, interval: int, lookback: int | None = None
 ) -> tuple[list[dict] | None, str]:
@@ -98,14 +102,17 @@ async def underlying_candles(
         except Exception:  # noqa: BLE001
             return None
 
-    if store.data_source() == "upstox" and get_upstox().authed:
+    # SENSEX is Upstox-only otherwise; while Upstox is answering 429, go to Flattrade first so the chart stays live
+    broker_first = symbol.upper() in _BSE_BROKER_TOKENS and broker.authed and upstox_data.rate_limited()
+
+    if not broker_first and store.data_source() == "upstox" and get_upstox().authed:
         candles = await _ux()
         if candles:
             label = "upstox"
 
     if not candles and broker.authed:
         try:
-            tok = await broker.feed_token(symbol)
+            tok = await broker.feed_token(symbol) or _BSE_BROKER_TOKENS.get(symbol.upper())
             if tok:
                 candles = await broker.tpseries(
                     tok[0], tok[1], minutes_back=lookback, interval=str(fetch_min)
