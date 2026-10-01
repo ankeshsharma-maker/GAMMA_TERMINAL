@@ -124,12 +124,30 @@ def _all_stocks() -> list[str]:
 
 def want_all(seconds: float = 300) -> None:
     global _all_wanted_until
+    was_idle = time.time() >= _all_wanted_until
     _all_wanted_until = max(_all_wanted_until, time.time() + seconds)
+    if was_idle:
+        _wake_quotes()
+
+
+_loop = None  # the quotes loop's event loop + wake flag: opening the tab polls NOW, not at the next 30 s tick
+_wake = None
+
+
+def _wake_quotes() -> None:
+    if _loop is not None and _wake is not None:
+        try:
+            _loop.call_soon_threadsafe(_wake.set)
+        except RuntimeError:
+            pass
 
 
 def viewed(seconds: float = 120) -> None:
     global _viewed_until
+    was_idle = time.time() >= _viewed_until
     _viewed_until = max(_viewed_until, time.time() + seconds)
+    if was_idle:
+        _wake_quotes()  # nobody was looking: the quotes may be minutes old or missing
 
 
 # ---------------------------------------------------------------- baseline
@@ -252,6 +270,10 @@ def _pos_fields(q: dict, b: dict) -> dict:
     return out
 
 
+_nodata: dict[str, float] = {}
+_nodata_date = ""
+
+
 async def _baseline_one(ux, sym: str, today: date) -> bool:
     """Fetch a year of daily candles for one stock (one request), keep the ones before
     the session day `today`; True when Upstox said 429 (back off)."""
@@ -293,7 +315,7 @@ async def _baseline_one(ux, sym: str, today: date) -> bool:
 async def run_baseline(stop: asyncio.Event) -> None:
     """Rebuilt whenever the session day changes (08:30 IST on a trading day): F&O stocks
     first, then all NSE while that list is being asked for."""
-    global _base_date
+    global _base_date, _nodata_date
     from .brokers.upstox import get_upstox
 
     _load_base()
@@ -309,14 +331,19 @@ async def run_baseline(stop: asyncio.Event) -> None:
                     _alerted.clear()
                 fo_l = fo_stocks()
                 fo_set = set(fo_l)
-                todo = [s for s in fo_l if s not in _base]
+                if _nodata_date != _base_date:
+                    _nodata.clear()
+                    _nodata_date = _base_date
+                todo = [s for s in fo_l if s not in _base and time.time() - _nodata.get(s, 0) > 1800]
                 if time.time() < _all_wanted_until:
-                    todo += [s for s in _all_stocks() if s not in _base and s not in fo_set]
+                    todo += [s for s in _all_stocks() if s not in _base and s not in fo_set and time.time() - _nodata.get(s, 0) > 1800]
                 done = 0
                 for sym in todo:
                     if stop.is_set() or (sym not in fo_set and time.time() >= _all_wanted_until):
                         break  # stopping, or nobody wants the all-NSE list any more
                     throttled = await _baseline_one(ux, sym, today)
+                    if not throttled and sym not in _base:
+                        _nodata[sym] = time.time()  # no candles (new listing / suspended or a blip): retry in 30 min, not every minute
                     done += 1
                     if done % 50 == 0:
                         _save_base()
@@ -491,8 +518,11 @@ def _check_alerts(rows: list[dict]) -> None:
 
 
 async def run_quotes(stop: asyncio.Event) -> None:
+    global _loop, _wake
     from .brokers.upstox import get_upstox
 
+    _loop = asyncio.get_running_loop()
+    _wake = asyncio.Event()
     await asyncio.sleep(25)
     while not stop.is_set():
         try:
@@ -516,9 +546,14 @@ async def run_quotes(stop: asyncio.Event) -> None:
         except Exception as exc:  # noqa: BLE001
             log.warning("volume quotes loop: %s", exc)
         try:
-            await asyncio.wait_for(stop.wait(), timeout=30)
-        except asyncio.TimeoutError:
-            pass
+            _wake.clear()
+            waiter = asyncio.ensure_future(_wake.wait())
+            stopper = asyncio.ensure_future(stop.wait())
+            await asyncio.wait({waiter, stopper}, timeout=30, return_when=asyncio.FIRST_COMPLETED)
+            waiter.cancel()
+            stopper.cancel()
+        except Exception:  # noqa: BLE001
+            await asyncio.sleep(5)
 
 
 def snapshot(universe: str, pos: bool = False) -> dict:
