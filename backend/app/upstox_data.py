@@ -441,13 +441,15 @@ async def fetch_history_greeks(
     # a retry (confirmed: every leg silently returns [] via the except below,
     # so the whole day's reconstruction comes back empty with no exception
     # raised anywhere to signal it).
-    sem = asyncio.Semaphore(12)
+    sem = asyncio.Semaphore(5)  # was 12: a 250-contract burst used up the whole per-minute allowance and slowed every chart
 
     async def _one(strike: float, side: str, ik: str):
         async with sem:
             for wait in (0, 2, 4):
                 if wait:
                     await asyncio.sleep(wait)
+                while rate_limited():
+                    await asyncio.sleep(3)  # Upstox is refusing: wait rather than pile on
                 try:
                     h = await ux.get(f"/historical-candle/{ik}/days/1/{to_date}/{from_date}", v3=True)
                     candles = h.get("data", {}).get("candles", []) or []

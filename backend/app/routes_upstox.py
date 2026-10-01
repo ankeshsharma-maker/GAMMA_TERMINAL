@@ -171,8 +171,33 @@ async def history_greeks(
         raise HTTPException(502, f"Upstox history failed: {exc}")
 
 
+_wg_cache: dict[str, tuple[float, dict]] = {}
+_wg_locks: dict[str, "asyncio.Lock"] = {}
+
+
 @router.get("/weekly-gex")
 async def weekly_gex(symbol: str = Query(...), days: int = Query(7, ge=1, le=30)):
+    """The 30-day series is built once per symbol (it fetches every strike's history -- hundreds of Upstox
+    calls for the BSE names) and kept 30 minutes; any `days` is a slice of it. Concurrent requests share one build."""
+    import asyncio
+    import time
+
+    symbol = symbol.upper()
+    hit = _wg_cache.get(symbol)
+    if not hit or time.time() - hit[0] > 1800:
+        lock = _wg_locks.setdefault(symbol, asyncio.Lock())
+        async with lock:
+            hit = _wg_cache.get(symbol)
+            if not hit or time.time() - hit[0] > 1800:
+                full = await _weekly_gex_build(symbol, 30)
+                hit = (time.time(), full)
+                if full.get("series"):
+                    _wg_cache[symbol] = hit
+    full = hit[1]
+    return {**full, "series": full["series"][-days:]}
+
+
+async def _weekly_gex_build(symbol: str, days: int) -> dict:
     """Daily netGex / gammaFlip / spot for the last `days` *trading* days,
     reconstructed from NSE's own bhavcopy (real front-week contract per day —
     see nse_bhavcopy) so this needs no Upstox connection for NIFTY/BANKNIFTY/

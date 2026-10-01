@@ -189,6 +189,13 @@ class Upstox:
         if r.status_code == 401:
             self.clear()
             raise RuntimeError("Upstox token rejected (401) - re-login")
+        if r.status_code == 429:
+            try:  # bulk background work (volume baselines, history sweeps) waits while Upstox is refusing
+                from ..upstox_data import note_rate_limit
+
+                note_rate_limit()
+            except Exception:  # noqa: BLE001
+                pass
         r.raise_for_status()
         return r.json()
 
