@@ -219,6 +219,19 @@ const vegaCol: Col = {
 };
 const ivCol: Col = { key: "iv", label: "IV", render: (l) => nf(l.ivCalc ?? l.iv, 1) };
 
+/** R1-3 / S1-3 next to the strike, in every column view (LTP, OI, Greeks): the 3 biggest call-OI strikes are resistance, the 3 biggest put-OI strikes are support */
+function WallTag({ call, rank }: { call: boolean; rank: number }) {
+  return (
+    <span
+      className={`mx-1 inline-block rounded px-1 align-middle text-[9px] font-bold leading-[13px] text-white ${call ? "bg-down" : "bg-up"} ${rank === 1 ? "ring-2 ring-white/70" : rank === 2 ? "opacity-90" : "opacity-75"}`}
+      title={call ? `Resistance wall ${rank}: one of the 3 largest call OI strikes` : `Support wall ${rank}: one of the 3 largest put OI strikes`}
+    >
+      {call ? "R" : "S"}
+      {rank}
+    </span>
+  );
+}
+
 const COLS: Record<TabKey, Col[]> = {
   // reading from the centre STRIKE outward: LTP · Chg% · Δ · Γ · Θ · V
   // (array order = calls left→right, so the last entry sits against STRIKE)
@@ -690,8 +703,10 @@ export function OptionChain({
                 isATM ? "border-term-accent bg-term-accent text-white" : "border-term-border bg-term-bg text-term-text"
               }`}
             >
+              {ctx.callOIRank > 0 && <WallTag call rank={ctx.callOIRank} />}
               <span className="text-[8px] opacity-60">{isOpen ? "▾ " : "▸ "}</span>
               {sk(row.strike)}
+              {ctx.putOIRank > 0 && <WallTag call={false} rank={ctx.putOIRank} />}
               {row.parityStale && row.parityDev != null && <sup className="ml-0.5 font-bold text-amber-400">≠</sup>}
             </td>
             {[...mcols].reverse().map((col) => (
@@ -745,6 +760,7 @@ export function OptionChain({
               : "border-term-border bg-term-bg text-term-text"
           }`}
         >
+          {ctx.callOIRank > 0 && <WallTag call rank={ctx.callOIRank} />}
           {isATM ? (
             <span className="inline-flex items-center gap-1">
               {sk(row.strike)}
@@ -755,6 +771,7 @@ export function OptionChain({
           ) : (
             sk(row.strike)
           )}
+          {ctx.putOIRank > 0 && <WallTag call={false} rank={ctx.putOIRank} />}
           {row.parityStale && row.parityDev != null && (
             <sup
               className="ml-0.5 font-bold text-amber-400"
