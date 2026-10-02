@@ -2887,7 +2887,11 @@ function ruleStatus(r: AutoRule, masterOn: boolean): Status {
   if (!masterOn) return { label: "Engine off", cls: "bg-term-border/60 text-term-dim" };
   if (r._state?.paused) return { label: "Paused", cls: "bg-amber-500/15 text-amber-400" };
   if (r._state?.open) return { label: "In trade", cls: "bg-amber-500/15 text-amber-400" };
-  if (r._why?.phase === "blocked") return { label: "Blocked", cls: "bg-down/15 text-down" };
+  if (r._why?.phase === "blocked") {
+    // nothing wrong, the market is just shut: a quiet label instead of a red "Blocked"
+    if (/market closed/i.test(r._why.reason ?? "")) return { label: "Market closed", cls: "bg-term-border/60 text-term-dim" };
+    return { label: "Blocked", cls: "bg-down/15 text-down" };
+  }
   return { label: "Waiting", cls: "bg-term-accent/15 text-term-accent" };
 }
 
