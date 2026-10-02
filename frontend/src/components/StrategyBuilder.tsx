@@ -22,6 +22,7 @@ import { PayoffChart } from "./PayoffChart";
 import { BacktestPanel } from "./BacktestPanel";
 import { StrategyChart } from "./StrategyChart";
 import { SelectMenu } from "./SelectMenu";
+import { SlideToConfirm } from "./SlideToConfirm";
 import { VSplit, clamp, readNum } from "./VSplit";
 
 // IV points: +1 = IV 12% -> 13% (asked 25-Sep: 1-5% steps instead of 10 / 20 / 30)
@@ -1300,12 +1301,14 @@ export function StrategyBuilder() {
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col border-t border-term-border lg:grid lg:overflow-hidden"
-      style={{ gridTemplateColumns: `${builderW}px 4px minmax(0,1fr)` }}
+      className="flex min-h-0 flex-1 flex-col border-t border-term-border sm:grid sm:grid-cols-[minmax(330px,46%)_minmax(0,1fr)] sm:overflow-hidden lg:grid-cols-[var(--bw)_4px_minmax(0,1fr)]"
+      style={{ ["--bw" as string]: `${builderW}px` }}
     >
       {/* ---- leg editor ---- */}
-      <div className="flex flex-col border-r border-term-border bg-term-panel2 lg:min-h-0 lg:overflow-y-auto">
-        <div className="flex items-center gap-2 border-b border-term-border px-3 py-2 text-2xs font-semibold uppercase tracking-wide text-term-dim">
+      <div className="flex flex-col border-r border-term-border bg-term-panel2 sm:min-h-0 sm:overflow-y-auto">
+       {/* the header block (phone): symbol + expiry, the source tabs, then the lot multiplier -- one frame like every screen */}
+       <div className="mx-2 mt-1.5 overflow-hidden rounded-lg border border-term-accent/40 bg-term-accent/10 sm:m-0 sm:overflow-visible sm:rounded-none sm:border-0 sm:bg-transparent">
+        <div className="flex items-center gap-2 border-b border-term-accent/25 px-2 py-1.5 text-2xs font-semibold uppercase tracking-wide text-term-dim sm:border-term-border sm:px-3 sm:py-2">
           <span>Builder</span>
           <SelectMenu
             value={symbol}
@@ -1341,7 +1344,7 @@ export function StrategyBuilder() {
             ["Others", "text-term-dim", names.filter((n) => !known.has(n))] as [string, string, string[]],
           ].filter((g) => g[2].length);
           return (
-            <div className="hidden border-b border-term-border sm:block">
+            <div className="border-b border-term-accent/25 sm:border-term-border">
               <div className="flex flex-wrap items-center gap-1.5 px-2 py-1.5">
                 {/* tab BUTTONS, same look as the Payoff graph / P&L table row */}
                 {tabs.map(([k, l]) => (
@@ -1505,67 +1508,36 @@ export function StrategyBuilder() {
           );
         })()}
 
-        <div className="flex flex-col gap-2 border-b border-term-border p-2 sm:hidden">
-          <SelectMenu
-            value=""
-            options={[
-              ["Load a template…", ""],
-              ...Object.keys(templates).map((t) => [t, t] as [string, string]),
-            ]}
-            onChange={(t) => t && loadTemplate(t)}
-            title="Load a template"
-            width={180}
-          />
-          <div className="flex gap-1">
-            {!isViewer() && (
-              <button className="btn flex-1 text-2xs" onClick={loadFromPaper}>
-                From paper positions
-              </button>
-            )}
+        <div className="flex items-center gap-1 px-2 py-1.5 text-2xs sm:hidden">
+          <span className="text-term-dim">Lots</span>
+          <button className="btn px-2 py-0.5" onClick={() => setMult((m) => Math.max(1, m - 1))}>
+            −
+          </button>
+          <span className="num w-7 text-center text-[13px] font-semibold text-term-text">×{mult}</span>
+          <button className="btn px-2 py-0.5" onClick={() => setMult((m) => m + 1)}>
+            +
+          </button>
+          {[1, 2, 3, 5, 10].map((n) => (
             <button
-              className="btn flex-1 text-2xs"
-              onClick={() => {
-                setFromBroker(false);
-                setStratName("");
-                update([]);
-              }}
+              key={n}
+              onClick={() => setMult(n)}
+              className={`rounded border px-1.5 py-0.5 ${
+                mult === n ? "border-term-accent bg-term-accent/20 text-term-text" : "border-term-dim/70 text-term-dim"
+              }`}
             >
-              Clear
+              {n}
             </button>
-          </div>
-          {broker?.authed && !isViewer() && (
-            <button
-              className="w-full rounded border border-up/60 bg-up/10 px-2 py-1.5 text-xs font-semibold text-up hover:bg-up/20"
-              onClick={loadFromBroker}
-              title="Load your live Flattrade option positions into the builder so you can hedge / cap the running loss"
-            >
-              ⚡ From live positions
-            </button>
+          ))}
+          {analysis && legs.length > 0 && (
+            <span className="ml-auto text-term-dim">
+              {analysis.netPremiumType === "CREDIT" ? "credit" : "debit"}{" "}
+              <span className={`num font-semibold ${analysis.netPremiumType === "CREDIT" ? "text-up" : "text-down"}`}>
+                ₹{nf(Math.abs(analysis.netPremium), 0)}
+              </span>
+            </span>
           )}
-          <div className="flex items-center gap-1 text-2xs">
-            <span className="text-term-dim">Lot multiplier</span>
-            <button className="btn px-1.5 py-0.5" onClick={() => setMult((m) => Math.max(1, m - 1))}>
-              −
-            </button>
-            <span className="num w-6 text-center font-semibold text-term-text">×{mult}</span>
-            <button className="btn px-1.5 py-0.5" onClick={() => setMult((m) => m + 1)}>
-              +
-            </button>
-            {[1, 2, 3, 5, 10].map((n) => (
-              <button
-                key={n}
-                onClick={() => setMult(n)}
-                className={`rounded border px-1.5 py-0.5 ${
-                  mult === n
-                    ? "border-term-accent bg-term-accent/20 text-term-text"
-                    : "border-term-dim/70 text-term-dim"
-                }`}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
         </div>
+       </div>
 
         <div className="flex flex-col gap-1.5 p-2">
           <div className="flex items-baseline justify-between px-0.5 text-[11px] sm:text-[12.5px]">
@@ -1587,7 +1559,7 @@ export function StrategyBuilder() {
             </div>
           )}
           {legs.length > 0 && (
-            <div className="hidden overflow-hidden rounded-md border border-term-border bg-term-panel/40 sm:block">
+            <div className="hidden overflow-x-auto rounded-md border border-term-border bg-term-panel/40 sm:block">
               <table className="w-full border-collapse text-[13px]">
                 <thead className="bg-term-panel text-[11px] uppercase tracking-wide text-term-dim">
                   <tr>
@@ -2271,14 +2243,16 @@ export function StrategyBuilder() {
 
         {isViewer() ? (
           <div className="flex flex-col gap-2 border-t border-term-border p-2 lg:mt-auto">
-            <button
-              disabled={legs.length === 0 || runLegCount === 0}
-              onClick={doExecute}
-              className="btn btn-buy py-2 font-semibold disabled:opacity-40"
-            >
-              Execute (paper) · {runLegCount} leg{runLegCount === 1 ? "" : "s"}
-              {mult > 1 && <span className="ml-1 text-2xs">(×{mult})</span>}
-            </button>
+            {legs.length === 0 || runLegCount === 0 ? (
+              <button disabled className="btn btn-buy py-2 font-semibold opacity-40">
+                Execute (paper) · {runLegCount} leg{runLegCount === 1 ? "" : "s"}
+              </button>
+            ) : (
+              <SlideToConfirm tone="up" onConfirm={doExecute}>
+                Slide to execute (paper) · {runLegCount} leg{runLegCount === 1 ? "" : "s"}
+                {mult > 1 && <span className="ml-1 text-2xs">(×{mult})</span>}
+              </SlideToConfirm>
+            )}
             <div className="text-2xs text-term-dim">
               Paper trades only — they go to your own paper positions. Scheduling and saving are off.
             </div>
@@ -2354,13 +2328,9 @@ export function StrategyBuilder() {
               also execute {heldCount} held leg{heldCount === 1 ? "" : "s"}
             </label>
           )}
-          <button
-            disabled={legs.length === 0 || runLegCount === 0}
-            onClick={doExecute}
-            className={`btn py-2 font-semibold disabled:opacity-40 ${
-              orderMode === "live" ? "btn-sell" : "btn-buy"
-            }`}
-          >
+          {(() => {
+            const label = (
+              <>
             {orderMode === "live" ? "Execute LIVE" : "Execute (paper)"} · {runLegCount} leg
             {runLegCount === 1 ? "" : "s"}
             {heldCount > 0 && !executeHeld && (
@@ -2380,7 +2350,18 @@ export function StrategyBuilder() {
                 )}
               </span>
             )}
-          </button>
+              </>
+            );
+            return legs.length === 0 || runLegCount === 0 ? (
+              <button disabled className="btn py-2 font-semibold opacity-40">
+                {label}
+              </button>
+            ) : (
+              <SlideToConfirm tone={orderMode === "live" ? "down" : "up"} onConfirm={doExecute}>
+                {label}
+              </SlideToConfirm>
+            );
+          })()}
 
           </div>
           <Fold
@@ -2534,7 +2515,7 @@ export function StrategyBuilder() {
       <VSplit onDrag={bumpBuilder} className="hidden lg:block" />
 
       {/* ---- payoff / backtest ---- */}
-      <div className="flex flex-col lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-term-border">
+      <div className="flex flex-col sm:min-h-0 sm:overflow-y-auto sm:border-l sm:border-term-border">
         {/* strategy name + the numbers that matter, on every tab (laptop / unfolded; the folded phone has its own) */}
         {analysis && (
           <div className="mx-2 mt-1.5 hidden shrink-0 rounded-xl border border-term-accent/40 bg-term-accent/10 px-3 py-2 sm:block">
@@ -2557,14 +2538,14 @@ export function StrategyBuilder() {
         {/* one tab bar (was two rows: Payoff / Strategy chart / Greek charts / Backtest + Stats / Chart / ...) */}
         {(() => {
           const active = panel === "payoff" ? (payoffTab === "stats" ? "chart" : payoffTab) : panel;
-          const TABS: [string, string, boolean][] = [
-            ["chart", "Payoff graph", true],
-            ["table", "P&L table", false],
-            ["legs", "Legs", false],
-            ["greeks", "Greeks", false],
-            ["schart", "Strategy chart", true],
-            ["sgreeks", "Greek charts", true],
-            ["backtest", "Backtest", true],
+          const TABS: [string, string, boolean, string][] = [
+            ["chart", "Payoff graph", true, "Payoff"],
+            ["table", "P&L table", false, "P&L"],
+            ["legs", "Legs", false, "Legs"],
+            ["greeks", "Greeks", false, "Greeks"],
+            ["schart", "Strategy chart", true, "Chart"],
+            ["sgreeks", "Greek charts", true, "Greeks"],
+            ["backtest", "Backtest", true, "Backtest"],
           ];
           const pick = (k: string) => {
             if (k === "schart" || k === "sgreeks" || k === "backtest") setPanel(k);
@@ -2586,18 +2567,19 @@ export function StrategyBuilder() {
           return (
             <div className="mx-2 my-1.5 flex shrink-0 items-center gap-1.5 overflow-x-auto rounded-xl border border-term-accent/40 bg-term-accent/10 px-2 py-1.5 [scrollbar-width:none]">
               {/* tab BUTTONS, the app's own sub-nav look (GroupSubNav: Scalp / Build / Positions ...) */}
-              {TABS.map(([k, l, phone]) => (
+              {TABS.map(([k, l, phone, short]) => (
                 <button
                   key={k}
                   onClick={() => pick(k)}
                   title={hint[k]}
-                  className={`${phone ? "" : "hidden sm:block"} shrink-0 rounded border px-3 py-1 text-[12px] font-semibold transition-colors sm:text-[13px] ${
+                  className={`${phone ? "" : "hidden sm:block"} min-w-0 flex-1 rounded border px-2 py-1 text-[12px] font-semibold transition-colors sm:flex-none sm:shrink-0 sm:px-3 sm:text-[13px] ${
                     active === k
                       ? "border-term-accent/50 bg-term-accent/15 text-term-accent"
                       : "border-term-dim/70 text-term-dim hover:bg-term-border hover:text-term-text"
                   }`}
                 >
-                  {l}
+                  <span className="sm:hidden">{short}</span>
+                  <span className="hidden sm:inline">{l}</span>
                 </button>
               ))}
             </div>

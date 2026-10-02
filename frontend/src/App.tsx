@@ -128,13 +128,19 @@ function DesktopShell() {
     setZoom(100);
   };
 
-  const [hideLeft, setHideLeft] = useState(() => localStorage.getItem(LS.hideLeft) === "1");
+  const [hideLeftSaved, setHideLeft] = useState(() => localStorage.getItem(LS.hideLeft) === "1");
+  // the Build tab wants the room: the watchlist folds away whenever Build opens (the Layout menu can bring it back for that visit)
+  const [builderShowLeft, setBuilderShowLeft] = useState(false);
+  useEffect(() => {
+    if (view === "builder") setBuilderShowLeft(false);
+  }, [view]);
+  const hideLeft = view === "builder" ? !builderShowLeft : hideLeftSaved;
   const [hideRight, setHideRight] = useState(() => localStorage.getItem(LS.hideRight) === "1");
   useEffect(() => {
     try {
-      localStorage.setItem(LS.hideLeft, hideLeft ? "1" : "0");
+      localStorage.setItem(LS.hideLeft, hideLeftSaved ? "1" : "0");
     } catch {}
-  }, [hideLeft]);
+  }, [hideLeftSaved]);
   useEffect(() => {
     try {
       localStorage.setItem(LS.hideRight, hideRight ? "1" : "0");
@@ -154,7 +160,7 @@ function DesktopShell() {
     <div className="relative flex h-full flex-col bg-term-bg text-term-text">
       <Header>
         <HeaderMenu icon="☰" title="Layout — panels & reset">
-          <MenuRow onClick={() => setHideLeft((v) => !v)} active={!hideLeft}>
+          <MenuRow onClick={() => (view === "builder" ? setBuilderShowLeft((v) => !v) : setHideLeft((v) => !v))} active={!hideLeft}>
             <span>Watchlist panel</span>
             <span className="text-[10px] opacity-70">{hideLeft ? "Hidden" : "Shown"}</span>
           </MenuRow>
