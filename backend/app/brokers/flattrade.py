@@ -765,6 +765,12 @@ class FlattradeBroker:
         )
         payload.pop("uid", None)  # _post adds uid itself
         out = await self._post("PlaceOrder", payload)
+        try:  # the order watcher polls every second for a few seconds, so a rejection shows at once
+            from .. import order_watch
+
+            order_watch.kick()
+        except Exception:  # noqa: BLE001
+            pass
         if isinstance(out, dict) and out.get("stat") == "Ok":
             return {"ok": True, "orderId": out.get("norenordno"), "raw": out}
         raise RuntimeError(out.get("emsg") if isinstance(out, dict) else str(out))

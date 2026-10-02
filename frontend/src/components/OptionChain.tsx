@@ -20,8 +20,8 @@ const TABS: { key: TabKey; label: string }[] = [
 interface Ctx {
   maxOI: number;
   maxAbsChgOI: number;
-  isMaxCallOI: boolean;
-  isMaxPutOI: boolean;
+  callOIRank: number; // 0 = not top-3, 1/2/3 = rank among top-3 call OI strikes (resistance)
+  putOIRank: number; // 0 = not top-3, 1/2/3 = rank among top-3 put OI strikes (support)
   isMaxCallChg: boolean; // biggest fresh CE OI build
   isMaxPutChg: boolean; // biggest fresh PE OI build
   isMinCallChg: boolean; // biggest CE OI unwind
@@ -228,18 +228,33 @@ const COLS: Record<TabKey, Col[]> = {
       key: "oi",
       label: "OI",
       render: (l, side, ctx) => {
-        const wall = side === "l" ? ctx.isMaxCallOI : ctx.isMaxPutOI;
+        const rank = side === "l" ? ctx.callOIRank : ctx.putOIRank; // 0 = not top-3, else 1..3
+        const wall = rank > 0;
+        // rank 1 = strongest highlight (bold + ring), rank 2/3 = progressively lighter
+        const intensity =
+          rank === 1
+            ? side === "l"
+              ? "rounded bg-down/20 px-0.5 font-bold text-down ring-1 ring-down/70"
+              : "rounded bg-up/20 px-0.5 font-bold text-up ring-1 ring-up/70"
+            : rank === 2
+            ? side === "l"
+              ? "font-semibold text-down/80"
+              : "font-semibold text-up/80"
+            : rank === 3
+            ? side === "l"
+              ? "text-down/60"
+              : "text-up/60"
+            : "";
         return (
           <>
             <OIBar value={l.oi} max={ctx.maxOI} side={side} tone={side === "l" ? "call" : "put"} />
-            <span
-              className={`relative ${
-                wall ? (side === "l" ? "font-bold text-down" : "font-bold text-up") : ""
-              }`}
-            >
+            <span className={`relative ${intensity}`}>
               {compact(l.oi)}
               {wall && (
-                <sup className="ml-0.5 text-[8px]">{side === "l" ? "R" : "S"}</sup>
+                <sup className="ml-0.5 text-[8px]">
+                  {side === "l" ? "R" : "S"}
+                  {rank}
+                </sup>
               )}
             </span>
           </>
@@ -443,8 +458,8 @@ export function OptionChain({
     const base = {
       maxOI: 1,
       maxAbsChgOI: 1,
-      maxCallStrike: -1,
-      maxPutStrike: -1,
+      top3CallStrikes: [] as number[],
+      top3PutStrikes: [] as number[],
       maxCallChgStrike: -1,
       maxPutChgStrike: -1,
       minCallChgStrike: -1,
@@ -472,8 +487,6 @@ export function OptionChain({
     if (visibleRows.length === 0) return base;
     let maxOI = 1;
     let maxAbsChgOI = 1;
-    let maxCall = { v: -1, k: -1 };
-    let maxPut = { v: -1, k: -1 };
     let maxCallChg = { v: 0, k: -1 };
     let maxPutChg = { v: 0, k: -1 };
     let minCallChg = { v: 0, k: -1 };
@@ -519,8 +532,6 @@ export function OptionChain({
       if (r.put.gamma > maxPutGamma.v) maxPutGamma = { v: r.put.gamma, k: r.strike };
       maxOI = Math.max(maxOI, r.call.oi, r.put.oi);
       maxAbsChgOI = Math.max(maxAbsChgOI, Math.abs(r.call.oiChg), Math.abs(r.put.oiChg));
-      if (r.call.oi > maxCall.v) maxCall = { v: r.call.oi, k: r.strike };
-      if (r.put.oi > maxPut.v) maxPut = { v: r.put.oi, k: r.strike };
       if (r.call.oiChg > maxCallChg.v) maxCallChg = { v: r.call.oiChg, k: r.strike };
       if (r.put.oiChg > maxPutChg.v) maxPutChg = { v: r.put.oiChg, k: r.strike };
       if (r.call.oiChg < minCallChg.v) minCallChg = { v: r.call.oiChg, k: r.strike };
@@ -528,11 +539,20 @@ export function OptionChain({
       if (r.call.volume > maxCallVol.v) maxCallVol = { v: r.call.volume, k: r.strike };
       if (r.put.volume > maxPutVol.v) maxPutVol = { v: r.put.volume, k: r.strike };
     }
+    // top-3 OI strikes each side (resistance/support walls)
+    const top3CallStrikes = [...visibleRows]
+      .sort((a, b) => b.call.oi - a.call.oi)
+      .slice(0, 3)
+      .map((r) => r.strike);
+    const top3PutStrikes = [...visibleRows]
+      .sort((a, b) => b.put.oi - a.put.oi)
+      .slice(0, 3)
+      .map((r) => r.strike);
     return {
       maxOI,
       maxAbsChgOI,
-      maxCallStrike: maxCall.k,
-      maxPutStrike: maxPut.k,
+      top3CallStrikes,
+      top3PutStrikes,
       maxCallChgStrike: maxCallChg.k,
       maxPutChgStrike: maxPutChg.k,
       minCallChgStrike: minCallChg.k,
@@ -592,8 +612,8 @@ export function OptionChain({
     const ctx: Ctx = {
       maxOI: oiStats.maxOI,
       maxAbsChgOI: oiStats.maxAbsChgOI,
-      isMaxCallOI: row.strike === oiStats.maxCallStrike,
-      isMaxPutOI: row.strike === oiStats.maxPutStrike,
+      callOIRank: oiStats.top3CallStrikes.indexOf(row.strike) + 1, // 0 if not found, else 1/2/3
+      putOIRank: oiStats.top3PutStrikes.indexOf(row.strike) + 1,
       isMaxCallChg: row.strike === oiStats.maxCallChgStrike,
       isMaxPutChg: row.strike === oiStats.maxPutChgStrike,
       isMinCallChg: row.strike === oiStats.minCallChgStrike,

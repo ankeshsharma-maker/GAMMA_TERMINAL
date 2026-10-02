@@ -28,6 +28,10 @@ IST = ZoneInfo("Asia/Kolkata")
 
 _POLL_LIVE_S = 3.0      # market hours
 _POLL_IDLE_S = 20.0     # outside them
+_POLL_FAST_S = 1.0      # just after an order was sent: a rejection shows up within about a second
+_FAST_FOR_S = 15.0
+_fast_until = 0.0
+_wake: "asyncio.Event | None" = None
 _RECENT_S = 180         # on the first read after a start, only a rejection this fresh is announced
 _seen: dict[str, str] = {}   # order number -> last status read
 _primed = False
@@ -157,15 +161,42 @@ async def check_once() -> list[dict]:
     return fresh
 
 
+def kick() -> None:
+    """An order was just sent: check the order book every second for the next few seconds."""
+    global _fast_until
+    _fast_until = time.time() + _FAST_FOR_S
+    if _wake is not None:
+        try:
+            _loop.call_soon_threadsafe(_wake.set)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+_loop = None
+
+
 async def run(stop: asyncio.Event) -> None:
+    global _wake, _loop
     b = get_broker()
     if not b.configured:
         return
+    _loop = asyncio.get_running_loop()
+    _wake = asyncio.Event()
     while not stop.is_set():
         try:
-            await asyncio.wait_for(stop.wait(), timeout=_POLL_LIVE_S if _market_hours() else _POLL_IDLE_S)
-        except asyncio.TimeoutError:
-            pass
+            fast = time.time() < _fast_until
+            _wake.clear()
+            waiter = asyncio.ensure_future(_wake.wait())
+            stopper = asyncio.ensure_future(stop.wait())
+            await asyncio.wait(
+                {waiter, stopper},
+                timeout=_POLL_FAST_S if fast else (_POLL_LIVE_S if _market_hours() else _POLL_IDLE_S),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            waiter.cancel()
+            stopper.cancel()
+        except Exception:  # noqa: BLE001
+            await asyncio.sleep(1)
         if stop.is_set():
             break
         if not b.authed:
