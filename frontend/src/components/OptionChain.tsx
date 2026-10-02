@@ -230,20 +230,16 @@ const COLS: Record<TabKey, Col[]> = {
       render: (l, side, ctx) => {
         const rank = side === "l" ? ctx.callOIRank : ctx.putOIRank; // 0 = not top-3, else 1..3
         const wall = rank > 0;
-        // rank 1 = strongest highlight (bold + ring), rank 2/3 = progressively lighter
+        // all three walls get a framed number and a solid R1/R2/R3 (resistance) or S1/S2/S3 (support) badge;
+        // the strongest has the boldest frame and fill
+        const call = side === "l";
         const intensity =
           rank === 1
-            ? side === "l"
-              ? "rounded bg-down/20 px-0.5 font-bold text-down ring-1 ring-down/70"
-              : "rounded bg-up/20 px-0.5 font-bold text-up ring-1 ring-up/70"
+            ? call ? "rounded bg-down/35 px-1 font-bold text-down ring-2 ring-down" : "rounded bg-up/35 px-1 font-bold text-up ring-2 ring-up"
             : rank === 2
-            ? side === "l"
-              ? "font-semibold text-down/80"
-              : "font-semibold text-up/80"
+            ? call ? "rounded bg-down/25 px-1 font-semibold text-down ring-1 ring-down/80" : "rounded bg-up/25 px-1 font-semibold text-up ring-1 ring-up/80"
             : rank === 3
-            ? side === "l"
-              ? "text-down/60"
-              : "text-up/60"
+            ? call ? "rounded bg-down/15 px-1 font-medium text-down ring-1 ring-down/50" : "rounded bg-up/15 px-1 font-medium text-up ring-1 ring-up/50"
             : "";
         return (
           <>
@@ -251,10 +247,13 @@ const COLS: Record<TabKey, Col[]> = {
             <span className={`relative ${intensity}`}>
               {compact(l.oi)}
               {wall && (
-                <sup className="ml-0.5 text-[8px]">
-                  {side === "l" ? "R" : "S"}
+                <span
+                  className={`ml-1 rounded px-1 text-[9px] font-bold leading-[13px] text-white ${call ? "bg-down" : "bg-up"}`}
+                  title={call ? `Resistance wall ${rank}: one of the 3 largest call OI strikes` : `Support wall ${rank}: one of the 3 largest put OI strikes`}
+                >
+                  {call ? "R" : "S"}
                   {rank}
-                </sup>
+                </span>
               )}
             </span>
           </>
