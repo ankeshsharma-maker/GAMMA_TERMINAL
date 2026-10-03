@@ -641,6 +641,15 @@ export function OptionChain({
       hotPE,
     };
     const hotRow = tab === "greeks" && (hotCE || hotPE);
+    // OI walls: the whole row is marked for R1-3 (call wall, red) and S1-3 (put wall, green); rank 1 is strongest
+    const wallIsR = ctx.callOIRank > 0 && (ctx.putOIRank === 0 || ctx.callOIRank <= ctx.putOIRank);
+    const wallRank = wallIsR ? ctx.callOIRank : ctx.putOIRank;
+    const wallRow =
+      wallRank === 0 || isATM
+        ? ""
+        : wallIsR
+        ? ["outline outline-2 -outline-offset-2 outline-down/80 bg-down/20", "outline outline-1 -outline-offset-1 outline-down/60 bg-down/15", "outline outline-1 -outline-offset-1 outline-down/40 bg-down/10"][wallRank - 1]
+        : ["outline outline-2 -outline-offset-2 outline-up/80 bg-up/20", "outline outline-1 -outline-offset-1 outline-up/60 bg-up/15", "outline outline-1 -outline-offset-1 outline-up/40 bg-up/10"][wallRank - 1];
     if (isMobile) {
       const mcols = MOBILE_KEYS[tab]
         .map((k) => ALL_COLS.find((x) => x.key === k)!)
@@ -679,7 +688,7 @@ export function OptionChain({
             onClick={() => setOpenStrike(isOpen ? null : row.strike)}
             className={`cursor-pointer active:bg-term-panel/60 ${
               isATM ? "bg-term-accent/20 font-semibold text-term-text outline outline-2 -outline-offset-2 outline-term-accent" : ""
-            } ${hotRow ? "bg-amber-500/10" : ""}`}
+            } ${hotRow ? "bg-amber-500/10" : ""} ${wallRow}`}
           >
             {mcols.map((col) => (
               <td key={"c" + col.key} className={`relative cell border-l-0 text-right text-[12px] text-term-dim ${cbg}`}>
@@ -722,7 +731,7 @@ export function OptionChain({
           isATM
             ? "bg-term-accent/20 font-semibold text-term-text outline outline-2 -outline-offset-2 outline-term-accent"
             : ""
-        } ${hotRow ? "bg-amber-500/10" : ""}`}
+        } ${hotRow ? "bg-amber-500/10" : ""} ${wallRow}`}
       >
         {/* ---- CALL side ---- */}
         <td className={`cell border-l-2 border-up/40 text-left ${cbg}`}>
