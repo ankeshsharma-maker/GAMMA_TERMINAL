@@ -16,6 +16,7 @@ import asyncio
 import logging
 import time as _time
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from .brokers.upstox import get_upstox
 
@@ -156,7 +157,7 @@ async def fetch_chain_payload(symbol: str, expiry: str) -> dict | None:
         "records": {
             "expiryDates": [expiry],
             "underlyingValue": spot,
-            "timestamp": datetime.now().strftime("%d-%b-%Y %H:%M:%S"),
+            "timestamp": datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%d-%b-%Y %H:%M:%S"),
             "data": sorted(data, key=lambda x: x["strikePrice"]),
         }
     }

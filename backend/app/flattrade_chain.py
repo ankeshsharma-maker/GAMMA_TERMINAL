@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from .config import INDEX_FEED_TOKENS
 
@@ -244,7 +245,7 @@ async def fetch_chain_payload(
         "records": {
             "expiryDates": [expiry],
             "underlyingValue": spot,
-            "timestamp": datetime.now().strftime("%d-%b-%Y %H:%M:%S"),
+            "timestamp": datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%d-%b-%Y %H:%M:%S"),
             "data": sorted(by_strike.values(), key=lambda r: r["strikePrice"]),
         }
     }
