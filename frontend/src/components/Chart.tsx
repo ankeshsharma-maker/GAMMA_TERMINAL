@@ -361,7 +361,14 @@ export function Chart({ hideTrend = false }: { hideTrend?: boolean } = {}) {
   const priceCandlesRef = useRef<Candle[]>([]); // the candles on screen, readable from drawing primitives
   const intervalRef = useRef(0);
   const [feedLimited, setFeedLimited] = useState(false);
-  const [intervalS, setIntervalS] = useState(getIntervalS); // default from Settings
+  const [intervalS, setIntervalS] = useState(() => useStore.getState().chartTfReq?.secs ?? getIntervalS()); // default from Settings
+  // a scan list (Screener / Volume / Positional) asked for a candle size, e.g. 1D
+  const tfReq = useStore((s) => s.chartTfReq);
+  useEffect(() => {
+    if (!tfReq) return;
+    setIntervalS(tfReq.secs);
+    useStore.setState({ chartTfReq: null }); // one-shot: a later plain chart open keeps the user's own timeframe
+  }, [tfReq]);
   const [rangeD, setRangeD] = useState(() => defaultRangeDays(intervalS)); // visible-history window in days; 0 = all
   const [split, setSplit] = useState(false);
   const [cmpInstrument, setCmpInstrument] = useState<string>("STRADDLE");

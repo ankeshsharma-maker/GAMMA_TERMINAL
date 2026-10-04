@@ -81,6 +81,8 @@ interface State {
   /** the list the current chart was opened from (Screener / Movers / Watchlist ...),
    *  in the order it was showing -- the chart's Prev / Next buttons step through it */
   chartQueue: { source: string; symbols: string[] } | null;
+  /** one-shot ask from a scan list: open the chart on this candle size (seconds); seq makes repeats count */
+  chartTfReq: { secs: number; seq: number } | null;
   paper: PaperState | null;
   brokerFunds: import("./types").BrokerFunds | null;
   view: View;
@@ -171,6 +173,7 @@ interface State {
   wlClear: (i: number, optionsOnly?: boolean) => Promise<void>;
   setChartInstrument: (v: string) => void;
   setChartQueue: (source: string, symbols: string[]) => void;
+  requestChartTf: (secs: number) => void;
   chartStep: (dir: 1 | -1) => void;
   setScalpLots: (n: number) => void;
   quickTrade: (symbol: string, ot: "CE" | "PE", side: "BUY" | "SELL", lots?: number) => Promise<void>;
@@ -319,6 +322,7 @@ export const useStore = create<State>((set, get) => ({
   scalpLots: getDefaultLots(),
   chartInstrument: "",
   chartQueue: null,
+  chartTfReq: null,
   paper: null,
   brokerFunds: null,
   view: "home", // the app opens on the Home dashboard (asked for 24-Sep)
@@ -811,6 +815,7 @@ export const useStore = create<State>((set, get) => ({
     const list = symbols.filter((s) => s && !seen.has(s) && !!seen.add(s));
     set({ chartQueue: list.length > 1 ? { source, symbols: list } : null });
   },
+  requestChartTf: (secs) => set((s) => ({ chartTfReq: { secs, seq: (s.chartTfReq?.seq ?? 0) + 1 } })),
   chartStep: (dir) => {
     const { chartQueue, symbol, selectSymbol } = get();
     if (!chartQueue) return;

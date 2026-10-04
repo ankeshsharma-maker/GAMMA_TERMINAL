@@ -239,6 +239,7 @@ export function PositionalScan() {
           metric={metric}
           sort={{ key: "metric", dir: sortDir }}
           tag={tag}
+          source="Positional"
           empty={empty}
         />
       )}

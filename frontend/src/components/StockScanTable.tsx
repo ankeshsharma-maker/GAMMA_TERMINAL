@@ -281,6 +281,7 @@ export function ScanTable({
   sort: initial,
   tag,
   empty,
+  source = "Scan",
 }: {
   rows: VolRow[];
   metric: Metric;
@@ -288,7 +289,11 @@ export function ScanTable({
   /** a small marker after the symbol (e.g. ▲ PDH) */
   tag?: (r: VolRow) => ReactNode;
   empty: string;
+  /** name shown on the chart's Prev / Next ("Volume", "Positional") */
+  source?: string;
 }) {
+  const setChartQueue = useStore((s) => s.setChartQueue);
+  const requestChartTf = useStore((s) => s.requestChartTf);
   const selectSymbol = useStore((s) => s.selectSymbol);
   const setView = useStore((s) => s.setView);
   const addWatch = useStore((s) => s.addWatch);
@@ -436,6 +441,9 @@ export function ScanTable({
           const key = r.fo ? r.symbol : `EQ:${r.symbol}`;
           const has = inWatch.has(key) || added.has(key);
           const chart = () => {
+            // Next / Prev walk the rows exactly as sorted right now; scan results open on the daily chart
+            setChartQueue(source, sorted.map((x) => x.symbol));
+            requestChartTf(86400);
             selectSymbol(r.symbol, true);
             setView("chart");
           };

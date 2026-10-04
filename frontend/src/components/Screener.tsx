@@ -115,6 +115,7 @@ export function Screener() {
     selectSymbol,
     setView,
     setChartQueue,
+    requestChartTf,
     symClass,
     symClassOk,
   } = useStore();
@@ -124,6 +125,7 @@ export function Screener() {
       "Screener",
       rows.map((r) => r.symbol)
     );
+    requestChartTf(86400);
     selectSymbol(sym, true);
     setView("chart");
   };

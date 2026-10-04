@@ -152,6 +152,7 @@ export function StockScan() {
               ? { key: "chg", dir: mode === "gain" ? -1 : 1 }
               : { key: "metric", dir: mode === "lo" || mode === "gapdn" ? 1 : -1 }
           }
+          source="Scan"
           empty={empty}
         />
       )}
