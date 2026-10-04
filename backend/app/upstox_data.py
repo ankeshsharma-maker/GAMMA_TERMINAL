@@ -211,6 +211,12 @@ async def fetch_history_chain(
         raise RuntimeError(f"no Upstox key for {symbol} (index or F&O stock)")
 
     ck = (symbol.upper(), expiry, from_date, to_date)
+    # a wider range already fetched for this contract covers any narrower one: slice it, no new Upstox calls
+    for (s0, e0, f0, t0), ser in _HIST_CACHE.items():
+        if s0 == symbol.upper() and e0 == expiry and f0 <= from_date and t0 >= to_date:
+            part = [r for r in ser if from_date <= r["date"] <= to_date]
+            return {"symbol": symbol.upper(), "expiry": expiry, "from": from_date,
+                    "to": to_date, "series": part, "cached": True}
     if ck in _HIST_CACHE:
         return {"symbol": symbol.upper(), "expiry": expiry, "from": from_date,
                 "to": to_date, "series": _HIST_CACHE[ck], "cached": True}
@@ -228,17 +234,31 @@ async def fetch_history_chain(
                 legs.append((strike, side, ik))
 
     # 2. per-leg daily candles  [ts, o, h, l, c, volume, oi]
-    sem = asyncio.Semaphore(12)
+    # Upstox answers 429 when ~230 strikes are asked at once: go gently, retry a refused strike with a growing pause,
+    # and never hand back (or cache) a half-filled series as if it were complete
+    sem = asyncio.Semaphore(5)
+    failed = 0
+    deadline = _time.monotonic() + 40  # past this, a refused strike is not retried: fail fast with a clear message
 
     async def _one(strike: float, side: str, ik: str):
+        nonlocal failed
         async with sem:
-            try:
-                h = await ux.get(f"/historical-candle/{ik}/days/1/{to_date}/{from_date}", v3=True)
-                return strike, side, h.get("data", {}).get("candles", []) or []
-            except Exception:  # noqa: BLE001
-                return strike, side, []
+            for attempt in range(5):
+                try:
+                    h = await ux.get(f"/historical-candle/{ik}/days/1/{to_date}/{from_date}", v3=True)
+                    return strike, side, h.get("data", {}).get("candles", []) or []
+                except Exception as exc:  # noqa: BLE001
+                    if "429" not in str(exc) or attempt == 4 or _time.monotonic() > deadline:
+                        break
+                    await asyncio.sleep(1.0 + attempt * 1.5)
+            failed += 1
+            return strike, side, []
 
     results = await asyncio.gather(*[_one(s, sd, ik) for s, sd, ik in legs])
+    if legs and failed > max(3, len(legs) * 0.03):
+        raise RuntimeError(
+            f"Upstox is rate-limiting right now ({failed} of {len(legs)} strikes were refused): press Load again in a minute"
+        )
 
     # 3. underlying daily closes (spot)
     spot_by_date: dict[str, float] = {}
