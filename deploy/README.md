@@ -116,11 +116,3 @@ Then change `FLATTRADE_REDIRECT_URL` (and the Flattrade app) to the `https://…
 | Restart backend | `sudo systemctl restart gammaterminal-backend` |
 | Deploy an update | `cd /opt/gammaterminal && git pull && bash deploy/setup.sh` |
 | Free-tier keep-alive | OCI reclaims *idle* Always-Free VMs — this app's poller keeps CPU non-idle during market hours; fine. |
-
-## Server housekeeping (set up 2026-10-04)
-
-- **Journal cap:** `journald-size.conf` -> `/etc/systemd/journald.conf.d/size.conf`, then
-  `sudo systemctl restart systemd-journald`. Keeps the system log at 600 MB (it otherwise fills to ~4.5 GB).
-- **Disk alert:** `disk_alert.py` -> `/opt/gammaterminal/deploy/disk_alert.py`. Sends a Telegram message
-  (through the app's own Telegram settings) when the disk reaches 90%, at most once a day. Cron, every 30 min:
-  `*/30 * * * * cd /opt/gammaterminal/backend && venv/bin/python /opt/gammaterminal/deploy/disk_alert.py >> /tmp/disk_alert.log 2>&1`
