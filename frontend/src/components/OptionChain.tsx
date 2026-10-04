@@ -112,7 +112,7 @@ function ltpBarCell(
   );
 }
 
-// heat shading: calls red (resistance), puts green (support); the biggest value is the darkest, the smallest the lightest
+// heat shading: calls red (resistance), puts green (support); a bar as long as the value, the biggest darkest and the smallest lightest
 const TONE_RGB: Record<string, string> = {
   call: "220 38 38",
   put: "22 163 74",
@@ -138,7 +138,7 @@ function OIBar({
   return (
     <div
       className={`pointer-events-none absolute inset-y-[1px] ${side === "l" ? "right-0" : "left-0"} ${strong ? "outline outline-1 outline-amber-400/80" : ""}`}
-      style={{ width: "100%", backgroundColor: `rgb(${TONE_RGB[tone]} / ${alpha.toFixed(3)})` }}
+      style={{ width: `${(r * 100).toFixed(1)}%`, backgroundColor: `rgb(${TONE_RGB[tone]} / ${alpha.toFixed(3)})` }}
     />
   );
 }
