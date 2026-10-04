@@ -56,7 +56,7 @@ _GREEKS_MODES = ("big", "all", "off")
 # alerts about the MARKET (not about the user's own positions or rules) -- the
 # ones the symbol filter applies to
 _MARKET_KINDS = ("blast-crit", "blast-warn", "blast-build", "iv-spike", "straddle-exp", "oi-surge", "flow-reversal", "volume-spike",
-                 "trend-reversal", "smc")
+                 "trend-reversal", "smc", "dbr-touch")
 
 
 def _is_market(alert: dict) -> bool:
@@ -164,8 +164,8 @@ def deliver(alert: dict) -> None:
         mode = cfg.get("greeksAlerts", "big")
         if mode == "off" or (mode == "big" and alert.get("severity") != "critical"):
             return
-    elif alert.get("category") == "volume":
-        pass  # its own level (Settings / Volume tab: off / 2x / 3x / 5x) decided it already
+    elif alert.get("category") in ("volume", "dbr"):
+        pass  # decided by their own switch already (Volume tab level / Positional > Demand zones alerts)
     else:
         sev = alert.get("severity") or "info"
         if _SEV_ORDER.get(sev, 0) < _SEV_ORDER.get(cfg.get("minSeverity", "warning"), 1):

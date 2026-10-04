@@ -28,7 +28,7 @@ log = logging.getLogger("volume_screener")
 IST = timezone(timedelta(hours=5, minutes=30))
 _BASE_FILE = DATA_DIR / "volume_baseline.json"
 _KV = "volume_screener"
-_DEFAULT_CFG = {"alertLevel": 3, "minValueCr": 5.0}
+_DEFAULT_CFG = {"alertLevel": 3, "minValueCr": 5.0, "zoneAlerts": True}
 AVG_DAYS = 20
 
 # cumulative share of a day's volume traded by N minutes after 09:15 (typical NSE U-shape)
@@ -44,6 +44,8 @@ _all_wanted_until = 0.0              # poll / build the all-NSE list while now <
 _viewed_until = 0.0                  # someone has the tab open (off-hours polling)
 _alerted: dict[str, int] = {}        # symbol -> highest level alerted today
 _alert_day: str | None = None
+_zone_alerted: set[str] = set()      # symbols already alerted for a demand-zone touch today
+_zone_day: str | None = None
 
 
 def _now() -> datetime:
@@ -106,6 +108,8 @@ def set_cfg(body: dict) -> dict:
     if "alertLevel" in body:
         lvl = int(body["alertLevel"] or 0)
         c["alertLevel"] = lvl if lvl in (0, 2, 3, 5) else 3
+    if "zoneAlerts" in body:
+        c["zoneAlerts"] = bool(body["zoneAlerts"])
     if "minValueCr" in body:
         c["minValueCr"] = max(0.0, float(body["minValueCr"] or 0))
     db.set_kv(_KV, c)
@@ -540,6 +544,48 @@ def _check_alerts(rows: list[dict]) -> None:
         })
 
 
+def _check_zone_alerts() -> None:
+    """Telegram / push when price first touches a FRESH demand zone (drop-base-rally, dbr_zones):
+    the zone has never been revisited since its rally, and price is now back at the zone top
+    (within 0.5%) and still above the stop. Once per stock per day -- after that the zone counts
+    as tested and drops out of the fresh list by itself. Covers every stock with a loaded
+    baseline and a live quote (F&O always, all-NSE only while that list is being watched)."""
+    global _zone_day
+    from . import dbr_zones, store
+
+    c = cfg()
+    now = _now()
+    if not c.get("zoneAlerts", True) or not _market_open(now) or (now.hour * 60 + now.minute) < 9 * 60 + 20:
+        return  # off, closed, or the opening minutes (a gap into a zone is not a "touch")
+    if _zone_day != now.date().isoformat():
+        _zone_day = now.date().isoformat()
+        _zone_alerted.clear()
+    min_val = float(c.get("minValueCr") or 0) * 1e7
+    for sym, b in list(_base.items()):
+        z, q = b.get("dbr"), _live.get(sym)
+        if not z or not q or sym in _zone_alerted or q.get("value", 0) < min_val:
+            continue
+        lz = dbr_zones.live(z, q["ltp"])
+        if lz["status"] != "retest" or lz["touches"] != 0 or lz["age"] > 60:
+            continue  # only an untouched zone (an old, already-tested one is not "fresh")
+        _zone_alerted.add(sym)
+        rr = f" · reward:risk {lz['rr']:.1f}" if lz.get("rr") else ""
+        store.add_alert({
+            "ts": time.time(),
+            "symbol": sym,
+            "kind": "dbr-touch",
+            "category": "dbr",
+            "severity": "warning",
+            "score": lz["score"],
+            "message": (
+                f"{sym} is back at a fresh demand zone (drop-base-rally, rally {lz['date']})\n"
+                f"Price ₹{q['ltp']:.2f} · zone {lz['dist']:.2f}–{lz['prox']:.2f}\n"
+                f"Stop below ₹{lz['dist']:.2f} · target ₹{lz['tgt']:.2f}{rr}"
+                f"{'' if lz['trend'] else ' · below its 50-day average'}"
+            ),
+        })
+
+
 async def run_quotes(stop: asyncio.Event) -> None:
     global _loop, _wake
     from .brokers.upstox import get_upstox
@@ -560,12 +606,15 @@ async def run_quotes(stop: asyncio.Event) -> None:
                     if live:
                         fo = set(fo_stocks())
                         _check_alerts([r for s in fo_stocks() if (r := _row(s, fo))])
+                        _check_zone_alerts()
                 # all NSE: every 90 s while asked for (5 min off-hours)
                 gap = 90 if live else 300
                 if now < _all_wanted_until and now - _live_ts["all"] > gap:
                     fo = set(fo_stocks())
                     await _poll(ux, [s for s in _all_stocks() if s not in fo])
                     _live_ts["all"] = time.time()
+                    if live:
+                        _check_zone_alerts()
         except Exception as exc:  # noqa: BLE001
             log.warning("volume quotes loop: %s", exc)
         try:

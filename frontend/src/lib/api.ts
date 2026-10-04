@@ -119,7 +119,7 @@ export type VolSnapshot = {
   market: "open" | "closed";
   sessionFraction: number;
   baseline: { ready: number; total: number; date: string | null };
-  cfg: { alertLevel: number; minValueCr: number };
+  cfg: { alertLevel: number; minValueCr: number; zoneAlerts?: boolean };
   rows: VolRow[];
   /** positional only: how many NSE day-files are in (delivery, futures OI) and the latest dates */
   nse?: { delivDays: number; delivLast: string | null; foDays: number; foLast: string | null };
@@ -234,7 +234,7 @@ export const api = {
     j<VolSnapshot>(`/api/volume-screener?universe=${universe}${pos ? "&pos=1" : ""}`),
   rangeCheck: (symbol: string) => j<RangeCheckData>(`/api/range-check/${encodeURIComponent(symbol)}`),
   volumeScreenerConfigGet: () => j<VolSnapshot["cfg"]>("/api/volume-screener/config"),
-  volumeScreenerConfig: (body: { alertLevel?: number; minValueCr?: number }) =>
+  volumeScreenerConfig: (body: { alertLevel?: number; minValueCr?: number; zoneAlerts?: boolean }) =>
     j<VolSnapshot["cfg"]>("/api/volume-screener/config", { method: "POST", body: JSON.stringify(body) }),
   gexIntraday: (symbol: string, day: string | null) =>
     j<{ symbol: string; day: string | null; days: string[]; live: boolean; points: [number, number | null, number | null, number | null][] }>(

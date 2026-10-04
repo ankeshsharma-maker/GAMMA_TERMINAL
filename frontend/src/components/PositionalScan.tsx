@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { OiType, VolRow } from "../lib/api";
+import { api } from "../lib/api";
 import { nf } from "../lib/format";
 import { Chips, MinTraded, ScanHeader, ScanTable, useStockScan, type Metric, type Universe } from "./StockScanTable";
 
@@ -41,6 +42,14 @@ export function PositionalScan() {
   const [dbrTrend, setDbrTrend] = useState(0);
   const [dbrVol, setDbrVol] = useState(0);
   const [dbrRr, setDbrRr] = useState(0);
+  const [zoneAlerts, setZoneAlerts] = useState<boolean | null>(null); // null = not loaded yet
+  useEffect(() => {
+    if (mode === "dbr" && zoneAlerts === null) api.volumeScreenerConfigGet().then((c) => setZoneAlerts(c.zoneAlerts !== false)).catch(() => {});
+  }, [mode, zoneAlerts]);
+  const toggleZoneAlerts = (on: number) => {
+    setZoneAlerts(on === 1);
+    api.volumeScreenerConfig({ zoneAlerts: on === 1 }).catch(() => setZoneAlerts(null));
+  };
   const { data, err } = useStockScan(universe, true);
   useEffect(() => setMinCr(universe !== "fo" ? 5 : 0), [universe]);
 
@@ -249,6 +258,8 @@ export function PositionalScan() {
                 value={dbrView}
                 onChange={setDbrView}
               />
+              <span>Telegram alert at a fresh zone</span>
+              <Chips<number> items={[[1, "On"], [0, "Off"]]} value={zoneAlerts === false ? 0 : 1} onChange={toggleZoneAlerts} />
               {dbrView !== "failed" && (
                 <>
                   <Chips<number> items={[[0, "Any trend"], [1, "Above 50 DMA"]]} value={dbrTrend} onChange={setDbrTrend} />
@@ -325,7 +336,7 @@ export function PositionalScan() {
           selling: <b className="text-term-text">zone top</b> = the top of the base bodies, <b className="text-term-text">stop</b> = the
           base low, <b className="text-term-text">target</b> = where the drop began; RR = (target − top) ÷ (top − stop). Fresh = rally in the last
           3 sessions and the zone never revisited; Retest = price is back at the zone top (tested at most once); Failed = a close
-          below the stop. Score (0–100) ranks rally volume, an untouched zone, age, RR, trend and a tight base. Tapping Chart opens the
+          below the stop. Score (0–100) ranks rally volume, an untouched zone, age, RR, trend and a tight base. A Telegram / push alert fires once per stock per day when price first comes back to a never-revisited zone (market hours, after 09:20, stocks trading at least ₹5 Cr; the switch is above). Tapping Chart opens the
           1D chart with the zone drawn, and Next / Prev walks the list. It finds a pattern, it doesn't predict one — check the chart first.
         </p>
         <p>NSE publishes both files around 6–7 PM for the day. Tap a header to sort, a stock for its details (Chart button inside); ☆ adds it to the watchlist. OI 5d (laptop): LB = long build-up, SB = short build-up, SC = short covering, LU = long unwinding — futures OI over the last 5 sessions.</p>
