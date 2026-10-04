@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type LabLeg, type LabOption, type LabRepair } from "../lib/api";
 import { nf } from "../lib/format";
 import { useStore } from "../store";
@@ -16,7 +16,9 @@ export function RepairTool() {
   const queueBuilderLeg = useStore((s) => s.queueBuilderLeg);
   const setView = useStore((s) => s.setView);
 
-  const [source, setSource] = useState<"broker" | "paper">("broker");
+  const orderMode = useStore((s) => s.orderMode);
+  // starts on the book that matches the header switch: PAPER -> paper positions, LIVE -> Flattrade positions
+  const [source, setSource] = useState<"broker" | "paper">(orderMode === "live" ? "broker" : "paper");
   const [pos, setPos] = useState<{ symbol: string; expiry: string; legs: LabLeg[] } | null>(null);
   const [limit, setLimit] = useState("");
   const [res, setRes] = useState<LabRepair | null>(null);
@@ -39,22 +41,32 @@ export function RepairTool() {
       .finally(() => setBusy(false));
   };
 
-  const load = () => {
+  const reqId = useRef(0);
+  const load = (src: "broker" | "paper" = source) => {
+    const my = ++reqId.current;
     setBusy(true);
     setErr("");
     setRes(null);
-    (source === "broker" ? api.strategyFromBroker() : api.strategyFromPaper())
+    setPos(null);
+    (src === "broker" ? api.strategyFromBroker() : api.strategyFromPaper())
       .then((r) => {
+        if (my !== reqId.current) return; // the other book was picked meanwhile: show only the one selected
         const p = { symbol: r.symbol, expiry: r.expiry, legs: r.legs.filter((l) => l.optionType !== "FUT") as LabLeg[] };
         setPos(p);
         find(p);
       })
       .catch((e) => {
+        if (my !== reqId.current) return;
         setPos(null);
-        setErr(String(e?.message || e));
+        const m = String(e?.message || e);
+        setErr(/no (paper|open broker)/i.test(m) ? `You have no open option positions in ${src === "broker" ? "your live Flattrade account" : "your paper book"} right now.` : m);
         setBusy(false);
       });
   };
+  // choosing a book loads THAT book at once (and only that one)
+  useEffect(() => {
+    load(source);
+  }, [source]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** to the Build tab: the position's own legs as HELD (so they are not re-sent), then the fix's legs bought-first */
   const toBuild = (o: LabOption) => {
@@ -78,9 +90,9 @@ export function RepairTool() {
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-term-bg">
       <div className="space-y-2 border-b border-term-border bg-term-panel2 px-3 py-2">
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-term-dim">
-          <Chips<"broker" | "paper"> items={[["broker", "My live positions (Flattrade)"], ["paper", "My paper positions"]]} value={source} onChange={(v) => { setSource(v); setPos(null); setRes(null); }} />
-          <button onClick={load} disabled={busy} className="rounded border border-term-accent bg-term-accent/15 px-3 py-1 text-[12px] font-semibold text-term-accent disabled:opacity-40">
-            {busy ? "Working…" : pos ? "Reload & find fixes" : "Load my position"}
+          <Chips<"broker" | "paper"> items={[["broker", "My live positions (Flattrade)"], ["paper", "My paper positions"]]} value={source} onChange={(v) => { setSource(v); setPos(null); setRes(null); setErr(""); }} />
+          <button onClick={() => load()} disabled={busy} className="rounded border border-term-accent bg-term-accent/15 px-3 py-1 text-[12px] font-semibold text-term-accent disabled:opacity-40">
+            {busy ? "Working…" : "Reload"}
           </button>
         </div>
         {pos && (
@@ -109,7 +121,7 @@ export function RepairTool() {
         <div className="p-4 text-center text-[12px] text-down">{err}</div>
       ) : !res ? (
         <div className="p-6 text-center text-[12px] leading-snug text-term-dim">
-          {busy ? "Reading your position and the live option chain…" : "Load your open option position and I'll line up the ways to fix it: close the tested leg, roll it, buy protection, add wings, or exit — each with its cost and the risk it leaves."}
+          {busy ? "Reading your position and the live option chain…" : "Pick your live or paper book above: its open option position loads, and I'll line up the ways to fix it — close the tested leg, roll it, buy protection, add wings, or exit — each with its cost and the risk it leaves."}
         </div>
       ) : (
         <div className="space-y-3 px-3 py-3">
