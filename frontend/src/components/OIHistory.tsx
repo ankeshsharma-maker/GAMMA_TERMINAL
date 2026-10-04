@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RangePresets } from "./RangePresets";
 import { useStore } from "../store";
 import { api } from "../lib/api";
@@ -26,6 +26,8 @@ const STATE_CLS: Record<string, string> = {
 };
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const dmy = (s: string) => `${s.slice(8, 10)} ${MON[parseInt(s.slice(5, 7), 10) - 1]}`;
 
 /** Historical daily chain metrics over a date range — spot, total Call/Put OI,
  *  PCR, max-pain and the day-over-day OI state. Data from Upstox
@@ -45,6 +47,16 @@ export function OIHistory({ paneNav, onGoto }: { paneNav?: ReactNode; onGoto?: (
   });
   const [to, setTo] = useState(() => iso(new Date()));
   const [rows, setRows] = useState<Row[]>([]);
+  // the chart is drawn at its real pixel size (it used to be stretched to the box, which distorted the axis text)
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ w: 900, h: 200 });
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setBox({ w: Math.max(300, el.clientWidth - 24), h: Math.max(140, el.clientHeight - 12) }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -105,9 +117,9 @@ export function OIHistory({ paneNav, onGoto }: { paneNav?: ReactNode; onGoto?: (
 
   const chart = useMemo(() => {
     if (rows.length < 2) return null;
-    const W = 1000;
-    const H = 320;
-    const pad = { l: 54, r: 52, t: 12, b: 22 };
+    const W = box.w;
+    const H = box.h;
+    const pad = { l: 50, r: 52, t: 10, b: 20 };
     const spots = rows.map((r) => r.spot ?? 0).filter(Boolean);
     const haveSpot = spots.length > 0;
     const ois = rows.flatMap((r) => [r.ceOI, r.peOI]);
@@ -120,12 +132,15 @@ export function OIHistory({ paneNav, onGoto }: { paneNav?: ReactNode; onGoto?: (
     const x = (i: number) => pad.l + (i / (rows.length - 1)) * (W - pad.l - pad.r);
     const ys = (v: number) => pad.t + (1 - (v - slo) / (shi - slo || 1)) * (H - pad.t - pad.b);
     const yo = (v: number) => pad.t + (1 - v / omax) * (H - pad.t - pad.b);
-    const bw = ((W - pad.l - pad.r) / rows.length) * 0.32;
+    const bw = Math.min(14, ((W - pad.l - pad.r) / rows.length) * 0.34);
+    // one unit for the whole OI axis, so the ticks read 0 / 5.4 / 10.7 ... Cr and never mix Cr with L
+    const [unit, suffix] = omax >= 1e7 ? [1e7, "Cr"] : [1e5, "L"];
+    const oiTick = (v: number) => `${(v / unit).toFixed(omax / unit >= 20 ? 0 : 1)}${suffix}`;
     const spotPath = rows
       .map((r, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${ys(r.spot ?? slo).toFixed(1)}`)
       .join(" ");
     return (
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-full w-full">
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block">
         {[0, 0.25, 0.5, 0.75, 1].map((f, i) => (
           <g key={i}>
             <line
@@ -137,8 +152,8 @@ export function OIHistory({ paneNav, onGoto }: { paneNav?: ReactNode; onGoto?: (
               strokeOpacity={0.1}
               className="text-term-dim"
             />
-            <text x={4} y={pad.t + f * (H - pad.t - pad.b) + 3} fontSize={10} className="fill-term-dim">
-              {oiCr(omax * (1 - f))}
+            <text x={pad.l - 6} y={pad.t + f * (H - pad.t - pad.b) + 3} fontSize={10} textAnchor="end" className="fill-term-dim">
+              {oiTick(omax * (1 - f))}
             </text>
             <text
               x={W - pad.r + 4}
@@ -172,15 +187,15 @@ export function OIHistory({ paneNav, onGoto }: { paneNav?: ReactNode; onGoto?: (
         ))}
         {haveSpot && <path d={spotPath} fill="none" stroke="#38bdf8" strokeWidth={2} />}
         {rows.map((r, i) =>
-          i % Math.ceil(rows.length / 6) === 0 ? (
-            <text key={"t" + i} x={x(i)} y={H - 6} fontSize={9} textAnchor="middle" className="fill-term-dim">
-              {r.date.slice(5)}
+          i % Math.ceil(rows.length / Math.max(3, Math.floor(W / 90))) === 0 ? (
+            <text key={"t" + i} x={x(i)} y={H - 5} fontSize={10} textAnchor="middle" className="fill-term-dim">
+              {dmy(r.date)}
             </text>
           ) : null
         )}
       </svg>
     );
-  }, [rows]);
+  }, [rows, box]);
 
   const dOISum = rows.reduce((s, r) => s + (r.dOI ?? 0), 0);
   const spotMove =
@@ -299,9 +314,9 @@ export function OIHistory({ paneNav, onGoto }: { paneNav?: ReactNode; onGoto?: (
         </div>
       )}
 
-      <div className="h-[240px] shrink-0 p-3">
+      <div ref={boxRef} className="h-[210px] shrink-0 overflow-hidden px-3 pb-1 pt-2">
         {chart ? (
-          <div className="h-full w-full">{chart}</div>
+          chart
         ) : (
           <div className="flex h-full items-center justify-center text-center text-xs text-term-dim">
             {busy
@@ -366,49 +381,39 @@ export function OIHistory({ paneNav, onGoto }: { paneNav?: ReactNode; onGoto?: (
 
       {rows.length > 0 && !isMobile && (
         <div className="min-h-0 flex-1 overflow-auto border-t border-term-border">
-          <table className="grid-table text-2xs">
+          <table className="w-full border-collapse text-[12px]">
             <thead className="sticky top-0 bg-term-panel text-[10px] uppercase text-term-dim">
               <tr>
-                {["Date", "Spot", "ΔSpot", "Call OI", "Put OI", "PCR", "Max Pain", "OI State"].map((h) => (
-                  <th key={h} className="border-b border-term-border px-3 py-1 text-left font-medium">
+                {["Date", "Spot", "Δ Spot", "Call OI", "Put OI", "Δ OI", "PCR", "Max pain", "OI state"].map((h, i) => (
+                  <th key={h} className={`border-b border-term-border px-3 py-1.5 font-medium ${i === 0 || i === 8 ? "text-left" : "text-right"}`}>
                     {h}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {[...rows].reverse().map((r) => (
-                <tr key={r.date}>
-                  <td className="num border-b border-term-border/40 px-3 py-1 text-term-dim">{r.date}</td>
-                  <td className="num border-b border-term-border/40 px-3 py-1">{nf(r.spot ?? 0, 0)}</td>
-                  <td
-                    className={`num border-b border-term-border/40 px-3 py-1 ${
-                      (r.dSpot ?? 0) >= 0 ? "text-up" : "text-down"
-                    }`}
-                  >
-                    {r.dSpot != null ? `${r.dSpot >= 0 ? "+" : ""}${nf(r.dSpot, 0)}` : "–"}
-                  </td>
-                  <td className="num border-b border-term-border/40 px-3 py-1" style={{ color: "#f87171" }}>
-                    {crores(r.ceOI)}
-                  </td>
-                  <td className="num border-b border-term-border/40 px-3 py-1" style={{ color: "#4ade80" }}>
-                    {crores(r.peOI)}
-                  </td>
-                  <td className="num border-b border-term-border/40 px-3 py-1">
-                    {r.pcr != null ? nf(r.pcr, 2) : "–"}
-                  </td>
-                  <td className="num border-b border-term-border/40 px-3 py-1">
-                    {r.maxPain != null ? nf(r.maxPain, 0) : "–"}
-                  </td>
-                  <td
-                    className={`border-b border-term-border/40 px-3 py-1 font-semibold ${
-                      STATE_CLS[r.state ?? ""] ?? "text-term-dim"
-                    }`}
-                  >
-                    {r.state ?? "–"}
-                  </td>
-                </tr>
-              ))}
+              {[...rows].reverse().map((r) => {
+                const td = "num border-b border-term-border/40 px-3 py-1.5 text-right whitespace-nowrap";
+                return (
+                  <tr key={r.date} className="hover:bg-term-panel/60">
+                    <td className="num whitespace-nowrap border-b border-term-border/40 px-3 py-1.5 text-left text-term-dim">{dmy(r.date)} {r.date.slice(0, 4)}</td>
+                    <td className={`${td} font-medium`}>{nf(r.spot ?? 0, 0)}</td>
+                    <td className={`${td} ${(r.dSpot ?? 0) >= 0 ? "text-up" : "text-down"}`}>
+                      {r.dSpot != null ? `${r.dSpot >= 0 ? "+" : "−"}${nf(Math.abs(r.dSpot), 0)}` : "–"}
+                    </td>
+                    <td className={td} style={{ color: "#f87171" }}>{crores(r.ceOI)}</td>
+                    <td className={td} style={{ color: "#4ade80" }}>{crores(r.peOI)}</td>
+                    <td className={`${td} ${(r.dOI ?? 0) >= 0 ? "text-term-text" : "text-amber-400"}`}>
+                      {r.dOI != null ? `${r.dOI >= 0 ? "+" : "−"}${oiCr(Math.abs(r.dOI))}` : "–"}
+                    </td>
+                    <td className={td}>{r.pcr != null ? nf(r.pcr, 2) : "–"}</td>
+                    <td className={td}>{r.maxPain != null ? nf(r.maxPain, 0) : "–"}</td>
+                    <td className={`border-b border-term-border/40 px-3 py-1.5 text-left font-semibold ${STATE_CLS[r.state ?? ""] ?? "text-term-dim"}`}>
+                      {r.state ? r.state.split(" ").map((w) => w[0] + w.slice(1).toLowerCase()).join(" ") : "–"}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
