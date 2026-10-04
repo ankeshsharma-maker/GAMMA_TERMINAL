@@ -14,6 +14,7 @@ from .auth import auth_middleware, auth_required, expected_token, token_ok, app_
 from .broker_feed import run_broker_feed, run_position_feed
 from .brokers import get_broker
 from .upstox_feed import run_upstox_feed
+from .upstox_ws import run_upstox_ws
 from .hub import hub
 from .nse_client import client
 from .poller import run_poller, run_universe_scan
@@ -48,6 +49,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(run_broker_feed(stop)),
         asyncio.create_task(run_position_feed(stop)),
         asyncio.create_task(run_upstox_feed(stop)),
+        asyncio.create_task(run_upstox_ws(stop)),
         asyncio.create_task(volume_screener.run_baseline(stop)),
         asyncio.create_task(candle_store.run_updater(stop)),
         asyncio.create_task(volume_screener.run_quotes(stop)),

@@ -66,6 +66,10 @@ async def _on_tick(token: str, msg: dict) -> None:
         return
     if ltp is None:
         return
+    from . import upstox_ws
+
+    if upstox_ws.active():
+        return  # Live feed = Upstox: it supplies the underlyings; Flattrade ticks only drive the position legs above
     chg = _num(msg.get("pc"))
     store.set_live_spot(sym, ltp, chg)
 

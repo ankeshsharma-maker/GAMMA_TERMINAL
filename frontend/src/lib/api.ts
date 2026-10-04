@@ -1045,6 +1045,9 @@ export const api = {
         changePct7d: number | null;
       }[];
     }>("/api/upstox/movers-history"),
+  liveFeed: () => j<LiveFeedStatus>("/api/upstox/live-feed"),
+  setLiveFeed: (mode: "upstox" | "flattrade") =>
+    j<LiveFeedStatus>("/api/upstox/live-feed", { method: "POST", body: JSON.stringify({ mode }) }),
   dataSource: () => j<{ source: "nse" | "upstox" }>("/api/upstox/data-source"),
   setDataSource: (source: "nse" | "upstox") =>
     j<{ source: "nse" | "upstox" }>("/api/upstox/data-source", {
@@ -1170,6 +1173,14 @@ export interface ScanBt {
 }
 
 
+export interface LiveFeedStatus {
+  mode: "upstox" | "flattrade";
+  connected: boolean;
+  active: boolean;
+  instruments: number;
+  lastMsgAgeS: number | null;
+  error: string | null;
+}
 export interface DaywiseRow {
   d: string;
   dow: string;

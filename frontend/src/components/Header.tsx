@@ -1,7 +1,7 @@
 import { useStore } from "../store";
 import { compact, nf, ago, sk, signColor, px } from "../lib/format";
 import { ivRegime } from "../lib/iv";
-import { api } from "../lib/api";
+import { api, type LiveFeedStatus } from "../lib/api";
 import { isViewer, lockNow, viewerName } from "../lib/auth";
 import { useLiveMtm } from "../lib/useLiveMtm";
 import { ConnBadge } from "./ConnBadge";
@@ -571,11 +571,13 @@ export function UpstoxPill() {
     tokenDate: string | null;
   } | null>(null);
   const [src, setSrc] = useState<"nse" | "upstox">("nse");
+  const [feed, setFeed] = useState<LiveFeedStatus | null>(null);
   const [mode, setMode] = useState<"" | "token">("");
   const [tok, setTok] = useState("");
   const load = () => {
     api.upstoxStatus().then(setSt, () => setSt(null));
     api.dataSource().then((d) => setSrc(d.source), () => {});
+    api.liveFeed().then(setFeed, () => {});
   };
   useEffect(() => {
     load();
@@ -606,6 +608,31 @@ export function UpstoxPill() {
             </button>
           ))}
         </span>
+        {/* live-price feed: who streams the ticks. Upstox = websocket (no one-socket clash); Flattrade = its own socket */}
+        {feed && (
+          <span className="flex items-center gap-1" title="Live prices: Upstox streams them over its own websocket, so another Flattrade login can no longer knock the feed out. Flattrade then only places orders.">
+            <span className="hidden text-[10px] text-sky-300/70 sm:inline">Feed</span>
+            <span className="flex overflow-hidden rounded border border-sky-500/40">
+              {(["flattrade", "upstox"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => api.setLiveFeed(m).then(setFeed, (e) => alert(e?.message || "could not switch"))}
+                  className={`px-1 py-0.5 text-[10px] ${
+                    feed.mode === m ? "bg-sky-500 text-white" : "text-sky-300/70 hover:text-sky-200"
+                  }`}
+                >
+                  {m === "flattrade" ? "FT" : "UX"}
+                </button>
+              ))}
+            </span>
+            {feed.mode === "upstox" && (
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${feed.active ? "bg-up" : "bg-amber-400"}`}
+                title={feed.active ? `Upstox live stream OK · ${feed.instruments} instruments` : feed.error ? `Upstox stream down: ${feed.error}` : "Upstox stream connecting…"}
+              />
+            )}
+          </span>
+        )}
       </span>
     );
   }

@@ -207,13 +207,24 @@ async def run_upstox_feed(stop: asyncio.Event) -> None:
                 )
             except Exception:  # noqa: BLE001
                 ws_ok = False
-            fast = not ws_ok
-            if fast != was_fast:
-                log.info("upstox feed -> %s mode", "FAST (broker WS down)" if fast else "slow (BSE only)")
-                was_fast = fast
-            await _poll_once(fast)
-            await _poll_futures_once()
-            timeout = 1.5 if fast else 10.0
+            from . import upstox_ws
+
+            if upstox_ws.active():
+                # Live feed = Upstox and its socket is delivering: it already covers the underlyings and the cash
+                # stocks, so only the futures (not on the socket) are polled
+                if was_fast is not None:
+                    log.info("upstox feed -> websocket is the live feed (REST poll idle)")
+                    was_fast = None
+                await _poll_futures_once()
+                timeout = 3.0
+            else:
+                fast = not ws_ok
+                if fast != was_fast:
+                    log.info("upstox feed -> %s mode", "FAST (broker WS down)" if fast else "slow (BSE only)")
+                    was_fast = fast
+                await _poll_once(fast)
+                await _poll_futures_once()
+                timeout = 1.5 if fast else 10.0
         except Exception as exc:  # noqa: BLE001
             log.debug("upstox feed loop: %s", exc)
             timeout = 5.0

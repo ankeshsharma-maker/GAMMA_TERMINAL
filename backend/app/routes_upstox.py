@@ -65,6 +65,27 @@ def set_data_source(body: dict):
     return {"source": store.set_data_source(src)}
 
 
+@router.get("/live-feed")
+def get_live_feed():
+    from . import upstox_ws
+
+    return upstox_ws.status()
+
+
+@router.post("/live-feed")
+def set_live_feed(body: dict):
+    """Who streams the live prices: "upstox" (websocket, no one-socket clash) or "flattrade" (its own socket)."""
+    from . import upstox_ws
+
+    m = body.get("mode")
+    if m not in ("upstox", "flattrade"):
+        raise HTTPException(400, "mode must be upstox or flattrade")
+    if m == "upstox" and not get_upstox().authed:
+        raise HTTPException(400, "Connect Upstox (paste the analytics token) before switching")
+    upstox_ws.set_mode(m)
+    return upstox_ws.status()
+
+
 @router.delete("/token")
 def clear_token():
     get_upstox().clear()
