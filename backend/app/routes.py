@@ -759,6 +759,25 @@ def journal_list(limit: int = 200, symbol: str | None = None):
     return store.get_journal(limit=limit, symbol=symbol, extra=live_journal.trades())
 
 
+@router.get("/journal/daywise")
+def journal_daywise():
+    """Day-wise P&L with and without charges (from the imported Flattrade Expense / TO report)."""
+    from . import daywise
+
+    return daywise.list_days()
+
+
+@router.post("/journal/daywise/import")
+def journal_daywise_import(body: dict):
+    """{b64, name}: the Flattrade Expense / TO xlsx, base64. Adds or overwrites those days."""
+    from . import daywise
+
+    try:
+        return daywise.import_b64(str((body or {}).get("b64") or ""), str((body or {}).get("name") or ""))
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "reason": str(exc)}
+
+
 @router.get("/journal/stats")
 def journal_stats():
     from . import live_journal

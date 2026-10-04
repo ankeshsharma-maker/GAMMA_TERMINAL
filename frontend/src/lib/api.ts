@@ -650,6 +650,12 @@ export const api = {
     return j<JournalTrade[]>(`/api/journal${qs ? `?${qs}` : ""}`);
   },
   journalStats: () => j<JournalStats>("/api/journal/stats"),
+  journalDaywise: () => j<DaywiseData>("/api/journal/daywise"),
+  journalDaywiseImport: (b64: string, name: string) =>
+    j<{ ok: boolean; days?: number; from?: string; to?: string; reason?: string }>("/api/journal/daywise/import", {
+      method: "POST",
+      body: JSON.stringify({ b64, name }),
+    }),
   journalReview: (day?: string) =>
     j<import("../types").JournalReview>(`/api/journal/review${day ? `?day=${encodeURIComponent(day)}` : ""}`),
   journalSyncLive: () =>
@@ -1159,4 +1165,25 @@ export interface ScanBtHorizon {
 export interface ScanBt {
   error?: string; scan: string; fires: number; stocks: number; universe: string; asOf: string; from: string;
   horizons: ScanBtHorizon[];
+}
+
+
+export interface DaywiseRow {
+  d: string;
+  dow: string;
+  turnover: number;
+  gross: number; // trading result before charges
+  net: number; // after charges (the bill)
+  charges: number;
+  stt: number;
+  stamp: number;
+  exch: number;
+  sebi: number;
+  gst: number;
+  brokerage: number;
+}
+export interface DaywiseData {
+  days: DaywiseRow[];
+  from: string | null;
+  to: string | null;
 }

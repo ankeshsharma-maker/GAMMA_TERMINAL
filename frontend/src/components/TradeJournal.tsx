@@ -4,6 +4,7 @@ import { useStore } from "../store";
 import { isViewer } from "../lib/auth";
 import { nf, sk, hhmm, signColor } from "../lib/format";
 import type { JournalReview, JournalStats, JournalTrade } from "../types";
+import type { DaywiseData, DaywiseRow } from "../lib/api";
 
 function Card({
   label,
@@ -216,12 +217,182 @@ function DayReview({ refresh }: { refresh: number }) {
   );
 }
 
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const dmy = (iso: string) => `${iso.slice(8, 10)} ${MON[parseInt(iso.slice(5, 7), 10) - 1]}`;
+const monthLabel = (m: string) => `${MON[parseInt(m.slice(5, 7), 10) - 1]} ${m.slice(2, 4)}`;
+const money = (n: number) => `${n < 0 ? "−" : n > 0 ? "+" : ""}₹${Math.round(Math.abs(n)).toLocaleString("en-IN")}`;
+const money2 = (n: number) => `${n < 0 ? "−" : ""}₹${Math.abs(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Day-wise P&L with and without charges, from Flattrade's Expense / TO report (import the xlsx to add days). */
+function DayWise() {
+  const [data, setData] = useState<DaywiseData | null>(null);
+  const [month, setMonth] = useState<string>("");
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    try {
+      const d = await api.journalDaywise();
+      setData(d);
+      setMonth((m) => m || (d.to ? d.to.slice(0, 7) : "all"));
+    } catch (e: any) {
+      setNote(String(e?.message || e));
+    }
+  };
+  useEffect(() => {
+    load();
+  }, []);
+
+  const months = useMemo(() => [...new Set((data?.days ?? []).map((x) => x.d.slice(0, 7)))], [data]);
+  const rows: DaywiseRow[] = useMemo(
+    () => (data?.days ?? []).filter((x) => month === "all" || x.d.startsWith(month)),
+    [data, month]
+  );
+  const tot = useMemo(() => {
+    const sum = (k: keyof DaywiseRow) => rows.reduce((a, r) => a + (r[k] as number), 0);
+    return {
+      gross: sum("gross"), net: sum("net"), charges: sum("charges"), turnover: sum("turnover"),
+      stt: sum("stt"), stamp: sum("stamp"), exch: sum("exch"), sebi: sum("sebi"), gst: sum("gst"), brokerage: sum("brokerage"),
+      green: rows.filter((r) => r.net > 0).length, red: rows.filter((r) => r.net <= 0).length,
+    };
+  }, [rows]);
+
+  const onFile = async (f: File | undefined) => {
+    if (!f) return;
+    setBusy(true);
+    setNote("importing…");
+    try {
+      const buf = new Uint8Array(await f.arrayBuffer());
+      let bin = "";
+      for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+      const r = await api.journalDaywiseImport(btoa(bin), f.name);
+      setNote(r.ok ? `imported ${r.days} days (${r.from} to ${r.to})` : r.reason ?? "import failed");
+      if (r.ok) await load();
+    } catch (e: any) {
+      setNote(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const csv = () => {
+    let run = 0;
+    const lines = ["Date,Day,Turnover,P&L without charges,STT,Stamp duty,Exchange charges,SEBI,GST,Total charges,P&L with charges,Running with charges"];
+    for (const r of rows) {
+      run += r.net;
+      lines.push([r.d, r.dow, Math.round(r.turnover), r.gross, r.stt, r.stamp, r.exch, r.sebi, r.gst, r.charges, r.net, Math.round(run * 100) / 100].join(","));
+    }
+    lines.push(["TOTAL", "", Math.round(tot.turnover), Math.round(tot.gross * 100) / 100, tot.stt, tot.stamp, Math.round(tot.exch * 100) / 100, Math.round(tot.sebi * 100) / 100, Math.round(tot.gst * 100) / 100, Math.round(tot.charges * 100) / 100, Math.round(tot.net * 100) / 100, ""].join(","));
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+    a.download = `daywise_pnl_${month}.csv`;
+    a.click();
+  };
+
+  const th = "border border-term-border bg-term-panel px-1.5 py-1.5 text-[10px] font-medium uppercase text-term-dim";
+  const td = "border border-term-border/60 px-1.5 py-1.5";
+  let run = 0;
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <div className="seg">
+          {months.map((m) => (
+            <button key={m} onClick={() => setMonth(m)} className={month === m ? "on" : ""}>
+              {monthLabel(m)}
+            </button>
+          ))}
+          <button onClick={() => setMonth("all")} className={month === "all" ? "on" : ""}>
+            All
+          </button>
+        </div>
+        <label className="btn ml-auto cursor-pointer px-2 py-1 text-2xs" title="Flattrade → Reports → Expense / TO → download the xlsx, then pick it here">
+          {busy ? "…" : "⬆ Import report"}
+          <input type="file" accept=".xlsx" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
+        </label>
+        <button onClick={csv} disabled={!rows.length} className="btn px-2 py-1 text-2xs">
+          ⬇ CSV
+        </button>
+      </div>
+      {note && <div className="text-2xs text-term-dim">{note}</div>}
+
+      {!data ? (
+        <div className="p-6 text-center text-sm text-term-dim">Loading…</div>
+      ) : !data.days.length ? (
+        <div className="rounded border border-term-border bg-term-panel p-6 text-center text-sm text-term-dim">
+          No days yet. In Flattrade open Reports → Expense / TO, download the xlsx and tap ⬆ Import report.
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Card label="Without charges" value={money(tot.gross)} tone={signColor(tot.gross)} sub={`${rows.length} trading days`} />
+            <Card
+              label="Charges"
+              value={`−₹${Math.round(tot.charges).toLocaleString("en-IN")}`}
+              tone="text-amber-400"
+              sub={tot.gross > 0 ? `${nf((tot.charges / tot.gross) * 100, 0)}% of profit · ${nf((tot.charges / (tot.turnover || 1)) * 100, 3)}% of turnover` : `${nf((tot.charges / (tot.turnover || 1)) * 100, 3)}% of turnover`}
+            />
+            <Card label="With charges" value={money(tot.net)} tone={signColor(tot.net)} sub="what your account got" />
+            <Card label="Green / red days" value={`${tot.green} / ${tot.red}`} sub={rows.length ? `${nf((tot.green / rows.length) * 100, 0)}% green` : ""} />
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[12px]">
+              <thead>
+                <tr>
+                  <th className={`${th} text-left`}>Date</th>
+                  <th className={`${th} hidden text-right sm:table-cell`}>Turnover</th>
+                  <th className={`${th} text-right`}>Without</th>
+                  <th className={`${th} text-right`}>Charges</th>
+                  <th className={`${th} text-right`}>With</th>
+                  <th className={`${th} text-right`}>Running</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => {
+                  run += r.net;
+                  return (
+                    <tr key={r.d} className={r.net > 0 ? "bg-up/5" : "bg-down/5"} title={`STT ${r.stt} · stamp ${r.stamp} · exchange ${r.exch} · SEBI ${r.sebi} · GST ${r.gst}`}>
+                      <td className={`${td} whitespace-nowrap`}>
+                        {dmy(r.d)} <span className="text-term-dim">{r.dow}</span>
+                      </td>
+                      <td className={`${td} num hidden text-right text-term-dim sm:table-cell`}>{Math.round(r.turnover).toLocaleString("en-IN")}</td>
+                      <td className={`${td} num text-right ${signColor(r.gross)}`}>{money(r.gross)}</td>
+                      <td className={`${td} num text-right text-amber-400`}>{Math.round(r.charges).toLocaleString("en-IN")}</td>
+                      <td className={`${td} num text-right font-semibold ${signColor(r.net)}`}>{money(r.net)}</td>
+                      <td className={`${td} num text-right ${signColor(run)}`}>{money(run)}</td>
+                    </tr>
+                  );
+                })}
+                <tr className="bg-term-panel font-semibold">
+                  <td className={td}>Total</td>
+                  <td className={`${td} num hidden text-right sm:table-cell`}>{Math.round(tot.turnover).toLocaleString("en-IN")}</td>
+                  <td className={`${td} num text-right ${signColor(tot.gross)}`}>{money(tot.gross)}</td>
+                  <td className={`${td} num text-right text-amber-400`}>{Math.round(tot.charges).toLocaleString("en-IN")}</td>
+                  <td className={`${td} num text-right ${signColor(tot.net)}`}>{money(tot.net)}</td>
+                  <td className={td} />
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="text-[11px] leading-snug text-term-dim">
+            Charges in this view: STT {money2(tot.stt)} · stamp {money2(tot.stamp)} · exchange {money2(tot.exch)} · SEBI {money2(tot.sebi)} · GST {money2(tot.gst)}
+            {tot.brokerage ? ` · brokerage ${money2(tot.brokerage)}` : " · brokerage ₹0"}. Hover a row for its own breakdown.
+            “Without” is the day's trading result by trade date (what you bought and sold that day); “With” is the bill Flattrade debited or credited. A
+            position held overnight shows its buy on one day and its sale on another, so single days can look bigger than the real result.
+            Data comes from Flattrade's Expense / TO report: import a newer file to add days.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function TradeJournal() {
   const [allTrades, setAllTrades] = useState<JournalTrade[] | null>(null);
   const [busy, setBusy] = useState(true);
   const [symbolFilter, setSymbolFilter] = useState("");
   const [syncNote, setSyncNote] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const [jview, setJview] = useState<"trades" | "daywise">("trades");
   // Paper / Live is the header toggle: the journal shows only that side (viewers: paper)
   const orderMode = useStore((s) => s.orderMode);
   const mode: Mode = isViewer() || orderMode !== "live" ? "paper" : "live";
@@ -281,8 +452,18 @@ export function TradeJournal() {
         >
           {mode === "live" ? "LIVE" : "PAPER"} <span className="num opacity-80">{counts[mode]}</span>
         </span>
-        {syncNote && <span className="text-2xs text-term-dim">{syncNote}</span>}
         {mode === "live" && (
+          <div className="seg">
+            <button onClick={() => setJview("trades")} className={jview === "trades" ? "on" : ""}>
+              Trades
+            </button>
+            <button onClick={() => setJview("daywise")} className={jview === "daywise" ? "on" : ""}>
+              Day-wise
+            </button>
+          </div>
+        )}
+        {syncNote && <span className="text-2xs text-term-dim">{syncNote}</span>}
+        {mode === "live" && jview === "trades" && (
         <button
           onClick={syncLive}
           title="Copy today's Flattrade order book into the journal now (it also syncs by itself every 5 min while connected)"
@@ -300,6 +481,10 @@ export function TradeJournal() {
         </button>
       </div>
 
+      {mode === "live" && jview === "daywise" ? (
+        <DayWise />
+      ) : (
+        <>
       {mode === "live" && <DayReview refresh={refresh} />}
 
       {busy && !stats ? (
@@ -436,6 +621,8 @@ export function TradeJournal() {
               </tbody>
             </table>
           </div>
+        </>
+      )}
         </>
       )}
     </div>
