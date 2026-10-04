@@ -18,6 +18,7 @@ const TABS: { key: TabKey; label: string }[] = [
 ];
 
 interface Ctx {
+  tab: TabKey; // which column view is showing: only its lead column draws a bar
   maxOI: number;
   maxAbsChgOI: number;
   callOIRank: number; // 0 = not top-3, 1/2/3 = rank among top-3 call OI strikes (resistance)
@@ -57,11 +58,12 @@ function greekCell(
   side: "l" | "r",
   digits: number,
   hotCls: string,
-  tag: string
+  tag: string,
+  bar = false
 ) {
   return (
     <>
-      <OIBar value={val} max={max} side={side} tone={side === "l" ? "call" : "put"} />
+      {bar && <OIBar value={val} max={max} side={side} tone={side === "l" ? "call" : "put"} />}
       <span className={`relative text-term-dim ${hotCls}`}>
         {digits === 4 ? val.toFixed(4) : nf(val, digits)}
         {tag && <sup className="ml-0.5 text-[8px]">{tag}</sup>}
@@ -111,8 +113,8 @@ function ltpBarCell(
 }
 
 const TONE: Record<string, string> = {
-  call: "bg-down/30", // Call OI = resistance
-  put: "bg-up/30", // Put OI = support
+  call: "bg-term-dim/20", // one neutral colour: red/green is kept for direction (change %, OI change), not for the bars
+  put: "bg-term-dim/20",
   pos: "bg-up/40",
   neg: "bg-down/40",
 };
@@ -159,17 +161,12 @@ const ltpCol: Col = {
 const chgPctCol: Col = {
   key: "chgpct",
   label: "Chg %",
-  render: (l, side, ctx) =>
-    ltpBarCell(
-      Math.abs(l.chgPct),
-      ctx.maxChgPct,
-      side,
-      l.chgPct >= 0 ? "pos" : "neg",
-      <span className={`font-medium ${signColor(l.chgPct)}`}>
-        {l.chgPct >= 0 ? "+" : ""}
-        {nf(l.chgPct, 2)}%
-      </span>
-    ),
+  render: (l) => (
+    <span className={`font-medium ${signColor(l.chgPct)}`}>
+      {l.chgPct >= 0 ? "+" : ""}
+      {nf(l.chgPct, 2)}%
+    </span>
+  ),
 };
 
 const deltaCol: Col = {
@@ -204,7 +201,7 @@ const gammaCol: Col = {
       ? "font-bold text-term-text"
       : "";
     const tag = hot ? (k === "GAMMA_SPIKE" ? "▲" : "▼") : peak ? "Γ" : "";
-    return greekCell(l.gamma, ctx.maxGamma, side, 4, cls, tag);
+    return greekCell(l.gamma, ctx.maxGamma, side, 4, cls, tag, ctx.tab === "greeks");
   },
 };
 const thetaCol: Col = {
@@ -246,14 +243,7 @@ const COLS: Record<TabKey, Col[]> = {
         // all three walls get a framed number and a solid R1/R2/R3 (resistance) or S1/S2/S3 (support) badge;
         // the strongest has the boldest frame and fill
         const call = side === "l";
-        const intensity =
-          rank === 1
-            ? call ? "rounded bg-down/35 px-1 font-bold text-down ring-2 ring-down" : "rounded bg-up/35 px-1 font-bold text-up ring-2 ring-up"
-            : rank === 2
-            ? call ? "rounded bg-down/25 px-1 font-semibold text-down ring-1 ring-down/80" : "rounded bg-up/25 px-1 font-semibold text-up ring-1 ring-up/80"
-            : rank === 3
-            ? call ? "rounded bg-down/15 px-1 font-medium text-down ring-1 ring-down/50" : "rounded bg-up/15 px-1 font-medium text-up ring-1 ring-up/50"
-            : "";
+        const intensity = rank === 1 ? "font-bold text-term-text" : rank > 1 ? "font-semibold text-term-text" : "";
         return (
           <>
             <OIBar value={l.oi} max={ctx.maxOI} side={side} tone={side === "l" ? "call" : "put"} />
@@ -286,13 +276,6 @@ const COLS: Record<TabKey, Col[]> = {
           : "";
         return (
           <>
-            <OIBar
-              value={l.oiChg}
-              max={ctx.maxAbsChgOI}
-              side={side}
-              tone={l.oiChg >= 0 ? "pos" : "neg"}
-              strong={build || unwind}
-            />
             <span className={`relative ${signColor(l.oiChg)} ${hl}`}>
               {compact(l.oiChg)}
               {build && <sup className="ml-0.5 text-[8px] text-up">▲ add</sup>}
@@ -622,6 +605,7 @@ export function OptionChain({
     const hotCE = hotMap.get(`${row.strike}:CE`) ?? null;
     const hotPE = hotMap.get(`${row.strike}:PE`) ?? null;
     const ctx: Ctx = {
+      tab,
       maxOI: oiStats.maxOI,
       maxAbsChgOI: oiStats.maxAbsChgOI,
       callOIRank: oiStats.top3CallStrikes.indexOf(row.strike) + 1, // 0 if not found, else 1/2/3
@@ -653,15 +637,8 @@ export function OptionChain({
       hotPE,
     };
     const hotRow = tab === "greeks" && (hotCE || hotPE);
-    // OI walls: the whole row is marked for R1-3 (call wall, red) and S1-3 (put wall, green); rank 1 is strongest
-    const wallIsR = ctx.callOIRank > 0 && (ctx.putOIRank === 0 || ctx.callOIRank <= ctx.putOIRank);
-    const wallRank = wallIsR ? ctx.callOIRank : ctx.putOIRank;
-    const wallRow =
-      wallRank === 0 || isATM
-        ? ""
-        : wallIsR
-        ? ["outline outline-2 -outline-offset-2 outline-down/80 bg-down/20", "outline outline-1 -outline-offset-1 outline-down/60 bg-down/15", "outline outline-1 -outline-offset-1 outline-down/40 bg-down/10"][wallRank - 1]
-        : ["outline outline-2 -outline-offset-2 outline-up/80 bg-up/20", "outline outline-1 -outline-offset-1 outline-up/60 bg-up/15", "outline outline-1 -outline-offset-1 outline-up/40 bg-up/10"][wallRank - 1];
+    // walls are shown by the R/S tags beside the strike and on the OI figure; the row itself stays plain
+    const wallRow = "";
     if (isMobile) {
       const mcols = MOBILE_KEYS[tab]
         .map((k) => ALL_COLS.find((x) => x.key === k)!)
@@ -699,7 +676,7 @@ export function OptionChain({
             ref={isATM ? atmRef : undefined}
             onClick={() => setOpenStrike(isOpen ? null : row.strike)}
             className={`cursor-pointer active:bg-term-panel/60 ${
-              isATM ? "bg-term-accent/20 font-semibold text-term-text outline outline-2 -outline-offset-2 outline-term-accent" : ""
+              isATM ? "font-semibold text-term-text" : ""
             } ${hotRow ? "bg-amber-500/10" : ""} ${wallRow}`}
           >
             {mcols.map((col) => (
@@ -742,9 +719,7 @@ export function OptionChain({
         key={row.strike}
         ref={isATM ? atmRef : undefined}
         className={`hover:bg-term-panel/60 ${
-          isATM
-            ? "bg-term-accent/20 font-semibold text-term-text outline outline-2 -outline-offset-2 outline-term-accent"
-            : ""
+          isATM ? "font-semibold text-term-text" : ""
         } ${hotRow ? "bg-amber-500/10" : ""} ${wallRow}`}
       >
         {/* ---- CALL side ---- */}
