@@ -356,7 +356,7 @@ export function OptionChain({
   const [tab, setTab] = useState<TabKey>("ltp");
   const isMobile = useIsMobile();
   const [openStrike, setOpenStrike] = useState<number | null>(null); // phone: the strike whose details are open
-  const [count, setCount] = useState<number>(0); // strikes each side of ATM; 0 = All
+  const [count, setCount] = useState<number>(10); // strikes each side of ATM (default ±10); 0 = All
   // ΔOI window in minutes; 0 = day (since open) -- remembered on the device
   const [oiTf, setOiTfState] = useState<number>(() => {
     try {
