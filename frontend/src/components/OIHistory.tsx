@@ -117,9 +117,12 @@ export function OIHistory({ paneNav, onGoto }: { paneNav?: ReactNode; onGoto?: (
 
   const chart = useMemo(() => {
     if (rows.length < 2) return null;
-    const W = box.w;
     const H = box.h;
-    const pad = { l: 50, r: 52, t: 10, b: 20 };
+    const spotsAll = rows.map((r) => r.spot ?? 0).filter(Boolean);
+    // few days: keep each day's slot narrow (the chart hugs its bars) instead of spreading 4 days over the whole screen
+    const SLOT = 96;
+    const pad = { l: 50, r: spotsAll.length ? 52 : 12, t: 10, b: 20 };
+    const W = Math.min(box.w, pad.l + pad.r + rows.length * SLOT);
     const spots = rows.map((r) => r.spot ?? 0).filter(Boolean);
     const haveSpot = spots.length > 0;
     const ois = rows.flatMap((r) => [r.ceOI, r.peOI]);
@@ -129,10 +132,10 @@ export function OIHistory({ paneNav, onGoto }: { paneNav?: ReactNode; onGoto?: (
     slo -= sp;
     shi += sp;
     const omax = Math.max(...ois, 1) * 1.1;
-    const x = (i: number) => pad.l + (i / (rows.length - 1)) * (W - pad.l - pad.r);
+    const x = (i: number) => pad.l + ((i + 0.5) / rows.length) * (W - pad.l - pad.r);
     const ys = (v: number) => pad.t + (1 - (v - slo) / (shi - slo || 1)) * (H - pad.t - pad.b);
     const yo = (v: number) => pad.t + (1 - v / omax) * (H - pad.t - pad.b);
-    const bw = Math.min(14, ((W - pad.l - pad.r) / rows.length) * 0.34);
+    const bw = Math.min(26, ((W - pad.l - pad.r) / rows.length) * 0.34);
     // one unit for the whole OI axis, so the ticks read 0 / 5.4 / 10.7 ... Cr and never mix Cr with L
     const [unit, suffix] = omax >= 1e7 ? [1e7, "Cr"] : [1e5, "L"];
     const oiTick = (v: number) => `${(v / unit).toFixed(omax / unit >= 20 ? 0 : 1)}${suffix}`;
@@ -155,6 +158,7 @@ export function OIHistory({ paneNav, onGoto }: { paneNav?: ReactNode; onGoto?: (
             <text x={pad.l - 6} y={pad.t + f * (H - pad.t - pad.b) + 3} fontSize={10} textAnchor="end" className="fill-term-dim">
               {oiTick(omax * (1 - f))}
             </text>
+            {haveSpot && (
             <text
               x={W - pad.r + 4}
               y={pad.t + f * (H - pad.t - pad.b) + 3}
@@ -163,6 +167,7 @@ export function OIHistory({ paneNav, onGoto }: { paneNav?: ReactNode; onGoto?: (
             >
               {nf(shi - f * (shi - slo), 0)}
             </text>
+            )}
           </g>
         ))}
         {rows.map((r, i) => (
@@ -199,7 +204,7 @@ export function OIHistory({ paneNav, onGoto }: { paneNav?: ReactNode; onGoto?: (
 
   const dOISum = rows.reduce((s, r) => s + (r.dOI ?? 0), 0);
   const spotMove =
-    rows.length >= 2 ? (rows[rows.length - 1].spot ?? 0) - (rows[0].spot ?? 0) : 0;
+    rows.length >= 2 && rows[rows.length - 1].spot && rows[0].spot ? (rows[rows.length - 1].spot ?? 0) - (rows[0].spot ?? 0) : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -294,9 +299,8 @@ export function OIHistory({ paneNav, onGoto }: { paneNav?: ReactNode; onGoto?: (
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-term-border bg-term-panel px-3 py-1.5 text-2xs">
           <span className="flex flex-col leading-tight">
             <span className="text-[9px] uppercase text-term-dim">Spot move (range)</span>
-            <span className={`num text-sm font-semibold ${spotMove >= 0 ? "text-up" : "text-down"}`}>
-              {spotMove >= 0 ? "+" : ""}
-              {nf(spotMove, 0)}
+            <span className={`num text-sm font-semibold ${spotMove == null ? "text-term-dim" : spotMove >= 0 ? "text-up" : "text-down"}`}>
+              {spotMove == null ? "–" : `${spotMove >= 0 ? "+" : "−"}${nf(Math.abs(spotMove), 0)}`}
             </span>
           </span>
           <span className="flex flex-col leading-tight">
@@ -316,7 +320,7 @@ export function OIHistory({ paneNav, onGoto }: { paneNav?: ReactNode; onGoto?: (
 
       <div ref={boxRef} className="h-[210px] shrink-0 overflow-hidden px-3 pb-1 pt-2">
         {chart ? (
-          chart
+          <div className="flex justify-center">{chart}</div>
         ) : (
           <div className="flex h-full items-center justify-center text-center text-xs text-term-dim">
             {busy
@@ -381,7 +385,7 @@ export function OIHistory({ paneNav, onGoto }: { paneNav?: ReactNode; onGoto?: (
 
       {rows.length > 0 && !isMobile && (
         <div className="min-h-0 flex-1 overflow-auto border-t border-term-border">
-          <table className="w-full border-collapse text-[12px]">
+          <table className="mx-auto w-full max-w-[1000px] border-collapse text-[12px]">
             <thead className="sticky top-0 bg-term-panel text-[10px] uppercase text-term-dim">
               <tr>
                 {["Date", "Spot", "Δ Spot", "Call OI", "Put OI", "Δ OI", "PCR", "Max pain", "OI state"].map((h, i) => (
@@ -397,9 +401,9 @@ export function OIHistory({ paneNav, onGoto }: { paneNav?: ReactNode; onGoto?: (
                 return (
                   <tr key={r.date} className="hover:bg-term-panel/60">
                     <td className="num whitespace-nowrap border-b border-term-border/40 px-3 py-1.5 text-left text-term-dim">{dmy(r.date)} {r.date.slice(0, 4)}</td>
-                    <td className={`${td} font-medium`}>{nf(r.spot ?? 0, 0)}</td>
+                    <td className={`${td} font-medium`}>{r.spot ? nf(r.spot, 0) : "–"}</td>
                     <td className={`${td} ${(r.dSpot ?? 0) >= 0 ? "text-up" : "text-down"}`}>
-                      {r.dSpot != null ? `${r.dSpot >= 0 ? "+" : "−"}${nf(Math.abs(r.dSpot), 0)}` : "–"}
+                      {r.dSpot != null && r.spot ? `${r.dSpot >= 0 ? "+" : "−"}${nf(Math.abs(r.dSpot), 0)}` : "–"}
                     </td>
                     <td className={td} style={{ color: "#f87171" }}>{crores(r.ceOI)}</td>
                     <td className={td} style={{ color: "#4ade80" }}>{crores(r.peOI)}</td>

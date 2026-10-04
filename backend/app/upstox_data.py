@@ -248,6 +248,18 @@ async def fetch_history_chain(
             spot_by_date[c[0][:10]] = _num(c[4])
     except Exception:  # noqa: BLE001
         pass
+    if not spot_by_date:
+        # Upstox refused or rate-limited the index candles: fall back to the daily closes the server stores itself
+        try:
+            from . import candle_store
+
+            ist = ZoneInfo("Asia/Kolkata")
+            since = int(datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=ist).timestamp()) - 86400
+            if symbol.upper() in candle_store.SYMBOLS:
+                for r in candle_store._rows(symbol.upper(), candle_store.TF_D, since):
+                    spot_by_date[datetime.fromtimestamp(r["time"], ist).strftime("%Y-%m-%d")] = float(r["close"])
+        except Exception:  # noqa: BLE001
+            pass
 
     # 4. aggregate per calendar date
     per_date: dict[str, dict] = {}
@@ -281,7 +293,8 @@ async def fetch_history_chain(
         c["dOI"] = round(doi, 0)
         c["state"] = _state(dp, doi)
 
-    _HIST_CACHE[ck] = series
+    if spot_by_date:  # a result without spot is not cached, so the next load retries
+        _HIST_CACHE[ck] = series
     return {"symbol": symbol.upper(), "expiry": expiry, "from": from_date,
             "to": to_date, "series": series, "cached": False}
 
