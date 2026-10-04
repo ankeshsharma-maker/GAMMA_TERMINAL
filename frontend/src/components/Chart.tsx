@@ -220,8 +220,19 @@ const istTime = (t: number) =>
   });
 const istDate = (t: number) =>
   new Date(t * 1000).toLocaleDateString("en-GB", { timeZone: IST, day: "2-digit", month: "short" });
+let _tfSpan = 0; // the candle size in seconds (set with _tfSecs): a daily / weekly / monthly bar has no time of day to show
+const istFull = (t: number, o: Intl.DateTimeFormatOptions) => new Date(t * 1000).toLocaleDateString("en-GB", { timeZone: IST, ...o });
+/** crosshair label. Intraday: "15 Apr 10:15". A daily bar: "Mon 15 Apr 2024". A weekly bar is stamped on its Monday and covers Mon-Fri: "Week 15 Apr – 19 Apr 2024".
+ *  A monthly bar: "Apr 2024". (It used to print "15 Apr 00:00" for all of them -- no year, and a midnight that means nothing.) */
 const IST_LOCALIZATION = {
-  timeFormatter: (t: number) => `${istDate(t)} ${istTime(t)}`,
+  timeFormatter: (t: number) =>
+    _tfSpan === 604800
+      ? `Week ${istFull(t, { day: "2-digit", month: "short" })} – ${istFull(t + 4 * 86400, { day: "2-digit", month: "short", year: "numeric" })}` // Mon – Fri
+      : _tfSpan === 2592000
+      ? istFull(t, { month: "short", year: "numeric" })
+      : _tfSpan === 86400
+      ? istFull(t, { weekday: "short", day: "2-digit", month: "short", year: "numeric" })
+      : `${istDate(t)} ${istTime(t)}`,
 };
 /** axis labels: a year's first tick shows the year (1W / 1M charts span years), a month's first the month,
  *  a day its date, else the time (tickType 0 year, 1 month, 2 day of month, 3+ time) */
@@ -964,6 +975,7 @@ export function Chart({ hideTrend = false }: { hideTrend?: boolean } = {}) {
   // seconds on the time axis / crosshair only for sub-minute intervals
   useEffect(() => {
     _tfSecs = intervalS < 60;
+    _tfSpan = intervalS;
     chartRef.current?.applyOptions({ timeScale: { secondsVisible: intervalS < 60 } });
   }, [intervalS]);
 
