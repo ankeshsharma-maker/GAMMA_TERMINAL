@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { api, type BuyCard, type EntryTiming, type SellerCard, type SellerRow, type SellerStats } from "../lib/api";
 import { BuyBody } from "./BuyScorecard";
+import { OptionClock } from "./OptionClock";
 import { nf } from "../lib/format";
 import { useStore } from "../store";
 import { Chips } from "./StockScanTable";
@@ -67,6 +68,7 @@ const V = {
 export function SellerScorecard() {
   const storeSym = useStore((s) => s.symbol);
   const [symbol, setSymbol] = useState<string>(INDICES.includes(storeSym as any) ? storeSym : "NIFTY");
+  const [tool, setTool] = useState<"card" | "clock">("card"); // the strike scorecard, or the option clock (one strike, live)
   const [mode, setMode] = useState<"sell" | "buy">("sell"); // what the user is doing: selling or buying options
   const [side, setSide] = useState<"P" | "C">("P");
   const [expiry, setExpiry] = useState<string>("");
@@ -77,6 +79,7 @@ export function SellerScorecard() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    if (tool !== "card") return; // the option clock fetches its own chain
     let live = true;
     let inflight = false; // a refresh that is still running is not started twice (page-visibility flips used to cancel each other)
     const load = () => {
@@ -109,7 +112,7 @@ export function SellerScorecard() {
       clearInterval(t);
       document.removeEventListener("visibilitychange", load);
     };
-  }, [symbol, side, expiry, mode]);
+  }, [symbol, side, expiry, mode, tool]);
 
   const rows = card?.rows ?? [];
   const stat = (r: SellerRow): SellerStats | null => (basis === "trend" ? r.trend : r.all);
@@ -118,11 +121,22 @@ export function SellerScorecard() {
   const trendWord = card?.trend === "up" ? "up-trend" : card?.trend === "down" ? "down-trend" : "no clear trend";
   const best = useMemo(() => rows.find((r) => verdictOf(r) === "pays"), [rows, basis]); // rows run from the money outwards: the CLOSEST strike that pays // eslint-disable-line react-hooks/exhaustive-deps
 
+  const toolChips = (
+    <Chips<"card" | "clock"> items={[["card", "Strike scorecard"], ["clock", "Option clock"]]} value={tool} onChange={setTool} />
+  );
+  if (tool === "clock")
+    return (
+      <div className="flex min-h-0 flex-1 flex-col bg-term-bg">
+        <div className="border-b border-term-border bg-term-panel2 px-3 pt-2 pb-1">{toolChips}</div>
+        <OptionClock initialSymbol={symbol} />
+      </div>
+    );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-term-bg">
       <div className="space-y-2 border-b border-term-border bg-term-panel2 px-3 py-2">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[13px] font-bold text-term-text">Strike scorecard</span>
+          {toolChips}
           <Chips<"sell" | "buy">
             items={[["sell", "I'm selling"], ["buy", "I'm buying"]]}
             value={mode}
