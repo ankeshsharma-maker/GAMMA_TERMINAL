@@ -28,7 +28,7 @@ log = logging.getLogger("volume_screener")
 IST = timezone(timedelta(hours=5, minutes=30))
 _BASE_FILE = DATA_DIR / "volume_baseline.json"
 _KV = "volume_screener"
-_DEFAULT_CFG = {"alertLevel": 3, "minValueCr": 5.0, "zoneAlerts": True}
+_DEFAULT_CFG = {"alertLevel": 3, "minValueCr": 5.0, "zoneAlerts": False}  # zone alerts off by default: the backtest found no edge
 AVG_DAYS = 20
 
 # cumulative share of a day's volume traded by N minutes after 09:15 (typical NSE U-shape)
@@ -555,7 +555,7 @@ def _check_zone_alerts() -> None:
 
     c = cfg()
     now = _now()
-    if not c.get("zoneAlerts", True) or not _market_open(now) or (now.hour * 60 + now.minute) < 9 * 60 + 20:
+    if not c.get("zoneAlerts", False) or not _market_open(now) or (now.hour * 60 + now.minute) < 9 * 60 + 20:
         return  # off, closed, or the opening minutes (a gap into a zone is not a "touch")
     if _zone_day != now.date().isoformat():
         _zone_day = now.date().isoformat()

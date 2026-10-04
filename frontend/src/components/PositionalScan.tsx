@@ -44,7 +44,7 @@ export function PositionalScan() {
   const [dbrRr, setDbrRr] = useState(0);
   const [zoneAlerts, setZoneAlerts] = useState<boolean | null>(null); // null = not loaded yet
   useEffect(() => {
-    if (mode === "dbr" && zoneAlerts === null) api.volumeScreenerConfigGet().then((c) => setZoneAlerts(c.zoneAlerts !== false)).catch(() => {});
+    if (mode === "dbr" && zoneAlerts === null) api.volumeScreenerConfigGet().then((c) => setZoneAlerts(c.zoneAlerts === true)).catch(() => {});
   }, [mode, zoneAlerts]);
   const toggleZoneAlerts = (on: number) => {
     setZoneAlerts(on === 1);
@@ -259,7 +259,7 @@ export function PositionalScan() {
                 onChange={setDbrView}
               />
               <span>Telegram alert at a fresh zone</span>
-              <Chips<number> items={[[1, "On"], [0, "Off"]]} value={zoneAlerts === false ? 0 : 1} onChange={toggleZoneAlerts} />
+              <Chips<number> items={[[1, "On"], [0, "Off"]]} value={zoneAlerts ? 1 : 0} onChange={toggleZoneAlerts} />
               {dbrView !== "failed" && (
                 <>
                   <Chips<number> items={[[0, "Any trend"], [1, "Above 50 DMA"]]} value={dbrTrend} onChange={setDbrTrend} />
