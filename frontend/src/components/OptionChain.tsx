@@ -112,11 +112,12 @@ function ltpBarCell(
   );
 }
 
-const TONE: Record<string, string> = {
-  call: "bg-term-dim/20", // one neutral colour: red/green is kept for direction (change %, OI change), not for the bars
-  put: "bg-term-dim/20",
-  pos: "bg-up/40",
-  neg: "bg-down/40",
+// heat shading: calls red (resistance), puts green (support); the biggest value is the darkest, the smallest the lightest
+const TONE_RGB: Record<string, string> = {
+  call: "220 38 38",
+  put: "22 163 74",
+  pos: "22 163 74",
+  neg: "220 38 38",
 };
 
 function OIBar({
@@ -132,13 +133,12 @@ function OIBar({
   tone: "call" | "put" | "pos" | "neg";
   strong?: boolean;
 }) {
-  const w = max > 0 ? Math.min(100, (Math.abs(value) / max) * 100) : 0;
+  const r = max > 0 ? Math.min(1, Math.abs(value) / max) : 0;
+  const alpha = 0.06 + 0.6 * r;
   return (
     <div
-      className={`pointer-events-none absolute inset-y-[1px] ${
-        side === "l" ? "right-0" : "left-0"
-      } ${TONE[tone]} ${strong ? "outline outline-1 outline-amber-400/80" : ""}`}
-      style={{ width: `${w}%` }}
+      className={`pointer-events-none absolute inset-y-[1px] ${side === "l" ? "right-0" : "left-0"} ${strong ? "outline outline-1 outline-amber-400/80" : ""}`}
+      style={{ width: "100%", backgroundColor: `rgb(${TONE_RGB[tone]} / ${alpha.toFixed(3)})` }}
     />
   );
 }
@@ -315,15 +315,14 @@ function classifyLeg(leg: Leg, ot: "CE" | "PE") {
   const pUp = (leg.chg ?? 0) >= 0;
   const oUp = (leg.oiChg ?? 0) >= 0;
   const side = ot === "CE" ? "Call" : "Put";
-  const bull = "bg-up/20 text-up";
-  const bear = "bg-down/20 text-down";
+  // colour only the two that mark walls: Put Writing = support (green), Call Writing = resistance (red); the rest stay plain grey
+  const calm = "text-term-dim";
   if (Math.abs(leg.oiChg ?? 0) < 1) return { label: "—", cls: "text-term-dim/50" };
-  if (pUp && oUp)
-    return { label: `${side} Buying`, cls: ot === "CE" ? bull : bear };
+  if (pUp && oUp) return { label: `${side} Buying`, cls: calm };
   if (!pUp && oUp)
-    return { label: `${side} Writing`, cls: ot === "PE" ? bull : bear };
-  if (pUp && !oUp) return { label: "Short Covering", cls: "bg-sky-500/20 text-sky-400" };
-  return { label: "Long Unwinding", cls: "bg-amber-500/20 text-amber-400" };
+    return { label: `${side} Writing`, cls: ot === "PE" ? "bg-up/20 text-up" : "bg-down/20 text-down" };
+  if (pUp && !oUp) return { label: "Short Covering", cls: calm };
+  return { label: "Long Unwinding", cls: calm };
 }
 
 function ActivityCell({
