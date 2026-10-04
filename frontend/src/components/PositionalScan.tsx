@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { OiType, VolRow } from "../lib/api";
 import { api } from "../lib/api";
 import { nf } from "../lib/format";
+import { ScanBacktest } from "./ScanBacktest";
 import { Chips, MinTraded, ScanHeader, ScanTable, useStockScan, type Metric, type Universe } from "./StockScanTable";
 
 type Mode = "volbuild" | "deliv" | "dma" | "wk" | "mo" | "setup" | "oi" | "dbr";
@@ -175,6 +176,31 @@ export function PositionalScan() {
     return null;
   };
 
+  // the tab's own signal + filters -> what the Backtest button tests
+  const bt = (() => {
+    switch (mode) {
+      case "volbuild":
+        return { scan: "volbuild", params: { min: volMin }, label: `last 5 days' average volume at least ${volMin}x the 20-day average`,
+          note: "It has no built-in direction, so it is judged by whether the stock keeps going the way it moved over those 5 days." };
+      case "dma": {
+        const L = { above3: "price above the 20, 50 and 200-day averages", below3: "price below the 20, 50 and 200-day averages", above200: "price above the 200-day average", below200: "price below the 200-day average" } as const;
+        return { scan: "dma", params: { pick: dmaPick }, label: L[dmaPick] };
+      }
+      case "wk":
+        return { scan: "wk", params: { side }, label: side === "UP" ? "price above last week's high" : "price below last week's low" };
+      case "mo":
+        return { scan: "mo", params: { side }, label: side === "UP" ? "price above last month's high" : "price below last month's low" };
+      case "setup":
+        return { scan: "setup", params: { which: setup }, label: setup === "nr7" ? "NR7 (narrowest range of 7 days)" : setup === "inside" ? "inside day" : "NR7 + inside day" };
+      case "deliv":
+        return { unsupported: "delivery % needs years of NSE delivery files, which aren't stored yet — not backtestable for now." };
+      case "oi":
+        return { unsupported: "futures OI build-up needs years of NSE futures files, which aren't stored yet — not backtestable for now." };
+      default:
+        return { unsupported: "demand zones were backtested separately on 5 years of data (F&O + cash): no tradable edge, so the zone alert is off by default." };
+    }
+  })();
+
   const sortDir: 1 | -1 =
     (mode === "dma" && (dmaPick === "below3" || dmaPick === "below200")) ||
     ((mode === "wk" || mode === "mo") && side === "DOWN") ||
@@ -291,6 +317,15 @@ export function PositionalScan() {
         )}
       </div>
 
+      <ScanBacktest
+        scan={(bt as any).scan ?? ""}
+        params={(bt as any).params ?? {}}
+        universe={universe}
+        minCr={minCr}
+        label={(bt as any).label ?? ""}
+        directionNote={(bt as any).note}
+        unsupported={(bt as any).unsupported}
+      />
       {err ? (
         <div className="p-4 text-center text-[12px] text-down">{err}</div>
       ) : !data ? (

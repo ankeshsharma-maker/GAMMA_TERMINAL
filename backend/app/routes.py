@@ -248,6 +248,26 @@ def volume_screener_view(universe: str = Query("fo"), pos: bool = Query(False)):
     return snap
 
 
+@router.post("/scan-backtest")
+async def scan_backtest_run(body: dict):
+    """{scan, params, universe: fo|cash|all, minValueCr}: how a Scan-tab signal did over the last 5 years
+    (forward returns 1/3/5/10/20 sessions vs the average stock). Daily candles from data/daily_candles."""
+    from . import scan_backtest
+    from .config import DATA_DIR
+
+    return await scan_backtest.run_spec(
+        DATA_DIR / "daily_candles", str(body.get("scan") or ""), body.get("params") or {},
+        str(body.get("universe") or "fo"), body.get("minValueCr") or 0,
+    )
+
+
+@router.get("/scan-backtest/status")
+def scan_backtest_status():
+    from . import daily_history
+
+    return daily_history.status()
+
+
 @router.get("/volume-screener/config")
 def volume_screener_config_get():
     from . import volume_screener

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { VolRow } from "../lib/api";
 import { nf } from "../lib/format";
+import { ScanBacktest } from "./ScanBacktest";
 import { Chips, MinTraded, ScanHeader, ScanTable, useStockScan, type Metric, type Universe } from "./StockScanTable";
 
 type Mode = "gain" | "lose" | "hi" | "lo" | "gapup" | "gapdn";
@@ -15,6 +16,7 @@ export function StockScan() {
   const [minCr, setMinCr] = useState(0);
   const [near, setNear] = useState(2); // % from the 52-week high / low that still counts
   const [gapMin, setGapMin] = useState(1); // % gap
+  const [btPct, setBtPct] = useState(3); // backtest: a day move of at least this %
   const { data, err } = useStockScan(universe, true);
   useEffect(() => setMinCr(universe !== "fo" ? 5 : 0), [universe]);
 
@@ -139,6 +141,37 @@ export function StockScan() {
         )}
       </div>
 
+      {mode === "gain" || mode === "lose" ? (
+        <>
+          <div className="mx-1 mt-2 flex flex-wrap items-center gap-2 text-[11px] text-term-dim">
+            <span>Backtest a day move of at least</span>
+            <Chips<number> items={[[2, "2%"], [3, "3%"], [5, "5%"]]} value={btPct} onChange={setBtPct} />
+          </div>
+          <ScanBacktest
+            scan="mover"
+            params={{ pct: btPct, side: mode === "gain" ? "UP" : "DOWN" }}
+            universe={universe}
+            minCr={minCr}
+            label={`stock ${mode === "gain" ? "up" : "down"} ${btPct}% or more on the day`}
+          />
+        </>
+      ) : mode === "hi" || mode === "lo" ? (
+        <ScanBacktest
+          scan="w52"
+          params={{ side: mode === "hi" ? "UP" : "DOWN", near }}
+          universe={universe}
+          minCr={minCr}
+          label={`${near ? `within ${near}% of or at` : "a new"} 52-week ${mode === "hi" ? "high" : "low"}`}
+        />
+      ) : (
+        <ScanBacktest
+          scan="gap"
+          params={{ side: mode === "gapup" ? "UP" : "DOWN", pct: gapMin, state: "any" }}
+          universe={universe}
+          minCr={minCr}
+          label={`opens ${gapMin}% or more ${mode === "gapup" ? "above" : "below"} yesterday's close`}
+        />
+      )}
       {err ? (
         <div className="p-4 text-center text-[12px] text-down">{err}</div>
       ) : !data ? (

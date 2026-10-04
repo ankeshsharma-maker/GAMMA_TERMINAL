@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, type VolRow } from "../lib/api";
 import { nf } from "../lib/format";
 import { isViewer } from "../lib/auth";
+import { ScanBacktest } from "./ScanBacktest";
 import { Chips, MinTraded, ScanHeader, ScanTable, useStockScan, type Metric, type Universe } from "./StockScanTable";
 
 type Mode = "spikes" | "volume" | "value" | "breakouts";
@@ -27,6 +28,8 @@ export function VolumeScreener() {
   const [universe, setUniverse] = useState<Universe>("fo");
   const [mode, setMode] = useState<Mode>("spikes");
   const [minCr, setMinCr] = useState(0);
+  const [btK, setBtK] = useState(2); // backtest: volume at least this many x its 20-day average
+  const [btSide, setBtSide] = useState<"UP" | "DOWN">("UP");
   const { data, setData, err } = useStockScan(universe, true);
   useEffect(() => setMinCr(universe !== "fo" ? 5 : 0), [universe]); // illiquid small caps swamp "all" otherwise
 
@@ -88,6 +91,25 @@ export function VolumeScreener() {
         )}
       </div>
 
+      {mode === "spikes" || mode === "breakouts" ? (
+        <>
+          <div className="mx-1 mt-2 flex flex-wrap items-center gap-2 text-[11px] text-term-dim">
+            <span>Backtest as</span>
+            <Chips<number> items={[[2, "2x volume"], [3, "3x"], [5, "5x"]]} value={btK} onChange={setBtK} />
+            <Chips<"UP" | "DOWN"> items={[["UP", "closes above yesterday's high"], ["DOWN", "closes below yesterday's low"]]} value={btSide} onChange={setBtSide} />
+          </div>
+          <ScanBacktest
+            scan="volbreak"
+            params={{ min: btK, side: btSide }}
+            universe={universe}
+            minCr={minCr}
+            label={`day's volume at least ${btK}x its 20-day average and the close ${btSide === "UP" ? "above yesterday's high" : "below yesterday's low"}`}
+            directionNote="This is the end-of-day version of the Volume tab (the live tab compares with the usual volume by this time of day, which daily candles can't replay)."
+          />
+        </>
+      ) : (
+        <ScanBacktest scan="" params={{}} universe={universe} minCr={minCr} label="" unsupported="Most traded / Top value are rankings, not signals — nothing to test. Use Volume spikes or Breakouts." />
+      )}
       {err ? (
         <div className="p-4 text-center text-[12px] text-down">{err}</div>
       ) : !data ? (

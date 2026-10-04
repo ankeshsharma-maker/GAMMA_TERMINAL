@@ -236,6 +236,8 @@ export const api = {
   volumeScreenerConfigGet: () => j<VolSnapshot["cfg"]>("/api/volume-screener/config"),
   volumeScreenerConfig: (body: { alertLevel?: number; minValueCr?: number; zoneAlerts?: boolean }) =>
     j<VolSnapshot["cfg"]>("/api/volume-screener/config", { method: "POST", body: JSON.stringify(body) }),
+  scanBacktest: (body: { scan: string; params: Record<string, string | number>; universe: "fo" | "cash" | "all"; minValueCr: number }) =>
+    j<ScanBt>("/api/scan-backtest", { method: "POST", body: JSON.stringify(body) }),
   gexIntraday: (symbol: string, day: string | null) =>
     j<{ symbol: string; day: string | null; days: string[]; live: boolean; points: [number, number | null, number | null, number | null][] }>(
       `/api/gex-intraday/${symbol}` + (day ? `?day=${encodeURIComponent(day)}` : "")
@@ -1145,4 +1147,16 @@ export interface RangeCheckData {
   worstCloseMovePct: number;
   days: number;
   from: string;
+}
+
+/** the Scan tabs' Backtest button: how a signal did over the last 5 years, per horizon, vs the average stock */
+export interface ScanBtHorizon {
+  h: number; n: number; days?: number; stocks?: number;
+  avg?: number; median?: number; hit?: number; baseAvg?: number; baseHit?: number; edge?: number;
+  t?: number | null; tc?: number | null; directional?: boolean;
+  byYear?: Record<string, { n: number; edge: number }>;
+}
+export interface ScanBt {
+  error?: string; scan: string; fires: number; stocks: number; universe: string; asOf: string; from: string;
+  horizons: ScanBtHorizon[];
 }
