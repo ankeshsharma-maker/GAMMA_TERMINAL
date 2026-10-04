@@ -1,7 +1,7 @@
 import { useStore } from "../store";
 
 /** Prev / Next through the list the chart was opened from (Screener, Top Movers,
- *  Indicators, Watchlist) -- in the order that list was showing. Renders nothing
+ *  Indicators, Watchlist, Volume, Positional) -- in the order that list was showing. Renders nothing
  *  when the chart wasn't opened from a list. */
 export function ChartStepper() {
   const queue = useStore((s) => s.chartQueue);
@@ -22,7 +22,7 @@ export function ChartStepper() {
       <button
         onClick={() => step(-1)}
         disabled={!prevSym}
-        title={prevSym ? `Previous chart: ${prevSym} (${queue.source})` : `Start of ${queue.source}`}
+        title={prevSym ? `Previous chart: ${prevSym} (${queue.source}) · key ← or P` : `Start of ${queue.source}`}
         className={btn}
       >
         ‹ Prev
@@ -33,7 +33,7 @@ export function ChartStepper() {
       <button
         onClick={() => step(1)}
         disabled={!nextSym}
-        title={nextSym ? `Next chart: ${nextSym} (${queue.source})` : `End of ${queue.source}`}
+        title={nextSym ? `Next chart: ${nextSym} (${queue.source}) · key → or N` : `End of ${queue.source}`}
         className={`${btn} font-semibold text-term-text`}
       >
         Next ›

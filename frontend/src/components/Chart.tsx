@@ -369,6 +369,21 @@ export function Chart({ hideTrend = false }: { hideTrend?: boolean } = {}) {
     setIntervalS(tfReq.secs);
     useStore.setState({ chartTfReq: null }); // one-shot: a later plain chart open keeps the user's own timeframe
   }, [tfReq]);
+  // keyboard: → / N = next chart, ← / P = previous (through the list the chart was opened from)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      const k = e.key.toLowerCase();
+      const dir = k === "arrowright" || k === "n" ? 1 : k === "arrowleft" || k === "p" ? -1 : 0;
+      if (!dir || !useStore.getState().chartQueue) return;
+      e.preventDefault();
+      useStore.getState().chartStep(dir);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [rangeD, setRangeD] = useState(() => defaultRangeDays(intervalS)); // visible-history window in days; 0 = all
   const [split, setSplit] = useState(false);
   const [cmpInstrument, setCmpInstrument] = useState<string>("STRADDLE");
