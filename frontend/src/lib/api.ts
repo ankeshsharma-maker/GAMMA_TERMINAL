@@ -1181,9 +1181,14 @@ export interface DaywiseRow {
   sebi: number;
   gst: number;
   brokerage: number;
+  /** result on the day the position was CLOSED (FIFO from the app's saved orders); null before the orders began */
+  real: number | null;
+  /** contracts still open when this day ended (carried to the next day); null before the orders began */
+  carried: number | null;
 }
 export interface DaywiseData {
   days: DaywiseRow[];
   from: string | null;
   to: string | null;
+  realFrom: string | null;
 }

@@ -229,6 +229,9 @@ function DayWise() {
   const [month, setMonth] = useState<string>("");
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // "close": a position carried overnight books its whole result on the day it is closed (needs the app's saved orders, since 23 Sep);
+  // "trade": the Flattrade report as is (each day's own buys and sales)
+  const [basis, setBasis] = useState<"close" | "trade">("close");
 
   const load = async () => {
     try {
@@ -243,10 +246,17 @@ function DayWise() {
     load();
   }, []);
 
+  const daysEff: DaywiseRow[] = useMemo(
+    () =>
+      (data?.days ?? []).map((r) =>
+        basis === "close" && r.real != null ? { ...r, gross: r.real, net: Math.round((r.real - r.charges) * 100) / 100 } : r
+      ),
+    [data, basis]
+  );
   const months = useMemo(() => [...new Set((data?.days ?? []).map((x) => x.d.slice(0, 7)))], [data]);
   const rows: DaywiseRow[] = useMemo(
-    () => (data?.days ?? []).filter((x) => month === "all" || month === "summary" || x.d.startsWith(month)),
-    [data, month]
+    () => daysEff.filter((x) => month === "all" || month === "summary" || x.d.startsWith(month)),
+    [daysEff, month]
   );
   const tot = useMemo(() => {
     const sum = (k: keyof DaywiseRow) => rows.reduce((a, r) => a + (r[k] as number), 0);
@@ -259,7 +269,7 @@ function DayWise() {
 
   const monthly = useMemo(() => {
     const out = months.map((m) => {
-      const ds = (data?.days ?? []).filter((x) => x.d.startsWith(m));
+      const ds = daysEff.filter((x) => x.d.startsWith(m));
       const sum = (k: keyof DaywiseRow) => ds.reduce((a, r) => a + (r[k] as number), 0);
       const best = ds.reduce((a, r) => (r.net > a.net ? r : a), ds[0]);
       const worst = ds.reduce((a, r) => (r.net < a.net ? r : a), ds[0]);
@@ -269,7 +279,7 @@ function DayWise() {
       };
     });
     return out;
-  }, [data, months]);
+  }, [daysEff, months]);
 
   const onFile = async (f: File | undefined) => {
     if (!f) return;
@@ -332,7 +342,15 @@ function DayWise() {
             All
           </button>
         </div>
-        <label className="btn ml-auto cursor-pointer px-2 py-1 text-2xs" title="Flattrade → Reports → Expense / TO → download the xlsx, then pick it here">
+        <div className="seg ml-auto" title="Close date: a position you carry overnight books its whole result on the day it is closed or expires. Trade date: the Flattrade report as is.">
+          <button onClick={() => setBasis("close")} className={basis === "close" ? "on" : ""}>
+            Close date
+          </button>
+          <button onClick={() => setBasis("trade")} className={basis === "trade" ? "on" : ""}>
+            Trade date
+          </button>
+        </div>
+        <label className="btn cursor-pointer px-2 py-1 text-2xs" title="Flattrade → Reports → Expense / TO → download the xlsx, then pick it here">
           {busy ? "…" : "⬆ Import report"}
           <input type="file" accept=".xlsx" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
         </label>
@@ -446,6 +464,11 @@ function DayWise() {
                     <tr key={r.d} className={r.net > 0 ? "bg-up/5" : "bg-down/5"} title={`STT ${r.stt} · stamp ${r.stamp} · exchange ${r.exch} · SEBI ${r.sebi} · GST ${r.gst}`}>
                       <td className={`${td} whitespace-nowrap`}>
                         {dmy(r.d)} <span className="text-term-dim">{r.dow}</span>
+                        {(r.carried ?? 0) > 0 && (
+                          <span className="ml-1 rounded bg-amber-500/20 px-1 text-[9px] font-bold text-amber-400" title={`${r.carried} contract${r.carried === 1 ? "" : "s"} still open at the close: carried to the next day`}>
+                            held {r.carried}
+                          </span>
+                        )}
                       </td>
                       <td className={`${td} num hidden text-right text-term-dim sm:table-cell`}>{Math.round(r.turnover).toLocaleString("en-IN")}</td>
                       <td className={`${td} num text-right ${signColor(r.gross)}`}>{money(r.gross)}</td>
@@ -473,6 +496,9 @@ function DayWise() {
             “Without” is the day's trading result by trade date (what you bought and sold that day); “With” is the bill Flattrade debited or credited. A
             position held overnight shows its buy on one day and its sale on another, so single days can look bigger than the real result.
             Data comes from Flattrade's Expense / TO report: import a newer file to add days.
+            {basis === "close" && data?.realFrom
+              ? ` With "Close date", days from ${data.realFrom} on use your saved orders: a position carried overnight (marked "held") books its whole result on the day it is closed or expires, and the charges stay on the day they were paid. Earlier days stay as reported.`
+              : ""}
           </div>
         </>
       )}

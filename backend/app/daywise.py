@@ -147,4 +147,25 @@ def list_days() -> dict:
     days = [dict(zip(keys, r)) for r in rows]
     for x in days:
         x["dow"] = date.fromisoformat(x["d"]).strftime("%a")
-    return {"days": days, "from": days[0]["d"] if days else None, "to": days[-1]["d"] if days else None}
+    # from the app's own order records: the day-wise result on the day each position was CLOSED (FIFO), so a position
+    # carried overnight books its whole result on the day it is closed (or expires), not its buy on one day and its sale on another
+    real: dict[str, float] = {}
+    carried: dict[str, int] = {}
+    start = None
+    try:
+        from . import live_journal
+        from datetime import datetime as _dt
+
+        ds = live_journal.days()
+        start = ds[-1] if ds else None
+        for t in live_journal.trades():
+            k = live_journal._day(t["closedTs"])
+            real[k] = real.get(k, 0.0) + t["pnl"]
+        carried = live_journal.carried_by_day()
+    except Exception:  # noqa: BLE001
+        pass
+    for x in days:
+        covered = start is not None and x["d"] >= start
+        x["real"] = round(real.get(x["d"], 0.0), 2) if covered else None
+        x["carried"] = carried.get(x["d"], 0) if covered else None
+    return {"days": days, "from": days[0]["d"] if days else None, "to": days[-1]["d"] if days else None, "realFrom": start}

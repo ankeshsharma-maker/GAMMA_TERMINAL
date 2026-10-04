@@ -78,12 +78,14 @@ def trades() -> list[dict]:
     """Closed round trips, newest first, in the paper journal's own shape."""
     book: dict[str, list[list[float]]] = {}   # tsym -> FIFO open lots [signed qty, price, ts]
     out: list[dict] = []
+    meta: dict[str, dict] = {}
     for o in _orders():
         if o["filled"] <= 0 or o["price"] <= 0:
             continue
         parsed = parse_noren_tsym(o["tsym"], o.get("dname"))
         if not parsed:
             continue
+        meta[o["tsym"]] = parsed
         sgn = 1 if o["side"] == "B" else -1
         lots = book.setdefault(o["tsym"], [])
         left = o["filled"]
@@ -108,7 +110,96 @@ def trades() -> list[dict]:
                 lots[0][0] = q0 + take if q0 < 0 else q0 - take
         if left > 0:
             lots.append([sgn * left, o["price"], o["ts"]])
+    # a position carried to expiry has no closing order: it settles at the index close on expiry day
+    # (cash settlement: intrinsic value; out of the money = 0)
+    for tsym, lots in book.items():
+        if not lots or tsym not in meta:
+            continue
+        p = meta[tsym]
+        sp = _expiry_settle(p)
+        if sp is None:
+            continue
+        price, close_ts = sp
+        for q0, p0, t0 in lots:
+            take = abs(q0)
+            long_pos = q0 > 0
+            out.append({
+                "id": f"live-exp-{tsym}-{int(t0)}", "mode": "live", "symbol": p["symbol"],
+                "expiry": p["expiry"], "strike": p["strike"], "optionType": p["optionType"],
+                "side": "BUY" if long_pos else "SELL", "qty": take, "lotSize": lot_size(p["symbol"]),
+                "entryPrice": round(p0, 2), "exitPrice": round(price, 2),
+                "pnl": round((price - p0) * take * (1 if long_pos else -1), 2),
+                "openedTs": t0, "closedTs": close_ts, "note": "expired",
+            })
+        lots.clear()
     return sorted(out, key=lambda r: -r["closedTs"])
+
+
+def _expiry_settle(p: dict) -> tuple[float, float] | None:
+    """(settlement price, closing timestamp) of an expired index option, else None while it is still live."""
+    try:
+        exp = datetime.strptime(p["expiry"], "%d-%b-%Y").replace(tzinfo=IST)
+    except Exception:  # noqa: BLE001
+        return None
+    now = datetime.now(IST)
+    close_ts = exp.replace(hour=15, minute=30).timestamp()
+    if now.timestamp() < close_ts + 300:
+        return None  # not expired yet (or only just)
+    try:
+        from . import candle_store
+
+        if p["symbol"] not in candle_store.SYMBOLS:
+            return None
+        midnight = exp.replace(hour=0, minute=0).timestamp()
+        rows = candle_store._rows(p["symbol"], candle_store.TF_D, int(midnight) - 86400)
+        day = next((r for r in rows if abs(r["time"] - midnight) < 3600), None)
+        if day is None:
+            # today's expiry before the nightly store job: use the live daily bar the store would serve
+            return None
+        close = float(day["close"])
+    except Exception:  # noqa: BLE001
+        return None
+    k = float(p["strike"])
+    intrinsic = max(0.0, close - k) if p["optionType"] == "CE" else max(0.0, k - close)
+    return intrinsic, close_ts
+
+
+def carried_by_day() -> dict[str, int]:
+    """For each day with orders: how many contracts were still open when the day ended (carried to the next day)."""
+    pos: dict[str, float] = {}
+    out: dict[str, int] = {}
+    seen_days: list[str] = []
+    meta: dict[str, dict] = {}
+    cur = None
+    for o in _orders():
+        if o["filled"] <= 0 or o["price"] <= 0:
+            continue
+        parsed = parse_noren_tsym(o["tsym"], o.get("dname"))
+        if not parsed:
+            continue
+        meta[o["tsym"]] = parsed
+        d = _day(o["ts"])
+        if cur is not None and d != cur:
+            out[cur] = _count_open(pos, meta, cur)
+        cur = d
+        pos[o["tsym"]] = pos.get(o["tsym"], 0.0) + (o["filled"] if o["side"] == "B" else -o["filled"])
+    if cur is not None:
+        out[cur] = _count_open(pos, meta, cur)
+    return out
+
+
+def _count_open(pos: dict[str, float], meta: dict[str, dict], day: str) -> int:
+    n = 0
+    for tsym, q in pos.items():
+        if abs(q) < 1e-9:
+            continue
+        try:
+            exp = datetime.strptime(meta[tsym]["expiry"], "%d-%b-%Y").strftime("%Y-%m-%d")
+        except Exception:  # noqa: BLE001
+            exp = "9999-12-31"
+        if exp > day:  # a contract that expired on or before this day is not carried
+            n += 1
+    return n
 
 
 def days() -> list[str]:
