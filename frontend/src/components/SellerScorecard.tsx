@@ -2,6 +2,8 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { api, type BuyCard, type EntryTiming, type SellerCard, type SellerRow, type SellerStats } from "../lib/api";
 import { BuyBody } from "./BuyScorecard";
 import { OptionClock } from "./OptionClock";
+import { DefinedLossTrade } from "./DefinedLossTrade";
+import { RepairTool } from "./RepairTool";
 import { nf } from "../lib/format";
 import { useStore } from "../store";
 import { Chips } from "./StockScanTable";
@@ -68,7 +70,7 @@ const V = {
 export function SellerScorecard() {
   const storeSym = useStore((s) => s.symbol);
   const [symbol, setSymbol] = useState<string>(INDICES.includes(storeSym as any) ? storeSym : "NIFTY");
-  const [tool, setTool] = useState<"card" | "clock">("card"); // the strike scorecard, or the option clock (one strike, live)
+  const [tool, setTool] = useState<"card" | "clock" | "entry" | "repair">("card"); // scorecard / option clock / defined-loss trade / repair
   const [mode, setMode] = useState<"sell" | "buy">("sell"); // what the user is doing: selling or buying options
   const [side, setSide] = useState<"P" | "C">("P");
   const [expiry, setExpiry] = useState<string>("");
@@ -122,13 +124,17 @@ export function SellerScorecard() {
   const best = useMemo(() => rows.find((r) => verdictOf(r) === "pays"), [rows, basis]); // rows run from the money outwards: the CLOSEST strike that pays // eslint-disable-line react-hooks/exhaustive-deps
 
   const toolChips = (
-    <Chips<"card" | "clock"> items={[["card", "Strike scorecard"], ["clock", "Option clock"]]} value={tool} onChange={setTool} />
+    <Chips<"card" | "clock" | "entry" | "repair">
+      items={[["card", "Strike scorecard"], ["clock", "Option clock"], ["entry", "Defined-loss trade"], ["repair", "Repair"]]}
+      value={tool}
+      onChange={setTool}
+    />
   );
-  if (tool === "clock")
+  if (tool !== "card")
     return (
       <div className="flex min-h-0 flex-1 flex-col bg-term-bg">
         <div className="border-b border-term-border bg-term-panel2 px-3 pt-2 pb-1">{toolChips}</div>
-        <OptionClock initialSymbol={symbol} />
+        {tool === "clock" ? <OptionClock initialSymbol={symbol} /> : tool === "entry" ? <DefinedLossTrade initialSymbol={symbol} /> : <RepairTool />}
       </div>
     );
 

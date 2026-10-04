@@ -546,6 +546,10 @@ export const api = {
       note: string;
     }>("/api/strategy/hedge", { method: "POST", body: JSON.stringify(body) }),
 
+  tradeLabEntry: (body: { symbol: string; expiry?: string; maxLoss: number; structures?: string[]; minDistPct?: number; sort?: "return" | "win" | "credit" }) =>
+    j<LabEntry>("/api/trade-lab/entry", { method: "POST", body: JSON.stringify(body) }),
+  tradeLabRepair: (body: { symbol: string; expiry: string; legs: LabLeg[]; maxLoss?: number | null }) =>
+    j<LabRepair>("/api/trade-lab/repair", { method: "POST", body: JSON.stringify(body) }),
   strategyFromPaper: () =>
     j<{ symbol: string; expiry: string; legs: StrategyLeg[]; analysis: Analysis }>(
       "/api/strategy/from-paper",
@@ -1244,4 +1248,25 @@ export interface BuyCard {
   error?: string; mode: "buy"; symbol: string; side: "P" | "C"; expiry: string; expiries?: string[]; spot: number; sessions: number;
   lotSize?: number; windows: number; from: string; to: string; trend: "up" | "down" | "mixed" | null; trendWindows: number;
   rows: BuyRow[]; advisor: number | null; atm: number | null;
+}
+
+/** Defined-loss entry + Repair (backend/app/trade_lab.py) */
+export interface LabLeg { optionType: "CE" | "PE"; strike: number; side: "BUY" | "SELL"; lots: number; price?: number | null }
+export interface LabHist { n: number; win: number; avg: number; p5: number; worst: number; retPct: number | null }
+export interface LabTrade {
+  key: string; structure: string; legs: LabLeg[]; lots: number; width: number; credit: number; maxLoss: number; rr: number;
+  breakevens: number[]; shortPutDist: number | null; shortCallDist: number | null; hist: LabHist | null; margin?: number | null; pop?: number | null; costs?: number;
+}
+export interface LabEntry {
+  symbol: string; expiry: string; spot: number; sessions: number; lotSize: number; maxLoss: number; windows: number;
+  trades: LabTrade[]; note: string; cost: string;
+}
+export interface LabOption {
+  name: string; kind: "none" | "close" | "roll" | "hedge" | "wings" | "exit"; why: string; extra: LabLeg[]; costNow: number;
+  maxLoss: number; maxLossUnbounded: boolean; maxProfit: number; maxProfitUnbounded: boolean; breakevens: number[]; pop: number | null;
+  pnlNow: number; pnlDown1: number; pnlUp1: number; margin: number; hist: LabHist | null;
+}
+export interface LabRepair {
+  symbol: string; expiry: string; spot: number; sessions: number; lotSize: number; legs: LabLeg[]; tested: { strike: number; optionType: string }[];
+  options: LabOption[]; tags: Record<string, string>; withinLimit: string[]; maxLoss: number | null; windows: number;
 }

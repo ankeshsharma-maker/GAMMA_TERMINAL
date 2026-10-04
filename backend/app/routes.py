@@ -1,6 +1,7 @@
 """REST endpoints."""
 from __future__ import annotations
 
+import asyncio
 import time
 from collections import OrderedDict
 
@@ -172,6 +173,46 @@ async def symbols_search(q: str = "", limit: int = Query(25, ge=1, le=60), sym: 
 @router.get("/option-chain/{symbol}")
 async def option_chain(symbol: str, expiry: str | None = Query(None)):
     return await _ensure_chain(symbol, expiry)
+
+
+@router.post("/trade-lab/entry")
+async def trade_lab_entry(body: dict):
+    """{symbol, expiry?, maxLoss, structures?, minDistPct?, sort?}: defined-loss trades (iron condor / fly / credit spreads) whose worst
+    case at expiry is <= maxLoss, sized in lots, priced at the bid / ask and replayed on the index's own history."""
+    from . import trade_lab
+
+    try:
+        max_loss = float(body.get("maxLoss") or 0)
+    except (TypeError, ValueError):
+        max_loss = 0.0
+    if max_loss < 500:
+        raise HTTPException(status_code=422, detail="maxLoss must be at least 500")
+    structs = [s for s in (body.get("structures") or []) if s in ("IC", "IF", "PCS", "CCS")] or None
+    sort = body.get("sort") if body.get("sort") in ("return", "win", "credit") else "return"
+    try:
+        dist = max(0.0, min(5.0, float(body.get("minDistPct") or 0.5)))
+    except (TypeError, ValueError):
+        dist = 0.5
+    chain = await _ensure_chain(str(body.get("symbol") or "NIFTY"), body.get("expiry"))
+    return await asyncio.to_thread(trade_lab.find_trades, chain, max_loss, structs, dist, sort)
+
+
+@router.post("/trade-lab/repair")
+async def trade_lab_repair(body: dict):
+    """{symbol, expiry, legs: [{optionType, strike, side, lots, price}], maxLoss?}: ways to fix a running option position."""
+    from . import trade_lab
+
+    legs = body.get("legs") or []
+    if not legs or len(legs) > 12:
+        raise HTTPException(status_code=422, detail="1 to 12 legs required")
+    try:
+        legs = [{"optionType": str(l["optionType"]).upper(), "strike": float(l["strike"]), "side": str(l["side"]).upper(),
+                 "lots": int(l["lots"]), "price": (float(l["price"]) if l.get("price") is not None else None)} for l in legs]
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="each leg needs optionType, strike, side, lots")
+    chain = await _ensure_chain(str(body.get("symbol") or ""), body.get("expiry"))
+    ml = body.get("maxLoss")
+    return await asyncio.to_thread(trade_lab.repair, chain, legs, float(ml) if ml else None)
 
 
 @router.get("/seller-scorecard/{symbol}")
@@ -1006,7 +1047,8 @@ async def place_future_order(body: FutureOrderIn):
 async def strategy_execute(body: StrategyExecuteIn):
     mode = body.mode or store.order_mode()
     results = []
-    for leg in body.legs:
+    # bought legs first (stable order otherwise): the protection is on before a short leg is sold, so a half-filled strategy never has a naked short
+    for leg in sorted(body.legs, key=lambda l: 0 if str(l.side).upper() == "BUY" else 1):
         if leg.option_type == "FUT":
             continue
         results.append(
