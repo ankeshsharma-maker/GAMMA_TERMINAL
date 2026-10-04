@@ -399,6 +399,8 @@ export function Chart({ hideTrend = false }: { hideTrend?: boolean } = {}) {
   const pvtRefs = useRef<any[]>([]);
   const mtfPvtRefs = useRef<any[]>([]);
   const gfRef = useRef<any>(null);
+  const zoneRefs = useRef<any[]>([]); // demand-zone price lines (DBR scan)
+  const zone = useStore((st) => st.chartZones[symbol]);
   const drawToolRef = useRef<typeof drawTool>("none");
   const [legend, setLegend] = useState<string>("");
   // candlestick patterns on screen, by bar time -- the crosshair legend names the one under the cursor
@@ -1796,6 +1798,22 @@ export function Chart({ hideTrend = false }: { hideTrend?: boolean } = {}) {
       title: "γ-flip",
     });
   }, [eff.gammaFlip, isOption, chain?.gammaFlip, chain?.rows, gfDaily]);
+
+  // demand zone from the Positional DBR scan: top of the base (proximal), its low (the stop), and where the drop began (target)
+  useEffect(() => {
+    const cs = s.current.candle as ISeriesApi<"Candlestick"> | undefined;
+    if (!cs) return;
+    zoneRefs.current.forEach((pl) => { try { cs.removePriceLine(pl); } catch { /* series rebuilt */ } });
+    zoneRefs.current = [];
+    if (!zone || isOption || instrument) return;
+    const line = (price: number, color: string, style: LineStyle, title: string) =>
+      cs.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title });
+    zoneRefs.current = [
+      line(zone.prox, "#22c55e", LineStyle.Solid, "Demand top"),
+      line(zone.dist, "#ef4444", LineStyle.Dashed, "Demand stop"),
+      line(zone.tgt, "#f59e0b", LineStyle.Dotted, "Target"),
+    ];
+  }, [zone, isOption, instrument, symbol, data]);
 
   // what the on-canvas loading / error / empty message calls this chart
   const chartLabel = isOption

@@ -151,7 +151,7 @@ def viewed(seconds: float = 120) -> None:
 
 
 # ---------------------------------------------------------------- baseline
-_BASE_VERSION = 4  # 2: + 52-week high / low (a year of candles); 3: + positional stats ("pos"); 4: + last closes
+_BASE_VERSION = 5  # 2: + 52-week high / low (a year of candles); 3: + positional stats ("pos"); 4: + last closes; 5: + drop-base-rally zone ("dbr")
 
 
 def _load_base() -> None:
@@ -171,6 +171,17 @@ def _save_base() -> None:
         tmp.replace(_BASE_FILE)
     except Exception as exc:  # noqa: BLE001
         log.warning("baseline save failed: %s", exc)
+
+
+def _dbr(past: list) -> dict | None:
+    """The stock's latest drop-base-rally demand zone (dbr_zones), or None; never raises."""
+    from . import dbr_zones
+
+    try:
+        return dbr_zones.detect(past)
+    except Exception as exc:  # noqa: BLE001 -- a bad candle must not lose the whole baseline row
+        log.warning("dbr detect failed: %s", exc)
+        return None
 
 
 def _pos_stats(past: list, today: date, avg_vol: float) -> dict:
@@ -267,6 +278,10 @@ def _pos_fields(q: dict, b: dict) -> dict:
         out["inside"] = bool(p.get("h2") and p.get("l2") and p["h1"] <= p["h2"] and p["l1"] >= p["l2"])
         out["rangePct"] = round(rng[0] / ltp * 100, 2) if ltp else None
     out.update(positional.summary(q.get("sym") or b.get("sym") or ""))
+    if b.get("dbr"):
+        from . import dbr_zones
+
+        out["dbr"] = dbr_zones.live(b["dbr"], ltp)
     return out
 
 
@@ -302,6 +317,7 @@ async def _baseline_one(ux, sym: str, today: date) -> bool:
     lows = [x for c in year if (x := _num(c[3]))]
     _base[sym] = {
         "pos": _pos_stats(past, today, sum(vols) / len(vols)),
+        "dbr": _dbr(past),
         "avgVol": sum(vols) / len(vols),
         "days": len(vols),
         "pdh": _num(last[2]),

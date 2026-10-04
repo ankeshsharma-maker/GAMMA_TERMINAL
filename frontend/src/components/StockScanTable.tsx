@@ -282,6 +282,7 @@ export function ScanTable({
   tag,
   empty,
   source = "Scan",
+  zoneOf,
 }: {
   rows: VolRow[];
   metric: Metric;
@@ -291,6 +292,8 @@ export function ScanTable({
   empty: string;
   /** name shown on the chart's Prev / Next ("Volume", "Positional") */
   source?: string;
+  /** a demand zone to draw on the chart for a row (the DBR scan) */
+  zoneOf?: (r: VolRow) => { prox: number; dist: number; tgt: number; date: string } | null;
 }) {
   const setChartQueue = useStore((s) => s.setChartQueue);
   const requestChartTf = useStore((s) => s.requestChartTf);
@@ -442,7 +445,9 @@ export function ScanTable({
           const has = inWatch.has(key) || added.has(key);
           const chart = () => {
             // Next / Prev walk the rows exactly as sorted right now; scan results open on the daily chart
-            setChartQueue(source, sorted.map((x) => x.symbol));
+            const zones: Record<string, { prox: number; dist: number; tgt: number; date: string }> = {};
+            if (zoneOf) for (const x of sorted) { const z = zoneOf(x); if (z) zones[x.symbol] = z; }
+            setChartQueue(source, sorted.map((x) => x.symbol), zones);
             requestChartTf(86400);
             selectSymbol(r.symbol, true);
             setView("chart");

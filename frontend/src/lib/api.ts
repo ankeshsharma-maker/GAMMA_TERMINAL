@@ -39,6 +39,16 @@ export type OiWallPt = {
 
 export const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/+$/, "");
 
+export interface DbrZone {
+  status: "fresh" | "retest" | "zone" | "failed";
+  date: string; // the rally candle
+  age: number; // sessions since it
+  drop: number; rally: number; base: number;
+  rvol: number | null; prox: number; dist: number; tgt: number; rr: number | null;
+  touches: number; failed: boolean; trend: boolean; score: number;
+  distPct: number; // price vs the proximal line, %
+}
+
 export type VolRow = {
   symbol: string;
   name?: string | null;
@@ -81,6 +91,8 @@ export type VolRow = {
   wkPct?: number;
   mo?: "UP" | "DOWN";
   moPct?: number;
+  /** latest drop-base-rally demand zone (daily): proximal = top of the base, distal = its low / the stop */
+  dbr?: DbrZone;
   /** the last finished session: narrowest range of 7 / inside the day before; its range as % of price */
   nr7?: boolean;
   inside?: boolean;

@@ -83,6 +83,8 @@ interface State {
   chartQueue: { source: string; symbols: string[] } | null;
   /** one-shot ask from a scan list: open the chart on this candle size (seconds); seq makes repeats count */
   chartTfReq: { secs: number; seq: number } | null;
+  /** demand zones to draw on the chart, by symbol (set with the queue from the DBR scan) */
+  chartZones: Record<string, { prox: number; dist: number; tgt: number; date: string }>;
   paper: PaperState | null;
   brokerFunds: import("./types").BrokerFunds | null;
   view: View;
@@ -172,7 +174,7 @@ interface State {
   wlAddFuture: (i: number) => Promise<void>;
   wlClear: (i: number, optionsOnly?: boolean) => Promise<void>;
   setChartInstrument: (v: string) => void;
-  setChartQueue: (source: string, symbols: string[]) => void;
+  setChartQueue: (source: string, symbols: string[], zones?: Record<string, { prox: number; dist: number; tgt: number; date: string }>) => void;
   requestChartTf: (secs: number) => void;
   chartStep: (dir: 1 | -1) => void;
   setScalpLots: (n: number) => void;
@@ -323,6 +325,7 @@ export const useStore = create<State>((set, get) => ({
   chartInstrument: "",
   chartQueue: null,
   chartTfReq: null,
+  chartZones: {},
   paper: null,
   brokerFunds: null,
   view: "home", // the app opens on the Home dashboard (asked for 24-Sep)
@@ -810,10 +813,10 @@ export const useStore = create<State>((set, get) => ({
     await get().refreshWatch();
   },
   setChartInstrument: (v) => set({ chartInstrument: v }),
-  setChartQueue: (source, symbols) => {
+  setChartQueue: (source, symbols, zones) => {
     const seen = new Set<string>();
     const list = symbols.filter((s) => s && !seen.has(s) && !!seen.add(s));
-    set({ chartQueue: list.length > 1 ? { source, symbols: list } : null });
+    set({ chartQueue: list.length > 1 ? { source, symbols: list } : null, chartZones: zones ?? {} });
   },
   requestChartTf: (secs) => set((s) => ({ chartTfReq: { secs, seq: (s.chartTfReq?.seq ?? 0) + 1 } })),
   chartStep: (dir) => {

@@ -3,7 +3,8 @@ import type { OiType, VolRow } from "../lib/api";
 import { nf } from "../lib/format";
 import { Chips, MinTraded, ScanHeader, ScanTable, useStockScan, type Metric, type Universe } from "./StockScanTable";
 
-type Mode = "volbuild" | "deliv" | "dma" | "wk" | "mo" | "setup" | "oi";
+type Mode = "volbuild" | "deliv" | "dma" | "wk" | "mo" | "setup" | "oi" | "dbr";
+type DbrView = "fresh" | "retest" | "zone" | "failed";
 type DmaPick = "above3" | "below3" | "above200" | "below200";
 type Setup = "nr7" | "inside" | "both";
 
@@ -36,6 +37,10 @@ export function PositionalScan() {
   const [oiType, setOiType] = useState<OiType>("LONG_BUILDUP");
   const [oiWin, setOiWin] = useState<1 | 5>(5);
   const [oiMin, setOiMin] = useState(5);
+  const [dbrView, setDbrView] = useState<DbrView>("fresh");
+  const [dbrTrend, setDbrTrend] = useState(0);
+  const [dbrVol, setDbrVol] = useState(0);
+  const [dbrRr, setDbrRr] = useState(0);
   const { data, err } = useStockScan(universe, true);
   useEffect(() => setMinCr(universe !== "fo" ? 5 : 0), [universe]);
 
@@ -67,9 +72,20 @@ export function PositionalScan() {
         return r.filter((x) => (setup === "nr7" ? x.nr7 : setup === "inside" ? x.inside : x.nr7 && x.inside));
       case "oi":
         return r.filter((x) => oiTyp(x) === oiType && Math.abs(oiChg(x) ?? 0) >= oiMin);
+      case "dbr":
+        return r.filter((x) => {
+          const z = x.dbr;
+          if (!z || z.status !== dbrView) return false;
+          if (dbrView !== "failed") {
+            if (dbrTrend === 1 && !z.trend) return false;
+            if (dbrVol === 1 && (z.rvol ?? 0) < 1.5) return false;
+            if (dbrRr > 0 && (z.rr ?? 0) < dbrRr) return false;
+          }
+          return true;
+        });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, mode, minCr, volMin, delivMin, dmaPick, side, setup, oiType, oiWin, oiMin]);
+  }, [data, mode, minCr, volMin, delivMin, dmaPick, side, setup, oiType, oiWin, oiMin, dbrView, dbrTrend, dbrVol, dbrRr]);
 
   const metric: Metric = (() => {
     switch (mode) {
@@ -112,6 +128,12 @@ export function PositionalScan() {
           cell: (r) => (r.rangePct == null ? dim : <span className="text-term-text">{nf(r.rangePct, 1)}%</span>),
           sort: (r) => r.rangePct ?? null,
         };
+      case "dbr":
+        return {
+          label: "Score",
+          cell: (r) => (r.dbr ? <span className={r.dbr.score >= 70 ? "font-bold text-amber-400" : "text-term-text"}>{r.dbr.score}</span> : dim),
+          sort: (r) => r.dbr?.score ?? null,
+        };
       case "oi":
         return {
           label: "OI chg",
@@ -129,6 +151,17 @@ export function PositionalScan() {
       return <span className="shrink-0 text-[9px] font-bold text-term-dim">{r.volUp}/5 days up{r.ret5 != null ? ` · ${pct(r.ret5)}` : ""}</span>;
     if (mode === "oi" && pxChg(r) != null)
       return <span className={`shrink-0 text-[9px] font-bold ${pctCls(pxChg(r))}`}>price {pct(pxChg(r)!)}</span>;
+    if (mode === "dbr" && r.dbr) {
+      const z = r.dbr;
+      return (
+        <span className="shrink-0 text-[9px] font-bold text-term-dim">
+          zone {nf(z.dist, 2)}–{nf(z.prox, 2)} · {z.distPct >= 0 ? "+" : ""}{nf(z.distPct, 1)}%
+          {z.rr != null ? ` · RR ${nf(z.rr, 1)}` : ""}
+          {z.rvol != null ? ` · ${nf(z.rvol, 1)}x vol` : ""} · {z.age === 0 ? "last session" : `${z.age}d ago`}
+          {z.touches ? ` · tested ${z.touches}x` : ""}
+        </span>
+      );
+    }
     if (mode === "setup" && r.nr7 && r.inside) return <span className="shrink-0 text-[9px] font-bold text-amber-400">NR7 + inside</span>;
     return null;
   };
@@ -165,6 +198,7 @@ export function PositionalScan() {
             ["mo", "Monthly breakout"],
             ["setup", "NR7 / Inside day"],
             ["oi", "F&O OI build-up"],
+            ["dbr", "Demand zones (DBR)"],
           ]}
           value={mode}
           onChange={setMode}
@@ -208,6 +242,23 @@ export function PositionalScan() {
           {mode === "setup" && (
             <Chips<Setup> items={[["nr7", "NR7"], ["inside", "Inside day"], ["both", "Both"]]} value={setup} onChange={setSetup} />
           )}
+          {mode === "dbr" && (
+            <>
+              <Chips<DbrView>
+                items={[["fresh", "Fresh rally"], ["retest", "Retest of zone"], ["zone", "All open zones"], ["failed", "Failed"]]}
+                value={dbrView}
+                onChange={setDbrView}
+              />
+              {dbrView !== "failed" && (
+                <>
+                  <Chips<number> items={[[0, "Any trend"], [1, "Above 50 DMA"]]} value={dbrTrend} onChange={setDbrTrend} />
+                  <Chips<number> items={[[0, "Any volume"], [1, "Rally vol 1.5x+"]]} value={dbrVol} onChange={setDbrVol} />
+                  <span>Reward : risk</span>
+                  <Chips<number> items={[[0, "Any"], [1, "1+"], [2, "2+"], [3, "3+"]]} value={dbrRr} onChange={setDbrRr} />
+                </>
+              )}
+            </>
+          )}
           {mode === "oi" && (
             <>
               <Chips<OiType>
@@ -240,6 +291,7 @@ export function PositionalScan() {
           sort={{ key: "metric", dir: sortDir }}
           tag={tag}
           source="Positional"
+          zoneOf={mode === "dbr" ? (r) => (r.dbr && r.dbr.status !== "failed" ? { prox: r.dbr.prox, dist: r.dbr.dist, tgt: r.dbr.tgt, date: r.dbr.date } : null) : undefined}
           empty={empty}
         />
       )}
@@ -266,6 +318,15 @@ export function PositionalScan() {
           {nse?.foLast ? ` of ${ymd(nse.foLast)}` : ""}. Long build-up = price ↑ OI ↑, short build-up = price ↓ OI ↑, short
           covering = price ↑ OI ↓, long unwinding = price ↓ OI ↓; a price change under 0.25% isn't classed. Bonus / split days
           are adjusted using NSE's own adjusted previous close.
+        </p>
+        <p>
+          <b className="text-term-text">Demand zones (DBR)</b>: a sharp drop (1–3 big red candles), a short base (1–5 small candles),
+          then a strong green rally candle closing above the base — on daily candles. The base is where buyers absorbed the
+          selling: <b className="text-term-text">zone top</b> = the top of the base bodies, <b className="text-term-text">stop</b> = the
+          base low, <b className="text-term-text">target</b> = where the drop began; RR = (target − top) ÷ (top − stop). Fresh = rally in the last
+          3 sessions and the zone never revisited; Retest = price is back at the zone top (tested at most once); Failed = a close
+          below the stop. Score (0–100) ranks rally volume, an untouched zone, age, RR, trend and a tight base. Tapping Chart opens the
+          1D chart with the zone drawn, and Next / Prev walks the list. It finds a pattern, it doesn't predict one — check the chart first.
         </p>
         <p>NSE publishes both files around 6–7 PM for the day. Tap a header to sort, a stock for its details (Chart button inside); ☆ adds it to the watchlist. OI 5d (laptop): LB = long build-up, SB = short build-up, SC = short covering, LU = long unwinding — futures OI over the last 5 sessions.</p>
       </div>
