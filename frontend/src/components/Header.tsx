@@ -594,6 +594,7 @@ export function UpstoxPill() {
         <span className="h-1.5 w-1.5 rounded-full bg-sky-400" title="Upstox data feed connected" />
         <span className="hidden sm:inline">Upstox</span>
         {/* chain source toggle */}
+        <span className="hidden text-[10px] text-sky-300/70 sm:inline">Chain</span>
         <span className="flex overflow-hidden rounded border border-sky-500/40">
           {(["nse", "upstox"] as const).map((s) => (
             <button
