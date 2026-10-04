@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { nf } from "../lib/format";
 import type { BuyCard, BuyRow, BuyStats } from "../lib/api";
 
@@ -12,7 +13,15 @@ const V = {
 
 /** The BUYER's table: what a strike costs (time value, daily decay, spread), the move needed to break even, and how often / how much it
  *  paid over the index's own history when held to expiry. */
-export function BuyBody({ card, basis, lot }: { card: BuyCard; basis: "all" | "trend"; lot: number }) {
+/** the whole row in one plain sentence */
+function buyLine(r: BuyRow, s: BuyStats | null, lot: number, call: boolean): string {
+  if (!s) return "Not enough history to compare this strike.";
+  const pay = lot ? `${money(r.premium * lot)} a lot` : nf(r.premium, 2);
+  const move = `${nf(Math.abs(r.breakEvenPct), 2)}% ${call ? "up" : "down"}`;
+  return `Pay ${pay} · ${nf(r.timeValuePct, 0)}% of it is time value · needs a ${move} move to break even · made a profit ${nf(s.probProfit, 0)}% of the time, ${s.avgPct >= 0 ? "gaining" : "losing"} ${nf(Math.abs(s.avgPct), 0)}% of the premium on average`;
+}
+
+export function BuyBody({ card, basis, lot, simple }: { card: BuyCard; basis: "all" | "trend"; lot: number; simple: boolean }) {
   const rows = card.rows;
   const stat = (r: BuyRow): BuyStats | null => (basis === "trend" ? r.trend : r.all);
   const verdictOf = (r: BuyRow) => (basis === "trend" ? r.verdictTrend : r.verdict);
@@ -38,6 +47,26 @@ export function BuyBody({ card, basis, lot }: { card: BuyCard; basis: "all" | "t
           . The price of that safety: it costs more per lot and gains less when the index runs.
         </div>
       )}
+      {simple ? (
+        <div className="mx-3 my-3 shrink-0 overflow-hidden rounded-md border border-term-border">
+          {rows.length === 0 && <div className="p-4 text-center text-[12px] text-term-dim">No strike with a price right now.</div>}
+          {rows.map((r) => {
+            const s = stat(r);
+            const v = V[verdictOf(r)];
+            const star = r.strike === card.advisor;
+            return (
+              <div key={r.strike} className={`flex items-start gap-2 border-b border-term-border/50 px-3 py-2 text-[12px] text-term-text last:border-b-0 ${star ? "bg-term-accent/10" : ""}`}>
+                <div className="w-[84px] shrink-0">
+                  <div className="font-bold">{star ? <span className="mr-0.5 text-amber-400">★</span> : null}{nf(r.strike, 0)}</div>
+                  <div className="text-[10px] text-term-dim">{Math.abs(r.pctItm) <= 0.05 ? "at the money" : r.pctItm > 0 ? `${nf(r.pctItm, 1)}% in` : `${nf(-r.pctItm, 1)}% out`}</div>
+                </div>
+                <div className="min-w-0 flex-1 leading-snug text-term-dim">{buyLine(r, s, lot, call)}</div>
+                <span title={v.tip} className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${v.cls}`}>{v.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
       <div className="mx-3 my-3 shrink-0 overflow-x-auto rounded-md border border-term-border">
         <table className="w-full min-w-[760px] text-right text-[12px]">
           <thead className="bg-term-panel text-[10px] uppercase tracking-wide text-term-dim">
@@ -63,7 +92,8 @@ export function BuyBody({ card, basis, lot }: { card: BuyCard; basis: "all" | "t
               const v = V[verdictOf(r)];
               const star = r.strike === card.advisor;
               return (
-                <tr key={r.strike} className={`border-b border-term-border/50 text-term-text ${star ? "bg-term-accent/10" : ""}`}>
+                <Fragment key={r.strike}>
+                <tr className={`border-t border-term-border/50 text-term-text ${star ? "bg-term-accent/10" : ""}`}>
                   <td className="px-2 py-1.5 text-left font-semibold">
                     {star ? <span className="mr-0.5 text-amber-400">★</span> : null}
                     {nf(r.strike, 0)}{" "}
@@ -84,11 +114,16 @@ export function BuyBody({ card, basis, lot }: { card: BuyCard; basis: "all" | "t
                     <span title={v.tip} className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold ${v.cls}`}>{v.label}</span>
                   </td>
                 </tr>
+                <tr className={`border-b border-term-border/50 ${star ? "bg-term-accent/10" : ""}`}>
+                  <td colSpan={10} className="px-2 pb-1.5 pt-0.5 text-left text-[11px] text-term-dim">{buyLine(r, s, lot, call)}</td>
+                </tr>
+                </Fragment>
               );
             })}
           </tbody>
         </table>
       </div>
+      )}
       <div className="space-y-1 px-3 pb-4 text-[10px] leading-snug text-term-dim">
         <p>
           <b className="text-term-text">How to read it.</b> For every past stretch of {card.sessions} trading day{card.sessions > 1 ? "s" : ""} I held this option to expiry from today's price and
