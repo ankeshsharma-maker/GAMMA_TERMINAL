@@ -390,7 +390,45 @@ def _load_sets(root: Path) -> dict[str, list[Stock]]:
     return sets
 
 
-def _run_spec(root: Path, scan: str, params: dict, universe: str, min_cr: float) -> dict:
+_REG: dict = {"mtime": 0.0, "sets": {}}
+
+
+def market_dates(db_path: Path) -> dict[str, set[str]] | None:
+    """Days by NIFTY's trend at the close: UP = close > 50-DMA > 200-DMA, DOWN = close < 50-DMA < 200-DMA, MIXED = the rest
+    (from the server's candle store; the 200-DMA exists after ~200 sessions, so these start in mid-2022)."""
+    import sqlite3
+    from datetime import datetime, timedelta, timezone
+
+    if not db_path.exists():
+        return None
+    mt = db_path.stat().st_mtime
+    if _REG["sets"] and mt == _REG["mtime"]:
+        return _REG["sets"]
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+        rows = con.execute("select ts, c from bars where sym=? and tf=86400 order by ts", ("NIFTY",)).fetchall()
+        con.close()
+    except sqlite3.Error:
+        return None
+    ist = timezone(timedelta(hours=5, minutes=30))
+    d = [datetime.fromtimestamp(r[0], ist).date().isoformat() for r in rows]
+    c = [float(r[1]) for r in rows]
+    out: dict[str, set[str]] = {"up": set(), "down": set(), "mixed": set()}
+    for i in range(200, len(c)):
+        s50 = sum(c[i - 49 : i + 1]) / 50
+        s200 = sum(c[i - 199 : i + 1]) / 200
+        out["up" if c[i] > s50 > s200 else "down" if c[i] < s50 < s200 else "mixed"].add(d[i])
+    _REG.update(mtime=mt, sets=out)
+    return out
+
+
+def _run_spec(root: Path, scan: str, params: dict, universe: str, min_cr: float, market: str = "all") -> dict:
+    dates = None
+    if market in ("up", "down", "mixed"):
+        reg = market_dates(root.parent / "candles.db")
+        if not reg:
+            return {"error": "NIFTY trend history is not available yet"}
+        dates = reg[market]
     with _LOCK:
         sig = _files_sig(root)
         if _cache["sig"] != sig or time.time() - _cache["loaded"] > TTL or not _cache["sets"]:
@@ -399,14 +437,16 @@ def _run_spec(root: Path, scan: str, params: dict, universe: str, min_cr: float)
         stocks = _cache["sets"].get(universe) or []
         if not stocks:
             return {"error": "no candle history for that universe yet"}
-        key = json.dumps([scan, params, universe, min_cr], sort_keys=True)
+        key = json.dumps([scan, params, universe, min_cr, market], sort_keys=True)
         if key in _cache["res"]:
             return _cache["res"][key]
-        bk = (universe, min_cr)
+        bk = (universe, min_cr, market)
         if bk not in _cache["base"]:
-            _cache["base"][bk] = baseline(stocks, min_cr * 1e7)
-        res = run(stocks, scan, params, min_cr, _cache["base"][bk])
+            _cache["base"][bk] = baseline(stocks, min_cr * 1e7, None, dates)
+        res = run(stocks, scan, params, min_cr, _cache["base"][bk], dates)
         res["universe"] = universe
+        res["market"] = market
+        res["marketDays"] = len(dates) if dates is not None else None
         res["asOf"] = max(s.d[-1] for s in stocks)
         res["from"] = min(s.d[0] for s in stocks)
         _cache["res"][key] = res
@@ -433,10 +473,11 @@ def clean_params(p: dict | None) -> dict:
     return out
 
 
-async def run_spec(root: Path, scan: str, params: dict, universe: str, min_cr: float) -> dict:
+async def run_spec(root: Path, scan: str, params: dict, universe: str, min_cr: float, market: str = "all") -> dict:
     if scan not in SIGNALS:
         return {"error": f"unknown scan {scan!r}"}
     params = clean_params(params)
     if universe not in ("fo", "cash", "all"):
         universe = "fo"
-    return await asyncio.to_thread(_run_spec, root, scan, params or {}, universe, max(0.0, float(min_cr or 0)))
+    market = market if market in ("up", "down", "mixed") else "all"
+    return await asyncio.to_thread(_run_spec, root, scan, params or {}, universe, max(0.0, float(min_cr or 0)), market)

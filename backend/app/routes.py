@@ -257,7 +257,7 @@ async def scan_backtest_run(body: dict):
 
     return await scan_backtest.run_spec(
         DATA_DIR / "daily_candles", str(body.get("scan") or ""), body.get("params") or {},
-        str(body.get("universe") or "fo"), body.get("minValueCr") or 0,
+        str(body.get("universe") or "fo"), body.get("minValueCr") or 0, str(body.get("market") or "all"),
     )
 
 

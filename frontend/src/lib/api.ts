@@ -236,7 +236,7 @@ export const api = {
   volumeScreenerConfigGet: () => j<VolSnapshot["cfg"]>("/api/volume-screener/config"),
   volumeScreenerConfig: (body: { alertLevel?: number; minValueCr?: number; zoneAlerts?: boolean }) =>
     j<VolSnapshot["cfg"]>("/api/volume-screener/config", { method: "POST", body: JSON.stringify(body) }),
-  scanBacktest: (body: { scan: string; params: Record<string, string | number>; universe: "fo" | "cash" | "all"; minValueCr: number }) =>
+  scanBacktest: (body: { scan: string; params: Record<string, string | number>; universe: "fo" | "cash" | "all"; minValueCr: number; market?: "all" | "up" | "down" }) =>
     j<ScanBt>("/api/scan-backtest", { method: "POST", body: JSON.stringify(body) }),
   gexIntraday: (symbol: string, day: string | null) =>
     j<{ symbol: string; day: string | null; days: string[]; live: boolean; points: [number, number | null, number | null, number | null][] }>(
