@@ -43,6 +43,7 @@ export const NAV_GROUPS: NavGroup[] = [
       ["positions", "Positions"],
       ["orders", "Orders"],
       ["auto", "Auto"],
+      ["seller", "Sell"],
     ],
   },
   {
@@ -69,7 +70,7 @@ export const NAV_GROUPS: NavGroup[] = [
 
 /** views a view-only user never gets: they place orders or show the owner's
  *  book (the server refuses the data anyway -- this just keeps them out of the nav) */
-export const OWNER_ONLY_VIEWS: View[] = ["scalper", "journal", "funds"];
+export const OWNER_ONLY_VIEWS: View[] = ["scalper", "journal", "funds", "seller"];
 // (Positions / Orders are open to viewers: they show THEIR paper book; Auto shows THEIR OWN
 //  practice rules, paper only -- the server scopes and forces that)
 

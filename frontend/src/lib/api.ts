@@ -238,6 +238,8 @@ export const api = {
     j<VolSnapshot["cfg"]>("/api/volume-screener/config", { method: "POST", body: JSON.stringify(body) }),
   scanBacktest: (body: { scan: string; params: Record<string, string | number>; universe: "fo" | "cash" | "all"; minValueCr: number; market?: "all" | "up" | "down" }) =>
     j<ScanBt>("/api/scan-backtest", { method: "POST", body: JSON.stringify(body) }),
+  sellerScorecard: (symbol: string, side: "P" | "C", expiry?: string) =>
+    j<SellerCard>(`/api/seller-scorecard/${encodeURIComponent(symbol)}?side=${side}${expiry ? `&expiry=${encodeURIComponent(expiry)}` : ""}`),
   gexIntraday: (symbol: string, day: string | null) =>
     j<{ symbol: string; day: string | null; days: string[]; live: boolean; points: [number, number | null, number | null, number | null][] }>(
       `/api/gex-intraday/${symbol}` + (day ? `?day=${encodeURIComponent(day)}` : "")
@@ -1191,4 +1193,20 @@ export interface DaywiseData {
   from: string | null;
   to: string | null;
   realFrom: string | null;
+}
+
+/** Seller scorecard: per strike you could sell, how the index's own history treated it (see backend/app/seller_scorecard.py) */
+export interface SellerStats {
+  n: number; probItm: number; keptPct: number; avgLossX: number; worstX: number; winsPerLoss: number;
+  breakEvenWin: number; histWin: number; margin: number;
+}
+export interface SellerRow {
+  strike: number; pctOtm: number; premium: number; bid: number; ask: number; impliedItm: number | null;
+  all: SellerStats | null; trend: SellerStats | null;
+  verdict: "pays" | "thin" | "underpays" | "n/a"; verdictTrend: "pays" | "thin" | "underpays" | "n/a";
+}
+export interface SellerCard {
+  error?: string; symbol: string; side: "P" | "C"; expiry: string; expiries?: string[]; spot: number; sessions: number;
+  lotSize?: number; windows: number; from: string; to: string; trend: "up" | "down" | "mixed" | null; trendWindows: number;
+  rows: SellerRow[];
 }

@@ -174,6 +174,16 @@ async def option_chain(symbol: str, expiry: str | None = Query(None)):
     return await _ensure_chain(symbol, expiry)
 
 
+@router.get("/seller-scorecard/{symbol}")
+async def seller_scorecard_view(symbol: str, side: str = Query("P"), expiry: str | None = Query(None)):
+    """Per strike you could SELL (puts or calls): how often the index finished beyond it by expiry over its 5-year history, the loss when it
+    did (in premiums collected), and whether today's premium pays for that. Indices with daily history only."""
+    from . import seller_scorecard
+
+    chain = await _ensure_chain(symbol, expiry)
+    return seller_scorecard.build(chain["symbol"], chain, side)
+
+
 @router.get("/volatility/{symbol}")
 async def volatility_view(
     symbol: str,

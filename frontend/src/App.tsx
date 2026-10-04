@@ -17,6 +17,7 @@ import { OrderFlowView } from "./components/OrderFlow";
 import { TrendingOI } from "./components/TrendingOI";
 import { VolatilityView } from "./components/VolatilityView";
 import { TradeJournal } from "./components/TradeJournal";
+import { SellerScorecard } from "./components/SellerScorecard";
 import { StrategyBuilder } from "./components/StrategyBuilder";
 import { PositionsView, OrdersTab } from "./components/PositionsView";
 import { HomeDashboard } from "./components/HomeDashboard";
@@ -88,6 +89,7 @@ function DesktopShell() {
     view === "auto" ||
     view === "funds" ||
     view === "journal" ||
+    view === "seller" ||
     view === "chart";
   const [leftW, setLeftW] = useState(() => readNum(LS.left, 190));
   const [rightW, setRightW] = useState(() => readNum(LS.right, view === "scalper" ? 360 : 300));
@@ -223,6 +225,7 @@ function DesktopShell() {
           {view === "auto" && <AutoBotView />}
           {view === "funds" && <Funds />}
           {view === "journal" && <TradeJournal />}
+          {view === "seller" && <SellerScorecard />}
         </main>
 
         {showRight && <VSplit onDrag={bumpRight} />}

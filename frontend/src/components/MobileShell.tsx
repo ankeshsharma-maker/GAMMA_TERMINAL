@@ -232,6 +232,7 @@ import { ScalpCharts } from "./ScalpCharts";
 import { AutoBotView } from "./AutoBot";
 import { Funds } from "./Funds";
 import { TradeJournal } from "./TradeJournal";
+import { SellerScorecard } from "./SellerScorecard";
 import { VolatilityView } from "./VolatilityView";
 import { LogoMark } from "./Logo";
 
@@ -258,6 +259,7 @@ const TOP_NAV: TopTab[] = [
   { v: "positional", label: "Positional", group: "scan" },
   { v: "builder", label: "Build", group: "trade" },
   { v: "auto", label: "Auto", group: "trade" },
+  { v: "seller", label: "Sell", group: "trade" },
   { v: "scalper", label: "Scalp", group: "trade" },
   { v: "journal", label: "Journal", group: "trade" },
 ];
@@ -555,6 +557,8 @@ function MobileBody({ view: want }: { view: View }) {
       return <Funds />;
     case "journal":
       return <TradeJournal />;
+    case "seller":
+      return <SellerScorecard />;
     default:
       return null;
   }

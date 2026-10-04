@@ -342,7 +342,8 @@ export type View =
   | "orders"
   | "trendingoi"
   | "vol"
-  | "journal";
+  | "journal"
+  | "seller";
 
 /** `grp` = which condition group it sits in, when the list has been split into groups (see lib/condGroups.ts) */
 export type AutoCondition = Record<string, unknown> & { kind: string; grp?: number };
