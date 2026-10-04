@@ -218,9 +218,20 @@ def sig_gap(s: Stock, p: dict):
     return flags, (1 if side == "UP" else -1)
 
 
+def sig_breakvol(s: Stock, p: dict):
+    """A breakout (close past last week's / month's high, or a new 52-week high) AND the day's volume >= k x its 20-day
+    average (k = 0: no volume condition). Bullish. Combine with `dates=` for a market-trend filter."""
+    brk = p.get("brk", "wk")
+    k = float(p.get("min", 2.0) or 0)
+    fb, _ = {"wk": sig_wk, "mo": sig_mo, "w52": sig_w52}[brk](s, {"side": "UP"})
+    a20 = _roll_mean(s.v, 20, shift=1)
+    flags = [bool(fb[i]) and (k <= 0 or bool(a20[i] and s.v[i] >= k * a20[i])) for i in range(s.n)]
+    return flags, 1
+
+
 SIGNALS = {
     "volbuild": sig_volbuild, "dma": sig_dma, "wk": sig_wk, "mo": sig_mo, "setup": sig_setup,
-    "volbreak": sig_volbreak, "mover": sig_mover, "w52": sig_w52, "gap": sig_gap,
+    "volbreak": sig_volbreak, "breakvol": sig_breakvol, "mover": sig_mover, "w52": sig_w52, "gap": sig_gap,
 }
 
 
@@ -248,7 +259,7 @@ def fwd(s: Stock, i: int, h: int) -> float | None:
     return (s.c[j] / s.o[i + 1] - 1) * 100
 
 
-def baseline(stocks: list[Stock], min_val: float, years: set[int] | None = None) -> dict[int, dict]:
+def baseline(stocks: list[Stock], min_val: float, years: set[int] | None = None, dates: set[str] | None = None) -> dict[int, dict]:
     """Average of ALL stock-days (liquid enough) at each horizon: mean return, mean |return|, share up."""
     out = {}
     for h in HORIZONS:
@@ -256,7 +267,7 @@ def baseline(stocks: list[Stock], min_val: float, years: set[int] | None = None)
         sr = sa = 0.0
         for s in stocks:
             for i in range(30, s.n - h - 1):
-                if s.val[i] < min_val or (years and s.year[i] not in years):
+                if s.val[i] < min_val or (years and s.year[i] not in years) or (dates is not None and s.d[i] not in dates):
                     continue
                 r = fwd(s, i, h)
                 if r is None:
@@ -269,11 +280,13 @@ def baseline(stocks: list[Stock], min_val: float, years: set[int] | None = None)
     return out
 
 
-def run(stocks: list[Stock], scan: str, params: dict | None = None, min_val_cr: float = 0.0, base: dict | None = None) -> dict:
+def run(stocks: list[Stock], scan: str, params: dict | None = None, min_val_cr: float = 0.0, base: dict | None = None,
+        dates: set[str] | None = None) -> dict:
+    """dates = only count signals (and the baseline) on these days, e.g. the days the market was in an uptrend."""
     p = params or {}
     min_val = min_val_cr * 1e7
     fn = SIGNALS[scan]
-    base = base or baseline(stocks, min_val)
+    base = base or baseline(stocks, min_val, None, dates)
     events: dict[int, list[tuple]] = {h: [] for h in HORIZONS}  # h -> (ret_dir, year, stock, day, direction)
     n_fire = 0
     for s in stocks:
@@ -282,6 +295,8 @@ def run(stocks: list[Stock], scan: str, params: dict | None = None, min_val_cr: 
         for i in range(30, s.n - 2):
             if not flags[i] or flags[i - 1] or s.val[i] < min_val:
                 continue  # only the day it ENTERS the scan, and only a liquid enough stock
+            if dates is not None and s.d[i] not in dates:
+                continue
             d = dirs[i] if isinstance(dirs, list) else dirs
             n_fire += 1
             for h in HORIZONS:
@@ -398,7 +413,7 @@ def _run_spec(root: Path, scan: str, params: dict, universe: str, min_cr: float)
         return res
 
 
-_CHOICES = {"pick": {"above3", "below3", "above200", "below200"}, "side": {"UP", "DOWN"}, "which": {"nr7", "inside", "both"},
+_CHOICES = {"brk": {"wk", "mo", "w52"}, "pick": {"above3", "below3", "above200", "below200"}, "side": {"UP", "DOWN"}, "which": {"nr7", "inside", "both"},
             "state": {"any", "hold", "filled"}}
 _RANGES = {"min": (0.5, 20.0), "pct": (0.2, 20.0), "near": (0.0, 20.0)}
 
