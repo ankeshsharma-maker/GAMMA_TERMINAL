@@ -1,9 +1,45 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { api, type BuyCard, type SellerCard, type SellerRow, type SellerStats } from "../lib/api";
+import { api, type BuyCard, type EntryTiming, type SellerCard, type SellerRow, type SellerStats } from "../lib/api";
 import { BuyBody } from "./BuyScorecard";
 import { nf } from "../lib/format";
 import { useStore } from "../store";
 import { Chips } from "./StockScanTable";
+
+/** When to sell: the history of selling weekly strangles k sessions before expiry (see backend ENTRY_TIMING). */
+function EntryTimingCard({ t }: { t: EntryTiming }) {
+  const cur = t.rows.find((r) => r.k === t.sessions);
+  const first = t.rows[0]; // 5 sessions out
+  const last = t.rows[t.rows.length - 1]; // 2 sessions out
+  const headline = cur
+    ? cur.k === 2
+      ? `${t.sessions} sessions to expiry: the best-paid window in the history. Sold now, strangles kept ${pct(cur.hold.avg)} of the credit on average and won ${cur.hold.win}% of the time; sold 5 sessions out they kept only ${pct(first.hold.avg)} (${first.hold.win}%).`
+      : cur.k >= 4
+      ? `${t.sessions} sessions to expiry: early. Sold at this point the history kept just ${pct(cur.hold.avg)} (won ${cur.hold.win}%); the premium mostly pays in the last 2 sessions (${pct(last.hold.avg)}, ${last.hold.win}%). Waiting looked better.`
+      : `${t.sessions} sessions to expiry: a middle window. Sold now the history kept ${pct(cur.hold.avg)} (won ${cur.hold.win}%); waiting until 2 sessions out kept ${pct(last.hold.avg)}.`
+    : t.sessions <= 1
+    ? "1 session to expiry: not in the study. Little premium is left and a gap hurts the most; the history can't guide this one."
+    : `${t.sessions} sessions to expiry: further out than the study (5 at most). Selling 5 sessions out kept only ${pct(first.hold.avg)}, so earlier is not better.`;
+  return (
+    <div className="mx-3 mt-3 rounded-md border border-term-border bg-term-panel px-3 py-2 text-[12px] text-term-dim">
+      <div className="mb-1 font-bold text-term-text">When to sell — entry timing</div>
+      <div className="leading-snug">{headline}</div>
+      <div className="mt-2 grid grid-cols-4 gap-1 text-center text-[10px]">
+        {t.rows.map((r) => (
+          <div key={r.k} className={`rounded border px-1 py-1 ${r.k === t.sessions ? "border-term-accent bg-term-accent/15 text-term-text" : "border-term-border"}`}>
+            <div className="font-semibold">{r.k} sessions out</div>
+            <div className={`text-[13px] font-bold ${r.hold.avg >= 0 ? "text-up" : "text-down"}`}>{pct(r.hold.avg)}</div>
+            <div>won {r.hold.win}%</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 text-[10px] leading-snug">
+        Average share of the credit kept, holding to expiry, after costs. A 2x stop (buy back at double the credit) cut the 5th-percentile trade at 2 sessions from {pct(last.hold.p5)} to {pct(last.stop.p5)}{" "}
+        for about {nf(last.hold.avg - last.stop.avg, 0)} points of average; a 50% profit target gave up more ({pct(last.target.avg)}). Every window kept the same tail: the worst 5% of trades lost about 2-4x the credit.
+        Based on {t.source}; the past, not a forecast.
+      </div>
+    </div>
+  );
+}
 
 /** "about 1 time in 10" for a chance in % */
 const oneIn = (p: number) => (p < 1 ? "less than 1 time in 100" : `about 1 time in ${Math.max(2, Math.round(100 / p))}`);
@@ -138,6 +174,7 @@ export function SellerScorecard() {
         <BuyBody card={card} basis={basis} lot={lot} simple={simple} />
       ) : (
         <>
+          {card.entryTiming && <EntryTimingCard t={card.entryTiming} />}
           {best && (
             <div className="mx-3 mt-3 rounded-md border border-term-border bg-term-panel px-3 py-2 text-[12px] text-term-dim">
               The closest strike that <b className="text-up">pays</b> on this history is <b className="text-term-text">{nf(best.strike, 0)}</b> ({nf(best.pctOtm, 1)}% out): you collect{" "}

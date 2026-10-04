@@ -1216,10 +1216,18 @@ export interface SellerRow {
   all: SellerStats | null; trend: SellerStats | null;
   verdict: "pays" | "thin" | "underpays" | "n/a"; verdictTrend: "pays" | "thin" | "underpays" | "n/a";
 }
+export interface EntryTimingRow {
+  k: number;
+  hold: { avg: number; win: number; p5: number };
+  target: { avg: number; win: number; p5: number };
+  stop: { avg: number; win: number; p5: number };
+}
+export interface EntryTiming { sessions: number; tested: boolean; rows: EntryTimingRow[]; source: string }
 export interface SellerCard {
   error?: string; symbol: string; side: "P" | "C"; expiry: string; expiries?: string[]; spot: number; sessions: number;
   lotSize?: number; windows: number; from: string; to: string; trend: "up" | "down" | "mixed" | null; trendWindows: number;
   rows: SellerRow[];
+  entryTiming?: EntryTiming;
 }
 
 /** the BUYER's side of the same scorecard */

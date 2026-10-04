@@ -21,6 +21,24 @@ from .config import DATA_DIR
 IST = timezone(timedelta(hours=5, minutes=30))
 SYMBOLS = ("NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY", "MIDCPNIFTY", "BANKEX", "NIFTYNXT50")
 MAX_OTM = 0.07  # strikes up to 7% out of the money
+
+# Entry timing, from tools/iv_entry_exit_study.py: weekly NIFTY + SENSEX short strangles ~1.5% out, sold at the open k trading days before expiry,
+# 1.5% cost, real option prices Jul 2024 - Sep 2026 (~115 weekly cycles per row). % of the credit kept: average, win rate, 5th-percentile trade.
+ENTRY_TIMING = {
+    5: {"hold": (3.9, 69, -362), "target": (4.3, 79, -362), "stop": (5.0, 75, -230)},
+    4: {"hold": (12.4, 71, -332), "target": (7.2, 78, -307), "stop": (-1.1, 73, -266)},
+    3: {"hold": (12.6, 77, -374), "target": (6.8, 83, -351), "stop": (7.2, 79, -246)},
+    2: {"hold": (38.8, 86, -331), "target": (30.3, 90, -313), "stop": (29.4, 85, -205)},
+}
+ENTRY_SOURCE = "weekly NIFTY and SENSEX short strangles about 1.5% out, Jul 2024 - Sep 2026, about 115 weeks per row"
+
+
+def entry_timing(sessions: int) -> dict:
+    """The study's table with the row for `sessions` trading days to expiry marked (None when it was not tested: 1, or more than 5)."""
+    rows = [{"k": k, "hold": {"avg": v["hold"][0], "win": v["hold"][1], "p5": v["hold"][2]},
+             "target": {"avg": v["target"][0], "win": v["target"][1], "p5": v["target"][2]},
+             "stop": {"avg": v["stop"][0], "win": v["stop"][1], "p5": v["stop"][2]}} for k, v in sorted(ENTRY_TIMING.items(), reverse=True)]
+    return {"sessions": sessions, "tested": sessions in ENTRY_TIMING, "rows": rows, "source": ENTRY_SOURCE}
 _hist: dict[str, tuple] = {}  # symbol -> (mtime, dates, closes, regimes)
 
 
@@ -148,6 +166,7 @@ def build(symbol: str, chain: dict, side: str) -> dict:
         "symbol": symbol, "side": "P" if put else "C", "expiry": chain.get("expiry"), "expiries": chain.get("expiries"), "spot": spot, "sessions": sess, "lotSize": chain.get("lotSize"),
         "windows": n, "from": dates[0].isoformat(), "to": dates[-1].isoformat(),
         "trend": today_reg, "trendWindows": len(same), "rows": out_rows,
+        "entryTiming": entry_timing(sess),
     }
 
 
