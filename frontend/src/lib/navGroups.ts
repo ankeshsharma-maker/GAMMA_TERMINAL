@@ -43,7 +43,7 @@ export const NAV_GROUPS: NavGroup[] = [
       ["positions", "Positions"],
       ["orders", "Orders"],
       ["auto", "Auto"],
-      ["seller", "Sell"],
+      ["seller", "Strikes"],
     ],
   },
   {

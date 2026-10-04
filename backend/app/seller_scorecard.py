@@ -149,3 +149,90 @@ def build(symbol: str, chain: dict, side: str) -> dict:
         "windows": n, "from": dates[0].isoformat(), "to": dates[-1].isoformat(),
         "trend": today_reg, "trendWindows": len(same), "rows": out_rows,
     }
+
+
+# ---------------------------------------------------------------- the BUYER's side
+def _stats_buy(rets: list[float], spot: float, strike: float, premium: float, call: bool) -> dict | None:
+    """What a buyer who holds to expiry made on every past window: payout - premium, as % of the premium."""
+    if len(rets) < 30 or premium <= 0:
+        return None
+    pay = [max(0.0, (spot * (1 + r) - strike) if call else (strike - spot * (1 + r))) for r in rets]
+    res = sorted((p - premium) / premium * 100 for p in pay)
+    n = len(pay)
+    wins = [p for p in pay if p > premium]
+    return {
+        "n": n,
+        "probProfit": round(len(wins) / n * 100, 1),
+        "avgPct": round(sum(res) / n, 1),
+        "medPct": round(res[n // 2], 1),
+        "p10Pct": round(res[int(n * 0.1)], 1),
+        "lose50": round(sum(1 for p in pay if p < 0.5 * premium) / n * 100, 1),  # share that lost more than half the premium
+        "avgWinX": round((sum(wins) / len(wins) - premium) / premium, 2) if wins else 0.0,
+        "bestX": round((max(pay) - premium) / premium, 1),
+    }
+
+
+def verdict_buy(s: dict | None) -> str:
+    if not s:
+        return "n/a"
+    return "fair" if s["avgPct"] >= -8 else "costly" if s["avgPct"] >= -25 else "verycostly"
+
+
+def build_buy(symbol: str, chain: dict, side: str) -> dict:
+    """Per strike you could BUY (calls or puts), held to expiry: what it costs in time value, spread and daily decay, the move you
+    need to break even, and how the index's own history treated it. `advisor` = the in-the-money strike that cost least."""
+    symbol = symbol.upper()
+    h = history(symbol)
+    if h is None:
+        return {"error": f"no daily history for {symbol} yet (indices only: {', '.join(SYMBOLS)})"}
+    dates, closes, reg = h
+    call = not side.upper().startswith("P")
+    live = chain.get("liveSpot")
+    spot = float(live["ltp"] if isinstance(live, dict) and live.get("ltp") else chain["spot"])
+    exp = parse_expiry(chain.get("expiry") or "")
+    if exp is None:
+        return {"error": f"unreadable expiry {chain.get('expiry')!r}"}
+    sess = sessions_to(exp)
+    n = len(closes) - sess
+    if n < 100:
+        return {"error": "not enough history"}
+    rets = [closes[i + sess] / closes[i] - 1 for i in range(n)]
+    today_reg = reg[-1]
+    same = [rets[i] for i in range(n) if reg[i] == today_reg] if today_reg else []
+    rows = []
+    for r in chain.get("rows", []):
+        k = float(r["strike"])
+        leg = r["call"] if call else r["put"]
+        itm = (spot - k) / spot if call else (k - spot) / spot  # > 0 = in the money
+        if itm < -0.02 or itm > 0.04:
+            continue
+        bid, ask, ltp = leg.get("bid") or 0, leg.get("ask") or 0, leg.get("ltp") or 0
+        prem = ltp if ltp > 0 else ((bid + ask) / 2 if bid > 0 and ask > 0 else 0)
+        if prem <= 0:
+            continue
+        intrinsic = max(0.0, (spot - k) if call else (k - spot))
+        be = (k + prem) / spot - 1 if call else 1 - (k - prem) / spot  # the move (in the option's direction) needed to break even at expiry
+        allw = _stats_buy(rets, spot, k, prem, call)
+        samew = _stats_buy(same, spot, k, prem, call) if len(same) >= 60 else None
+        mid = (bid + ask) / 2 if bid > 0 and ask > 0 else prem
+        rows.append({
+            "strike": k, "pctItm": round(itm * 100, 2), "premium": round(prem, 2), "bid": bid, "ask": ask,
+            "spreadPct": round((ask - bid) / mid * 100, 1) if bid > 0 and ask > 0 and mid else None,
+            "timeValuePct": round(max(0.0, prem - intrinsic) / prem * 100, 1),
+            "decayDayPct": round(abs(leg.get("theta") or 0) / prem * 100, 1) if leg.get("theta") else None,  # of the premium, per day
+            "delta": round(abs(leg.get("delta") or 0), 2), "volume": leg.get("volume") or 0,
+            "breakEvenPct": round(be * 100, 2),
+            "all": allw, "trend": samew, "verdict": verdict_buy(allw), "verdictTrend": verdict_buy(samew),
+        })
+    rows.sort(key=lambda x: -x["pctItm"])  # deepest in the money first
+    # the advisor: of the liquid in-the-money strikes (delta >= 0.6, spread <= 3%) the one that cost the least on this history
+    cand = [x for x in rows if 0.3 <= x["pctItm"] <= 3.0 and x["delta"] >= 0.6 and x["timeValuePct"] >= 1  # a price below intrinsic is a stale quote
+            and (x["spreadPct"] is None or x["spreadPct"] <= 3) and x["all"]]
+    best = max(cand, key=lambda x: x["all"]["avgPct"]) if cand else None
+    atm = min(rows, key=lambda x: abs(x["pctItm"])) if rows else None
+    return {
+        "mode": "buy", "symbol": symbol, "side": "C" if call else "P", "expiry": chain.get("expiry"), "expiries": chain.get("expiries"), "spot": spot,
+        "sessions": sess, "lotSize": chain.get("lotSize"), "windows": n, "from": dates[0].isoformat(), "to": dates[-1].isoformat(),
+        "trend": today_reg, "trendWindows": len(same), "rows": rows,
+        "advisor": best["strike"] if best else None, "atm": atm["strike"] if atm else None,
+    }

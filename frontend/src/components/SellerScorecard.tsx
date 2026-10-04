@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type SellerCard, type SellerRow, type SellerStats } from "../lib/api";
+import { api, type BuyCard, type SellerCard, type SellerRow, type SellerStats } from "../lib/api";
+import { BuyBody } from "./BuyScorecard";
 import { nf } from "../lib/format";
 import { useStore } from "../store";
 import { Chips } from "./StockScanTable";
@@ -19,10 +20,11 @@ const V = {
 export function SellerScorecard() {
   const storeSym = useStore((s) => s.symbol);
   const [symbol, setSymbol] = useState<string>(INDICES.includes(storeSym as any) ? storeSym : "NIFTY");
+  const [mode, setMode] = useState<"sell" | "buy">("sell"); // what the user is doing: selling or buying options
   const [side, setSide] = useState<"P" | "C">("P");
   const [expiry, setExpiry] = useState<string>("");
   const [basis, setBasis] = useState<"all" | "trend">("all");
-  const [card, setCard] = useState<SellerCard | null>(null);
+  const [card, setCard] = useState<(SellerCard & BuyCard) | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -34,7 +36,7 @@ export function SellerScorecard() {
       inflight = true;
       setBusy(true);
       api
-        .sellerScorecard(symbol, side, expiry || undefined)
+        .sellerScorecard(symbol, side, expiry || undefined, mode)
         .then((r) => {
           if (!live) return;
           if (r.error) {
@@ -59,7 +61,7 @@ export function SellerScorecard() {
       clearInterval(t);
       document.removeEventListener("visibilitychange", load);
     };
-  }, [symbol, side, expiry]);
+  }, [symbol, side, expiry, mode]);
 
   const rows = card?.rows ?? [];
   const stat = (r: SellerRow): SellerStats | null => (basis === "trend" ? r.trend : r.all);
@@ -72,11 +74,24 @@ export function SellerScorecard() {
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-term-bg">
       <div className="space-y-2 border-b border-term-border bg-term-panel2 px-3 py-2">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[13px] font-bold text-term-text">Seller scorecard</span>
+          <span className="text-[13px] font-bold text-term-text">Strike scorecard</span>
+          <Chips<"sell" | "buy">
+            items={[["sell", "I'm selling"], ["buy", "I'm buying"]]}
+            value={mode}
+            onChange={(m) => {
+              setMode(m);
+              setSide(m === "buy" ? "C" : "P"); // each side opens on its usual leg
+              setCard(null);
+            }}
+          />
           <Chips<string> items={INDICES.map((i) => [i, i] as [string, string])} value={symbol} onChange={(v) => { setSymbol(v); setExpiry(""); }} />
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-term-dim">
-          <Chips<"P" | "C"> items={[["P", "Sell puts"], ["C", "Sell calls"]]} value={side} onChange={setSide} />
+          <Chips<"P" | "C">
+            items={mode === "buy" ? [["C", "Buy calls"], ["P", "Buy puts"]] : [["P", "Sell puts"], ["C", "Sell calls"]]}
+            value={side}
+            onChange={setSide}
+          />
           {card?.expiries && card.expiries.length > 1 && (
             <select
               value={expiry || card.expiry || ""}
@@ -105,6 +120,8 @@ export function SellerScorecard() {
         <div className="p-4 text-center text-[12px] text-down">{err}</div>
       ) : !card ? (
         <div className="p-6 text-center text-[12px] text-term-dim">Loading the option chain and the index's history…</div>
+      ) : card.mode === "buy" ? (
+        <BuyBody card={card} basis={basis} lot={lot} />
       ) : (
         <>
           {best && (

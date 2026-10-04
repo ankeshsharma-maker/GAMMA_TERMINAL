@@ -238,8 +238,8 @@ export const api = {
     j<VolSnapshot["cfg"]>("/api/volume-screener/config", { method: "POST", body: JSON.stringify(body) }),
   scanBacktest: (body: { scan: string; params: Record<string, string | number>; universe: "fo" | "cash" | "all"; minValueCr: number; market?: "all" | "up" | "down" }) =>
     j<ScanBt>("/api/scan-backtest", { method: "POST", body: JSON.stringify(body) }),
-  sellerScorecard: (symbol: string, side: "P" | "C", expiry?: string) =>
-    j<SellerCard>(`/api/seller-scorecard/${encodeURIComponent(symbol)}?side=${side}${expiry ? `&expiry=${encodeURIComponent(expiry)}` : ""}`),
+  sellerScorecard: (symbol: string, side: "P" | "C", expiry?: string, mode: "sell" | "buy" = "sell") =>
+    j<SellerCard & BuyCard>(`/api/seller-scorecard/${encodeURIComponent(symbol)}?side=${side}&mode=${mode}${expiry ? `&expiry=${encodeURIComponent(expiry)}` : ""}`),
   gexIntraday: (symbol: string, day: string | null) =>
     j<{ symbol: string; day: string | null; days: string[]; live: boolean; points: [number, number | null, number | null, number | null][] }>(
       `/api/gex-intraday/${symbol}` + (day ? `?day=${encodeURIComponent(day)}` : "")
@@ -1209,4 +1209,20 @@ export interface SellerCard {
   error?: string; symbol: string; side: "P" | "C"; expiry: string; expiries?: string[]; spot: number; sessions: number;
   lotSize?: number; windows: number; from: string; to: string; trend: "up" | "down" | "mixed" | null; trendWindows: number;
   rows: SellerRow[];
+}
+
+/** the BUYER's side of the same scorecard */
+export interface BuyStats {
+  n: number; probProfit: number; avgPct: number; medPct: number; p10Pct: number; lose50: number; avgWinX: number; bestX: number;
+}
+export interface BuyRow {
+  strike: number; pctItm: number; premium: number; bid: number; ask: number; spreadPct: number | null; timeValuePct: number;
+  decayDayPct: number | null; delta: number; volume: number; breakEvenPct: number;
+  all: BuyStats | null; trend: BuyStats | null;
+  verdict: "fair" | "costly" | "verycostly" | "n/a"; verdictTrend: "fair" | "costly" | "verycostly" | "n/a";
+}
+export interface BuyCard {
+  error?: string; mode: "buy"; symbol: string; side: "P" | "C"; expiry: string; expiries?: string[]; spot: number; sessions: number;
+  lotSize?: number; windows: number; from: string; to: string; trend: "up" | "down" | "mixed" | null; trendWindows: number;
+  rows: BuyRow[]; advisor: number | null; atm: number | null;
 }

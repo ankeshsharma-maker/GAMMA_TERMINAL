@@ -259,7 +259,7 @@ const TOP_NAV: TopTab[] = [
   { v: "positional", label: "Positional", group: "scan" },
   { v: "builder", label: "Build", group: "trade" },
   { v: "auto", label: "Auto", group: "trade" },
-  { v: "seller", label: "Sell", group: "trade" },
+  { v: "seller", label: "Strikes", group: "trade" },
   { v: "scalper", label: "Scalp", group: "trade" },
   { v: "journal", label: "Journal", group: "trade" },
 ];
