@@ -234,7 +234,7 @@ function DayWise() {
     try {
       const d = await api.journalDaywise();
       setData(d);
-      setMonth((m) => m || (d.to ? d.to.slice(0, 7) : "all"));
+      setMonth((m) => m || "summary");
     } catch (e: any) {
       setNote(String(e?.message || e));
     }
@@ -245,7 +245,7 @@ function DayWise() {
 
   const months = useMemo(() => [...new Set((data?.days ?? []).map((x) => x.d.slice(0, 7)))], [data]);
   const rows: DaywiseRow[] = useMemo(
-    () => (data?.days ?? []).filter((x) => month === "all" || x.d.startsWith(month)),
+    () => (data?.days ?? []).filter((x) => month === "all" || month === "summary" || x.d.startsWith(month)),
     [data, month]
   );
   const tot = useMemo(() => {
@@ -256,6 +256,20 @@ function DayWise() {
       green: rows.filter((r) => r.net > 0).length, red: rows.filter((r) => r.net <= 0).length,
     };
   }, [rows]);
+
+  const monthly = useMemo(() => {
+    const out = months.map((m) => {
+      const ds = (data?.days ?? []).filter((x) => x.d.startsWith(m));
+      const sum = (k: keyof DaywiseRow) => ds.reduce((a, r) => a + (r[k] as number), 0);
+      const best = ds.reduce((a, r) => (r.net > a.net ? r : a), ds[0]);
+      const worst = ds.reduce((a, r) => (r.net < a.net ? r : a), ds[0]);
+      return {
+        m, days: ds.length, green: ds.filter((r) => r.net > 0).length, red: ds.filter((r) => r.net <= 0).length,
+        gross: sum("gross"), net: sum("net"), charges: sum("charges"), turnover: sum("turnover"), best, worst,
+      };
+    });
+    return out;
+  }, [data, months]);
 
   const onFile = async (f: File | undefined) => {
     if (!f) return;
@@ -276,6 +290,16 @@ function DayWise() {
   };
 
   const csv = () => {
+    if (month === "summary") {
+      const L = ["Month,Trading days,Green days,Red days,Turnover,P&L without charges,Charges,P&L with charges,Charges % of turnover,Best day,Worst day"];
+      for (const x of monthly)
+        L.push([x.m, x.days, x.green, x.red, Math.round(x.turnover), Math.round(x.gross * 100) / 100, Math.round(x.charges * 100) / 100, Math.round(x.net * 100) / 100, nf((x.charges / (x.turnover || 1)) * 100, 3), `${x.best.d} ${x.best.net}`, `${x.worst.d} ${x.worst.net}`].join(","));
+      const a0 = document.createElement("a");
+      a0.href = URL.createObjectURL(new Blob([L.join("\n")], { type: "text/csv" }));
+      a0.download = "monthly_pnl.csv";
+      a0.click();
+      return;
+    }
     let run = 0;
     const lines = ["Date,Day,Turnover,P&L without charges,STT,Stamp duty,Exchange charges,SEBI,GST,Total charges,P&L with charges,Running with charges"];
     for (const r of rows) {
@@ -296,6 +320,9 @@ function DayWise() {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-1.5">
         <div className="seg">
+          <button onClick={() => setMonth("summary")} className={month === "summary" ? "on" : ""} title="One row per month">
+            Monthly
+          </button>
           {months.map((m) => (
             <button key={m} onClick={() => setMonth(m)} className={month === m ? "on" : ""}>
               {monthLabel(m)}
@@ -334,6 +361,72 @@ function DayWise() {
             <Card label="With charges" value={money(tot.net)} tone={signColor(tot.net)} sub="what your account got" />
             <Card label="Green / red days" value={`${tot.green} / ${tot.red}`} sub={rows.length ? `${nf((tot.green / rows.length) * 100, 0)}% green` : ""} />
           </div>
+          {month === "summary" ? (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[12px]">
+                <thead>
+                  <tr>
+                    <th className={`${th} text-left`}>Month</th>
+                    <th className={`${th} text-right`}>Days</th>
+                    <th className={`${th} text-right`}>G / R</th>
+                    <th className={`${th} hidden text-right sm:table-cell`}>Turnover</th>
+                    <th className={`${th} text-right`}>Without</th>
+                    <th className={`${th} text-right`}>Charges</th>
+                    <th className={`${th} text-right`}>With</th>
+                    <th className={`${th} hidden text-right sm:table-cell`}>Chg % TO</th>
+                    <th className={`${th} hidden text-right md:table-cell`}>Best day</th>
+                    <th className={`${th} hidden text-right md:table-cell`}>Worst day</th>
+                    <th className={`${th} text-right`}>Running</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    let cum = 0;
+                    return monthly.map((x) => {
+                      cum += x.net;
+                      return (
+                        <tr key={x.m} className={`cursor-pointer ${x.net > 0 ? "bg-up/5" : "bg-down/5"}`} onClick={() => setMonth(x.m)} title="Open this month">
+                          <td className={`${td} whitespace-nowrap font-medium`}>{monthLabel(x.m)}</td>
+                          <td className={`${td} num text-right`}>{x.days}</td>
+                          <td className={`${td} num whitespace-nowrap text-right`}>
+                            <span className="text-up">{x.green}</span> / <span className="text-down">{x.red}</span>
+                          </td>
+                          <td className={`${td} num hidden text-right text-term-dim sm:table-cell`}>{Math.round(x.turnover / 1e5).toLocaleString("en-IN")}L</td>
+                          <td className={`${td} num text-right ${signColor(x.gross)}`}>{money(x.gross)}</td>
+                          <td className={`${td} num text-right text-amber-400`}>{Math.round(x.charges).toLocaleString("en-IN")}</td>
+                          <td className={`${td} num text-right font-semibold ${signColor(x.net)}`}>{money(x.net)}</td>
+                          <td className={`${td} num hidden text-right text-term-dim sm:table-cell`}>{nf((x.charges / (x.turnover || 1)) * 100, 3)}%</td>
+                          <td className={`${td} num hidden text-right md:table-cell`}>
+                            <span className="text-up">{money(x.best.net)}</span> <span className="text-term-dim">{dmy(x.best.d)}</span>
+                          </td>
+                          <td className={`${td} num hidden text-right md:table-cell`}>
+                            <span className="text-down">{money(x.worst.net)}</span> <span className="text-term-dim">{dmy(x.worst.d)}</span>
+                          </td>
+                          <td className={`${td} num text-right ${signColor(cum)}`}>{money(cum)}</td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                  <tr className="bg-term-panel font-semibold">
+                    <td className={td}>Total</td>
+                    <td className={`${td} num text-right`}>{rows.length}</td>
+                    <td className={`${td} num whitespace-nowrap text-right`}>
+                      <span className="text-up">{tot.green}</span> / <span className="text-down">{tot.red}</span>
+                    </td>
+                    <td className={`${td} num hidden text-right sm:table-cell`}>{Math.round(tot.turnover / 1e5).toLocaleString("en-IN")}L</td>
+                    <td className={`${td} num text-right ${signColor(tot.gross)}`}>{money(tot.gross)}</td>
+                    <td className={`${td} num text-right text-amber-400`}>{Math.round(tot.charges).toLocaleString("en-IN")}</td>
+                    <td className={`${td} num text-right ${signColor(tot.net)}`}>{money(tot.net)}</td>
+                    <td className={`${td} num hidden text-right sm:table-cell`}>{nf((tot.charges / (tot.turnover || 1)) * 100, 3)}%</td>
+                    <td className={`${td} hidden md:table-cell`} />
+                    <td className={`${td} hidden md:table-cell`} />
+                    <td className={td} />
+                  </tr>
+                </tbody>
+              </table>
+              <div className="mt-1 text-[11px] text-term-dim">Tap a month to open its day-by-day table. G / R = green and red days. Turnover in lakh.</div>
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[12px]">
               <thead>
@@ -373,6 +466,7 @@ function DayWise() {
               </tbody>
             </table>
           </div>
+          )}
           <div className="text-[11px] leading-snug text-term-dim">
             Charges in this view: STT {money2(tot.stt)} · stamp {money2(tot.stamp)} · exchange {money2(tot.exch)} · SEBI {money2(tot.sebi)} · GST {money2(tot.gst)}
             {tot.brokerage ? ` · brokerage ${money2(tot.brokerage)}` : " · brokerage ₹0"}. Hover a row for its own breakdown.
